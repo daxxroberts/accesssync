@@ -1,0 +1,101 @@
+/**
+ * wix-adapter.js
+ * Platform Adapter Layer (Layer 2)
+ *
+ * Responsibilities:
+ * - Listen for incoming Wix Webhooks
+ * - Verify Webhook HMAC signatures from Wix using Node crypto
+ * - Acknowledge receipt (200 OK) immediately
+ * - Normalize payload into a standard internal event format
+ * - Pass validated event to Webhook Processor
+ */
+
+const crypto = require('crypto');
+const webhookProcessor = require('../core/webhook-processor');
+
+class WixAdapter {
+  constructor() {
+    this.webhookSecret = process.env.WIX_WEBHOOK_SECRET;
+  }
+
+  /**
+   * Express/Fastify compatible HTTP handler 
+   * @param {Object} req 
+   * @param {Object} res 
+   */
+  async handleWebhook(req, res) {
+    try {
+      const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+      const signature = req.headers['x-wix-signature'];
+
+      // 1. Verify Signature
+      if (!this._verifySignature(rawBody, signature)) {
+        console.warn('[Wix Adapter] Invalid Webhook signature rejected.');
+        return res.status(401).send('Unauthorized');
+      }
+
+      // 2. Acknowledge Immediately
+      res.status(200).send('OK');
+
+      // 3. Normalize into standard format
+      const eventId = req.headers['x-wix-event-id'] || 'fallback-id';
+      const eventType = req.headers['x-wix-event-type'] || req.body?.eventType; // e.g. "plan.purchased"
+      
+      const standardEvent = this._normalizePayload(eventType, req.body);
+
+      // 4. Pass to Webhook Processor (which handles deduplication & queuing)
+      await webhookProcessor.processIncoming(eventId, standardEvent, rawBody);
+
+    } catch (error) {
+      console.error('[Wix Adapter] Webhook processing error:', error);
+      // We already returned 200 OK ideally, but if it failed early:
+      if (!res.headersSent) {
+         res.status(500).send('Internal Server Error');
+      }
+    }
+  }
+
+  /**
+   * Verifies the Wix HMAC-SHA256 signature
+   * @param {string} rawBody 
+   * @param {string} signature 
+   */
+  _verifySignature(rawBody, signature) {
+    if (!this.webhookSecret || !signature) return false;
+    
+    try {
+      const hmac = crypto.createHmac('sha256', this.webhookSecret);
+      hmac.update(rawBody, 'utf8');
+      const expectedSignature = hmac.digest('base64');
+      
+      // Use timingSafeEqual to prevent timing attacks
+      const secureExpected = Buffer.from(expectedSignature);
+      const secureActual = Buffer.from(signature);
+      
+      if (secureExpected.length !== secureActual.length) return false;
+      return crypto.timingSafeEqual(secureExpected, secureActual);
+    } catch(e) {
+      console.error('[Wix Adapter] Signature verification failed exception:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Normalizes the Wix payload into the internal schema
+   * @param {string} eventType 
+   * @param {Object} body 
+   */
+  _normalizePayload(eventType, body) {
+    // Map Wix-specific payload fields to the AccessSync standard struct
+    // Note: The specific paths (body.data.memberId) depend on the exact Wix event structure
+    return {
+      eventType: eventType,
+      wixMemberId: body?.data?.memberId || body?.memberId,
+      planId: body?.data?.planId || body?.planId,
+      timestamp: new Date().toISOString(),
+      rawPayload: body
+    };
+  }
+}
+
+module.exports = new WixAdapter();
