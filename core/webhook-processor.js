@@ -77,6 +77,17 @@ class WebhookProcessor {
     // 3. Register Event (mark processed before enqueuing — prevents re-entry on crash)
     await this._markEventProcessed(eventId, standardEvent);
 
+    // 3b. Log to webhook_log for Admin Hub Webhook Inspector
+    // Dedup status known now; tenant resolution happens next
+    await this.logWebhookAttempt({
+      eventId,
+      hmacStatus: 'accepted',
+      dedupStatus: isDuplicate ? 'duplicate' : 'new',
+      eventType: standardEvent.eventType,
+      rawPayload: rawPayload ? (() => { try { return JSON.parse(rawPayload); } catch { return null; } })() : null,
+      normalizedPayload: standardEvent
+    }).catch(() => {}); // best-effort
+
     // 4. Resolve tenant from wix_site_id (OB-03)
     const tenantId = await tenantResolver.resolve(standardEvent.wixSiteId);
     if (!tenantId) {
@@ -139,6 +150,27 @@ class WebhookProcessor {
         process.env.DEFAULT_TENANT_ID || null,
         'malformed_payload',
         eventId
+      ]
+    );
+  }
+
+  /**
+   * Writes a webhook attempt to webhook_log for Admin Hub observability.
+   * Best-effort — caller wraps in .catch(() => {}) to avoid blocking.
+   */
+  async logWebhookAttempt({
+    eventId = null, clientId = null, hmacStatus, dedupStatus = null,
+    eventType = null, rawPayload = null, normalizedPayload = null, errorDetail = null
+  }) {
+    await db.query(
+      `INSERT INTO webhook_log
+       (event_id, client_id, hmac_status, dedup_status, event_type, raw_payload, normalized_payload, error_detail)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        eventId, clientId, hmacStatus, dedupStatus, eventType,
+        rawPayload        ? JSON.stringify(rawPayload)        : null,
+        normalizedPayload ? JSON.stringify(normalizedPayload) : null,
+        errorDetail
       ]
     );
   }

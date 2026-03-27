@@ -31,6 +31,13 @@ class WixAdapter {
       // 1. Verify Signature
       if (!this._verifySignature(rawBody, signature)) {
         console.warn('[Wix Adapter] Invalid Webhook signature rejected.');
+        // Log rejected attempt to webhook_log (Admin Hub observability)
+        await webhookProcessor.logWebhookAttempt({
+          eventId: req.headers['x-wix-event-id'] || null,
+          hmacStatus: 'rejected',
+          rawPayload: req.body || null,
+          errorDetail: 'HMAC signature mismatch'
+        }).catch(() => {}); // best-effort — never block on logging
         return res.status(401).send('Unauthorized');
       }
 
