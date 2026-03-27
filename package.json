@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "cron": "node core/reconciliation.js"
+    "cron": "node core/reconciliation.js",
+    "migrate": "node scripts/run-migrations.js"
   },
   "dependencies": {
     "bullmq": "^4.0.0",
