@@ -21,10 +21,6 @@ const { startWorker } = require('./core/queue-worker');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Startup env check — remove after confirming Railway vars are wired
-console.log('[AccessSync] ENV CHECK — REDIS_URL:', process.env.REDIS_URL ? `SET (${process.env.REDIS_URL.substring(0, 20)}...)` : 'NOT SET');
-console.log('[AccessSync] ENV CHECK — DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
-
 // Middleware (Wix adapter needs raw body to verify HMAC signature exactly)
 app.use(express.json({
   verify: (req, res, buf) => {
