@@ -174,6 +174,24 @@ class KisiAdapter {
   async deleteUser(apiKey, userId) {
     await this._makeRequest(`/users/${userId}`, { method: 'DELETE' }, apiKey);
   }
+
+  /**
+   * Fetch all locks for the org. Used by reconciliation._syncDoorLockdownStates().
+   * Returns array of lock objects, [] on error or missing key.
+   */
+  async getLocks(apiKey) {
+    if (!apiKey) {
+      console.warn('[Kisi Adapter] getLocks called with no API key. Skipping.');
+      return [];
+    }
+    try {
+      const data = await this._makeRequest('/locks', { method: 'GET' }, apiKey);
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      console.error('[Kisi Adapter] getLocks failed:', err.message);
+      return [];
+    }
+  }
 }
 
 module.exports = new KisiAdapter();

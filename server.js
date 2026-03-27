@@ -15,6 +15,8 @@ const express = require('express');
 // Import Modules
 const wixAdapter = require('./adapters/wix-adapter');
 const memberSyncApi = require('./core/member-sync-api');
+const db = require('./db');
+const { startWorker } = require('./core/queue-worker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,7 +31,14 @@ app.use(express.json({
 // --- Routes ---
 
 // Health Check for Railway
-app.get('/health', (req, res) => res.status(200).send('OK'));
+// Checks DB connectivity — Railway stops routing traffic on non-200
+app.get('/health', async (req, res) => {
+  const dbOk = await db.healthCheck();
+  if (!dbOk) {
+    return res.status(503).json({ status: 'error', db: 'unreachable' });
+  }
+  res.status(200).json({ status: 'ok', db: 'connected' });
+});
 
 // Platform Adapter: Wix Webhook Entry (Layer 2)
 app.post('/webhooks/wix', async (req, res) => {
@@ -46,7 +55,32 @@ app.get('/member/access-status', async (req, res) => {
 });
 
 // --- Boot Server ---
-app.listen(PORT, () => {
+const serverInstance = app.listen(PORT, () => {
     console.log(`[AccessSync Core Engine] Server listening on port ${PORT}`);
     console.log(`[AccessSync Core Engine] Environment: ${process.env.NODE_ENV}`);
+
+    // Start BullMQ worker (DR-012)
+    // Worker connects to Redis and begins consuming from 'accesssync-events' queue
+    startWorker();
+});
+
+// --- Graceful Shutdown (OI-09) ---
+process.on('SIGTERM', () => {
+    console.log('[AccessSync] SIGTERM received — graceful shutdown starting.');
+    serverInstance.close(async () => {
+        console.log('[AccessSync] HTTP server closed.');
+        try {
+            const { pool } = require('./db');
+            await pool.end();
+            console.log('[AccessSync] DB pool closed.');
+        } catch (e) {
+            console.error('[AccessSync] DB pool close error:', e.message);
+        }
+        process.exit(0);
+    });
+    // Force exit after 15s if graceful shutdown stalls
+    setTimeout(() => {
+        console.error('[AccessSync] Graceful shutdown timeout. Force exiting.');
+        process.exit(1);
+    }, 15000).unref();
 });

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "AccessSync Core Engine",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "port": 3000
+    },
+    {
+      "name": "Reconciliation Cron",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["core/reconciliation.js"],
+      "port": null
+    }
+  ]
+}

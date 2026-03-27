@@ -40,8 +40,12 @@ class WixAdapter {
       // 3. Normalize into standard format
       const eventId = req.headers['x-wix-event-id'] || 'fallback-id';
       const eventType = req.headers['x-wix-event-type'] || req.body?.eventType; // e.g. "plan.purchased"
-      
-      const standardEvent = this._normalizePayload(eventType, req.body);
+
+      // OB-03-A [ASSUMPTION]: Header 'x-wix-site-id' — verify against Wix docs via PARSE before go-live.
+      // If incorrect, tenant resolution silently fails for all multi-tenant events.
+      const wixSiteId = req.headers['x-wix-site-id'] || req.body?.instanceId || null;
+
+      const standardEvent = this._normalizePayload(eventType, wixSiteId, req.body);
 
       // 4. Pass to Webhook Processor (which handles deduplication & queuing)
       await webhookProcessor.processIncoming(eventId, standardEvent, rawBody);
@@ -82,16 +86,22 @@ class WixAdapter {
 
   /**
    * Normalizes the Wix payload into the internal schema
-   * @param {string} eventType 
-   * @param {Object} body 
+   * @param {string} eventType
+   * @param {string|null} wixSiteId
+   * @param {Object} body
    */
-  _normalizePayload(eventType, body) {
+  _normalizePayload(eventType, wixSiteId, body) {
     // Map Wix-specific payload fields to the AccessSync standard struct
-    // Note: The specific paths (body.data.memberId) depend on the exact Wix event structure
+    // Note: The specific paths (body.data.memberId) depend on the exact Wix event structure.
+    // [ASSUMPTION: OB-03-A] Payload field paths require PARSE verification against Wix webhook docs.
     return {
       eventType: eventType,
-      wixMemberId: body?.data?.memberId || body?.memberId,
+      wixSiteId: wixSiteId,
+      sourcePlatform: 'wix',                               // DR-021: all adapters set this
+      platformMemberId: body?.data?.memberId || body?.memberId, // DR-021: was wixMemberId
       planId: body?.data?.planId || body?.planId,
+      email: body?.data?.email || body?.email || null,
+      name: body?.data?.name || body?.name || null,
       timestamp: new Date().toISOString(),
       rawPayload: body
     };

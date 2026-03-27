@@ -15,6 +15,8 @@ CREATE TABLE clients (
     name VARCHAR(255) NOT NULL,
     status VARCHAR(50) DEFAULT 'active', -- active, cancelled
     wix_site_id VARCHAR(255) UNIQUE,
+    notification_email VARCHAR(255), -- DR-020: operator alert destination (Resend); populated by setup wizard (OB-09)
+    last_sync_at TIMESTAMP WITH TIME ZONE, -- DR-018: single timestamp per client, updated on each member sync sweep
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -59,13 +61,14 @@ CREATE TABLE error_queue (
 CREATE TABLE member_identity (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    wix_member_id VARCHAR(255) NOT NULL,
+    platform_member_id VARCHAR(255) NOT NULL,   -- DR-021: was wix_member_id; platform-agnostic
+    source_platform VARCHAR(50) NOT NULL DEFAULT 'wix', -- DR-021: 'wix', 'squarespace', etc.
     hardware_platform VARCHAR(50) NOT NULL, -- 'seam' or 'kisi'
     hardware_user_id VARCHAR(255), -- The generated ID in Kisi/Seam
     source_tag VARCHAR(50) DEFAULT 'accesssync', -- Rule: Distinguishes from manual users
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(client_id, wix_member_id)
+    UNIQUE(client_id, source_platform, platform_member_id)
 );
 
 -- 6. Member Access State (Provisioning Status)
@@ -97,10 +100,12 @@ CREATE TABLE adapter_admin_log (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID NOT NULL REFERENCES clients(id),
     event_type VARCHAR(100) NOT NULL,
-    wix_member_id VARCHAR(255),
+    platform_member_id VARCHAR(255), -- DR-021: was wix_member_id
     hardware_user_id VARCHAR(255),
     role_assignment_id VARCHAR(255),
     result VARCHAR(50), -- success, failed
+    configured_by VARCHAR(255), -- DR-019: nullable — who set up the adapter (operator self-service, future)
+    configured_at TIMESTAMP WITH TIME ZONE, -- DR-019: nullable — when adapter was configured
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -120,3 +125,18 @@ CREATE TABLE config_alert_log (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+--------------------------------------------------------
+-- Migration Notes (Railway deployment)
+--------------------------------------------------------
+-- DR-020 (2026-03-26): Added notification_email to clients table
+--   ALTER TABLE clients ADD COLUMN notification_email VARCHAR(255);
+--
+-- DR-021 (2026-03-26): member_identity made source-platform-agnostic
+--   Applied before any live members — zero migration cost.
+--   ALTER TABLE member_identity RENAME COLUMN wix_member_id TO platform_member_id;
+--   ALTER TABLE member_identity ADD COLUMN source_platform VARCHAR(50) NOT NULL DEFAULT 'wix';
+--   ALTER TABLE member_identity DROP CONSTRAINT member_identity_client_id_wix_member_id_key;
+--   ALTER TABLE member_identity ADD CONSTRAINT member_identity_client_source_member_key
+--     UNIQUE(client_id, source_platform, platform_member_id);
+--   ALTER TABLE adapter_admin_log RENAME COLUMN wix_member_id TO platform_member_id;

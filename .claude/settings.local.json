@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(update-config)",
+      "Skill(update-config:*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"{\\\"systemMessage\\\": \\\"=== KEEPER CHECKLIST ===\\\\nDid KEEPER update: changelog.md, KB_FILE_REGISTRY.md, VAULT_SUBSTANCE_MAP.md, VAULT_INDEX.md, open_items.md, CLAUDE.md?\\\\nFast path updates (registry, substance map, changelog, open_items add-only) need Daxx approval only. Full workflow for structural/decision changes.\\\"}\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
