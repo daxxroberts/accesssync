@@ -12,11 +12,18 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.ADMIN_JWT_SECRET || 'changeme-must-set-ADMIN_JWT_SECRET-in-env';
 
 /**
- * Express middleware — validates adminToken cookie.
+ * Express middleware — validates adminToken cookie or Authorization header.
+ * Accepts: httpOnly cookie (adminToken) or Bearer token in Authorization header.
  * Returns 401 if missing or invalid.
  */
 function requireAuth(req, res, next) {
-  const token = req.cookies?.adminToken;
+  // Prefer Authorization header (Bearer <token>), fall back to httpOnly cookie
+  let token = req.cookies?.adminToken;
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7);
+  }
+
   if (!token) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
