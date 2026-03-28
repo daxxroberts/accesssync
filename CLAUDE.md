@@ -1,5 +1,5 @@
 # CLAUDE.md — AccessSync Core Engine
-**Version:** 2.7 | **Updated:** 2026-03-28 | **Author:** KEEPER (Business Operating Team)
+**Version:** 2.8 | **Updated:** 2026-03-28 | **Author:** KEEPER (Business Operating Team)
 
 ---
 
@@ -13,7 +13,7 @@ AccessSync is a Wix App Market SaaS product that automates physical space access
 
 ## Repository State
 
-**V1 code-complete. Admin Hub V1 deployed and live. 7-layer architecture complete (DR-022/023/024). DR-025 schema locked + all migrations applied to live Railway DB (OB-16 closed). Pending: OB-10 (operator dashboard), OB-08 (Wix JWT).**
+**V1 code-complete. Admin Hub V1 deployed and live. 7-layer architecture complete (DR-022/023/024). DR-025 schema locked + all migrations applied to live Railway DB (OB-16 closed). OB-10 closed — operator dashboard live at /dashboard.html. OB-17 closed — plan mapping screen live at /mapping.html. Pending: OB-08 (Wix JWT).**
 
 **Current status as of 2026-03-28:**
 - `schema.sql` — DR-018 through DR-021 + Gate A + DR-024 + DR-025 applied. 12 tables total. (`locations`, `clients` additions, `plan_mappings` additions, `error_queue` additions, `client_activity_summary`). OB-16 CLOSED — all 4 DR-025 migrations applied to live Railway DB.
@@ -49,6 +49,9 @@ AccessSync is a Wix App Market SaaS product that automates physical space access
 - `admin/public/index.html` — ✅ Built. Dashboard shell — 5 panels, login screen, drawer, modal.
 - `admin/public/app.js` — ✅ Built. Full frontend logic — auth, panels, polling, interactions.
 - `admin/public/styles.css` — ✅ Built. Full CSS v2.0 — brand, layout, components, responsive.
+- `admin/public/dashboard.html` — ✅ Built. Operator dashboard. Edit button navigates to /mapping.html.
+- `admin/public/mapping.html` — ✅ Built. Plan mapping matrix screen. Wired to live data via /operator/:clientId/locations/:locationId/mappings.
+- `admin/routes/operator.js` — ✅ Built. Operator API. Includes GET /operator/:clientId/locations/:locationId/mappings + PATCH /operator/:clientId/plan-mappings/:id.
 
 ---
 
@@ -211,6 +214,10 @@ This project is managed by the Business Operating Team (BOT). The vault is the s
 - FORGE — Operator dashboard (server-side, iframe embed)
 - ORION — API integration specialist
 
+**Agents with review/diagnostic authority (no build):**
+- SPAN — QA / Test Coverage. Reviews built features end-to-end. Finds test gaps, flags edge cases and failure modes before launch. No build authority — review and flag only.
+- Lens — Live Site Monitor. Hits Railway API endpoints, reads response data, diagnoses what's broken vs working. No build authority — diagnostic only.
+
 ---
 
 ## REX Protocol — Active Session Coordination (MANDATORY)
@@ -353,3 +360,4 @@ KEEPER must explicitly surface proposed updates and receive confirmation. If a s
 | v2.5 | 2026-03-28 | Protocol corrections: session open applies to ALL sessions (not just build). Stale file policy added — stale is last resort for genuinely blocked files, not a deferral label. Correct inaccurate files immediately. |
 | v2.6 | 2026-03-28 | 7-layer architecture (DR-022/023/024). Architecture section replaced. Repository State updated with all 7-layer file paths + shims. DR-022/023/024 locked. SPEC_Core_Engine_Architecture.md corrected to active v1.0.0. |
 | v2.7 | 2026-03-28 | DR-025 locked — locations table + OD-10/11/13 schema additions. simplify review complete (parseRedisUrl extracted to redis-utils.js, dead-code catch removed, unreachable condition removed, processRevoke hardwarePlatform param, enforceRateLimit while loop). OB-15 closed. OB-16 added (Railway migrations). 12 tables total. |
+| v2.8 | 2026-03-28 | OB-17 closed — plan mapping screen (/mapping.html) built and wired to live data. GET /operator/:clientId/locations/:locationId/mappings endpoint added. Dashboard Edit button navigates to mapping screen (modal removed). SPAN (QA/Test Coverage) + Lens (Live Site Monitor) agents defined. OB-10 closed. |

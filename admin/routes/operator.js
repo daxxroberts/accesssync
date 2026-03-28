@@ -168,6 +168,38 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
   }
 });
 
+// ── GET /operator/:clientId/locations/:locationId/mappings ───────
+// Mapping screen data: location info + client info + plan_mappings
+router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
+  const { clientId, locationId } = req.params;
+  try {
+    const [locationResult, clientResult, mappingsResult] = await Promise.all([
+      db.query(
+        `SELECT id, name, city, state FROM locations WHERE id = $1 AND client_id = $2`,
+        [locationId, clientId]
+      ),
+      db.query(
+        `SELECT id, name, hardware_platform, tier FROM clients WHERE id = $1`,
+        [clientId]
+      ),
+      db.query(
+        `SELECT id, wix_plan_id, plan_name, door_name, hardware_group_id, status, created_at
+         FROM plan_mappings WHERE location_id = $1 ORDER BY plan_name`,
+        [locationId]
+      ),
+    ]);
+    if (!locationResult.rows.length) return res.status(404).json({ error: 'Location not found' });
+    res.json({
+      location: locationResult.rows[0],
+      client:   clientResult.rows[0] || null,
+      mappings: mappingsResult.rows,
+    });
+  } catch (err) {
+    console.error('[operator] GET /:clientId/locations/:locationId/mappings error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /operator/:clientId/sync ───────────────────────────────
 // Trigger sync — V1 placeholder: updates last_sync_at
 router.post('/:clientId/sync', async (req, res) => {

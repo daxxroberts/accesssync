@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan Mapping — AccessSync</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.11);
+  --brand-glow: rgba(79,110,247,0.22);
+  --sage:       #4ADE80;
+  --sage-dark:  #22C55E;
+  --sage-dim:   rgba(74,222,128,0.11);
+  --sage-border:rgba(74,222,128,0.22);
+  --red:        #FF4D6A;
+  --red-dim:    rgba(255,77,106,0.10);
+  --amber:      #F5A623;
+  --amber-dim:  rgba(245,166,35,0.10);
+  --bg:         #F2F4F7;
+  --surface:    #F9FAFB;
+  --card:       #FFFFFF;
+  --border:     #E2E5EA;
+  --border2:    #D0D5DD;
+  --text:       #1A2130;
+  --text2:      #4A5568;
+  --muted:      #8896A8;
+  --shadow:     0 1px 4px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.09);
+}
+[data-mode="dark"] {
+  --bg:         #0D0F12;
+  --surface:    #13161B;
+  --card:       #1A1E25;
+  --border:     #252B35;
+  --border2:    #2E3644;
+  --text:       #E8ECF2;
+  --text2:      #8B96A8;
+  --muted:      #4A5568;
+  --shadow:     0 1px 4px rgba(0,0,0,0.3);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.4);
+}
+body { font-family:'Sora',sans-serif; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; min-height:100vh; transition:background 0.2s,color 0.2s; }
+.topbar { position:sticky; top:0; z-index:50; background:var(--card); border-bottom:1px solid var(--border); box-shadow:var(--shadow); height:52px; display:flex; align-items:center; padding:0 18px; gap:12px; }
+.logo { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.logo-mark { flex-shrink:0; }
+.logo-text { font-size:15px; font-weight:700; letter-spacing:-0.3px; color:var(--text); }
+.logo-text span { color:var(--brand); }
+.topbar-right { display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0; }
+.icon-btn { width:36px; height:36px; border-radius:9px; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--border); color:var(--muted); cursor:pointer; transition:all 0.15s; flex-shrink:0; }
+.icon-btn:hover { border-color:var(--border2); color:var(--text); }
+.page { padding:18px 16px 60px; display:flex; flex-direction:column; gap:16px; max-width:900px; margin:0 auto; }
+.section-label { font-size:10px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.section-label::after { content:''; flex:1; height:1px; background:var(--border); }
+.card { background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; box-shadow:var(--shadow); }
+.pill { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; border:1px solid transparent; flex-shrink:0; }
+.pill.sage { background:var(--sage-dim); color:var(--sage-dark); border-color:var(--sage-border); }
+.pill.red { background:var(--red-dim); color:var(--red); border-color:rgba(255,77,106,0.2); }
+.pill.amber { background:var(--amber-dim); color:var(--amber); border-color:rgba(245,166,35,0.2); }
+.pill.brand { background:var(--brand-dim); color:var(--brand); border-color:rgba(79,110,247,0.2); }
+.count { font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px; }
+.count.red { background:var(--red-dim); color:var(--red); }
+.count.sage { background:var(--sage-dim); color:var(--sage-dark); }
+.count.muted { background:var(--surface); color:var(--muted); border:1px solid var(--border); }
+.sync-loading { padding:32px 16px; text-align:center; font-size:12px; color:var(--muted); }
+@media (min-width:640px) {
+  .page { padding:24px 24px 80px; }
+}
+
+/* ── Mapping-specific CSS ────────────────────────────────────── */
+.matrix-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.matrix-table { border-collapse:collapse; width:100%; }
+.matrix-th { padding:8px 14px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--muted); text-align:center; white-space:nowrap; }
+.matrix-row-label { padding:10px 16px; font-size:12px; font-weight:500; color:var(--text); white-space:nowrap; border-right:1px solid var(--border); }
+.matrix-cell { padding:10px 8px; text-align:center; vertical-align:middle; border-bottom:1px solid var(--border); }
+.matrix-table tbody tr:last-child .matrix-cell,
+.matrix-table tbody tr:last-child .matrix-row-label { border-bottom:none; }
+.dot-btn { width:28px; height:28px; border-radius:50%; border:2px solid transparent; cursor:pointer; transition:transform 0.15s,box-shadow 0.15s; display:inline-flex; align-items:center; justify-content:center; background:none; }
+.dot-btn.active   { background:var(--sage-dim); border-color:var(--sage-dark); }
+.dot-btn.excluded { background:var(--red-dim);  border-color:var(--red); }
+.dot-btn.absent   { background:var(--surface);  border-color:var(--border); cursor:not-allowed; opacity:0.5; }
+.dot-btn:not(.absent):not(.saving):hover { transform:scale(1.18); box-shadow:var(--shadow-md); }
+.dot-btn.saving { opacity:0.5; pointer-events:none; }
+.dot-inner { width:10px; height:10px; border-radius:50%; background:var(--muted); pointer-events:none; }
+.dot-btn.active   .dot-inner { background:var(--sage-dark); }
+.dot-btn.excluded .dot-inner { background:var(--red); }
+.page-title { font-size:20px; font-weight:800; letter-spacing:-0.4px; color:var(--text); }
+.page-sub   { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; }
+.stats-row  { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+.stat-chip  { display:flex; align-items:center; gap:6px; padding:6px 12px; border-radius:20px; font-size:11px; font-weight:600; background:var(--surface); border:1px solid var(--border); color:var(--text2); }
+.back-btn   { display:flex; align-items:center; gap:5px; padding:5px 11px; border-radius:8px; background:transparent; border:1px solid var(--border); font-family:'Sora',sans-serif; font-size:11px; color:var(--muted); cursor:pointer; transition:all 0.15s; }
+.back-btn:hover { border-color:var(--brand); color:var(--brand); }
+.review-card { background:var(--amber-dim); border:1px solid rgba(245,166,35,0.2); border-radius:12px; padding:14px 16px; margin-top:16px; }
+.review-plan-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid rgba(245,166,35,0.15); }
+.review-plan-row:last-child { border-bottom:none; }
+.map-footer { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-top:1px solid var(--border); font-size:11px; color:var(--muted); margin-top:16px; }
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<header class="topbar">
+  <div class="logo">
+    <svg class="logo-mark" width="26" height="26" viewBox="0 0 32 32" fill="none">
+      <rect width="32" height="32" rx="8" fill="#4F6EF7"/>
+      <path d="M8 22L13 10L16 17L19 13L24 22" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="logo-text">Access<span>Sync</span></span>
+  </div>
+  <button class="back-btn" onclick="goBack()">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8 2L4 6l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Back to dashboard
+  </button>
+  <div class="topbar-right">
+    <button class="icon-btn" onclick="toggleMode()" title="Toggle dark mode">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.3"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="page">
+  <!-- Page header -->
+  <div style="margin-bottom:20px;">
+    <div class="page-title" id="page-title">Loading…</div>
+    <div class="page-sub" id="page-sub"></div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row" id="stats-row">
+    <span class="stat-chip" style="color:var(--muted);">Loading…</span>
+  </div>
+
+  <!-- Matrix -->
+  <div class="section-label">Plan → Door Matrix</div>
+  <div class="card" style="margin-top:8px;">
+    <div class="matrix-wrap" id="matrix-wrap">
+      <div class="sync-loading">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Review section -->
+  <div id="review-section"></div>
+
+  <!-- Footer -->
+  <div class="map-footer">
+    <span id="footer-status">—</span>
+    <span id="footer-ts" style="font-size:10px;">—</span>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────
+const CLIENT_ID   = new URLSearchParams(window.location.search).get('client');
+const LOCATION_ID = new URLSearchParams(window.location.search).get('location');
+let _mappings  = [];
+let _lastSaved = null;
+
+// ── Utilities (copied from dashboard.html) ────────────────────
+function esc(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '—';
+  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (diff < 60)   return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400)return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+function toggleMode() {
+  const html = document.documentElement;
+  html.setAttribute('data-mode', html.getAttribute('data-mode') === 'dark' ? 'light' : 'dark');
+}
+
+function goBack() {
+  window.location.href = CLIENT_ID
+    ? `/dashboard.html?client=${encodeURIComponent(CLIENT_ID)}`
+    : '/dashboard.html';
+}
+
+// ── Error state ───────────────────────────────────────────────
+function showError(msg) {
+  document.getElementById('page-title').textContent = 'Error';
+  document.getElementById('matrix-wrap').innerHTML =
+    `<div class="sync-loading" style="color:var(--red);">${esc(msg)}</div>`;
+  document.getElementById('stats-row').innerHTML = '';
+}
+
+// ── Init ──────────────────────────────────────────────────────
+async function init() {
+  if (!CLIENT_ID || !LOCATION_ID) {
+    showError('Missing client or location parameter in URL.');
+    return;
+  }
+  try {
+    const res = await fetch(`/operator/${CLIENT_ID}/locations/${LOCATION_ID}/mappings`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    _mappings = data.mappings || [];
+    renderHeader(data.location, data.client);
+    buildMatrix();
+    renderStats();
+    renderReviewSection();
+    updateFooter();
+  } catch (err) {
+    showError(`Failed to load — ${err.message}`);
+  }
+}
+
+// ── renderHeader ──────────────────────────────────────────────
+function renderHeader(location, client) {
+  const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  document.title = `${location.name} — Plan Mapping`;
+  document.getElementById('page-title').textContent = location.name;
+  const city = [location.city, location.state].filter(Boolean).join(', ');
+  const hw   = cap(client?.hardware_platform) || 'Kisi';
+  document.getElementById('page-sub').innerHTML = [
+    city              ? `<span class="pill">${esc(city)}</span>` : '',
+    client?.name      ? `<span class="pill">${esc(client.name)}</span>` : '',
+    `<span class="pill sage">${esc(hw)}</span>`,
+    client?.tier      ? `<span class="pill brand">${esc(client.tier)}</span>` : '',
+  ].filter(Boolean).join('');
+}
+
+// ── buildMatrix ───────────────────────────────────────────────
+function buildMatrix() {
+  const plans = [...new Set(_mappings.map(m => m.plan_name).filter(Boolean))].sort();
+  const doors = [...new Set(_mappings.map(m => m.door_name).filter(Boolean))].sort();
+
+  if (!plans.length || !doors.length) {
+    document.getElementById('matrix-wrap').innerHTML =
+      '<div style="padding:24px;text-align:center;color:var(--muted);font-size:12px;">No plan mappings configured for this location.</div>';
+    return;
+  }
+
+  const lookup = new Map(
+    _mappings.filter(m => m.plan_name && m.door_name)
+             .map(m => [`${m.plan_name}||${m.door_name}`, m])
+  );
+
+  let html = '<table class="matrix-table"><thead><tr>';
+  html += '<th class="matrix-th" style="text-align:left;min-width:140px;">Plan</th>';
+  doors.forEach(d => { html += `<th class="matrix-th">${esc(d)}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  plans.forEach(plan => {
+    html += `<tr><td class="matrix-row-label">${esc(plan)}</td>`;
+    doors.forEach(door => {
+      const m = lookup.get(`${plan}||${door}`);
+      if (m) {
+        const cls   = m.status === 'active' ? 'active' : 'excluded';
+        const tip   = m.status === 'active' ? 'Active — click to exclude' : 'Excluded — click to activate';
+        html += `<td class="matrix-cell">
+          <button class="dot-btn ${cls}" id="dot-${esc(m.id)}"
+            title="${esc(tip)}"
+            onclick="toggleDot('${esc(m.id)}',this)">
+            <span class="dot-inner"></span>
+          </button></td>`;
+      } else {
+        html += `<td class="matrix-cell">
+          <button class="dot-btn absent" disabled title="No mapping for this combination">
+            <span class="dot-inner"></span>
+          </button></td>`;
+      }
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('matrix-wrap').innerHTML = html;
+}
+
+// ── toggleDot ─────────────────────────────────────────────────
+async function toggleDot(mappingId, el) {
+  const mapping = _mappings.find(m => m.id === mappingId);
+  if (!mapping) return;
+
+  const newStatus  = mapping.status === 'active' ? 'excluded' : 'active';
+  const prevStatus = mapping.status;
+
+  // Optimistic update
+  mapping.status = newStatus;
+  el.className = `dot-btn ${newStatus} saving`;
+  renderStats();
+  renderReviewSection();
+  updateFooter();
+
+  try {
+    const res = await fetch(`/operator/${CLIENT_ID}/plan-mappings/${mappingId}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ status: newStatus }),
+    });
+    if (!res.ok) throw new Error(res.status);
+    el.className = `dot-btn ${newStatus}`;
+    el.title = newStatus === 'active' ? 'Active — click to exclude' : 'Excluded — click to activate';
+    _lastSaved = new Date();
+    updateFooter();
+  } catch (err) {
+    // Revert
+    mapping.status = prevStatus;
+    el.className   = `dot-btn ${prevStatus}`;
+    renderStats();
+    renderReviewSection();
+    updateFooter();
+    console.error('[mapping] Toggle failed:', err);
+  }
+}
+
+// ── renderStats ───────────────────────────────────────────────
+function renderStats() {
+  const total    = _mappings.length;
+  const active   = _mappings.filter(m => m.status === 'active').length;
+  const excluded = _mappings.filter(m => m.status === 'excluded').length;
+  const plans    = [...new Set(_mappings.map(m => m.plan_name).filter(Boolean))];
+  const review   = plans.filter(p => !_mappings.some(m => m.plan_name === p && m.status === 'active')).length;
+
+  document.getElementById('stats-row').innerHTML = `
+    <span class="stat-chip">${total} mapping${total !== 1 ? 's' : ''}</span>
+    <span class="stat-chip" style="color:var(--sage-dark);border-color:var(--sage-border);">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--sage-dark);flex-shrink:0;"></span>
+      ${active} active
+    </span>
+    <span class="stat-chip">${excluded} excluded</span>
+    ${review > 0
+      ? `<span class="stat-chip" style="color:var(--amber);border-color:rgba(245,166,35,0.2);">${review} need review</span>`
+      : `<span class="stat-chip" style="color:var(--sage-dark);">&#x2713; All plans addressed</span>`}`;
+}
+
+// ── renderReviewSection ───────────────────────────────────────
+function renderReviewSection() {
+  const plans = [...new Set(_mappings.map(m => m.plan_name).filter(Boolean))];
+  const needs = plans.filter(p => !_mappings.some(m => m.plan_name === p && m.status === 'active'));
+  const sec   = document.getElementById('review-section');
+  if (!needs.length) { sec.innerHTML = ''; return; }
+
+  sec.innerHTML = `
+    <div class="review-card">
+      <div style="font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="vertical-align:-1px;margin-right:4px;"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.7" fill="currentColor"/></svg>
+        ${needs.length} plan${needs.length !== 1 ? 's' : ''} not active
+      </div>
+      ${needs.map(p => `
+        <div class="review-plan-row">
+          <span style="font-size:12px;color:var(--text);">${esc(p)}</span>
+          <span class="pill amber">Excluded only</span>
+        </div>`).join('')}
+      <p style="font-size:11px;color:var(--amber);margin-top:10px;line-height:1.55;">
+        Members on these plans won't get automatic door access at this location.
+      </p>
+    </div>`;
+}
+
+// ── updateFooter ──────────────────────────────────────────────
+function updateFooter() {
+  const plans = [...new Set(_mappings.map(m => m.plan_name).filter(Boolean))];
+  const allOk = plans.length > 0 &&
+    plans.every(p => _mappings.some(m => m.plan_name === p && m.status === 'active'));
+
+  document.getElementById('footer-status').innerHTML = allOk
+    ? `<span style="color:var(--sage-dark);display:flex;align-items:center;gap:5px;">
+         <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+         All plans addressed
+       </span>`
+    : `<span style="color:var(--amber);">Some plans not active — members may not have access</span>`;
+
+  document.getElementById('footer-ts').textContent = _lastSaved
+    ? `Last saved ${timeAgo(_lastSaved.toISOString())}`
+    : 'No changes yet this session';
+}
+
+// ── Boot ──────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

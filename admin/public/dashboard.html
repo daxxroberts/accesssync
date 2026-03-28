@@ -259,23 +259,6 @@ body { font-family:'Sora',sans-serif; background:var(--bg); color:var(--text); -
 .member-badge.failed { background:var(--red-dim); color:var(--red); }
 .member-provisioned { font-size:9px; color:var(--muted); }
 
-/* ── Plan mapping edit modal ─────────────────────────────────── */
-.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:200; display:flex; align-items:center; justify-content:center; padding:16px; }
-.modal-overlay.hide { display:none; }
-.modal-box { background:var(--card); border-radius:14px; box-shadow:var(--shadow-md); width:100%; max-width:420px; overflow:hidden; }
-.modal-head { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); }
-.modal-title { font-size:13px; font-weight:600; color:var(--text); }
-.modal-close-btn { width:28px; height:28px; border-radius:7px; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--border); color:var(--muted); cursor:pointer; font-size:15px; line-height:1; }
-.modal-content { padding:16px; display:flex; flex-direction:column; gap:13px; }
-.field-group { display:flex; flex-direction:column; }
-.field-label { font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:5px; }
-.field-input { width:100%; padding:8px 10px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-family:'Sora',sans-serif; font-size:12px; color:var(--text); outline:none; transition:border 0.15s; }
-.field-input:focus { border-color:var(--brand); }
-.field-select { width:100%; padding:8px 10px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-family:'Sora',sans-serif; font-size:12px; color:var(--text); outline:none; cursor:pointer; }
-.modal-foot { padding:12px 16px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; }
-.btn-modal-cancel { padding:7px 14px; background:transparent; border:1px solid var(--border); border-radius:8px; font-family:'Sora',sans-serif; font-size:11px; color:var(--muted); cursor:pointer; }
-.btn-modal-save { padding:7px 16px; background:var(--brand); border:none; border-radius:8px; font-family:'Sora',sans-serif; font-size:11px; font-weight:600; color:#fff; cursor:pointer; transition:opacity 0.15s; }
-.btn-modal-save:disabled { opacity:0.5; cursor:not-allowed; }
 @media (min-width:640px) {
   .page { padding:24px 24px 60px; }
   .topbar { padding:0 28px; }
@@ -711,55 +694,10 @@ function toggleSection(secId) {
   if (chev) chev.classList.toggle('open');
 }
 
-// Plan mapping editor modal
-let _editMappingId = null;
-
-function openMappingEditor(mappingId, planName, doorName, hwGroup, status) {
-  _editMappingId = mappingId;
-  document.getElementById('me-plan-name').value = planName;
-  document.getElementById('me-door-name').value = doorName;
-  document.getElementById('me-hw-group').value  = hwGroup;
-  document.getElementById('me-status').value    = status || 'active';
-  document.getElementById('me-save-btn').disabled = false;
-  document.getElementById('me-save-btn').textContent = 'Save changes';
-  document.getElementById('mapping-modal').classList.remove('hide');
-}
-
-function closeMappingEditor() {
-  document.getElementById('mapping-modal').classList.add('hide');
-  _editMappingId = null;
-}
-
-async function saveMappingEdit() {
-  if (!_editMappingId) return;
-  const btn = document.getElementById('me-save-btn');
-  btn.disabled = true;
-  btn.textContent = 'Saving…';
-  const body = {
-    status:            document.getElementById('me-status').value,
-    door_name:         document.getElementById('me-door-name').value.trim(),
-    hardware_group_id: document.getElementById('me-hw-group').value.trim(),
-  };
-  try {
-    const res = await fetch(`/operator/${CLIENT_ID}/plan-mappings/${_editMappingId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(res.status);
-    closeMappingEditor();
-    // Reload all open location bodies so plan mappings refresh
-    document.querySelectorAll('.loc-body[data-loaded]').forEach(el => {
-      delete el.dataset.loaded;
-      if (el.classList.contains('open')) {
-        const locId = el.id.replace('body-', '');
-        loadLocationDetail(locId);
-      }
-    });
-  } catch (err) {
-    btn.disabled = false;
-    btn.textContent = 'Save changes';
-    console.error('Save mapping failed:', err);
+function openMappingEditor(mappingId, planName, doorName, hwGroup, status, locId) {
+  if (CLIENT_ID && locId) {
+    window.location.href =
+      `/mapping.html?client=${encodeURIComponent(CLIENT_ID)}&location=${encodeURIComponent(locId)}`;
   }
 }
 
@@ -953,7 +891,7 @@ function renderPlanMappings(locId, mappings) {
     <span class="map-arrow">→</span>
     <span class="map-door">${esc(m.door_name || m.hardware_group_id || '—')}</span>
     <span class="mbadge active">Active</span>
-    <button class="btn-edit" onclick="openMappingEditor('${esc(m.id)}','${esc(m.plan_name||'')}','${esc(m.door_name||'')}','${esc(m.hardware_group_id||'')}','${esc(m.status)}')">Edit</button>
+    <button class="btn-edit" onclick="openMappingEditor('${esc(m.id)}','${esc(m.plan_name||'')}','${esc(m.door_name||'')}','${esc(m.hardware_group_id||'')}','${esc(m.status)}','${esc(locId)}')">Edit</button>
   </div>
 </div>`;
     } else {
@@ -962,7 +900,7 @@ function renderPlanMappings(locId, mappings) {
   <div><div class="map-plan">${esc(m.plan_name || m.wix_plan_id || '—')}</div></div>
   <div class="map-right">
     <span class="mbadge excl">Not managed</span>
-    <button class="btn-edit" onclick="openMappingEditor('${esc(m.id)}','${esc(m.plan_name||'')}','${esc(m.door_name||'')}','${esc(m.hardware_group_id||'')}','${esc(m.status)}')">Edit</button>
+    <button class="btn-edit" onclick="openMappingEditor('${esc(m.id)}','${esc(m.plan_name||'')}','${esc(m.door_name||'')}','${esc(m.hardware_group_id||'')}','${esc(m.status)}','${esc(locId)}')">Edit</button>
   </div>
 </div>`;
     }
@@ -1182,39 +1120,5 @@ if (CLIENT_ID) {
 }
 </script>
 
-<!-- Plan Mapping Editor Modal -->
-<div class="modal-overlay hide" id="mapping-modal">
-  <div class="modal-box">
-    <div class="modal-head">
-      <span class="modal-title">Edit Plan Mapping</span>
-      <button class="modal-close-btn" onclick="closeMappingEditor()">✕</button>
-    </div>
-    <div class="modal-content">
-      <div class="field-group">
-        <div class="field-label">Plan Name</div>
-        <input class="field-input" id="me-plan-name" type="text" />
-      </div>
-      <div class="field-group">
-        <div class="field-label">Door / Hardware Group Label</div>
-        <input class="field-input" id="me-door-name" type="text" />
-      </div>
-      <div class="field-group">
-        <div class="field-label">Hardware Group ID</div>
-        <input class="field-input" id="me-hw-group" type="text" />
-      </div>
-      <div class="field-group">
-        <div class="field-label">Status</div>
-        <select class="field-select" id="me-status">
-          <option value="active">Active — members get access</option>
-          <option value="excluded">Excluded — not managed</option>
-        </select>
-      </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn-modal-cancel" onclick="closeMappingEditor()">Cancel</button>
-      <button class="btn-modal-save" id="me-save-btn" onclick="saveMappingEdit()">Save changes</button>
-    </div>
-  </div>
-</div>
 </body>
 </html>
