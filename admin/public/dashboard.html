@@ -234,6 +234,48 @@ body { font-family:'Sora',sans-serif; background:var(--bg); color:var(--text); -
 .sync-status.ok { color:var(--sage-dark); }
 .sync-status.warn { color:var(--amber); }
 .sync-loading { padding:32px 16px; text-align:center; font-size:12px; color:var(--muted); }
+/* ── Collapsible section toggle ─────────────────────────────── */
+.sec-header { display:flex; align-items:center; justify-content:space-between; width:100%; cursor:pointer; }
+.sec-body { display:none; }
+.sec-body.open { display:block; }
+.sec-chevron { width:14px; height:14px; transition:transform 0.2s; flex-shrink:0; color:var(--muted); }
+.sec-chevron.open { transform:rotate(180deg); }
+
+/* ── Edit button ─────────────────────────────────────────────── */
+.btn-edit { padding:3px 9px; background:transparent; border:1px solid var(--border2); border-radius:6px; font-family:'Sora',sans-serif; font-size:10px; font-weight:600; color:var(--text2); cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+.btn-edit:hover { border-color:var(--brand); color:var(--brand); }
+
+/* ── Active Members section ──────────────────────────────────── */
+.members-header { display:flex; align-items:center; justify-content:space-between; padding:11px 16px; background:linear-gradient(to right,var(--brand-dim),var(--surface)); border-bottom:1px solid var(--border); border-top:1px solid var(--border); border-left:3px solid var(--brand); }
+.member-row { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--border); }
+.member-row:last-child { border-bottom:none; }
+.member-av { width:28px; height:28px; border-radius:50%; background:var(--brand-dim); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:var(--brand); flex-shrink:0; }
+.member-info { flex:1; min-width:0; }
+.member-name { font-size:12px; font-weight:500; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.member-plan { font-size:10px; color:var(--muted); margin-top:1px; }
+.member-right { flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:2px; }
+.member-badge { font-size:9px; font-weight:700; padding:2px 7px; border-radius:20px; }
+.member-badge.active { background:var(--sage-dim); color:var(--sage-dark); }
+.member-badge.failed { background:var(--red-dim); color:var(--red); }
+.member-provisioned { font-size:9px; color:var(--muted); }
+
+/* ── Plan mapping edit modal ─────────────────────────────────── */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:200; display:flex; align-items:center; justify-content:center; padding:16px; }
+.modal-overlay.hide { display:none; }
+.modal-box { background:var(--card); border-radius:14px; box-shadow:var(--shadow-md); width:100%; max-width:420px; overflow:hidden; }
+.modal-head { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); }
+.modal-title { font-size:13px; font-weight:600; color:var(--text); }
+.modal-close-btn { width:28px; height:28px; border-radius:7px; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--border); color:var(--muted); cursor:pointer; font-size:15px; line-height:1; }
+.modal-content { padding:16px; display:flex; flex-direction:column; gap:13px; }
+.field-group { display:flex; flex-direction:column; }
+.field-label { font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:5px; }
+.field-input { width:100%; padding:8px 10px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-family:'Sora',sans-serif; font-size:12px; color:var(--text); outline:none; transition:border 0.15s; }
+.field-input:focus { border-color:var(--brand); }
+.field-select { width:100%; padding:8px 10px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-family:'Sora',sans-serif; font-size:12px; color:var(--text); outline:none; cursor:pointer; }
+.modal-foot { padding:12px 16px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; }
+.btn-modal-cancel { padding:7px 14px; background:transparent; border:1px solid var(--border); border-radius:8px; font-family:'Sora',sans-serif; font-size:11px; color:var(--muted); cursor:pointer; }
+.btn-modal-save { padding:7px 16px; background:var(--brand); border:none; border-radius:8px; font-family:'Sora',sans-serif; font-size:11px; font-weight:600; color:#fff; cursor:pointer; transition:opacity 0.15s; }
+.btn-modal-save:disabled { opacity:0.5; cursor:not-allowed; }
 @media (min-width:640px) {
   .page { padding:24px 24px 60px; }
   .topbar { padding:0 28px; }
@@ -661,6 +703,66 @@ function toggleLoc(id) {
   try { localStorage.setItem('loc-' + id, !isOpen ? '1' : '0'); } catch(e) {}
 }
 
+function toggleSection(secId) {
+  const body = document.getElementById('secbody-' + secId);
+  const chev = document.getElementById('secchev-' + secId);
+  if (!body) return;
+  body.classList.toggle('open');
+  if (chev) chev.classList.toggle('open');
+}
+
+// Plan mapping editor modal
+let _editMappingId = null;
+
+function openMappingEditor(mappingId, planName, doorName, hwGroup, status) {
+  _editMappingId = mappingId;
+  document.getElementById('me-plan-name').value = planName;
+  document.getElementById('me-door-name').value = doorName;
+  document.getElementById('me-hw-group').value  = hwGroup;
+  document.getElementById('me-status').value    = status || 'active';
+  document.getElementById('me-save-btn').disabled = false;
+  document.getElementById('me-save-btn').textContent = 'Save changes';
+  document.getElementById('mapping-modal').classList.remove('hide');
+}
+
+function closeMappingEditor() {
+  document.getElementById('mapping-modal').classList.add('hide');
+  _editMappingId = null;
+}
+
+async function saveMappingEdit() {
+  if (!_editMappingId) return;
+  const btn = document.getElementById('me-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  const body = {
+    status:            document.getElementById('me-status').value,
+    door_name:         document.getElementById('me-door-name').value.trim(),
+    hardware_group_id: document.getElementById('me-hw-group').value.trim(),
+  };
+  try {
+    const res = await fetch(`/operator/${CLIENT_ID}/plan-mappings/${_editMappingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(res.status);
+    closeMappingEditor();
+    // Reload all open location bodies so plan mappings refresh
+    document.querySelectorAll('.loc-body[data-loaded]').forEach(el => {
+      delete el.dataset.loaded;
+      if (el.classList.contains('open')) {
+        const locId = el.id.replace('body-', '');
+        loadLocationDetail(locId);
+      }
+    });
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Save changes';
+    console.error('Save mapping failed:', err);
+  }
+}
+
 // ─────────────────────────────────────────────
 // Location detail
 // ─────────────────────────────────────────────
@@ -680,14 +782,18 @@ async function loadLocationDetail(locationId) {
 
 function renderLocationBody(locId, detail) {
   return renderErrSection(locId, detail.errors) +
-         renderAccessLog(detail.access_log) +
-         renderPlanMappings(detail.plan_mappings) +
+         renderActiveMembers(locId, detail.active_members || []) +
+         renderAccessLog(locId, detail.access_log) +
+         renderPlanMappings(locId, detail.plan_mappings) +
          renderLocFooter(locId);
 }
 
 function renderErrSection(locId, errors) {
   const count = errors.length;
   const countClass = count > 0 ? 'red' : 'sage';
+  const chevId  = `secchev-err-${esc(locId)}`;
+  const bodyId  = `secbody-err-${esc(locId)}`;
+
   const errorRows = count === 0
     ? `<div class="no-err"><span class="no-err-badge">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -697,13 +803,69 @@ function renderErrSection(locId, errors) {
 
   return `
 <div class="err-section-header">
-  <span class="card-title">
-    <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.7" fill="currentColor"/></svg>
-    Errors
-    <span class="count ${countClass}" id="err-count-${esc(locId)}">${count}</span>
-  </span>
+  <div class="sec-header" onclick="toggleSection('err-${esc(locId)}')">
+    <span class="card-title">
+      <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.7" fill="currentColor"/></svg>
+      Errors
+      <span class="count ${countClass}" id="err-count-${esc(locId)}">${count}</span>
+    </span>
+    <svg class="sec-chevron" id="${chevId}" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
 </div>
-<div id="err-list-${esc(locId)}">${errorRows}</div>`;
+<div class="sec-body" id="${bodyId}">
+  <div id="err-list-${esc(locId)}">${errorRows}</div>
+</div>`;
+}
+
+function renderActiveMembers(locId, members) {
+  const count = members.length;
+  const chevId = `secchev-mem-${esc(locId)}`;
+  const bodyId = `secbody-mem-${esc(locId)}`;
+
+  const formatName = (platformMemberId) => {
+    // "wix-member-jake-morrison" → "Jake Morrison"
+    const parts = (platformMemberId || '').split('-').slice(2);
+    return parts.length
+      ? parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+      : platformMemberId || '—';
+  };
+
+  const rows = count === 0
+    ? `<div class="log-row" style="justify-content:center;color:var(--muted);font-size:11px;">No active members</div>`
+    : members.map(m => {
+        const name = formatName(m.platform_member_id);
+        const init = name.split(' ').map(p => p[0]).join('').slice(0,2).toUpperCase();
+        const badgeCls = m.status === 'active' ? 'active' : 'failed';
+        const badgeTxt = m.status === 'active' ? 'Provisioned' : m.status;
+        const prov = m.provisioned_at ? timeAgo(m.provisioned_at) : '—';
+        return `
+<div class="member-row">
+  <div class="member-av">${esc(init)}</div>
+  <div class="member-info">
+    <div class="member-name">${esc(name)}</div>
+    <div class="member-plan">—</div>
+  </div>
+  <div class="member-right">
+    <span class="member-badge ${badgeCls}">${esc(badgeTxt)}</span>
+    <span class="member-provisioned">${esc(prov)}</span>
+  </div>
+</div>`;
+      }).join('');
+
+  return `
+<div class="members-header">
+  <div class="sec-header" onclick="toggleSection('mem-${esc(locId)}')">
+    <span class="card-title">
+      <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="5" cy="4" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="10" cy="4" r="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M12 10c0-1.7-0.9-3.1-2.2-3.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Active Members
+      <span class="count">${count}</span>
+    </span>
+    <svg class="sec-chevron" id="${chevId}" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+</div>
+<div class="sec-body" id="${bodyId}">
+  ${rows}
+</div>`;
 }
 
 function renderErrRow(locId, e) {
@@ -738,7 +900,7 @@ function renderErrRow(locId, e) {
 </div>`;
 }
 
-function renderAccessLog(events) {
+function renderAccessLog(locId, events) {
   const rows = events.length === 0
     ? `<div class="log-row" style="justify-content:center;color:var(--muted);font-size:11px;">No events yet</div>`
     : events.map(ev => {
@@ -760,18 +922,25 @@ function renderAccessLog(events) {
 </div>`;
       }).join('');
 
+  const chevId = `secchev-log-${esc(locId)}`;
+  const bodyId = `secbody-log-${esc(locId)}`;
   return `
 <div class="log-header">
-  <span class="card-title">Recent Access Log</span>
+  <div class="sec-header" onclick="toggleSection('log-${esc(locId)}')">
+    <span class="card-title">Recent Access Log</span>
+    <svg class="sec-chevron" id="${chevId}" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
 </div>
-${rows}`;
+<div class="sec-body" id="${bodyId}">
+  ${rows}
+</div>`;
 }
 
-function renderPlanMappings(mappings) {
+function renderPlanMappings(locId, mappings) {
   if (!mappings.length) {
     return `
-<div class="mapping-header"><span class="card-title">Plan Mapping</span></div>
-<div class="map-row" style="color:var(--muted);font-size:11px;">No plan mappings configured for this location.</div>`;
+<div class="mapping-header"><div class="sec-header" onclick="toggleSection('map-${esc(locId)}')"><span class="card-title">Plan Mapping</span><svg class="sec-chevron" id="secchev-map-${esc(locId)}" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+<div class="sec-body" id="secbody-map-${esc(locId)}"><div class="map-row" style="color:var(--muted);font-size:11px;">No plan mappings configured for this location.</div></div>`;
   }
 
   const rows = mappings.map(m => {
@@ -784,13 +953,17 @@ function renderPlanMappings(mappings) {
     <span class="map-arrow">→</span>
     <span class="map-door">${esc(m.door_name || m.hardware_group_id || '—')}</span>
     <span class="mbadge active">Active</span>
+    <button class="btn-edit" onclick="openMappingEditor('${esc(m.id)}','${esc(m.plan_name||'')}','${esc(m.door_name||'')}','${esc(m.hardware_group_id||'')}','${esc(m.status)}')">Edit</button>
   </div>
 </div>`;
     } else {
       return `
-<div class="map-row" style="opacity:0.5;">
+<div class="map-row" style="opacity:0.65;">
   <div><div class="map-plan">${esc(m.plan_name || m.wix_plan_id || '—')}</div></div>
-  <div class="map-right"><span class="mbadge excl">Not managed</span></div>
+  <div class="map-right">
+    <span class="mbadge excl">Not managed</span>
+    <button class="btn-edit" onclick="openMappingEditor('${esc(m.id)}','${esc(m.plan_name||'')}','${esc(m.door_name||'')}','${esc(m.hardware_group_id||'')}','${esc(m.status)}')">Edit</button>
+  </div>
 </div>`;
     }
   }).join('');
@@ -803,10 +976,19 @@ function renderPlanMappings(mappings) {
   <button class="btn-nudge">Review</button>
 </div>` : '';
 
+  const chevId = `secchev-map-${esc(locId)}`;
+  const bodyId = `secbody-map-${esc(locId)}`;
   return `
-<div class="mapping-header"><span class="card-title">Plan Mapping</span></div>
+<div class="mapping-header">
+  <div class="sec-header" onclick="toggleSection('map-${esc(locId)}')">
+    <span class="card-title">Plan Mapping</span>
+    <svg class="sec-chevron" id="${chevId}" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+</div>
+<div class="sec-body" id="${bodyId}">
 ${rows}
-${nudge}`;
+${nudge}
+</div>`;
 }
 
 function renderLocFooter(locId) {
@@ -999,5 +1181,40 @@ if (CLIENT_ID) {
     });
 }
 </script>
+
+<!-- Plan Mapping Editor Modal -->
+<div class="modal-overlay hide" id="mapping-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="modal-title">Edit Plan Mapping</span>
+      <button class="modal-close-btn" onclick="closeMappingEditor()">✕</button>
+    </div>
+    <div class="modal-content">
+      <div class="field-group">
+        <div class="field-label">Plan Name</div>
+        <input class="field-input" id="me-plan-name" type="text" />
+      </div>
+      <div class="field-group">
+        <div class="field-label">Door / Hardware Group Label</div>
+        <input class="field-input" id="me-door-name" type="text" />
+      </div>
+      <div class="field-group">
+        <div class="field-label">Hardware Group ID</div>
+        <input class="field-input" id="me-hw-group" type="text" />
+      </div>
+      <div class="field-group">
+        <div class="field-label">Status</div>
+        <select class="field-select" id="me-status">
+          <option value="active">Active — members get access</option>
+          <option value="excluded">Excluded — not managed</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-modal-cancel" onclick="closeMappingEditor()">Cancel</button>
+      <button class="btn-modal-save" id="me-save-btn" onclick="saveMappingEdit()">Save changes</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

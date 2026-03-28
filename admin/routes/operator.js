@@ -119,7 +119,7 @@ router.get('/:clientId/locations', async (req, res) => {
 router.get('/:clientId/locations/:locationId', async (req, res) => {
   const { clientId, locationId } = req.params;
   try {
-    const [errors, planMappings, accessLog] = await Promise.all([
+    const [errors, planMappings, accessLog, activeMembers] = await Promise.all([
       db.query(
         `SELECT id, event_type, error_reason, retry_count, plan_name, door_name, created_at
          FROM error_queue
@@ -143,6 +143,14 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
          ORDER BY mal.created_at DESC LIMIT 10`,
         [clientId]
       ),
+      db.query(
+        `SELECT mi.id, mi.platform_member_id, mas.status, mas.provisioned_at
+         FROM member_identity mi
+         JOIN member_access_state mas ON mas.member_id = mi.id
+         WHERE mi.client_id = $1
+         ORDER BY mas.provisioned_at DESC NULLS LAST`,
+        [clientId]
+      ),
     ]);
 
     res.json({
@@ -152,6 +160,7 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
       })),
       plan_mappings: planMappings.rows,
       access_log: accessLog.rows,
+      active_members: activeMembers.rows,
     });
   } catch (err) {
     console.error('[operator] GET /:clientId/locations/:locationId error:', err.message);
@@ -223,6 +232,28 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
     res.json({ queued: true });
   } catch (err) {
     console.error('[operator] POST errors/:errorId/retry error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── PATCH /operator/:clientId/plan-mappings/:mappingId ───────────
+router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
+  const { clientId, mappingId } = req.params;
+  const { status, door_name, hardware_group_id } = req.body;
+  try {
+    const fields = [], vals = [mappingId, clientId];
+    if (status !== undefined)            { fields.push(`status = $${vals.length + 1}`);            vals.push(status); }
+    if (door_name !== undefined)         { fields.push(`door_name = $${vals.length + 1}`);         vals.push(door_name); }
+    if (hardware_group_id !== undefined) { fields.push(`hardware_group_id = $${vals.length + 1}`); vals.push(hardware_group_id); }
+    if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
+    const result = await db.query(
+      `UPDATE plan_mappings SET ${fields.join(', ')} WHERE id = $1 AND client_id = $2 RETURNING *`,
+      vals
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[operator] PATCH plan-mappings/:mappingId error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
