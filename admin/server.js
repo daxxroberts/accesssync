@@ -17,6 +17,7 @@ const errorsRoutes   = require('./routes/errors');
 const membersRoutes  = require('./routes/members');
 const webhooksRoutes = require('./routes/webhooks');
 const queueRoutes    = require('./routes/queue');
+const clientsRoutes  = require('./routes/clients');
 const { requireAuth } = require('./middleware/auth');
 
 const app  = express();
@@ -33,6 +34,7 @@ app.use('/admin/errors',   requireAuth, errorsRoutes);
 app.use('/admin/members',  requireAuth, membersRoutes);
 app.use('/admin/webhooks', requireAuth, webhooksRoutes);
 app.use('/admin/queue',    requireAuth, queueRoutes);
+app.use('/admin/clients',  requireAuth, clientsRoutes);
 
 // ── Health check (Railway requires a reachable HTTP endpoint) ──
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'admin-hub' }));

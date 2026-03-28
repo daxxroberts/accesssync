@@ -261,6 +261,7 @@ function switchPanel(panel) {
   if (panel === 'errors')   loadErrors();
   if (panel === 'webhooks') startWebhookPolling();
   if (panel === 'queue')    startQueuePolling();
+  if (panel === 'clients')  loadClients();
 }
 
 // ── Dashboard Init ─────────────────────────────────────────────────
@@ -871,6 +872,181 @@ function renderQueueJobs(jobs) {
 document.querySelectorAll('.queue-tab').forEach(tab => {
   tab.addEventListener('click', () => loadQueueJobs(tab.dataset.state));
 });
+
+// ══ CLIENTS PANEL ═════════════════════════════════════════════════════
+
+async function loadClients() {
+  document.getElementById('clients-loading').classList.remove('hidden');
+  document.getElementById('clients-table-wrap').classList.add('hidden');
+  document.getElementById('clients-empty').classList.add('hidden');
+
+  try {
+    const res  = await apiFetch('/admin/clients');
+    const json = await res.json();
+    const data = json.data || [];
+
+    if (!data.length) {
+      document.getElementById('clients-empty').classList.remove('hidden');
+    } else {
+      renderClients(data);
+      document.getElementById('clients-table-wrap').classList.remove('hidden');
+    }
+  } catch (err) {
+    if (err.message !== 'Unauthorized') toast('Failed to load clients', 'error');
+  } finally {
+    document.getElementById('clients-loading').classList.add('hidden');
+  }
+}
+
+function renderClients(data) {
+  const tbody = document.getElementById('clients-tbody');
+  tbody.innerHTML = data.map(c => `
+    <tr class="clickable-row" onclick="openClientDetail('${c.id}')">
+      <td>
+        <div>${esc(c.name)}</div>
+        ${c.site_name ? `<div class="cell-sub">${esc(c.site_name)}</div>` : ''}
+        ${c.site_id   ? `<div class="cell-sub"><code>${esc(c.site_id)}</code></div>` : ''}
+      </td>
+      <td>${c.platform ? `<span class="pill pill-info">${esc(c.platform)}</span>` : '<span class="muted">—</span>'}</td>
+      <td>${c.hardware_platform ? `<span class="pill pill-muted">${esc(c.hardware_platform)}</span>` : '<span class="muted">—</span>'}</td>
+      <td>${c.tier || '<span class="muted">—</span>'}</td>
+      <td>
+        <span title="${c.active_count} active">${c.member_count} total</span>
+        ${c.active_count > 0 ? `<span class="cell-sub">${c.active_count} active</span>` : ''}
+      </td>
+      <td>${pill(c.status || 'active')}</td>
+      <td><span title="${esc(c.last_sync_at)}">${fmt(c.last_sync_at)}</span></td>
+      <td class="actions-cell" onclick="event.stopPropagation()">
+        <button class="btn btn-sm btn-secondary" onclick="openClientEdit('${c.id}')">Edit</button>
+        <button class="btn btn-sm btn-accent" onclick="openOperatorDashboard('${c.id}', '${esc(c.name)}')">Dashboard</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openClientDetail(id) {
+  const res = apiFetch('/admin/clients').then(r => r.json()).then(json => {
+    const c = (json.data || []).find(x => x.id === id);
+    if (!c) return;
+    openDrawer(`Client: ${c.name}`, renderClientDetail(c));
+  }).catch(() => {});
+}
+
+function renderClientDetail(c) {
+  return `
+    <div class="detail-section">
+      <div class="detail-row"><span class="detail-label">Name</span><span>${esc(c.name)}</span></div>
+      <div class="detail-row"><span class="detail-label">Status</span>${pill(c.status || 'active')}</div>
+      <div class="detail-row"><span class="detail-label">Platform</span><span>${esc(c.platform) || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Hardware</span><span>${esc(c.hardware_platform) || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Tier</span><span>${esc(c.tier) || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Site ID</span><code>${esc(c.site_id) || '—'}</code></div>
+      <div class="detail-row"><span class="detail-label">Site Name</span><span>${esc(c.site_name) || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Notification Email</span><span>${esc(c.notification_email) || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Members</span><span>${c.member_count} total, ${c.active_count} active</span></div>
+      <div class="detail-row"><span class="detail-label">Last Sync</span><span>${fmt(c.last_sync_at)}</span></div>
+      <div class="detail-row"><span class="detail-label">Created</span><span>${fmt(c.created_at)}</span></div>
+    </div>
+    <div class="drawer-footer-actions">
+      <button class="btn btn-secondary" onclick="openClientEdit('${c.id}')">Edit Client</button>
+      <button class="btn btn-accent" onclick="openOperatorDashboard('${c.id}', '${esc(c.name)}')">Open Dashboard</button>
+    </div>
+  `;
+}
+
+function openClientEdit(id) {
+  apiFetch('/admin/clients').then(r => r.json()).then(json => {
+    const c = (json.data || []).find(x => x.id === id);
+    if (!c) return;
+    openDrawer(`Edit: ${c.name}`, renderClientEditForm(c));
+  }).catch(() => {});
+}
+
+function renderClientEditForm(c) {
+  return `
+    <div class="detail-section">
+      <div class="form-field">
+        <label>Name</label>
+        <input type="text" id="edit-name" value="${esc(c.name)}" class="form-input" />
+      </div>
+      <div class="form-field">
+        <label>Hardware Platform</label>
+        <select id="edit-hardware_platform" class="form-input">
+          <option value="">— Select —</option>
+          <option value="kisi"  ${c.hardware_platform === 'kisi'  ? 'selected' : ''}>Kisi</option>
+          <option value="seam"  ${c.hardware_platform === 'seam'  ? 'selected' : ''}>Seam</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Tier</label>
+        <select id="edit-tier" class="form-input">
+          <option value="">— Select —</option>
+          <option value="Base"    ${c.tier === 'Base'    ? 'selected' : ''}>Base</option>
+          <option value="Pro"     ${c.tier === 'Pro'     ? 'selected' : ''}>Pro</option>
+          <option value="Connect" ${c.tier === 'Connect' ? 'selected' : ''}>Connect</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Site Name</label>
+        <input type="text" id="edit-site_name" value="${esc(c.site_name || '')}" class="form-input" />
+      </div>
+      <div class="form-field">
+        <label>Site ID</label>
+        <input type="text" id="edit-site_id" value="${esc(c.site_id || '')}" class="form-input" />
+      </div>
+      <div class="form-field">
+        <label>Notification Email</label>
+        <input type="email" id="edit-notification_email" value="${esc(c.notification_email || '')}" class="form-input" />
+      </div>
+      <div class="form-field">
+        <label>Status</label>
+        <select id="edit-status" class="form-input">
+          <option value="active"    ${c.status === 'active'    ? 'selected' : ''}>Active</option>
+          <option value="cancelled" ${c.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+        </select>
+      </div>
+    </div>
+    <div class="drawer-footer-actions">
+      <button class="btn btn-secondary" onclick="closeDrawer()">Cancel</button>
+      <button class="btn btn-accent" onclick="saveClientEdit('${c.id}')">Save Changes</button>
+    </div>
+  `;
+}
+
+async function saveClientEdit(id) {
+  const fields = ['name', 'hardware_platform', 'tier', 'site_name', 'site_id', 'notification_email', 'status'];
+  const body = {};
+  for (const f of fields) {
+    const el = document.getElementById(`edit-${f}`);
+    if (el) body[f] = el.value.trim();
+  }
+
+  try {
+    const res = await apiFetch(`/admin/clients/${id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    if (res.ok) {
+      toast('Client updated', 'success');
+      closeDrawer();
+      loadClients();
+    } else {
+      const j = await res.json();
+      toast(`Save failed: ${j.error}`, 'error');
+    }
+  } catch {
+    toast('Save failed', 'error');
+  }
+}
+
+function openOperatorDashboard(id, name) {
+  // Operator Dashboard (FORGE/OB-06) — not yet built.
+  // When live, this will link to the operator-facing dashboard for this client.
+  toast(`Operator Dashboard for ${name} coming soon (OB-06)`, 'info');
+}
+
+document.getElementById('clients-refresh-btn').addEventListener('click', () => loadClients());
 
 // ── Stop all polling ────────────────────────────────────────────────
 function stopPolling() {

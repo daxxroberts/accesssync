@@ -929,6 +929,38 @@ code, .code-sm {
 .toast-warning { background: var(--amber); }
 .toast-info    { background: var(--blue); }
 
+/* ── Form Fields (Client Edit) ───────────────────────────────────── */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.form-field label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+}
+
+.form-input {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 8px 10px;
+  width: 100%;
+  outline: none;
+  transition: border-color .15s;
+}
+
+.form-input:focus {
+  border-color: var(--accent);
+}
+
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 1100px) {
   .stat-cards {

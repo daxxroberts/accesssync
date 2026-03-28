@@ -16,6 +16,8 @@ CREATE TABLE clients (
     platform VARCHAR(50) NOT NULL DEFAULT 'wix', -- Source platform: 'wix', 'squarespace', etc.
     site_id VARCHAR(255) UNIQUE,                 -- Platform site identifier (was wix_site_id) — used for webhook routing
     site_name VARCHAR(255),                      -- Human-readable location name (e.g. "House of Gains - Main")
+    hardware_platform VARCHAR(50),               -- 'kisi', 'seam' — which hardware provider this client uses
+    tier VARCHAR(50),                            -- 'Base', 'Pro', 'Connect' — AccessSync billing tier
     status VARCHAR(50) DEFAULT 'active',         -- active, cancelled
     notification_email VARCHAR(255),             -- DR-020: operator alert destination (Resend); populated by setup wizard (OB-09)
     last_sync_at TIMESTAMP WITH TIME ZONE,       -- DR-018: single timestamp per client, updated on each member sync sweep
@@ -174,3 +176,7 @@ CREATE TABLE webhook_log (
 --   ALTER TABLE clients RENAME COLUMN wix_site_id TO site_id;
 --   ALTER TABLE clients ADD COLUMN platform VARCHAR(50) NOT NULL DEFAULT 'wix';
 --   ALTER TABLE clients ADD COLUMN site_name VARCHAR(255);
+--
+-- Clients schema update (2026-03-28): hardware_platform + tier
+--   ALTER TABLE clients ADD COLUMN hardware_platform VARCHAR(50);
+--   ALTER TABLE clients ADD COLUMN tier VARCHAR(50);
