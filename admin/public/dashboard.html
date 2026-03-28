@@ -376,7 +376,7 @@ body { font-family:'Sora',sans-serif; background:var(--bg); color:var(--text); -
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2.5" stroke="var(--sage-dark)" stroke-width="1.3"/><path d="M5 8.5l2-4 1.5 3 1-2 1.5 3" stroke="var(--sage-dark)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
           <div>
-            <div class="sync-platform-name">Wix</div>
+            <div class="sync-platform-name" id="sync-platform-name-src">Wix</div>
             <div class="sync-platform-sub">Source of truth</div>
           </div>
         </div>
@@ -398,7 +398,7 @@ body { font-family:'Sora',sans-serif; background:var(--bg); color:var(--text); -
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="8" width="10" height="7" rx="1.5" stroke="var(--brand)" stroke-width="1.3"/><path d="M5.5 8V6a2.5 2.5 0 015 0v2" stroke="var(--brand)" stroke-width="1.3" stroke-linecap="round" fill="none"/><circle cx="8" cy="11.5" r="1" fill="var(--brand)"/></svg>
           </div>
           <div>
-            <div class="sync-platform-name">Kisi</div>
+            <div class="sync-platform-name" id="sync-platform-name-hw">Kisi</div>
             <div class="sync-platform-sub">Destination</div>
           </div>
         </div>
@@ -540,6 +540,11 @@ function renderOverview(data) {
   document.getElementById('stat-kisi-delta').textContent = `of ${stats.total_members} total`;
 
   // Sync compare
+  const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  const srcName = cap(client.platform) || 'Wix';
+  const hwName  = cap(client.hardware_platform) || 'Kisi';
+  document.getElementById('sync-platform-name-src').textContent = srcName;
+  document.getElementById('sync-platform-name-hw').textContent  = hwName;
   const syncTs = timeAgo(client.last_sync_at);
   document.getElementById('sync-compare-ts').textContent = `As of last sync · ${syncTs}`;
   document.getElementById('sync-wix-count').textContent = stats.total_members;
@@ -549,7 +554,7 @@ function renderOverview(data) {
   const total = stats.total_members || 1;
   const pct = Math.round((stats.active_members / total) * 100);
   document.getElementById('kisi-bar-fill').style.width = `${pct}%`;
-  document.getElementById('kisi-bar-label').textContent = `${stats.active_members} AccessSync provisioned`;
+  document.getElementById('kisi-bar-label').textContent = `${stats.active_members} ${hwName} provisioned`;
 
   const gap = stats.total_members - stats.active_members;
   const statusBar = document.getElementById('sync-status-bar');
@@ -572,7 +577,7 @@ async function fetchLocations() {
   return res.json();
 }
 
-function renderLocations(data, clientTier) {
+function renderLocations(data, clientTier, hardwarePlatform) {
   const { locations } = data;
   document.getElementById('loc-count-badge').textContent = locations.length;
 
@@ -582,7 +587,7 @@ function renderLocations(data, clientTier) {
     return;
   }
 
-  stack.innerHTML = locations.map(loc => renderLocationTrigger(loc, clientTier)).join('');
+  stack.innerHTML = locations.map(loc => renderLocationTrigger(loc, clientTier, hardwarePlatform)).join('');
 
   // Restore open state from localStorage
   locations.forEach(loc => {
@@ -597,12 +602,16 @@ function renderLocations(data, clientTier) {
   });
 }
 
-function renderLocationTrigger(loc, tier) {
+function renderLocationTrigger(loc, tier, hardwarePlatform) {
   const hasErr = loc.error_count > 0;
+  const hwLabel = hardwarePlatform
+    ? hardwarePlatform.charAt(0).toUpperCase() + hardwarePlatform.slice(1)
+    : 'Kisi';
   const meta = [
     `${loc.door_count} door${loc.door_count !== 1 ? 's' : ''}`,
+    `${loc.plan_count} plan${loc.plan_count !== 1 ? 's' : ''}`,
     loc.city ? `${loc.city}${loc.state ? ', ' + loc.state : ''}` : null,
-    tier ? `Kisi ${tier}` : null,
+    tier ? `${hwLabel} ${tier}` : null,
   ].filter(Boolean).join(' · ');
 
   const iconColor = hasErr ? 'var(--red)' : 'var(--sage-dark)';
@@ -981,7 +990,7 @@ if (CLIENT_ID) {
   Promise.all([fetchOverview(), fetchLocations()])
     .then(([overview, locations]) => {
       renderOverview(overview);
-      renderLocations(locations, overview.client.tier);
+      renderLocations(locations, overview.client.tier, overview.client.hardware_platform);
     })
     .catch(err => {
       console.error('Dashboard load failed:', err);

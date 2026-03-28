@@ -19,7 +19,7 @@ router.get('/:clientId', async (req, res) => {
   try {
     const [clientResult, errorCount, activeMembers, totalMembers, locationCount] = await Promise.all([
       db.query(
-        `SELECT id, name, site_url, hardware_platform, tier,
+        `SELECT id, name, site_url, platform, hardware_platform, tier,
                 last_sync_at, last_wix_webhook_at
          FROM clients WHERE id = $1`,
         [clientId]
