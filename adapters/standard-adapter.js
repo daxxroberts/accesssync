@@ -201,9 +201,11 @@ class StandardAdapter {
    */
   async completeGrant(memberId, tenantId, assignments) {
     for (const { mappingId, roleAssignmentId } of assignments) {
+      // ON CONFLICT DO NOTHING — idempotent on retry (UNIQUE constraint on member_id, mapping_id)
       await db.query(
         `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id)
-         VALUES ($1, $2, $3)`,
+         VALUES ($1, $2, $3)
+         ON CONFLICT (member_id, mapping_id) DO NOTHING`,
         [memberId, mappingId, roleAssignmentId]
       );
     }
@@ -235,24 +237,36 @@ class StandardAdapter {
    */
   async completeRevoke(memberId, tenantId, targetStatus) {
     const clearRole = targetStatus === 'revoked' || targetStatus === 'deleted';
+    const dbClient = await db.getClient();
 
-    if (clearRole) {
-      // Clear all stored role assignments for this member
-      await db.query(
-        `DELETE FROM member_role_assignments WHERE member_id = $1`,
-        [memberId]
-      );
-      await db.query(
-        `UPDATE member_access_state
-         SET status = $1, role_assignment_id = NULL, updated_at = NOW()
-         WHERE member_id = $2`,
-        [targetStatus, memberId]
-      );
-    } else {
-      await db.query(
-        `UPDATE member_access_state SET status = $1, updated_at = NOW() WHERE member_id = $2`,
-        [targetStatus, memberId]
-      );
+    try {
+      await dbClient.query('BEGIN');
+
+      if (clearRole) {
+        // Clear all stored role assignments atomically with state update
+        await dbClient.query(
+          `DELETE FROM member_role_assignments WHERE member_id = $1`,
+          [memberId]
+        );
+        await dbClient.query(
+          `UPDATE member_access_state
+           SET status = $1, role_assignment_id = NULL, updated_at = NOW()
+           WHERE member_id = $2`,
+          [targetStatus, memberId]
+        );
+      } else {
+        await dbClient.query(
+          `UPDATE member_access_state SET status = $1, updated_at = NOW() WHERE member_id = $2`,
+          [targetStatus, memberId]
+        );
+      }
+
+      await dbClient.query('COMMIT');
+    } catch (err) {
+      await dbClient.query('ROLLBACK');
+      throw err;
+    } finally {
+      dbClient.release();
     }
 
     this._incrementActivity(tenantId, 'revokes_completed').catch(err =>

@@ -21,10 +21,11 @@
  *   throw error — BullMQ retries (BUG-01 fix preserved)
  */
 
-const { Worker } = require('bullmq');
+const { Worker, UnrecoverableError } = require('bullmq');
 const grantRevokeLogic = require('./grant-revoke');
 const retryEngine = require('./retry-engine');
 const standardAdapter = require('../adapters/standard-adapter');
+const hardwareAdapter = require('../adapters/hardware-adapter');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { getRedisConnection } = require('./redis-utils');
 
@@ -43,9 +44,25 @@ async function processJob(job) {
 
   try {
     if (job.name === 'grant') {
+
+      // payment.recovered: user is suspended — re-enable only (no new role assignments)
+      if (standardEvent.eventType === 'payment.recovered') {
+        const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null);
+        if (!lockResult) {
+          console.warn(`[Queue Worker] No identity for payment.recovered — member ${standardEvent.platformMemberId}. Dropping.`);
+          return;
+        }
+        const { memberId: resolvedMemberId, hardwareUserId, hardwarePlatform } = lockResult;
+        memberId = resolvedMemberId;
+        const apiKey = process.env.KISI_API_KEY_MOCK;
+        await hardwareAdapter.enableAccess(hardwarePlatform, apiKey, hardwareUserId);
+        await standardAdapter.completeRevoke(memberId, tenantId, 'active');
+        return;
+      }
+
       // Step 1: Resolve all active plan mappings for this plan (returns array)
       const mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
-      if (!mappings) {
+      if (!mappings || mappings.length === 0) {
         console.warn(`[Queue Worker] No active plan mapping for planId ${standardEvent.planId}. Dropping job.`);
         return; // Already alerted in resolver via config_alert_log
       }
@@ -100,6 +117,12 @@ async function processJob(job) {
     // Release in_flight lock before BullMQ retries
     if (memberId) {
       await standardAdapter.releaseLock(memberId, tenantId, 'failed');
+    }
+
+    // 4xx errors (except 429) are non-retryable — bad config, not transient failures.
+    // Throw UnrecoverableError so BullMQ dead-letters immediately without exhausting retries.
+    if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 429) {
+      throw new UnrecoverableError(`Non-retryable hardware error (${error.statusCode}): ${error.message}`);
     }
 
     // BUG-01 fix: throw so BullMQ retries. Dead-letter via worker.on('failed') → retryEngine.

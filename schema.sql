@@ -121,7 +121,8 @@ CREATE TABLE member_role_assignments (
     member_id          UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
     mapping_id         UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
     role_assignment_id VARCHAR(255) NOT NULL,
-    created_at         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (member_id, mapping_id)              -- idempotency: one role assignment per member per mapping
 );
 
 -- 9. Member Access Log (Lifecycle Events)
@@ -260,5 +261,6 @@ CREATE TABLE webhook_log (
 --        member_id UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
 --        mapping_id UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
 --        role_assignment_id VARCHAR(255) NOT NULL,
---        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+--        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+--        UNIQUE (member_id, mapping_id)
 --      );
