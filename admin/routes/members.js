@@ -35,9 +35,10 @@ router.get('/search', async (req, res) => {
     const { q = '', client_id, limit = 50 } = req.query;
     if (!q.trim()) return res.json({ data: [] });
 
-    const params = [`%${q.trim()}%`, `%${q.trim()}%`, `%${q.trim()}%`];
+    // Search by platform_member_id only — email/name resolved from Wix on-demand (data minimization)
+    const params = [`%${q.trim()}%`];
     const conditions = [
-      `(mi.email ILIKE $1 OR mi.display_name ILIKE $2 OR mi.platform_member_id ILIKE $3)`
+      `mi.platform_member_id ILIKE $1`
     ];
 
     if (client_id) {

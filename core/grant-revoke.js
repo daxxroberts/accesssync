@@ -45,17 +45,16 @@ class GrantRevokeLogic {
         await dbClient.query('BEGIN');
 
         // UPSERT identity record — creates on first encounter, touches updated_at on replay
+        // Email/name not stored here — fetched from Wix on-demand (data minimization decision)
         const identityResult = await dbClient.query(
           `INSERT INTO member_identity
-           (client_id, platform_member_id, hardware_platform, source_platform, source_tag, email, display_name)
-           VALUES ($1, $2, $3, $4, 'accesssync', $5, $6)
+           (client_id, platform_member_id, hardware_platform, source_platform, source_tag)
+           VALUES ($1, $2, $3, $4, 'accesssync')
            ON CONFLICT (client_id, source_platform, platform_member_id)
-           DO UPDATE SET updated_at = NOW(),
-                         email = EXCLUDED.email,
-                         display_name = EXCLUDED.display_name
+           DO UPDATE SET updated_at = NOW()
            RETURNING id, hardware_user_id`,
           [tenantId, wixEvent.platformMemberId, mapping.hardwarePlatform,
-           wixEvent.sourcePlatform || 'wix', wixEvent.email || null, wixEvent.name || null]
+           wixEvent.sourcePlatform || 'wix']
         );
         memberId = identityResult.rows[0].id;
 
