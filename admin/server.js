@@ -45,3 +45,11 @@ app.listen(PORT, () => {
   console.log(`[AccessSync Admin Hub] Running on port ${PORT}`);
   console.log(`[AccessSync Admin Hub] Environment: ${process.env.NODE_ENV}`);
 });
+
+// ── Prevent silent crashes ─────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('[Admin Hub] uncaughtException:', err.message, err.stack);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Admin Hub] unhandledRejection:', reason);
+});
