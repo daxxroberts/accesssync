@@ -51,6 +51,7 @@ CREATE TABLE plan_mappings (
     plan_name VARCHAR(255),                       -- OD-11: display label for the plan (operator dashboard)
     door_name VARCHAR(255),                       -- OD-11: display label for the hardware group/door
     status VARCHAR(50) DEFAULT 'active',          -- OD-11: 'active', 'excluded' — for "Not managed" display
+    access_type VARCHAR(50) DEFAULT 'group',      -- Hardware access object type: 'group' (Kisi), 'zone'/'door' (future Seam)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -111,7 +112,19 @@ CREATE TABLE member_access_state (
     UNIQUE(member_id)
 );
 
--- 8. Member Access Log (Lifecycle Events)
+-- 8. Member Role Assignments (Multi-Door Grant Storage)
+-- One row per hardware role assignment per member. Replaces the single role_assignment_id
+-- column on member_access_state for multi-door support. Standard Adapter Layer owns writes.
+-- On revoke: all rows for the member are deleted atomically via completeRevoke().
+CREATE TABLE member_role_assignments (
+    id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    member_id          UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
+    mapping_id         UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
+    role_assignment_id VARCHAR(255) NOT NULL,
+    created_at         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. Member Access Log (Lifecycle Events)
 CREATE TABLE member_access_log (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     member_id UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
@@ -237,3 +250,15 @@ CREATE TABLE webhook_log (
 --   4. ALTER TABLE error_queue ADD COLUMN location_id UUID REFERENCES locations(id);
 --      ALTER TABLE error_queue ADD COLUMN plan_name VARCHAR(255);
 --      ALTER TABLE error_queue ADD COLUMN door_name VARCHAR(255);
+--
+-- Multi-door support (2026-03-28): member_role_assignments + plan_mappings.access_type
+--   Fixes: resolver returned only first row; no status='active' filter; single role_assignment_id
+--   Run in sequence:
+--   1. ALTER TABLE plan_mappings ADD COLUMN access_type VARCHAR(50) DEFAULT 'group';
+--   2. CREATE TABLE member_role_assignments (
+--        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--        member_id UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
+--        mapping_id UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
+--        role_assignment_id VARCHAR(255) NOT NULL,
+--        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+--      );

@@ -26,7 +26,7 @@ class StandardAdapter {
    *
    * REVOKE path (hardwarePlatform = null):
    *   SELECT member_identity → check + set in_flight → increment events_received
-   *   Returns: { memberId, hardwareUserId, hardwarePlatform, roleAssignmentId }
+   *   Returns: { memberId, hardwareUserId, hardwarePlatform, roleAssignmentIds[] }
    *   Returns null if no identity record exists (caller must skip — not an error).
    *
    * Throws if in_flight lock is already set (concurrent modification).
@@ -41,7 +41,7 @@ class StandardAdapter {
     try {
       await dbClient.query('BEGIN');
 
-      let memberId, hardwareUserId, resolvedPlatform, roleAssignmentId;
+      let memberId, hardwareUserId, resolvedPlatform, roleAssignmentIds = [];
 
       if (hardwarePlatform !== null) {
         // GRANT: UPSERT identity record
@@ -86,10 +86,21 @@ class StandardAdapter {
 
       if (stateResult.rows.length > 0) {
         const { status, role_assignment_id } = stateResult.rows[0];
-        roleAssignmentId = role_assignment_id;
 
         if (status === 'in_flight') {
           throw new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId}`);
+        }
+
+        // Read all role assignment IDs from member_role_assignments (multi-door)
+        const raResult = await dbClient.query(
+          `SELECT role_assignment_id FROM member_role_assignments WHERE member_id = $1`,
+          [memberId]
+        );
+        if (raResult.rows.length > 0) {
+          roleAssignmentIds = raResult.rows.map(r => r.role_assignment_id);
+        } else {
+          // Legacy fallback: single role_assignment_id from member_access_state
+          roleAssignmentIds = role_assignment_id ? [role_assignment_id] : [];
         }
 
         await dbClient.query(
@@ -111,7 +122,7 @@ class StandardAdapter {
            VALUES ($1, $2, 'in_flight')`,
           [memberId, tenantId]
         );
-        roleAssignmentId = null;
+        roleAssignmentIds = [];
       }
 
       await dbClient.query('COMMIT');
@@ -124,7 +135,7 @@ class StandardAdapter {
       if (hardwarePlatform !== null) {
         return { memberId };
       } else {
-        return { memberId, hardwareUserId, hardwarePlatform: resolvedPlatform, roleAssignmentId };
+        return { memberId, hardwareUserId, hardwarePlatform: resolvedPlatform, roleAssignmentIds };
       }
 
     } catch (err) {
@@ -180,19 +191,28 @@ class StandardAdapter {
   }
 
   /**
-   * Records a successful grant — sets member_access_state to active.
-   * Called after hardware role assignment succeeds.
+   * Records a successful grant — writes all role assignments to member_role_assignments,
+   * then sets member_access_state to active.
+   * Called after hardware role assignments succeed.
    *
    * @param {string} memberId
    * @param {string} tenantId
-   * @param {string} roleId   hardware role assignment ID
+   * @param {Array}  assignments  [{ mappingId, roleAssignmentId }] from processGrant()
    */
-  async completeGrant(memberId, tenantId, roleId) {
+  async completeGrant(memberId, tenantId, assignments) {
+    for (const { mappingId, roleAssignmentId } of assignments) {
+      await db.query(
+        `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id)
+         VALUES ($1, $2, $3)`,
+        [memberId, mappingId, roleAssignmentId]
+      );
+    }
+
     await db.query(
       `UPDATE member_access_state
-       SET status = 'active', role_assignment_id = $1, provisioned_at = NOW(), updated_at = NOW()
-       WHERE member_id = $2`,
-      [String(roleId), memberId]
+       SET status = 'active', provisioned_at = NOW(), updated_at = NOW()
+       WHERE member_id = $1`,
+      [memberId]
     );
 
     this._incrementActivity(tenantId, 'grants_completed').catch(err =>
@@ -217,6 +237,11 @@ class StandardAdapter {
     const clearRole = targetStatus === 'revoked' || targetStatus === 'deleted';
 
     if (clearRole) {
+      // Clear all stored role assignments for this member
+      await db.query(
+        `DELETE FROM member_role_assignments WHERE member_id = $1`,
+        [memberId]
+      );
       await db.query(
         `UPDATE member_access_state
          SET status = $1, role_assignment_id = NULL, updated_at = NOW()

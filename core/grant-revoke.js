@@ -19,24 +19,27 @@ const planMappingResolver = require('./plan-mapping-resolver');
 class GrantRevokeLogic {
 
   /**
-   * Executes the hardware grant for a member.
+   * Executes the hardware grant for a member across all active plan mappings.
    * Called by queue-worker after Standard Adapter resolves identity and acquires lock.
    *
    * @param {string} tenantId
    * @param {string} memberId         member_identity.id
    * @param {string} hardwareUserId   resolved hardware platform user ID
-   * @param {Object} mapping          from planMappingResolver.resolve()
+   * @param {Array}  mappings         from planMappingResolver.resolve() — array of active mappings
    * @param {Object} wixEvent         standard event object
-   * @returns {string} roleId         hardware role assignment ID — passed to completeGrant()
+   * @returns {Array} assignments     [{ mappingId, roleAssignmentId }] — passed to completeGrant()
    */
-  async processGrant(tenantId, memberId, hardwareUserId, mapping, wixEvent) {
-    console.log(`[Grant] Assigning role to user ${hardwareUserId} in group ${mapping.hardwareGroupId}`);
-
+  async processGrant(tenantId, memberId, hardwareUserId, mappings, wixEvent) {
     const apiKey = process.env.KISI_API_KEY_MOCK;
+    const assignments = [];
 
-    const roleId = await hardwareAdapter.assignRole(
-      mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId
-    );
+    for (const mapping of mappings) {
+      console.log(`[Grant] Assigning role to user ${hardwareUserId} in group ${mapping.hardwareGroupId}`);
+      const roleId = await hardwareAdapter.assignRole(
+        mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId
+      );
+      assignments.push({ mappingId: mapping.mappingId, roleAssignmentId: String(roleId) });
+    }
 
     await db.query(
       `INSERT INTO member_access_log (member_id, client_id, event_type)
@@ -44,8 +47,8 @@ class GrantRevokeLogic {
       [memberId, tenantId]
     );
 
-    console.log(`[Grant] Success for member ${wixEvent.platformMemberId}, role ${roleId}`);
-    return String(roleId);
+    console.log(`[Grant] Success for member ${wixEvent.platformMemberId}, ${assignments.length} role(s) assigned`);
+    return assignments;
   }
 
   /**
@@ -53,19 +56,20 @@ class GrantRevokeLogic {
    * Called by queue-worker after Standard Adapter resolves lock and reads existing state.
    *
    * Three paths based on eventType:
-   *   payment.failed       → Suspend (preserve role for fast recovery) → returns 'disabled'
-   *   plan/booking cancel  → Remove role assignment (preserve user)    → returns 'revoked'
-   *   member.deleted       → Delete user from hardware org entirely     → returns 'deleted'
+   *   payment.failed       → Suspend (preserve roles for fast recovery) → returns 'disabled'
+   *   plan/booking cancel  → Remove all role assignments (preserve user) → returns 'revoked'
+   *   member.deleted       → Delete user from hardware org entirely      → returns 'deleted'
    *
    * @param {string} tenantId
    * @param {string} memberId
    * @param {string} hardwareUserId
-   * @param {string} roleAssignmentId
+   * @param {Array}  roleAssignmentIds  all active role assignment IDs for this member
+   * @param {string} hardwarePlatform
    * @param {string} eventType
    * @param {Object} wixEvent
    * @returns {string} targetStatus   passed to standardAdapter.completeRevoke()
    */
-  async processRevoke(tenantId, memberId, hardwareUserId, roleAssignmentId, hardwarePlatform, eventType, wixEvent) {
+  async processRevoke(tenantId, memberId, hardwareUserId, roleAssignmentIds, hardwarePlatform, eventType, wixEvent) {
     console.log(`[Revoke] Processing revoke (${eventType}) for tenant ${tenantId}, member ${wixEvent.platformMemberId}`);
 
     const apiKey = process.env.KISI_API_KEY_MOCK;
@@ -73,6 +77,7 @@ class GrantRevokeLogic {
     switch (eventType) {
 
       case 'payment.failed': {
+        // Suspend the user account — all role assignments preserved for fast recovery
         await hardwareAdapter.suspendAccess(
           hardwarePlatform, apiKey, hardwareUserId,
           `Payment failed on ${new Date().toISOString()}`
@@ -86,8 +91,9 @@ class GrantRevokeLogic {
 
       case 'plan.cancelled':
       case 'booking.cancelled': {
-        if (roleAssignmentId) {
-          await hardwareAdapter.removeRole(hardwarePlatform, apiKey, roleAssignmentId);
+        // Remove every role assignment the member holds
+        for (const raId of roleAssignmentIds) {
+          await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
         }
         await db.query(
           `INSERT INTO member_access_log (member_id, client_id, event_type) VALUES ($1, $2, 'revoked')`,

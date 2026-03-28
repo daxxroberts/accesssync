@@ -5,15 +5,15 @@
  * Orchestration sequence per job type:
  *
  * GRANT:
- *   1. planMappingResolver.resolve() → mapping (includes hardwarePlatform)
+ *   1. planMappingResolver.resolve() → mappings[] (all active mappings for this plan)
  *   2. standardAdapter.resolveAndLock(tenantId, event, hardwarePlatform) → { memberId }
  *   3. standardAdapter.resolveIdentity(memberId, email, name, platform, apiKey) → hardwareUserId
- *   4. grantRevokeLogic.processGrant(tenantId, memberId, hardwareUserId, mapping, event) → roleId
- *   5. standardAdapter.completeGrant(memberId, tenantId, roleId)
+ *   4. grantRevokeLogic.processGrant(tenantId, memberId, hardwareUserId, mappings, event) → assignments[]
+ *   5. standardAdapter.completeGrant(memberId, tenantId, assignments)
  *
  * REVOKE:
- *   1. standardAdapter.resolveAndLock(tenantId, event, null) → { memberId, hardwareUserId, hardwarePlatform, roleAssignmentId }
- *   2. grantRevokeLogic.processRevoke(tenantId, memberId, hardwareUserId, roleAssignmentId, hardwarePlatform, eventType, event) → targetStatus
+ *   1. standardAdapter.resolveAndLock(tenantId, event, null) → { memberId, hardwareUserId, hardwarePlatform, roleAssignmentIds[] }
+ *   2. grantRevokeLogic.processRevoke(tenantId, memberId, hardwareUserId, roleAssignmentIds, hardwarePlatform, eventType, event) → targetStatus
  *   3. standardAdapter.completeRevoke(memberId, tenantId, targetStatus)
  *
  * CATCH:
@@ -43,31 +43,31 @@ async function processJob(job) {
 
   try {
     if (job.name === 'grant') {
-      // Step 1: Resolve plan mapping (includes hardwarePlatform)
-      const mapping = await planMappingResolver.resolve(tenantId, standardEvent.planId);
-      if (!mapping) {
-        console.warn(`[Queue Worker] No plan mapping for planId ${standardEvent.planId}. Dropping job.`);
+      // Step 1: Resolve all active plan mappings for this plan (returns array)
+      const mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
+      if (!mappings) {
+        console.warn(`[Queue Worker] No active plan mapping for planId ${standardEvent.planId}. Dropping job.`);
         return; // Already alerted in resolver via config_alert_log
       }
 
-      // Step 2: Resolve identity + acquire lock
-      const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, mapping.hardwarePlatform);
+      // Step 2: Resolve identity + acquire lock (all mappings share same hardwarePlatform)
+      const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, mappings[0].hardwarePlatform);
       memberId = lockResult.memberId;
 
       // Step 3: Resolve hardware user identity
       const apiKey = process.env.KISI_API_KEY_MOCK;
       const hardwareUserId = await standardAdapter.resolveIdentity(
         memberId, standardEvent.email, standardEvent.name,
-        mapping.hardwarePlatform, apiKey
+        mappings[0].hardwarePlatform, apiKey
       );
 
-      // Step 4: Execute hardware grant
-      const roleId = await grantRevokeLogic.processGrant(
-        tenantId, memberId, hardwareUserId, mapping, standardEvent
+      // Step 4: Execute hardware grant across all active mappings
+      const assignments = await grantRevokeLogic.processGrant(
+        tenantId, memberId, hardwareUserId, mappings, standardEvent
       );
 
-      // Step 5: Record success
-      await standardAdapter.completeGrant(memberId, tenantId, roleId);
+      // Step 5: Record success — writes all assignments to member_role_assignments
+      await standardAdapter.completeGrant(memberId, tenantId, assignments);
 
     } else if (job.name === 'revoke') {
       // Step 1: Resolve identity + acquire lock (reads hardwarePlatform from existing row)
@@ -78,12 +78,12 @@ async function processJob(job) {
         return; // Member never existed — skip silently
       }
 
-      const { memberId: resolvedMemberId, hardwareUserId, hardwarePlatform, roleAssignmentId } = lockResult;
+      const { memberId: resolvedMemberId, hardwareUserId, hardwarePlatform, roleAssignmentIds } = lockResult;
       memberId = resolvedMemberId;
 
-      // Step 2: Execute hardware revoke — returns targetStatus
+      // Step 2: Execute hardware revoke across all stored role assignments → returns targetStatus
       const targetStatus = await grantRevokeLogic.processRevoke(
-        tenantId, memberId, hardwareUserId, roleAssignmentId, hardwarePlatform,
+        tenantId, memberId, hardwareUserId, roleAssignmentIds, hardwarePlatform,
         standardEvent.eventType, standardEvent
       );
 
