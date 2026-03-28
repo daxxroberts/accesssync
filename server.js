@@ -13,7 +13,7 @@ require('dotenv').config();
 const express = require('express');
 
 // Import Modules
-const wixAdapter = require('./adapters/wix-adapter');
+const wixConnector = require('./adapters/wix/wix-connector');
 const memberSyncApi = require('./core/member-sync-api');
 const db = require('./db');
 const { startWorker } = require('./core/queue-worker');
@@ -40,13 +40,13 @@ app.get('/health', async (req, res) => {
   res.status(200).json({ status: 'ok', db: 'connected' });
 });
 
-// Platform Adapter: Wix Webhook Entry (Layer 2)
+// Wix Connector: Webhook Entry (Layer 1)
 app.post('/webhooks/wix', async (req, res) => {
     // If we couldn't parse rawBody via middleware, fallback safely
     if (!req.rawBody && req.body) {
         req.rawBody = JSON.stringify(req.body);
     }
-    await wixAdapter.handleWebhook(req, res);
+    await wixConnector.handleWebhook(req, res);
 });
 
 // AccessSync UI Endpoint: Frontend Polling (Phase 5)

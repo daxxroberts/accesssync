@@ -11,27 +11,10 @@
 
 const router    = require('express').Router();
 const { Queue } = require('bullmq');
-
-function parseRedisUrl(url) {
-  try {
-    const u = new URL(url);
-    return {
-      host:     u.hostname,
-      port:     parseInt(u.port) || 6379,
-      password: u.password ? decodeURIComponent(u.password) : undefined,
-      username: u.username ? decodeURIComponent(u.username) : undefined,
-    };
-  } catch {
-    return { host: 'localhost', port: 6379 };
-  }
-}
-
-const connection = process.env.REDIS_URL
-  ? parseRedisUrl(process.env.REDIS_URL)
-  : { host: 'localhost', port: 6379 };
+const { getRedisConnection } = require('../../core/redis-utils');
 
 // Read-only Queue instance — connects to same Redis as Core Engine
-const adminQueue = new Queue('accesssync-events', { connection });
+const adminQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
 
 // ── GET /admin/queue/counts ────────────────────────────────────
 router.get('/counts', async (req, res) => {

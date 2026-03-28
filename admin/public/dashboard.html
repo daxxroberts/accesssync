@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.11);
+  --brand-glow: rgba(79,110,247,0.22);
+  --sage:       #4ADE80;
+  --sage-dark:  #22C55E;
+  --sage-dim:   rgba(74,222,128,0.11);
+  --sage-border:rgba(74,222,128,0.22);
+  --red:        #FF4D6A;
+  --red-dim:    rgba(255,77,106,0.10);
+  --amber:      #F5A623;
+  --amber-dim:  rgba(245,166,35,0.10);
+  --bg:         #F2F4F7;
+  --surface:    #F9FAFB;
+  --card:       #FFFFFF;
+  --border:     #E2E5EA;
+  --border2:    #D0D5DD;
+  --text:       #1A2130;
+  --text2:      #4A5568;
+  --muted:      #8896A8;
+  --shadow:     0 1px 4px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.09);
+}
+[data-mode="dark"] {
+  --bg:         #0D0F12;
+  --surface:    #13161B;
+  --card:       #1A1E25;
+  --border:     #252B35;
+  --border2:    #2E3644;
+  --text:       #E8ECF2;
+  --text2:      #8B96A8;
+  --muted:      #4A5568;
+  --shadow:     0 1px 4px rgba(0,0,0,0.3);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.4);
+}
+body { font-family:'Sora',sans-serif; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; min-height:100vh; transition:background 0.2s,color 0.2s; }
+.topbar { position:sticky; top:0; z-index:50; background:var(--card); border-bottom:1px solid var(--border); box-shadow:var(--shadow); height:52px; display:flex; align-items:center; padding:0 18px; gap:12px; }
+.logo { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.logo-mark { flex-shrink:0; }
+.logo-text { font-size:15px; font-weight:700; letter-spacing:-0.3px; color:var(--text); }
+.logo-text span { color:var(--brand); }
+.breadcrumb { display:none; align-items:center; gap:5px; font-size:12px; color:var(--muted); flex:1; min-width:0; }
+.bc-sep { color:var(--border2); }
+.bc-link { color:var(--muted); cursor:pointer; transition:color 0.15s; white-space:nowrap; }
+.bc-link:hover { color:var(--brand); }
+.bc-current { color:var(--text); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mobile-client { flex:1; font-size:13px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.topbar-right { display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0; }
+.sync-badge { display:flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:500; color:var(--muted); background:var(--surface); border:1px solid var(--border); }
+.sync-dot { width:6px; height:6px; border-radius:50%; background:var(--sage); box-shadow:0 0 5px var(--sage-dim); animation:pulse 2.5s infinite; flex-shrink:0; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+.icon-btn { width:36px; height:36px; border-radius:9px; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--border); color:var(--muted); cursor:pointer; transition:all 0.15s; flex-shrink:0; }
+.icon-btn:hover { border-color:var(--border2); color:var(--text); }
+.role-toggle { display:flex; background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:3px; gap:2px; flex-shrink:0; }
+.role-btn { padding:3px 10px; border-radius:20px; font-family:'Sora',sans-serif; font-size:10px; font-weight:600; cursor:pointer; border:none; background:transparent; color:var(--muted); transition:all 0.15s; white-space:nowrap; }
+.role-btn.active { background:var(--brand); color:#fff; }
+.page { padding:18px 16px 60px; display:flex; flex-direction:column; gap:16px; max-width:900px; margin:0 auto; }
+.section-label { font-size:10px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.section-label::after { content:''; flex:1; height:1px; background:var(--border); }
+.card { background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; box-shadow:var(--shadow); }
+.card-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:var(--surface); border-bottom:1px solid var(--border); }
+.card-title { font-size:12px; font-weight:600; color:var(--text2); display:flex; align-items:center; gap:7px; }
+.link-btn { background:none; border:none; font-family:'Sora',sans-serif; font-size:11px; font-weight:500; color:var(--brand); cursor:pointer; padding:0; transition:opacity 0.15s; }
+.link-btn:hover { opacity:0.75; }
+.pill { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; border:1px solid transparent; flex-shrink:0; }
+.pill.sage { background:var(--sage-dim); color:var(--sage-dark); border-color:var(--sage-border); }
+.pill.red { background:var(--red-dim); color:var(--red); border-color:rgba(255,77,106,0.2); }
+.pill.amber { background:var(--amber-dim); color:var(--amber); border-color:rgba(245,166,35,0.2); }
+.pill.brand { background:var(--brand-dim); color:var(--brand); border-color:rgba(79,110,247,0.2); }
+.pdot { width:5px; height:5px; border-radius:50%; background:currentColor; flex-shrink:0; }
+.pdot.pulse { animation:pulse 2s infinite; }
+.count { font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px; }
+.count.red { background:var(--red-dim); color:var(--red); }
+.count.sage { background:var(--sage-dim); color:var(--sage-dark); }
+.count.muted { background:var(--surface); color:var(--muted); border:1px solid var(--border); }
+.client-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; box-shadow:var(--shadow); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.client-name { font-size:17px; font-weight:800; letter-spacing:-0.4px; color:var(--text); }
+.client-sub { font-size:11px; color:var(--muted); margin-top:3px; }
+.add-btn { display:flex; align-items:center; gap:6px; padding:8px 14px; border-radius:10px; border:none; font-family:'Sora',sans-serif; font-size:12px; font-weight:600; background:var(--brand); color:#fff; box-shadow:0 0 14px var(--brand-glow); cursor:pointer; transition:all 0.15s; white-space:nowrap; flex-shrink:0; }
+.add-btn:hover { box-shadow:0 0 22px var(--brand-glow); transform:translateY(-1px); }
+.platform-row { display:flex; flex-direction:column; gap:8px; }
+.platform-chip { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:12px; background:var(--card); border:1px solid var(--border); border-left:3px solid var(--sage-dark); box-shadow:var(--shadow); }
+.platform-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.platform-icon.wix { background:var(--sage-dim); }
+.platform-icon.kisi { background:var(--brand-dim); }
+.platform-name { font-size:13px; font-weight:600; color:var(--text); }
+.platform-detail { font-size:11px; color:var(--muted); margin-top:1px; }
+.stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.stat-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); }
+.stat-delta { display:inline-block; font-size:10px; font-weight:600; padding:2px 7px; border-radius:4px; margin-bottom:6px; }
+.stat-delta.up { background:var(--sage-dim); color:var(--sage-dark); }
+.stat-delta.neutral { background:var(--surface); color:var(--muted); border:1px solid var(--border); }
+.stat-delta.warn { background:var(--red-dim); color:var(--red); }
+.stat-n { font-size:26px; font-weight:800; letter-spacing:-0.8px; line-height:1; margin-bottom:4px; color:var(--text); }
+.stat-n.sage { color:var(--sage-dark); }
+.stat-n.red { color:var(--red); }
+.stat-n.brand { color:var(--brand); }
+.stat-n.sm { font-size:18px; }
+.stat-l { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.6px; color:var(--muted); }
+.locations-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.locations-label { display:flex; align-items:center; gap:8px; font-size:10px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:var(--muted); }
+.locations-hint { font-size:11px; color:var(--muted); }
+.locations-stack { display:flex; flex-direction:column; gap:10px; }
+.loc-card { background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; box-shadow:var(--shadow); border-left:3px solid var(--sage-dark); transition:box-shadow 0.15s; }
+.loc-card.err { border-left-color:var(--red); }
+.loc-card:hover { box-shadow:var(--shadow-md); }
+.loc-trigger { display:flex; align-items:center; gap:12px; padding:14px 16px; cursor:pointer; background:var(--surface); transition:background 0.15s; min-height:66px; }
+.loc-trigger:hover { background:var(--bg); }
+.loc-trigger.open { border-bottom:1px solid var(--border); }
+.loc-icon { width:36px; height:36px; border-radius:9px; background:var(--sage-dim); border:1px solid var(--sage-border); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.loc-err .loc-icon { background:var(--red-dim); border-color:rgba(255,77,106,0.2); }
+.loc-info { flex:1; min-width:0; }
+.loc-name { font-size:14px; font-weight:700; color:var(--text); letter-spacing:-0.2px; }
+.loc-meta { font-size:11px; color:var(--muted); margin-top:3px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.loc-meta-sep { color:var(--border2); }
+.loc-trigger-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.chevron { color:var(--muted); transition:transform 0.22s; flex-shrink:0; }
+.chevron.open { transform:rotate(180deg); }
+.tip-wrap { position:relative; display:inline-flex; align-items:center; }
+.tip-icon { width:14px; height:14px; border-radius:50%; background:var(--surface); border:1px solid var(--border2); display:inline-flex; align-items:center; justify-content:center; cursor:help; margin-left:4px; flex-shrink:0; }
+.tip-box { display:none; position:absolute; bottom:calc(100% + 8px); left:0; background:#1a2130; color:#e8ecf2; font-size:11px; line-height:1.6; padding:10px 13px; border-radius:9px; width:240px; z-index:100; box-shadow:0 4px 20px rgba(0,0,0,0.3); pointer-events:none; }
+.tip-box::after { content:''; position:absolute; top:100%; left:16px; border:5px solid transparent; border-top-color:#1a2130; }
+.tip-wrap:hover .tip-box { display:block; }
+.loc-body { display:none; }
+.loc-body.open { display:block; }
+.loc-stats { display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid var(--border); }
+.loc-stat { padding:11px 14px; border-right:1px solid var(--border); }
+.loc-stat:last-child { border-right:none; }
+.loc-stat-n { font-size:18px; font-weight:700; letter-spacing:-0.4px; color:var(--text); line-height:1; margin-bottom:2px; }
+.loc-stat-n.sage { color:var(--sage-dark); }
+.loc-stat-n.red { color:var(--red); }
+.loc-stat-l { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.7px; color:var(--muted); }
+.err-section-header { display:flex; align-items:center; justify-content:space-between; padding:11px 16px; background:linear-gradient(to right,rgba(255,77,106,0.06),var(--surface)); border-bottom:1px solid var(--border); border-top:1px solid var(--border); border-left:3px solid var(--red); }
+.err-row { display:flex; align-items:flex-start; gap:10px; padding:13px 16px; border-bottom:1px solid var(--border); transition:background 0.1s; }
+.err-row:hover { background:var(--surface); }
+.err-dot { width:7px; height:7px; border-radius:50%; background:var(--red); box-shadow:0 0 5px rgba(255,77,106,0.4); flex-shrink:0; margin-top:4px; }
+.err-info { flex:1; min-width:0; }
+.err-title { font-size:12px; font-weight:600; color:var(--text); margin-bottom:3px; }
+.err-body { font-size:11px; color:var(--text2); line-height:1.55; }
+.err-body.hide { display:none; }
+.err-tech { font-size:11px; color:var(--muted); line-height:1.55; font-family:monospace; display:none; }
+.err-tech.show { display:block; }
+.err-tags { display:flex; gap:5px; margin-top:7px; flex-wrap:wrap; }
+.err-tag { font-size:9px; font-weight:500; padding:2px 7px; border-radius:4px; background:var(--surface); color:var(--muted); border:1px solid var(--border); }
+.err-view-toggle { display:flex; gap:4px; margin-top:7px; }
+.ev-btn { padding:3px 8px; border:1px solid var(--border); border-radius:5px; font-family:'Sora',sans-serif; font-size:10px; font-weight:500; color:var(--muted); cursor:pointer; background:transparent; transition:all 0.15s; }
+.ev-btn.active { background:var(--surface); color:var(--text2); border-color:var(--border2); }
+.err-actions { display:flex; flex-direction:column; gap:4px; flex-shrink:0; }
+.btn-retry { padding:6px 11px; background:var(--surface); border:1px solid var(--border); border-radius:7px; font-family:'Sora',sans-serif; font-size:11px; font-weight:500; color:var(--text2); cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+.btn-retry:hover { border-color:var(--brand); color:var(--brand); }
+.btn-dismiss { padding:6px 11px; background:transparent; border:1px solid transparent; border-radius:7px; font-family:'Sora',sans-serif; font-size:11px; color:var(--muted); cursor:pointer; transition:all 0.15s; }
+.btn-dismiss:hover { background:var(--red-dim); color:var(--red); }
+.no-err { display:flex; justify-content:center; padding:16px; }
+.no-err-badge { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; background:var(--sage-dim); border:1px solid var(--sage-border); border-radius:20px; font-size:11px; font-weight:500; color:var(--sage-dark); }
+.log-header { display:flex; align-items:center; justify-content:space-between; padding:11px 16px; background:linear-gradient(to right,var(--brand-dim),var(--surface)); border-bottom:1px solid var(--border); border-top:1px solid var(--border); border-left:3px solid var(--brand); }
+.log-row { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--border); transition:background 0.1s; }
+.log-row:last-child { border-bottom:none; }
+.log-row:hover { background:var(--surface); }
+.log-av { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; flex-shrink:0; }
+.log-av.grant { background:var(--sage-dim); color:var(--sage-dark); }
+.log-av.revoke { background:var(--red-dim); color:var(--red); }
+.log-av.prov { background:var(--brand-dim); color:var(--brand); }
+.log-info { flex:1; min-width:0; }
+.log-name { font-size:12px; font-weight:500; color:var(--text); }
+.log-detail { font-size:10px; color:var(--muted); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.log-right { display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0; }
+.log-badge { font-size:9px; font-weight:700; padding:2px 7px; border-radius:20px; white-space:nowrap; }
+.log-badge.grant { background:var(--sage-dim); color:var(--sage-dark); }
+.log-badge.revoke { background:var(--red-dim); color:var(--red); }
+.log-badge.prov { background:var(--brand-dim); color:var(--brand); }
+.log-time { font-size:10px; color:var(--muted); }
+.mapping-header { display:flex; align-items:center; justify-content:space-between; padding:11px 16px; background:linear-gradient(to right,var(--sage-dim),var(--surface)); border-bottom:1px solid var(--border); border-top:1px solid var(--border); border-left:3px solid var(--sage-dark); }
+.map-row { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; border-bottom:1px solid var(--border); transition:background 0.1s; }
+.map-row:hover { background:var(--surface); }
+.map-row:last-child { border-bottom:none; }
+.map-plan { font-size:12px; font-weight:500; color:var(--text); }
+.map-detail { font-size:10px; color:var(--muted); margin-top:1px; }
+.map-right { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.map-arrow { font-size:10px; color:var(--muted); }
+.map-door { font-size:11px; font-weight:500; color:var(--text2); }
+.mbadge { font-size:9px; font-weight:700; padding:2px 7px; border-radius:20px; }
+.mbadge.active { background:var(--sage-dim); color:var(--sage-dark); }
+.mbadge.excl { background:var(--surface); color:var(--muted); border:1px solid var(--border); }
+.nudge { display:flex; align-items:flex-start; gap:9px; padding:11px 16px; background:var(--amber-dim); border-top:1px solid rgba(245,166,35,0.15); }
+.nudge-text { font-size:11px; color:var(--amber); flex:1; line-height:1.55; }
+.nudge-text strong { font-weight:600; }
+.btn-nudge { padding:5px 10px; background:transparent; border:1px solid rgba(245,166,35,0.35); border-radius:6px; font-family:'Sora',sans-serif; font-size:10px; font-weight:600; color:var(--amber); cursor:pointer; white-space:nowrap; flex-shrink:0; transition:all 0.15s; }
+.btn-nudge:hover { background:var(--amber-dim); }
+.configured-by { display:flex; align-items:center; gap:6px; padding:9px 16px; background:var(--surface); border-top:1px solid var(--border); font-size:10px; color:var(--muted); }
+.configured-by span { color:var(--text2); font-weight:500; }
+.loc-footer { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; background:var(--surface); border-top:1px solid var(--border); gap:8px; }
+.loc-footer-text { font-size:11px; color:var(--muted); display:flex; align-items:center; gap:5px; flex:1; min-width:0; }
+.sync-btn { padding:6px 13px; background:transparent; border:1px solid var(--border); border-radius:8px; font-family:'Sora',sans-serif; font-size:11px; font-weight:500; color:var(--text2); cursor:pointer; transition:all 0.15s; white-space:nowrap; flex-shrink:0; }
+.sync-btn:hover { border-color:var(--brand); color:var(--brand); }
+.sync-btn:disabled { opacity:0.45; cursor:not-allowed; }
+.sync-btn.syncing { color:var(--brand); border-color:var(--brand); background:var(--brand-dim); }
+.sync-compare { background:var(--card); border:1px solid var(--border); border-radius:14px; overflow:hidden; box-shadow:var(--shadow); }
+.sync-compare-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:var(--surface); border-bottom:1px solid var(--border); }
+.sync-compare-title { font-size:12px; font-weight:600; color:var(--text2); display:flex; align-items:center; gap:7px; }
+.sync-compare-ts { font-size:10px; color:var(--muted); }
+.sync-row { display:flex; align-items:center; gap:0; padding:14px 16px; border-bottom:1px solid var(--border); }
+.sync-row:last-child { border-bottom:none; }
+.sync-platform { width:90px; flex-shrink:0; display:flex; align-items:center; gap:7px; }
+.sync-platform-icon { width:24px; height:24px; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.sync-platform-icon.wix { background:var(--sage-dim); }
+.sync-platform-icon.kisi { background:var(--brand-dim); }
+.sync-platform-name { font-size:11px; font-weight:600; color:var(--text2); }
+.sync-platform-sub { font-size:9px; color:var(--muted); margin-top:1px; }
+.sync-bar-wrap { flex:1; margin:0 14px; }
+.sync-bar-track { height:8px; background:var(--border); border-radius:4px; overflow:hidden; position:relative; }
+.sync-bar-fill { height:100%; border-radius:4px; transition:width 0.6s ease; }
+.sync-bar-fill.wix { background:var(--sage-dark); }
+.sync-bar-fill.kisi-synced { background:var(--brand); }
+.sync-bar-label { font-size:9px; color:var(--muted); margin-top:4px; display:flex; justify-content:space-between; }
+.sync-count { width:80px; flex-shrink:0; text-align:right; }
+.sync-count-n { font-size:18px; font-weight:700; letter-spacing:-0.4px; line-height:1; }
+.sync-count-n.sage { color:var(--sage-dark); }
+.sync-count-n.brand { color:var(--brand); }
+.sync-status { display:flex; align-items:center; gap:5px; padding:10px 16px; background:var(--surface); border-top:1px solid var(--border); font-size:11px; }
+.sync-status.ok { color:var(--sage-dark); }
+.sync-status.warn { color:var(--amber); }
+.sync-loading { padding:32px 16px; text-align:center; font-size:12px; color:var(--muted); }
+@media (min-width:640px) {
+  .page { padding:24px 24px 60px; }
+  .topbar { padding:0 28px; }
+  .breadcrumb { display:flex; }
+  .mobile-client { display:none; }
+  .platform-row { flex-direction:row; }
+  .platform-chip { flex:1; }
+  .stats-grid { grid-template-columns:repeat(4,1fr); }
+  .loc-stats { grid-template-columns:repeat(5,1fr); }
+}
+@media (min-width:900px) {
+  .page { padding:28px 32px 60px; }
+  .topbar { padding:0 32px; }
+}
+@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">
+    <svg class="logo-mark" width="26" height="26" viewBox="0 0 28 28" fill="none">
+      <rect x="5" y="13" width="18" height="13" rx="3" fill="var(--brand-dim)" stroke="var(--brand)" stroke-width="1.5"/>
+      <path d="M9 13V10a5 5 0 0110 0v3" stroke="var(--brand)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+      <path d="M15.5 17l-3 4h3l-1.5 4 4-5.5h-3l1.5-2.5z" fill="var(--brand)"/>
+    </svg>
+    <span class="logo-text">Access<span>Sync</span></span>
+  </div>
+  <nav class="breadcrumb">
+    <span class="bc-link">My Installs</span>
+    <span class="bc-sep">›</span>
+    <span class="bc-current" id="bc-current">—</span>
+  </nav>
+  <span class="mobile-client" id="mobile-client">—</span>
+  <div class="topbar-right">
+    <div class="sync-badge">
+      <span class="sync-dot"></span>
+      <span id="sync-label">—</span>
+    </div>
+    <div class="role-toggle" title="Switch view context">
+      <button class="role-btn active" onclick="setRole('designer',this)">Designer</button>
+      <button class="role-btn" onclick="setRole('operator',this)">Operator</button>
+    </div>
+    <button class="icon-btn" onclick="toggleMode()" title="Toggle dark mode">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1a7 7 0 100 14A7 7 0 008 1z" stroke="currentColor" stroke-width="1.3"/><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+    </button>
+    <button class="icon-btn">
+      <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 1v1.5M7 11.5V13M1 7h1.5M11.5 7H13M2.6 2.6l1.1 1.1M10.3 10.3l1.1 1.1M2.6 11.4l1.1-1.1M10.3 3.7l1.1-1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- Client header -->
+  <div class="client-card">
+    <div>
+      <div class="client-name" id="client-name">—</div>
+      <div class="client-sub" id="client-sub-text">Loading…</div>
+    </div>
+    <button class="add-btn">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Add Location
+    </button>
+  </div>
+
+  <!-- Platform connections -->
+  <div>
+    <div class="section-label">Platform Connections
+      <button class="sync-btn" id="sync-all" onclick="syncAll()" style="font-size:11px;padding:4px 11px;margin-left:auto;">
+        <span id="sync-all-label" style="display:flex;align-items:center;gap:5px;">
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M10 6A4 4 0 112 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10 3v3h-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Sync all
+        </span>
+      </button>
+    </div>
+    <div class="platform-row">
+      <div class="platform-chip">
+        <div class="platform-icon wix">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2.5" stroke="var(--sage-dark)" stroke-width="1.3"/><path d="M5 8.5l2-4 1.5 3 1-2 1.5 3" stroke="var(--sage-dark)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div class="platform-name">Wix</div>
+          <div class="platform-detail" id="wix-detail">—</div>
+        </div>
+        <span class="pill sage" id="wix-status-pill"><span class="pdot pulse"></span>Live</span>
+      </div>
+      <div class="platform-chip">
+        <div class="platform-icon kisi">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="8" width="10" height="7" rx="1.5" stroke="var(--brand)" stroke-width="1.3"/><path d="M5.5 8V6a2.5 2.5 0 015 0v2" stroke="var(--brand)" stroke-width="1.3" stroke-linecap="round" fill="none"/><circle cx="8" cy="11.5" r="1" fill="var(--brand)"/></svg>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div class="platform-name">Kisi</div>
+          <div class="platform-detail" id="kisi-detail">—</div>
+        </div>
+        <span class="pill sage"><span class="pdot pulse"></span>Live</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overview stats -->
+  <div>
+    <div class="section-label">Overview — All Locations</div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-delta neutral" id="stat-loc-label">— locations</div>
+        <div class="stat-n" id="stat-doors">—</div>
+        <div class="stat-l">Doors Managed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-delta neutral">Auto-sync</div>
+        <div class="stat-n sm" id="stat-sync-time">—</div>
+        <div class="stat-l">Last Sync</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-delta warn" id="stat-err-delta">—</div>
+        <div class="stat-n red" id="top-err-n">—</div>
+        <div class="stat-l">Errors</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-delta neutral" id="stat-kisi-delta">—</div>
+        <div class="stat-n brand" id="stat-kisi-synced">—</div>
+        <div class="stat-l">Kisi Synced</div>
+      </div>
+    </div>
+
+    <!-- Member sync comparison -->
+    <div class="sync-compare" style="margin-top:12px;">
+      <div class="sync-compare-header">
+        <span class="sync-compare-title">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M9 4l3 3-3 3M5 10L2 7l3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Member Sync — All Locations
+        </span>
+        <span class="sync-compare-ts" id="sync-compare-ts">—</span>
+      </div>
+      <!-- Wix row -->
+      <div class="sync-row">
+        <div class="sync-platform">
+          <div class="sync-platform-icon wix">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2.5" stroke="var(--sage-dark)" stroke-width="1.3"/><path d="M5 8.5l2-4 1.5 3 1-2 1.5 3" stroke="var(--sage-dark)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div>
+            <div class="sync-platform-name">Wix</div>
+            <div class="sync-platform-sub">Source of truth</div>
+          </div>
+        </div>
+        <div class="sync-bar-wrap">
+          <div class="sync-bar-track">
+            <div class="sync-bar-fill wix" style="width:100%;"></div>
+          </div>
+          <div class="sync-bar-label"><span>Members in system</span><span id="sync-wix-total">—</span></div>
+        </div>
+        <div class="sync-count">
+          <div class="sync-count-n sage" id="sync-wix-count">—</div>
+          <div class="sync-count-l">Total members</div>
+        </div>
+      </div>
+      <!-- Kisi row -->
+      <div class="sync-row">
+        <div class="sync-platform">
+          <div class="sync-platform-icon kisi">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="8" width="10" height="7" rx="1.5" stroke="var(--brand)" stroke-width="1.3"/><path d="M5.5 8V6a2.5 2.5 0 015 0v2" stroke="var(--brand)" stroke-width="1.3" stroke-linecap="round" fill="none"/><circle cx="8" cy="11.5" r="1" fill="var(--brand)"/></svg>
+          </div>
+          <div>
+            <div class="sync-platform-name">Kisi</div>
+            <div class="sync-platform-sub">Destination</div>
+          </div>
+        </div>
+        <div class="sync-bar-wrap">
+          <div class="sync-bar-track">
+            <div class="sync-bar-fill kisi-synced" id="kisi-bar-fill" style="width:0%;"></div>
+          </div>
+          <div class="sync-bar-label">
+            <span style="color:var(--brand);font-weight:600;" id="kisi-bar-label">—</span>
+          </div>
+        </div>
+        <div class="sync-count">
+          <div class="sync-count-n brand" id="sync-kisi-count">—</div>
+          <div class="sync-count-l">AccessSync</div>
+        </div>
+      </div>
+      <div class="sync-status" id="sync-status-bar">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.7" fill="currentColor"/></svg>
+        <span id="sync-status-msg">Loading…</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Location cards -->
+  <div>
+    <div class="locations-header">
+      <div class="locations-label">
+        Locations
+        <span class="count muted" id="loc-count-badge">—</span>
+      </div>
+      <span class="locations-hint">Tap to expand</span>
+    </div>
+    <div class="locations-stack" id="locations-stack">
+      <div class="sync-loading">Loading locations…</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// Config
+// ─────────────────────────────────────────────
+const CLIENT_ID = new URLSearchParams(window.location.search).get('client');
+if (!CLIENT_ID) {
+  document.querySelector('.page').innerHTML =
+    '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">' +
+    'No client specified.<br><br>Use <code style="background:var(--surface);padding:2px 6px;border-radius:4px;">/dashboard.html?client=&lt;uuid&gt;</code>' +
+    '</div>';
+}
+
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+function timeAgo(dateStr) {
+  if (!dateStr) return 'Never';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+function esc(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function initials(id) {
+  if (!id) return '?';
+  return id.slice(0, 2).toUpperCase();
+}
+
+function logEventClass(eventType) {
+  if (!eventType) return 'prov';
+  const t = eventType.toLowerCase();
+  if (t.includes('grant') || t.includes('provisioned')) return 'prov';
+  if (t.includes('revoke') || t.includes('revoked') || t.includes('cancelled') || t.includes('failed')) return 'revoke';
+  return 'prov';
+}
+
+function logBadgeLabel(eventType) {
+  if (!eventType) return 'Event';
+  const t = eventType.toLowerCase();
+  if (t.includes('provisioned') || t.includes('grant_completed')) return 'Provisioned';
+  if (t.includes('grant')) return 'Granted';
+  if (t.includes('revoke') || t.includes('cancelled')) return 'Revoked';
+  return eventType;
+}
+
+const spinSvg = '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" style="animation:spin 0.8s linear infinite"><path d="M10 6A4 4 0 112 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10 3v3h-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// ─────────────────────────────────────────────
+// Fetch + render overview
+// ─────────────────────────────────────────────
+async function fetchOverview() {
+  const res = await fetch(`/operator/${CLIENT_ID}`);
+  if (!res.ok) throw new Error(`Overview fetch failed: ${res.status}`);
+  return res.json();
+}
+
+function renderOverview(data) {
+  const { client, stats } = data;
+
+  // Topbar + client header
+  const name = esc(client.name || '—');
+  document.getElementById('client-name').textContent = client.name || '—';
+  document.getElementById('bc-current').textContent = client.name || '—';
+  document.getElementById('mobile-client').textContent = client.name || '—';
+  document.getElementById('client-sub-text').textContent =
+    `${stats.location_count} location${stats.location_count !== 1 ? 's' : ''}`;
+
+  // Sync badge
+  document.getElementById('sync-label').textContent = timeAgo(client.last_sync_at);
+
+  // Platform chips
+  const wixHookStatus = client.last_wix_webhook_at
+    ? `Webhooks active · ${timeAgo(client.last_wix_webhook_at)}`
+    : 'No webhooks received yet';
+  document.getElementById('wix-detail').textContent =
+    (client.site_url || 'Not configured') + ' · ' + wixHookStatus;
+  document.getElementById('kisi-detail').textContent =
+    `${stats.location_count} location${stats.location_count !== 1 ? 's' : ''} · ${client.tier || '—'} tier`;
+
+  // Stats grid
+  document.getElementById('stat-loc-label').textContent =
+    `${stats.location_count} location${stats.location_count !== 1 ? 's' : ''}`;
+  document.getElementById('stat-sync-time').textContent = timeAgo(client.last_sync_at);
+
+  const errN = stats.error_count;
+  document.getElementById('top-err-n').textContent = errN;
+  document.getElementById('top-err-n').className = `stat-n ${errN > 0 ? 'red' : 'sage'}`;
+  document.getElementById('stat-err-delta').textContent = errN > 0 ? 'Attention' : 'All clear';
+  document.getElementById('stat-err-delta').className = `stat-delta ${errN > 0 ? 'warn' : 'up'}`;
+
+  document.getElementById('stat-kisi-synced').textContent = stats.active_members;
+  document.getElementById('stat-kisi-delta').textContent = `of ${stats.total_members} total`;
+
+  // Sync compare
+  const syncTs = timeAgo(client.last_sync_at);
+  document.getElementById('sync-compare-ts').textContent = `As of last sync · ${syncTs}`;
+  document.getElementById('sync-wix-count').textContent = stats.total_members;
+  document.getElementById('sync-wix-total').textContent = `${stats.total_members} total`;
+  document.getElementById('sync-kisi-count').textContent = stats.active_members;
+
+  const total = stats.total_members || 1;
+  const pct = Math.round((stats.active_members / total) * 100);
+  document.getElementById('kisi-bar-fill').style.width = `${pct}%`;
+  document.getElementById('kisi-bar-label').textContent = `${stats.active_members} AccessSync provisioned`;
+
+  const gap = stats.total_members - stats.active_members;
+  const statusBar = document.getElementById('sync-status-bar');
+  const statusMsg = document.getElementById('sync-status-msg');
+  if (gap <= 0) {
+    statusBar.className = 'sync-status ok';
+    statusMsg.textContent = 'All members synced';
+  } else {
+    statusBar.className = 'sync-status warn';
+    statusMsg.textContent = `${gap} member${gap !== 1 ? 's' : ''} not yet provisioned`;
+  }
+}
+
+// ─────────────────────────────────────────────
+// Fetch + render locations
+// ─────────────────────────────────────────────
+async function fetchLocations() {
+  const res = await fetch(`/operator/${CLIENT_ID}/locations`);
+  if (!res.ok) throw new Error(`Locations fetch failed: ${res.status}`);
+  return res.json();
+}
+
+function renderLocations(data, clientTier) {
+  const { locations } = data;
+  document.getElementById('loc-count-badge').textContent = locations.length;
+
+  const stack = document.getElementById('locations-stack');
+  if (!locations.length) {
+    stack.innerHTML = '<div class="sync-loading">No locations configured.</div>';
+    return;
+  }
+
+  stack.innerHTML = locations.map(loc => renderLocationTrigger(loc, clientTier)).join('');
+
+  // Restore open state from localStorage
+  locations.forEach(loc => {
+    try {
+      if (localStorage.getItem('loc-' + loc.id) === '1') {
+        document.getElementById('body-' + loc.id).classList.add('open');
+        document.getElementById('chev-' + loc.id).classList.add('open');
+        document.getElementById('trig-' + loc.id).classList.add('open');
+        loadLocationDetail(loc.id);
+      }
+    } catch(e) {}
+  });
+}
+
+function renderLocationTrigger(loc, tier) {
+  const hasErr = loc.error_count > 0;
+  const meta = [
+    `${loc.door_count} door${loc.door_count !== 1 ? 's' : ''}`,
+    loc.city ? `${loc.city}${loc.state ? ', ' + loc.state : ''}` : null,
+    tier ? `Kisi ${tier}` : null,
+  ].filter(Boolean).join(' · ');
+
+  const iconColor = hasErr ? 'var(--red)' : 'var(--sage-dark)';
+  const pillHtml = hasErr
+    ? `<span class="pill red"><span class="pdot"></span>${loc.error_count} error${loc.error_count !== 1 ? 's' : ''}</span>`
+    : `<span class="pill sage"><span class="pdot pulse"></span>All clear</span>`;
+
+  return `
+<div class="loc-card ${hasErr ? 'err' : ''}" id="loc-${esc(loc.id)}">
+  <div class="loc-trigger" id="trig-${esc(loc.id)}" onclick="toggleLoc('${esc(loc.id)}')">
+    <div class="loc-icon" style="${hasErr ? 'background:var(--red-dim);border-color:rgba(255,77,106,0.2);' : ''}">
+      <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+        <path d="M9 1.5C6.5 1.5 4.5 3.5 4.5 6c0 3.75 4.5 10.5 4.5 10.5S13.5 9.75 13.5 6c0-2.5-2-4.5-4.5-4.5z" stroke="${iconColor}" stroke-width="1.3" fill="none"/>
+        <circle cx="9" cy="6" r="1.5" fill="${iconColor}"/>
+      </svg>
+    </div>
+    <div class="loc-info">
+      <div class="loc-name">${esc(loc.name)}</div>
+      <div class="loc-meta">${esc(meta)}</div>
+    </div>
+    <div class="loc-trigger-right">
+      ${pillHtml}
+      <svg class="chevron" id="chev-${esc(loc.id)}" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+  </div>
+  <div class="loc-body" id="body-${esc(loc.id)}">
+    <div class="sync-loading">Loading…</div>
+  </div>
+</div>`;
+}
+
+// ─────────────────────────────────────────────
+// Accordion
+// ─────────────────────────────────────────────
+function toggleLoc(id) {
+  const body = document.getElementById('body-' + id);
+  const chev = document.getElementById('chev-' + id);
+  const trig = document.getElementById('trig-' + id);
+  if (!body) return;
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  chev.classList.toggle('open', !isOpen);
+  trig.classList.toggle('open', !isOpen);
+  if (!isOpen && !body.dataset.loaded) loadLocationDetail(id);
+  try { localStorage.setItem('loc-' + id, !isOpen ? '1' : '0'); } catch(e) {}
+}
+
+// ─────────────────────────────────────────────
+// Location detail
+// ─────────────────────────────────────────────
+async function loadLocationDetail(locationId) {
+  const body = document.getElementById('body-' + locationId);
+  if (!body || body.dataset.loaded) return;
+  try {
+    const res = await fetch(`/operator/${CLIENT_ID}/locations/${locationId}`);
+    if (!res.ok) throw new Error(res.status);
+    const detail = await res.json();
+    body.innerHTML = renderLocationBody(locationId, detail);
+    body.dataset.loaded = '1';
+  } catch (err) {
+    body.innerHTML = `<div class="sync-loading" style="color:var(--red)">Failed to load — ${err.message}</div>`;
+  }
+}
+
+function renderLocationBody(locId, detail) {
+  return renderErrSection(locId, detail.errors) +
+         renderAccessLog(detail.access_log) +
+         renderPlanMappings(detail.plan_mappings) +
+         renderLocFooter(locId);
+}
+
+function renderErrSection(locId, errors) {
+  const count = errors.length;
+  const countClass = count > 0 ? 'red' : 'sage';
+  const errorRows = count === 0
+    ? `<div class="no-err"><span class="no-err-badge">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        No errors — all clear
+       </span></div>`
+    : errors.map(e => renderErrRow(locId, e)).join('');
+
+  return `
+<div class="err-section-header">
+  <span class="card-title">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.7" fill="currentColor"/></svg>
+    Errors
+    <span class="count ${countClass}" id="err-count-${esc(locId)}">${count}</span>
+  </span>
+</div>
+<div id="err-list-${esc(locId)}">${errorRows}</div>`;
+}
+
+function renderErrRow(locId, e) {
+  const plainId = `err-plain-${esc(e.id)}`;
+  const techId  = `err-tech-${esc(e.id)}`;
+  const sBtnId  = `ev-s-${esc(e.id)}`;
+  const tBtnId  = `ev-t-${esc(e.id)}`;
+  const tags = [
+    e.plan_name  ? esc(e.plan_name)  : null,
+    e.door_name  ? esc(e.door_name)  : null,
+    e.event_type ? esc(e.event_type) : null,
+    e.retry_count != null ? `${e.retry_count} retries` : null,
+  ].filter(Boolean).map(t => `<span class="err-tag">${t}</span>`).join('');
+
+  return `
+<div class="err-row" id="err-row-${esc(e.id)}">
+  <div class="err-dot"></div>
+  <div class="err-info">
+    <div class="err-title">${esc(e.plan_name ? `Access not set up — ${e.plan_name} plan` : e.event_type || 'Access error')}</div>
+    <div class="err-body" id="${plainId}">${esc(e.plain_message || e.error_reason || 'An error occurred provisioning access.')}</div>
+    <div class="err-tech" id="${techId}">${esc(e.error_reason || '—')}</div>
+    <div class="err-view-toggle">
+      <button class="ev-btn active" id="${sBtnId}" onclick="setErrView('${esc(e.id)}','simple')">Simple</button>
+      <button class="ev-btn" id="${tBtnId}" onclick="setErrView('${esc(e.id)}','tech')">Technical</button>
+    </div>
+    <div class="err-tags">${tags}</div>
+  </div>
+  <div class="err-actions">
+    <button class="btn-retry" id="retry-btn-${esc(e.id)}" onclick="retryErr('${esc(e.id)}','${esc(locId)}')">Retry</button>
+    <button class="btn-dismiss" onclick="dismissErr('${esc(e.id)}','${esc(locId)}')">✕</button>
+  </div>
+</div>`;
+}
+
+function renderAccessLog(events) {
+  const rows = events.length === 0
+    ? `<div class="log-row" style="justify-content:center;color:var(--muted);font-size:11px;">No events yet</div>`
+    : events.map(ev => {
+        const cls = logEventClass(ev.event_type);
+        const badge = logBadgeLabel(ev.event_type);
+        const memberId = ev.platform_member_id || '—';
+        const init = initials(memberId);
+        return `
+<div class="log-row">
+  <div class="log-av ${cls}">${esc(init)}</div>
+  <div class="log-info">
+    <div class="log-name">${esc(memberId)}</div>
+    <div class="log-detail">${esc(ev.event_type)}${ev.credential_type ? ' · ' + ev.credential_type : ''}</div>
+  </div>
+  <div class="log-right">
+    <span class="log-badge ${cls}">${esc(badge)}</span>
+    <span class="log-time">${timeAgo(ev.created_at)}</span>
+  </div>
+</div>`;
+      }).join('');
+
+  return `
+<div class="log-header">
+  <span class="card-title">Recent Access Log</span>
+</div>
+${rows}`;
+}
+
+function renderPlanMappings(mappings) {
+  if (!mappings.length) {
+    return `
+<div class="mapping-header"><span class="card-title">Plan Mapping</span></div>
+<div class="map-row" style="color:var(--muted);font-size:11px;">No plan mappings configured for this location.</div>`;
+  }
+
+  const rows = mappings.map(m => {
+    const isActive = m.status === 'active';
+    if (isActive) {
+      return `
+<div class="map-row">
+  <div><div class="map-plan">${esc(m.plan_name || m.wix_plan_id || '—')}</div></div>
+  <div class="map-right">
+    <span class="map-arrow">→</span>
+    <span class="map-door">${esc(m.door_name || m.hardware_group_id || '—')}</span>
+    <span class="mbadge active">Active</span>
+  </div>
+</div>`;
+    } else {
+      return `
+<div class="map-row" style="opacity:0.5;">
+  <div><div class="map-plan">${esc(m.plan_name || m.wix_plan_id || '—')}</div></div>
+  <div class="map-right"><span class="mbadge excl">Not managed</span></div>
+</div>`;
+    }
+  }).join('');
+
+  const unconfigured = mappings.filter(m => m.status !== 'active');
+  const nudge = unconfigured.length > 0 ? `
+<div class="nudge">
+  <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style="flex-shrink:0;margin-top:1px;"><circle cx="7" cy="7" r="5.5" stroke="var(--amber)" stroke-width="1.3"/><path d="M7 4v3" stroke="var(--amber)" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.7" fill="var(--amber)"/></svg>
+  <span class="nudge-text"><strong>${unconfigured.length} plan${unconfigured.length !== 1 ? 's' : ''} not managed</strong> — members on these plans won't get automatic door access.</span>
+  <button class="btn-nudge">Review</button>
+</div>` : '';
+
+  return `
+<div class="mapping-header"><span class="card-title">Plan Mapping</span></div>
+${rows}
+${nudge}`;
+}
+
+function renderLocFooter(locId) {
+  const btnId   = `sync-loc-btn-${esc(locId)}`;
+  const labelId = `sync-loc-lbl-${esc(locId)}`;
+  return `
+<div class="loc-footer">
+  <div class="loc-footer-text">
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M10 6A4 4 0 112 6" stroke="var(--sage-dark)" stroke-width="1.2" stroke-linecap="round"/><path d="M10 3v3h-3" stroke="var(--sage-dark)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span id="footer-sync-ts-${esc(locId)}">—</span>
+  </div>
+  <button class="sync-btn" id="${btnId}" onclick="syncNow('${esc(locId)}')">
+    <span id="${labelId}">Sync now</span>
+  </button>
+</div>`;
+}
+
+// ─────────────────────────────────────────────
+// Error view toggle
+// ─────────────────────────────────────────────
+function setErrView(errorId, view) {
+  const plain = document.getElementById('err-plain-' + errorId);
+  const tech  = document.getElementById('err-tech-'  + errorId);
+  const sb    = document.getElementById('ev-s-' + errorId);
+  const tb    = document.getElementById('ev-t-' + errorId);
+  if (!plain) return;
+  if (view === 'simple') {
+    plain.classList.remove('hide'); tech.classList.remove('show');
+    sb.classList.add('active'); tb.classList.remove('active');
+  } else {
+    plain.classList.add('hide'); tech.classList.add('show');
+    tb.classList.add('active'); sb.classList.remove('active');
+  }
+}
+
+// ─────────────────────────────────────────────
+// Retry / dismiss error
+// ─────────────────────────────────────────────
+async function retryErr(errorId, locId) {
+  const btn = document.getElementById('retry-btn-' + errorId);
+  if (!btn || btn.disabled) return;
+  btn.innerHTML = spinSvg + ' Retrying…';
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/operator/${CLIENT_ID}/errors/${errorId}/retry`, { method: 'POST' });
+    if (!res.ok) throw new Error(res.status);
+    clearErrRow(errorId, locId);
+  } catch (err) {
+    btn.innerHTML = 'Retry';
+    btn.disabled = false;
+    console.error('Retry failed:', err);
+  }
+}
+
+async function dismissErr(errorId, locId) {
+  try {
+    const res = await fetch(`/operator/${CLIENT_ID}/errors/${errorId}/dismiss`, { method: 'POST' });
+    if (!res.ok) throw new Error(res.status);
+    clearErrRow(errorId, locId);
+  } catch (err) {
+    console.error('Dismiss failed:', err);
+  }
+}
+
+function clearErrRow(errorId, locId) {
+  const row = document.getElementById('err-row-' + errorId);
+  if (!row) return;
+  row.style.transition = 'opacity 0.3s, transform 0.3s';
+  row.style.opacity = '0';
+  row.style.transform = 'translateX(8px)';
+  setTimeout(() => {
+    row.remove();
+    const list = document.getElementById('err-list-' + locId);
+    if (list && !list.querySelector('.err-row')) {
+      list.innerHTML = '<div class="no-err"><span class="no-err-badge">' +
+        '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+        'No errors — all clear</span></div>';
+    }
+    // Update location error count badge
+    const countEl = document.getElementById('err-count-' + locId);
+    if (countEl) {
+      const remaining = list ? list.querySelectorAll('.err-row').length : 0;
+      countEl.textContent = remaining;
+      countEl.className = `count ${remaining > 0 ? 'red' : 'sage'}`;
+    }
+    // Update top-level error count
+    const topErr = document.getElementById('top-err-n');
+    if (topErr) {
+      const current = parseInt(topErr.textContent) || 0;
+      const next = Math.max(0, current - 1);
+      topErr.textContent = next;
+      topErr.className = `stat-n ${next > 0 ? 'red' : 'sage'}`;
+    }
+    // Update location card pill + border
+    const card = document.getElementById('loc-' + locId);
+    const errList = document.getElementById('err-list-' + locId);
+    if (card && errList && !errList.querySelector('.err-row')) {
+      card.classList.remove('err');
+      const pill = card.querySelector('.pill.red');
+      if (pill) { pill.className = 'pill sage'; pill.innerHTML = '<span class="pdot pulse"></span>All clear'; }
+      const icon = card.querySelector('.loc-icon');
+      if (icon) {
+        icon.style.background = 'var(--sage-dim)';
+        icon.style.borderColor = 'var(--sage-border)';
+        icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 1.5C6.5 1.5 4.5 3.5 4.5 6c0 3.75 4.5 10.5 4.5 10.5S13.5 9.75 13.5 6c0-2.5-2-4.5-4.5-4.5z" stroke="var(--sage-dark)" stroke-width="1.3" fill="none"/><circle cx="9" cy="6" r="1.5" fill="var(--sage-dark)"/></svg>';
+        card.style.borderLeftColor = 'var(--sage-dark)';
+      }
+    }
+  }, 300);
+}
+
+// ─────────────────────────────────────────────
+// Sync
+// ─────────────────────────────────────────────
+async function syncNow(locId) {
+  const btnId   = `sync-loc-btn-${locId}`;
+  const labelId = `sync-loc-lbl-${locId}`;
+  const btn = document.getElementById(btnId);
+  const lbl = document.getElementById(labelId);
+  if (!btn || btn.disabled) return;
+  btn.disabled = true; btn.classList.add('syncing');
+  if (lbl) lbl.innerHTML = `<span style="display:flex;align-items:center;gap:5px;">${spinSvg} Syncing…</span>`;
+  try {
+    const res = await fetch(`/operator/${CLIENT_ID}/sync`, { method: 'POST' });
+    const data = res.ok ? await res.json() : null;
+    const ts = data ? timeAgo(data.last_sync_at) : 'Just now';
+    document.getElementById('sync-label').textContent = ts;
+    const footerTs = document.getElementById('footer-sync-ts-' + locId);
+    if (footerTs) footerTs.textContent = `Synced ${ts}`;
+  } catch(err) {
+    console.error('Sync failed:', err);
+  }
+  btn.disabled = false; btn.classList.remove('syncing');
+  if (lbl) lbl.textContent = 'Sync now';
+}
+
+async function syncAll() {
+  const btn = document.getElementById('sync-all');
+  const lbl = document.getElementById('sync-all-label');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true; btn.classList.add('syncing');
+  lbl.innerHTML = `<span style="display:flex;align-items:center;gap:5px;">${spinSvg} Syncing all…</span>`;
+  try {
+    const res = await fetch(`/operator/${CLIENT_ID}/sync`, { method: 'POST' });
+    const data = res.ok ? await res.json() : null;
+    const ts = data ? timeAgo(data.last_sync_at) : 'Just now';
+    document.getElementById('sync-label').textContent = ts;
+    document.getElementById('sync-compare-ts').textContent = `As of last sync · ${ts}`;
+  } catch(err) {
+    console.error('Sync all failed:', err);
+  }
+  btn.disabled = false; btn.classList.remove('syncing');
+  lbl.innerHTML = `<span style="display:flex;align-items:center;gap:5px;"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M10 6A4 4 0 112 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10 3v3h-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Sync all</span>`;
+}
+
+// ─────────────────────────────────────────────
+// Dark mode / role toggle
+// ─────────────────────────────────────────────
+function toggleMode() {
+  const html = document.documentElement;
+  html.setAttribute('data-mode', html.getAttribute('data-mode') === 'dark' ? 'light' : 'dark');
+}
+
+function setRole(role, btn) {
+  document.querySelectorAll('.role-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const breadcrumb = document.querySelector('.breadcrumb');
+  if (role === 'operator') {
+    if (breadcrumb) breadcrumb.style.display = 'none';
+    document.querySelectorAll('.configured-by').forEach(el => el.style.display = 'none');
+  } else {
+    if (breadcrumb) breadcrumb.style.display = '';
+    document.querySelectorAll('.configured-by').forEach(el => el.style.display = 'flex');
+  }
+}
+
+// ─────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────
+if (CLIENT_ID) {
+  Promise.all([fetchOverview(), fetchLocations()])
+    .then(([overview, locations]) => {
+      renderOverview(overview);
+      renderLocations(locations, overview.client.tier);
+    })
+    .catch(err => {
+      console.error('Dashboard load failed:', err);
+      document.getElementById('locations-stack').innerHTML =
+        `<div class="sync-loading" style="color:var(--red)">Failed to load: ${err.message}</div>`;
+    });
+}
+</script>
+</body>
+</html>

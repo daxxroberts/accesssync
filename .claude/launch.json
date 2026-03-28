@@ -12,6 +12,18 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["core/reconciliation.js"],
       "port": null
+    },
+    {
+      "name": "AccessSync Admin Hub",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["admin/server.js"],
+      "port": 3001
+    },
+    {
+      "name": "Dashboard Preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "admin/public", "-p", "3002", "--no-clipboard"],
+      "port": 3002
     }
   ]
 }

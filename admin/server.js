@@ -18,6 +18,7 @@ const membersRoutes  = require('./routes/members');
 const webhooksRoutes = require('./routes/webhooks');
 const queueRoutes    = require('./routes/queue');
 const clientsRoutes  = require('./routes/clients');
+const operatorRoutes = require('./routes/operator');
 const { requireAuth } = require('./middleware/auth');
 
 const app  = express();
@@ -35,6 +36,9 @@ app.use('/admin/members',  requireAuth, membersRoutes);
 app.use('/admin/webhooks', requireAuth, webhooksRoutes);
 app.use('/admin/queue',    requireAuth, queueRoutes);
 app.use('/admin/clients',  requireAuth, clientsRoutes);
+
+// ── Operator dashboard API (no admin auth — OB-08 will add Wix JWT) ──
+app.use('/operator', operatorRoutes);
 
 // ── Health check (Railway requires a reachable HTTP endpoint) ──
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'admin-hub' }));

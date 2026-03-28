@@ -21,11 +21,25 @@ CREATE TABLE clients (
     status VARCHAR(50) DEFAULT 'active',         -- active, cancelled
     notification_email VARCHAR(255),             -- DR-020: operator alert destination (Resend); populated by setup wizard (OB-09)
     last_sync_at TIMESTAMP WITH TIME ZONE,       -- DR-018: single timestamp per client, updated on each member sync sweep
+    site_url VARCHAR(255),                       -- OD-10: operator site URL (e.g. "houseofgains.com") — dashboard header chip
+    last_wix_webhook_at TIMESTAMP WITH TIME ZONE, -- OD-10: last webhook received — drives Wix LIVE/WARN/ERROR health status
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Plan Mappings (The Translator)
+-- 2. Locations (Physical Sites per Client)
+-- One row per physical location under a client. House of Gains: Fort Smith + Roland.
+-- kisi_org_id intentionally excluded — G-10 open, org structure unverified. See DR-025.
+CREATE TABLE locations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,                  -- Display name (e.g. "House of Gains - Fort Smith")
+    city VARCHAR(100),
+    state VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Plan Mappings (The Translator)
 CREATE TABLE plan_mappings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -33,6 +47,10 @@ CREATE TABLE plan_mappings (
     hardware_group_id VARCHAR(255) NOT NULL, -- The Kisi/Seam group ID mapped to this plan
     tier_name VARCHAR(50) DEFAULT 'Base', -- Base, Pro, Connect
     action VARCHAR(50) DEFAULT 'grant', -- grant, revoke, temporary
+    location_id UUID REFERENCES locations(id),   -- OD-11: nullable — existing rows have no location assignment
+    plan_name VARCHAR(255),                       -- OD-11: display label for the plan (operator dashboard)
+    door_name VARCHAR(255),                       -- OD-11: display label for the hardware group/door
+    status VARCHAR(50) DEFAULT 'active',          -- OD-11: 'active', 'excluded' — for "Not managed" display
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -43,27 +61,30 @@ CREATE TABLE processed_event_ids (
     processed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. Error Queue (Dead Letter Queue)
+-- 5. Error Queue (Dead Letter Queue)
 CREATE TABLE error_queue (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID REFERENCES clients(id),
     member_id UUID, -- References member_identity(id)
     event_type VARCHAR(100),
     payload JSONB,
-    error_reason TEXT,
+    error_reason TEXT,           -- Maps to 'plain_message' in API responses (naming conflict resolved in API layer)
     retry_count INTEGER DEFAULT 0,
     status VARCHAR(50) DEFAULT 'failed', -- failed, resolved
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     resolved_at TIMESTAMP WITH TIME ZONE,
     dismiss_note TEXT,           -- Admin Hub: operator note when dismissing
-    dismissed_by VARCHAR(255)    -- Admin Hub: who dismissed ('admin' for now)
+    dismissed_by VARCHAR(255),   -- Admin Hub: who dismissed ('admin' for now)
+    location_id UUID REFERENCES locations(id),   -- OD-13: nullable — error scoping by location
+    plan_name VARCHAR(255),                       -- OD-13: plan context for operator triage
+    door_name VARCHAR(255)                        -- OD-13: door context for operator triage
 );
 
 --------------------------------------------------------
 -- Phase 1 Foundation: Access Adapter Layer
 --------------------------------------------------------
 
--- 5. Member Identity
+-- 6. Member Identity
 CREATE TABLE member_identity (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -78,7 +99,7 @@ CREATE TABLE member_identity (
     UNIQUE(client_id, source_platform, platform_member_id)
 );
 
--- 6. Member Access State (Provisioning Status)
+-- 7. Member Access State (Provisioning Status)
 CREATE TABLE member_access_state (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     member_id UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
@@ -90,7 +111,7 @@ CREATE TABLE member_access_state (
     UNIQUE(member_id)
 );
 
--- 7. Member Access Log (Lifecycle Events)
+-- 8. Member Access Log (Lifecycle Events)
 CREATE TABLE member_access_log (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     member_id UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
@@ -102,7 +123,7 @@ CREATE TABLE member_access_log (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 8. Adapter Admin Log (Provisioning Audit Trail)
+-- 9. Adapter Admin Log (Provisioning Audit Trail)
 CREATE TABLE adapter_admin_log (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID NOT NULL REFERENCES clients(id),
@@ -120,7 +141,7 @@ CREATE TABLE adapter_admin_log (
 -- Phase 1 Foundation: Alert and Configuration
 --------------------------------------------------------
 
--- 9. Config Alert Log
+-- 10. Config Alert Log
 CREATE TABLE config_alert_log (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -134,10 +155,29 @@ CREATE TABLE config_alert_log (
 );
 
 --------------------------------------------------------
+-- Standard Adapter Layer: Activity Summary (DR-024)
+--------------------------------------------------------
+
+-- 11. Client Activity Summary (Standard Adapter Layer — Layer 3)
+-- Daily aggregated event counts per client. UPSERT pattern on every event.
+-- Fault-tolerant writes — failures are logged but never block the grant/revoke path.
+CREATE TABLE client_activity_summary (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id UUID REFERENCES clients(id) NOT NULL,
+    summary_date DATE NOT NULL,
+    events_received INTEGER DEFAULT 0,
+    grants_completed INTEGER DEFAULT 0,
+    revokes_completed INTEGER DEFAULT 0,
+    errors_count INTEGER DEFAULT 0,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (client_id, summary_date)
+);
+
+--------------------------------------------------------
 -- Phase 1 Foundation: Admin Hub Observability
 --------------------------------------------------------
 
--- 10. Webhook Log (Admin Hub: Webhook Inspector)
+-- 12. Webhook Log (Admin Hub: Webhook Inspector)
 CREATE TABLE webhook_log (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     event_id VARCHAR(255),
@@ -180,3 +220,20 @@ CREATE TABLE webhook_log (
 -- Clients schema update (2026-03-28): hardware_platform + tier
 --   ALTER TABLE clients ADD COLUMN hardware_platform VARCHAR(50);
 --   ALTER TABLE clients ADD COLUMN tier VARCHAR(50);
+--
+-- DR-024 (2026-03-28): client_activity_summary — Standard Adapter Layer daily activity log
+--   CREATE TABLE client_activity_summary ( ... ) — see table definition above
+--   Railway migration: CREATE TABLE client_activity_summary (...) as defined above
+--
+-- DR-025 (2026-03-28): locations table + dashboard schema additions (OD-08/10/11/13)
+--   Railway migration order — run in sequence (locations FK required before plan_mappings/error_queue):
+--   1. CREATE TABLE locations ( ... ) — see table definition above
+--   2. ALTER TABLE clients ADD COLUMN site_url VARCHAR(255);
+--      ALTER TABLE clients ADD COLUMN last_wix_webhook_at TIMESTAMP WITH TIME ZONE;
+--   3. ALTER TABLE plan_mappings ADD COLUMN location_id UUID REFERENCES locations(id);
+--      ALTER TABLE plan_mappings ADD COLUMN plan_name VARCHAR(255);
+--      ALTER TABLE plan_mappings ADD COLUMN door_name VARCHAR(255);
+--      ALTER TABLE plan_mappings ADD COLUMN status VARCHAR(50) DEFAULT 'active';
+--   4. ALTER TABLE error_queue ADD COLUMN location_id UUID REFERENCES locations(id);
+--      ALTER TABLE error_queue ADD COLUMN plan_name VARCHAR(255);
+--      ALTER TABLE error_queue ADD COLUMN door_name VARCHAR(255);

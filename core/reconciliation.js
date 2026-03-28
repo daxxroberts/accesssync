@@ -11,7 +11,7 @@
  */
 
 const db = require('../db');
-const kisiAdapter = require('../adapters/kisi-adapter');
+const hardwareAdapter = require('../adapters/hardware-adapter');
 const { eventQueue } = require('./webhook-processor');
 
 class NightlyReconciliation {
@@ -69,7 +69,7 @@ class NightlyReconciliation {
       return;
     }
 
-    const locks = await kisiAdapter.getLocks(apiKey);
+    const locks = await hardwareAdapter.getLocks('kisi', apiKey);
 
     for (const client of clientsResult.rows) {
       const lockedDoors = locks.filter(l => l.is_locked === true);

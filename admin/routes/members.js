@@ -10,24 +10,9 @@
 const router = require('express').Router();
 const db     = require('../../db');
 const { Queue } = require('bullmq');
+const { getRedisConnection } = require('../../core/redis-utils');
 
-function parseRedisUrl(url) {
-  try {
-    const u = new URL(url);
-    return {
-      host:     u.hostname,
-      port:     parseInt(u.port) || 6379,
-      password: u.password ? decodeURIComponent(u.password) : undefined,
-      username: u.username ? decodeURIComponent(u.username) : undefined,
-    };
-  } catch {
-    return { host: 'localhost', port: 6379 };
-  }
-}
-const connection = process.env.REDIS_URL
-  ? parseRedisUrl(process.env.REDIS_URL)
-  : { host: 'localhost', port: 6379 };
-const eventQueue = new Queue('accesssync-events', { connection });
+const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
 
 // ── GET /admin/members/search ──────────────────────────────────
 router.get('/search', async (req, res) => {
