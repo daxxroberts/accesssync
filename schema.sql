@@ -68,8 +68,7 @@ CREATE TABLE member_identity (
     hardware_platform VARCHAR(50) NOT NULL, -- 'seam' or 'kisi'
     hardware_user_id VARCHAR(255), -- The generated ID in Kisi/Seam
     source_tag VARCHAR(50) DEFAULT 'accesssync', -- Rule: Distinguishes from manual users
-    email VARCHAR(255),          -- Admin Hub: member search by email (DR-022)
-    display_name VARCHAR(255),   -- Admin Hub: member search by name (DR-022)
+    -- NOTE: email/name not stored — fetched from Wix on-demand (data minimization)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(client_id, source_platform, platform_member_id)
@@ -163,9 +162,8 @@ CREATE TABLE webhook_log (
 --     UNIQUE(client_id, source_platform, platform_member_id);
 --   ALTER TABLE adapter_admin_log RENAME COLUMN wix_member_id TO platform_member_id;
 --
--- Admin Hub V1 (2026-03-27): member_identity email/name + error_queue dismiss fields + webhook_log
---   ALTER TABLE member_identity ADD COLUMN email VARCHAR(255);
---   ALTER TABLE member_identity ADD COLUMN display_name VARCHAR(255);
+-- Admin Hub V1 (2026-03-27): error_queue dismiss fields + webhook_log
+--   Data minimization decision: email/name NOT stored in member_identity — fetched from Wix on-demand
 --   ALTER TABLE error_queue ADD COLUMN dismiss_note TEXT;
 --   ALTER TABLE error_queue ADD COLUMN dismissed_by VARCHAR(255);
 --   CREATE TABLE webhook_log ( ... ) — see table definition above
