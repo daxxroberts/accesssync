@@ -12,11 +12,13 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. Clients (Tenants)
 CREATE TABLE clients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    status VARCHAR(50) DEFAULT 'active', -- active, cancelled
-    wix_site_id VARCHAR(255) UNIQUE,
-    notification_email VARCHAR(255), -- DR-020: operator alert destination (Resend); populated by setup wizard (OB-09)
-    last_sync_at TIMESTAMP WITH TIME ZONE, -- DR-018: single timestamp per client, updated on each member sync sweep
+    name VARCHAR(255) NOT NULL,                  -- Company name (e.g. "House of Gains")
+    platform VARCHAR(50) NOT NULL DEFAULT 'wix', -- Source platform: 'wix', 'squarespace', etc.
+    site_id VARCHAR(255) UNIQUE,                 -- Platform site identifier (was wix_site_id) — used for webhook routing
+    site_name VARCHAR(255),                      -- Human-readable location name (e.g. "House of Gains - Main")
+    status VARCHAR(50) DEFAULT 'active',         -- active, cancelled
+    notification_email VARCHAR(255),             -- DR-020: operator alert destination (Resend); populated by setup wizard (OB-09)
+    last_sync_at TIMESTAMP WITH TIME ZONE,       -- DR-018: single timestamp per client, updated on each member sync sweep
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -167,3 +169,8 @@ CREATE TABLE webhook_log (
 --   ALTER TABLE error_queue ADD COLUMN dismiss_note TEXT;
 --   ALTER TABLE error_queue ADD COLUMN dismissed_by VARCHAR(255);
 --   CREATE TABLE webhook_log ( ... ) — see table definition above
+--
+-- Clients schema update (2026-03-27): platform-agnostic + site_name
+--   ALTER TABLE clients RENAME COLUMN wix_site_id TO site_id;
+--   ALTER TABLE clients ADD COLUMN platform VARCHAR(50) NOT NULL DEFAULT 'wix';
+--   ALTER TABLE clients ADD COLUMN site_name VARCHAR(255);

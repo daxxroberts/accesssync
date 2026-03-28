@@ -3,8 +3,8 @@
  * Core Engine (Layer 4)
  *
  * Responsibilities:
- * - Single responsibility: resolves a Wix site ID to an AccessSync client ID
- * - Looks up the clients table using wix_site_id
+ * - Single responsibility: resolves a platform site ID to an AccessSync client ID
+ * - Looks up the clients table using site_id (platform-agnostic, was wix_site_id)
  * - Returns null if no matching client found (unknown site — not our webhook)
  * - Caches resolved mappings in memory to avoid repeated DB reads on high-volume
  *   webhook traffic (cache TTL: 5 minutes)
@@ -44,12 +44,12 @@ class TenantResolver {
     // 2. Look up from DB
     try {
       const result = await db.query(
-        `SELECT id FROM clients WHERE wix_site_id = $1 AND status = 'active' LIMIT 1`,
+        `SELECT id FROM clients WHERE site_id = $1 AND status = 'active' LIMIT 1`,
         [wixSiteId]
       );
 
       if (result.rows.length === 0) {
-        console.warn(`[Tenant Resolver] No active client found for wix_site_id: ${wixSiteId}`);
+        console.warn(`[Tenant Resolver] No active client found for site_id: ${wixSiteId}`);
         return null;
       }
 
