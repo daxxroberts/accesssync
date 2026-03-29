@@ -8,6 +8,7 @@
 
 const router = require('express').Router();
 const db     = require('../../db');
+const { encryptApiKey } = require('../../core/crypto-utils');
 
 const EDITABLE_FIELDS = ['name', 'hardware_platform', 'tier', 'notification_email', 'status', 'site_id', 'site_name', 'platform'];
 
@@ -69,6 +70,44 @@ router.patch('/:id', async (req, res) => {
     res.json({ ok: true, client: result.rows[0] });
   } catch (err) {
     console.error('[Admin/clients] PATCH /:id error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /admin/clients/:id/api-key ────────────────────────────────
+// Set or rotate the Kisi API key for a client (DR-028).
+// Write-only: plaintext is encrypted before storage, never returned.
+router.post('/:id/api-key', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { apiKey } = req.body;
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return res.status(400).json({ error: 'apiKey is required' });
+    }
+    const encrypted = encryptApiKey(apiKey.trim());
+    const result = await db.query(
+      `UPDATE clients SET kisi_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
+      [encrypted, id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    console.log(`[Admin/clients] API key set for client ${id} (${result.rows[0].name})`);
+    res.json({ ok: true, message: 'API key saved' });
+  } catch (err) {
+    console.error('[Admin/clients] POST /:id/api-key error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /admin/clients/:id/api-key/status ──────────────────────────
+// Returns whether a key is set — never returns the key itself.
+router.get('/:id/api-key/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [id]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    res.json({ hasKey: !!result.rows[0].kisi_api_key });
+  } catch (err) {
+    console.error('[Admin/clients] GET /:id/api-key/status error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

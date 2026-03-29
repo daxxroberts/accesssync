@@ -15,6 +15,7 @@
 const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const planMappingResolver = require('./plan-mapping-resolver');
+const { decryptApiKey } = require('./crypto-utils');
 
 class GrantRevokeLogic {
 
@@ -30,10 +31,11 @@ class GrantRevokeLogic {
    * @returns {Array} assignments     [{ mappingId, roleAssignmentId }] — passed to completeGrant()
    */
   async processGrant(tenantId, memberId, hardwareUserId, mappings, wixEvent) {
-    const apiKey = process.env.KISI_API_KEY_MOCK;
     const assignments = [];
 
     for (const mapping of mappings) {
+      // DR-028: apiKey resolved per-mapping by plan-mapping-resolver (location override || client default)
+      const apiKey = mapping.apiKey;
       console.log(`[Grant] Assigning role to user ${hardwareUserId} in group ${mapping.hardwareGroupId}`);
       const roleId = await hardwareAdapter.assignRole(
         mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId
@@ -69,10 +71,22 @@ class GrantRevokeLogic {
    * @param {Object} wixEvent
    * @returns {string} targetStatus   passed to standardAdapter.completeRevoke()
    */
+  /**
+   * Looks up and decrypts the client-level Kisi API key for revoke operations.
+   * Revokes are org-level operations — client key is correct for all single-org operators.
+   * Multi-org per-location revoke is a future enhancement (post V1).
+   */
+  async _getClientApiKey(tenantId) {
+    const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [tenantId]);
+    const enc = result.rows[0]?.kisi_api_key;
+    if (enc) return decryptApiKey(enc);
+    return process.env.KISI_API_KEY_MOCK; // fallback: remove after all clients have DB keys
+  }
+
   async processRevoke(tenantId, memberId, hardwareUserId, roleAssignmentIds, hardwarePlatform, eventType, wixEvent) {
     console.log(`[Revoke] Processing revoke (${eventType}) for tenant ${tenantId}, member ${wixEvent.platformMemberId}`);
 
-    const apiKey = process.env.KISI_API_KEY_MOCK;
+    const apiKey = await this._getClientApiKey(tenantId);
 
     switch (eventType) {
 

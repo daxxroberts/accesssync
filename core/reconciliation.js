@@ -13,6 +13,7 @@
 const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const { eventQueue } = require('./webhook-processor');
+const { decryptApiKey } = require('./crypto-utils');
 
 class NightlyReconciliation {
 
@@ -60,18 +61,19 @@ class NightlyReconciliation {
 
   async _syncDoorLockdownStates() {
     const clientsResult = await db.query(
-      `SELECT id, wix_site_id FROM clients WHERE status = 'active'`
+      `SELECT id, hardware_platform, kisi_api_key FROM clients WHERE status = 'active'`
     );
 
-    const apiKey = process.env.KISI_API_KEY_MOCK;
-    if (!apiKey) {
-      console.warn('[Nightly Reconciliation] KISI_API_KEY_MOCK not set — skipping lockdown sync (G-08 still open).');
-      return;
-    }
-
-    const locks = await hardwareAdapter.getLocks('kisi', apiKey);
-
     for (const client of clientsResult.rows) {
+      const enc = client.kisi_api_key;
+      const apiKey = enc ? decryptApiKey(enc) : process.env.KISI_API_KEY_MOCK;
+      if (!apiKey) {
+        console.warn(`[Nightly Reconciliation] No API key for client ${client.id} — skipping lockdown sync.`);
+        continue;
+      }
+
+      const platform = client.hardware_platform || 'kisi';
+      const locks = await hardwareAdapter.getLocks(platform, apiKey);
       const lockedDoors = locks.filter(l => l.is_locked === true);
       for (const door of lockedDoors) {
         await db.query(

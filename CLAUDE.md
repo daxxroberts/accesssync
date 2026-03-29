@@ -1,5 +1,5 @@
 # CLAUDE.md — AccessSync Core Engine
-**Version:** 2.8 | **Updated:** 2026-03-28 | **Author:** KEEPER (Business Operating Team)
+**Version:** 3.1 | **Updated:** 2026-03-28 | **Author:** KEEPER (Business Operating Team)
 
 ---
 
@@ -13,10 +13,10 @@ AccessSync is a Wix App Market SaaS product that automates physical space access
 
 ## Repository State
 
-**V1 code-complete. Admin Hub V1 deployed and live. 7-layer architecture complete (DR-022/023/024). DR-025 schema locked + all migrations applied to live Railway DB (OB-16 closed). OB-10 closed — operator dashboard live at /dashboard.html. OB-17 closed — plan mapping screen live at /mapping.html. Pending: OB-08 (Wix JWT).**
+**V1 code-complete. Admin Hub V1 deployed and live. 7-layer architecture complete (DR-022/023/024/025/026). DR-026 locked — multi-door provisioning fix + `member_role_assignments` table. OB-18 closed — Railway DR-026 migrations applied 2026-03-28. Pending: OB-08 (Wix JWT).**
 
 **Current status as of 2026-03-28:**
-- `schema.sql` — DR-018 through DR-021 + Gate A + DR-024 + DR-025 applied. 12 tables total. (`locations`, `clients` additions, `plan_mappings` additions, `error_queue` additions, `client_activity_summary`). OB-16 CLOSED — all 4 DR-025 migrations applied to live Railway DB.
+- `schema.sql` — DR-018 through DR-026 applied. 13 tables total. Added: `member_role_assignments` (DR-026), `access_type` column on `plan_mappings` (DR-026). ✅ OB-18 closed — both Railway migrations applied.
 - `db.js` — ✅ Built. pg pool, query helper, `getClient()`, `healthCheck()`, `pool` exported.
 - `adapters/wix/wix-connector.js` — ✅ Layer 1. HTTP handler, HMAC verification only. Calls wix-adapter.parseEvent().
 - `adapters/wix/wix-adapter.js` — ✅ Layer 2. Wix payload parsing only. parseEvent() → standard event object. Zero dependencies.
@@ -30,11 +30,11 @@ AccessSync is a Wix App Market SaaS product that automates physical space access
 - `adapters/kisi-adapter.js` — Shim → `./kisi/kisi-adapter` (DR-022 backward compat).
 - `adapters/seam-adapter.js` — Shim → `./seam/seam-adapter` (DR-022 backward compat).
 - `server.js` — ✅ Fully implemented. Imports `adapters/wix/wix-connector` (DR-022). DB health check, BullMQ worker boot, SIGTERM graceful shutdown.
-- `core/queue-worker.js` — ✅ Built. Layer coordinator. Calls standardAdapter (resolve/lock/complete) around grantRevokeLogic (DR-022/023).
+- `core/queue-worker.js` — ✅ Built. Layer coordinator. Calls standardAdapter (resolve/lock/complete) around grantRevokeLogic. `payment.recovered` early-exit path (enableAccess only). `UnrecoverableError` for 4xx errors (DR-026).
 - `core/tenant-resolver.js` — ✅ Built. `site_id` → `client_id` with 5-min cache.
 - `core/webhook-processor.js` — ✅ Built. BullMQ Queue, real DB dedup, tenant resolution, `eventQueue` exported.
-- `core/plan-mapping-resolver.js` — ✅ Built. Real DB read from `plan_mappings`.
-- `core/grant-revoke.js` — ✅ Built. Pure grant/revoke logic + hardware calls via hardwareAdapter. Identity/lock/state owned by Standard Adapter (DR-023). Returns targetStatus to queue-worker.
+- `core/plan-mapping-resolver.js` — ✅ Built. Returns Array of all active mappings (DR-026). `status='active'` filter. Includes `mappingId` + `accessType`.
+- `core/grant-revoke.js` — ✅ Built. `processGrant` loops all mappings[], returns `assignments[]`. `processRevoke` loops all `roleAssignmentIds[]`. Identity/lock/state owned by Standard Adapter (DR-023).
 - `core/retry-engine.js` — ✅ Built. `_moveToDeadLetter` (error_queue), `_notifyOperator` (Resend SDK, DR-020).
 - `core/reconciliation.js` — ✅ Built. Calls hardwareAdapter.getLocks() (DR-022). Stale lock cleanup, failed job re-queue, operator digest.
 - `core/member-sync-api.js` — ✅ Built. Raw DB read only. JWT stubbed (OB-08).
@@ -124,6 +124,9 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 | DR-023 | Standard Adapter Layer (Layer 3) exclusively owns `member_identity` UPSERT, `member_access_state` writes, and in_flight lock acquire/release. Core Engine never writes these tables directly. |
 | DR-024 | `client_activity_summary` table — Standard Adapter Layer, daily UPSERT per client. events_received, grants_completed, revokes_completed, errors_count. Fault-tolerant (log but don't throw). |
 | DR-025 | `locations` table (id, client_id, name, city, state). `clients`: +site_url, +last_wix_webhook_at. `plan_mappings`: +location_id, +plan_name, +door_name, +status. `error_queue`: +location_id, +plan_name, +door_name. `kisi_org_id` excluded (G-10 open). `error_reason` maps to `plain_message` in API layer — no rename. |
+| DR-026 | Multi-door provisioning — `member_role_assignments` table (one row per member per mapping, UNIQUE constraint, idempotent). `plan_mappings.access_type DEFAULT 'group'` for future Seam routing. Resolver returns Array. `payment.recovered` = enableAccess only. `UnrecoverableError` for 4xx hardware errors. Legacy fallback: `member_access_state.role_assignment_id` if `member_role_assignments` empty. Railway migration required (OB-18). |
+| DR-027 | Per-location subscription model — one AccessSync subscription per physical location (AccessSync pricing decision, not a Kisi constraint). `locations` gets: `subscription_status` (default `'inactive'`), `tier`, `subscribed_at`, `subscription_id`. `plan-mapping-resolver.js` filters to `subscription_status = 'active'` locations only. Location lapse flow required (OB-20). OB-22: confirm HOG Wix pattern with Chad. |
+| DR-028 | Kisi API key storage — `clients.kisi_api_key` (org-level default) + `locations.kisi_api_key` (nullable override for multi-org operators). Lookup: `location.kisi_api_key \|\| client.kisi_api_key`. AES-256-GCM encryption via `core/crypto-utils.js` + `KISI_ENCRYPTION_KEY` env var. `KISI_API_KEY_MOCK` deprecated after OB-23. |
 
 Full decision records are in the vault: `AccessSync/13_Decision_Records/`
 
@@ -135,8 +138,14 @@ Full decision records are in the vault: `AccessSync/13_Decision_Records/`
 |---|---|---|
 | ~~OB-12~~ | ~~Deploy Admin Hub V1 to Railway~~ — ~~CLOSED 2026-03-27. Live at https://accesssync-admin.up.railway.app~~ | ~~Admin Hub live~~ |
 | ~~OB-14~~ | ~~Run 6 pending Railway schema migrations on live Postgres~~ — ~~CLOSED 2026-03-28. All migrations applied.~~ | ~~Admin Hub panels functional~~ |
+| ~~OB-18~~ | ~~Railway DB migration — DR-026: `access_type` column + `member_role_assignments` table~~ — ~~CLOSED 2026-03-28. Both migrations applied to live Railway Postgres.~~ | ~~Multi-door grant/revoke in production~~ |
 | OB-13 | Debug Center email search — GET /members/search?email= calls Wix API to resolve email → platformMemberId. Requires OB-08 (Wix JWT). | Debug Center full search |
-| OB-03-A | Verify Wix site ID header field name (`x-wix-site-id`) via PARSE/Wix docs | Multi-tenant correctness |
+| OB-03-A | ⚠️ PARSE VERIFIED: No `x-wix-site-id` header. Site identifier = `instanceId` in decoded JWT body. `wix-connector.js` reads wrong field — fix before multi-tenant routing relied on. | Multi-tenant correctness |
+| OB-19 | Railway migration — 6 ALTER statements (DR-027 + DR-028 bundled). `locations`: `subscription_status`, `tier`, `subscribed_at`, `subscription_id`. `clients`: `kisi_api_key VARCHAR(500)`. `locations`: `kisi_api_key VARCHAR(500)`. Add `KISI_ENCRYPTION_KEY` env var first. | Per-location billing + API key DB storage |
+| OB-23 | Build `core/crypto-utils.js` (AES-256-GCM). Update `kisi-connector.js` to read API key from DB. Add key input to Admin Hub Clients panel (write-only). Remove `KISI_API_KEY_MOCK` after wired. | Multi-client onboarding |
+| OB-20 | Location subscription lapse flow — when `subscription_status` → `'suspended'`/`'cancelled'`, suspend all member access at that location. | Billing integrity |
+| OB-21 | `plan-mapping-resolver.js` — add `JOIN locations` + `subscription_status = 'active'` filter (DR-027). | Provisioning gate for unsubscribed locations |
+| OB-22 | Confirm HOG Wix pattern with Chad — one site for all locations or separate sites? | HOG Phase 1 correctness |
 | OB-05 | `core/operator-api.js` — operator-facing API: GET /operator/members, /alerts, /errors | Operator account visibility |
 | OB-06 | PIXEL — Wix Account screen widget reading from OB-05 | Operator dashboard |
 | OB-07 | Confirm Velo owns UI state display logic for `member-sync-api.js` output | Sync screen Velo build |
@@ -153,7 +162,8 @@ Full open items list: `AccessSync/open_items.md`
 ```
 DATABASE_URL                  PostgreSQL connection string (Railway)
 WIX_WEBHOOK_SECRET            HMAC secret from Wix developer dashboard
-KISI_API_KEY_MOCK             Replace with per-client key lookup from DB
+KISI_API_KEY_MOCK             DEPRECATED — Phase 1 placeholder. Replaced by DB lookup (clients.kisi_api_key / locations.kisi_api_key) after OB-23 is closed.
+KISI_ENCRYPTION_KEY           32-byte hex string for AES-256-GCM API key encryption (DR-028). Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 PORT                          Set by Railway automatically
 NODE_ENV                      development | production
 DEFAULT_TENANT_ID             Temporary placeholder — remove when multi-tenant routing is built
@@ -361,3 +371,6 @@ KEEPER must explicitly surface proposed updates and receive confirmation. If a s
 | v2.6 | 2026-03-28 | 7-layer architecture (DR-022/023/024). Architecture section replaced. Repository State updated with all 7-layer file paths + shims. DR-022/023/024 locked. SPEC_Core_Engine_Architecture.md corrected to active v1.0.0. |
 | v2.7 | 2026-03-28 | DR-025 locked — locations table + OD-10/11/13 schema additions. simplify review complete (parseRedisUrl extracted to redis-utils.js, dead-code catch removed, unreachable condition removed, processRevoke hardwarePlatform param, enforceRateLimit while loop). OB-15 closed. OB-16 added (Railway migrations). 12 tables total. |
 | v2.8 | 2026-03-28 | OB-17 closed — plan mapping screen (/mapping.html) built and wired to live data. GET /operator/:clientId/locations/:locationId/mappings endpoint added. Dashboard Edit button navigates to mapping screen (modal removed). SPAN (QA/Test Coverage) + Lens (Live Site Monitor) agents defined. OB-10 closed. |
+| v2.9 | 2026-03-28 | DR-026 locked — multi-door provisioning fix (3 bugs + SPAN P0/P1). `member_role_assignments` table + `plan_mappings.access_type`. Resolver returns Array. `payment.recovered` enableAccess-only path. `UnrecoverableError` for 4xx. OB-18 added (Railway migration). Vault cleanup: System_Architecture 5→7 layer, 3 integration placeholders replaced with real content, Data_Model 12→13 tables, 13_Decision_Records DR-026 physical file created. |
+| v3.0 | 2026-03-28 | DR-027 locked — per-location subscription model. `locations` table gets `subscription_status`, `tier`, `subscribed_at`, `subscription_id`. Provisioning gated by location subscription status. Discovery Team (PIERCE/PARSE/AXIOM/REED/FAULT/VERA/MARGIN) ran full research: Wix plans confirmed site-wide (no location in webhooks), Kisi API key confirmed org-scoped (one key covers all Places). OB-03-A updated — `instanceId` in JWT body (not header). OB-19–22 added. |
+| v3.1 | 2026-03-28 | DR-028 locked — Kisi API key storage. `clients.kisi_api_key` + `locations.kisi_api_key` (nullable override). AES-256-GCM via `core/crypto-utils.js` + `KISI_ENCRYPTION_KEY` env var. `KISI_API_KEY_MOCK` deprecated. OB-19 expanded (6 ALTER statements). OB-23 added (crypto-utils build + kisi-connector DB lookup). |
