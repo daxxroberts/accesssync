@@ -49,6 +49,14 @@ class TenantResolver {
       );
 
       if (result.rows.length === 0) {
+        // Phase 1 fallback — DEFAULT_TENANT_ID covers HOG before site_id is registered in DB.
+        // Remove once all clients have site_id set. See CLAUDE.md env vars.
+        const fallback = process.env.DEFAULT_TENANT_ID || null;
+        if (fallback) {
+          console.warn(`[Tenant Resolver] No client for site_id: ${wixSiteId} — using DEFAULT_TENANT_ID fallback.`);
+          this._cache.set(wixSiteId, { clientId: fallback, cachedAt: Date.now() });
+          return fallback;
+        }
         console.warn(`[Tenant Resolver] No active client found for site_id: ${wixSiteId}`);
         return null;
       }

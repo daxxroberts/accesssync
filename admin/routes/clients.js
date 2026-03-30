@@ -8,7 +8,8 @@
 
 const router = require('express').Router();
 const db     = require('../../db');
-const { encryptApiKey } = require('../../core/crypto-utils');
+const { encryptApiKey, decryptApiKey } = require('../../core/crypto-utils');
+const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 
 const EDITABLE_FIELDS = ['name', 'hardware_platform', 'tier', 'notification_email', 'status', 'site_id', 'site_name', 'platform'];
@@ -126,6 +127,29 @@ router.post('/:id/api-key', async (req, res) => {
     res.json({ ok: true, message: 'API key saved' });
   } catch (err) {
     console.error('[Admin/clients] POST /:id/api-key error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /admin/clients/:id/api-key/test ───────────────────────────
+// Validates the stored API key by making a lightweight Kisi API call.
+// Returns { valid: true } or { valid: false, error: '...' }
+// Never returns the key itself.
+router.get('/:id/api-key/test', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [id]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    if (!result.rows[0].kisi_api_key) return res.status(400).json({ valid: false, error: 'No API key set for this client' });
+
+    const apiKey = decryptApiKey(result.rows[0].kisi_api_key);
+    await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
+
+    res.json({ valid: true });
+  } catch (err) {
+    if (err.statusCode === 401) return res.json({ valid: false, error: 'Invalid API key — Kisi rejected it' });
+    if (err.statusCode === 403) return res.json({ valid: false, error: 'API key authenticated but lacks required permissions' });
+    console.error('[Admin/clients] GET /:id/api-key/test error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

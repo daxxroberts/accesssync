@@ -154,6 +154,66 @@ router.get('/:clientId', async (req, res) => {
   }
 });
 
+// ── POST /operator/:clientId/locations/:locationId/api-key ──────
+// Store encrypted per-location Kisi API key override (DR-028).
+// Write-only. Null out by sending empty string.
+router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
+  const { clientId, locationId } = req.params;
+  try {
+    const { apiKey } = req.body;
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return res.status(400).json({ error: 'apiKey is required' });
+    }
+    if (apiKey.trim().length < 20) {
+      return res.status(400).json({ error: 'API key too short' });
+    }
+    const encrypted = encryptApiKey(apiKey.trim());
+    const result = await db.query(
+      `UPDATE locations SET kisi_api_key = $1
+       WHERE id = $2 AND client_id = $3
+       RETURNING id, name`,
+      [encrypted, locationId, clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    console.log(`[operator] Location API key set for ${locationId} (${result.rows[0].name})`);
+    res.json({ ok: true, message: 'Location API key saved' });
+  } catch (err) {
+    console.error('[operator] POST /:clientId/locations/:locationId/api-key error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /operator/:clientId/locations/:locationId/api-key/test ──
+// Validates stored location API key override against Kisi (DR-028).
+// Falls back to client-level key if no location override set.
+router.get('/:clientId/locations/:locationId/api-key/test', async (req, res) => {
+  const { clientId, locationId } = req.params;
+  try {
+    const { decryptApiKey } = require('../../core/crypto-utils');
+    const kisiConnector = require('../../adapters/kisi/kisi-connector');
+
+    const [locResult, clientResult] = await Promise.all([
+      db.query('SELECT kisi_api_key FROM locations WHERE id = $1 AND client_id = $2', [locationId, clientId]),
+      db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [clientId]),
+    ]);
+    if (!locResult.rows.length) return res.status(404).json({ error: 'Location not found' });
+
+    const encryptedKey = locResult.rows[0].kisi_api_key || clientResult.rows[0]?.kisi_api_key;
+    if (!encryptedKey) return res.status(400).json({ valid: false, error: 'No API key set', source: null });
+
+    const source = locResult.rows[0].kisi_api_key ? 'location' : 'client';
+    const apiKey = decryptApiKey(encryptedKey);
+    await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
+
+    res.json({ valid: true, source });
+  } catch (err) {
+    if (err.statusCode === 401) return res.json({ valid: false, error: 'Invalid API key — Kisi rejected it' });
+    if (err.statusCode === 403) return res.json({ valid: false, error: 'Authenticated but lacks required permissions' });
+    console.error('[operator] GET /:clientId/locations/:locationId/api-key/test error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /operator/:clientId/locations ───────────────────────────
 // Location list with per-location error count, door count, plan count
 router.get('/:clientId/locations', async (req, res) => {
@@ -161,7 +221,9 @@ router.get('/:clientId/locations', async (req, res) => {
   try {
     const [locations, errorCounts, doorCounts, planCounts] = await Promise.all([
       db.query(
-        `SELECT id, name, city, state FROM locations
+        `SELECT id, name, city, state, subscription_status, tier,
+                subscribed_at, kisi_api_key IS NOT NULL AS has_location_key
+         FROM locations
          WHERE client_id = $1 ORDER BY created_at ASC`,
         [clientId]
       ),
@@ -193,9 +255,9 @@ router.get('/:clientId/locations', async (req, res) => {
     res.json({
       locations: locations.rows.map(loc => ({
         ...loc,
-        error_count: errMap[loc.id] || 0,
-        door_count:  doorMap[loc.id] || 0,
-        plan_count:  planMap[loc.id] || 0,
+        error_count:      errMap[loc.id] || 0,
+        door_count:       doorMap[loc.id] || 0,
+        plan_count:       planMap[loc.id] || 0,
       })),
     });
   } catch (err) {

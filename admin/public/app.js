@@ -956,7 +956,10 @@ function renderClientDetail(c, hasKey) {
       <div class="detail-row">
         <span class="detail-label">Kisi API Key</span>
         <span ${keyLabelClass}>${keyLabel}</span>
-        <button class="btn btn-sm btn-secondary" style="margin-left:auto" onclick="openApiKeyForm('${c.id}', '${esc(c.name)}')">${keyBtnLabel}</button>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          ${hasKey ? `<button class="btn btn-sm btn-secondary" id="test-key-btn" onclick="testApiKey('${c.id}')">Test Key</button>` : ''}
+          <button class="btn btn-sm btn-secondary" onclick="openApiKeyForm('${c.id}', '${esc(c.name)}')">${keyBtnLabel}</button>
+        </div>
       </div>
     </div>
     <div class="drawer-footer-actions">
@@ -984,6 +987,24 @@ function openApiKeyForm(clientId, clientName) {
   `);
   // Auto-focus the input after the drawer renders
   setTimeout(() => { const el = document.getElementById('api-key-input'); if (el) el.focus(); }, 50);
+}
+
+async function testApiKey(clientId) {
+  const btn = document.getElementById('test-key-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
+  try {
+    const res = await apiFetch(`/admin/clients/${clientId}/api-key/test`);
+    const j   = await res.json();
+    if (j.valid) {
+      toast('✓ Key valid — Kisi connected successfully', 'success');
+    } else {
+      toast(`✗ Key invalid — ${j.error || 'Kisi rejected the key'}`, 'error');
+    }
+  } catch {
+    toast('Test failed — could not reach Kisi', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Test Key'; }
+  }
 }
 
 async function saveApiKey(clientId) {

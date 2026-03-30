@@ -31,7 +31,9 @@ class WixConnector {
    */
   async handleWebhook(req, res) {
     try {
-      const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+      // Use raw body captured by server.js middleware for HMAC verification (P1 fix).
+      // Re-serializing req.body risks field ordering differences that break signature checks.
+      const rawBody = req.rawBody || (typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
       const signature = req.headers['x-wix-signature'];
 
       // 1. Verify Signature (DR-009)
