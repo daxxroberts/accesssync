@@ -93,7 +93,9 @@ router.patch('/:id', async (req, res) => {
     );
 
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    res.json({ ok: true, client: result.rows[0] });
+    // S1: Strip encrypted API key — never return it in responses
+    const { kisi_api_key, ...safeClient } = result.rows[0];
+    res.json({ ok: true, client: safeClient });
   } catch (err) {
     console.error('[Admin/clients] PATCH /:id error:', err.message);
     res.status(500).json({ error: err.message });
@@ -109,6 +111,10 @@ router.post('/:id/api-key', async (req, res) => {
     const { apiKey } = req.body;
     if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
       return res.status(400).json({ error: 'apiKey is required' });
+    }
+    // S3: Validate key length before encrypting — rejects empty strings and obviously wrong values
+    if (apiKey.trim().length < 20) {
+      return res.status(400).json({ error: 'API key too short — must be at least 20 characters' });
     }
     const encrypted = encryptApiKey(apiKey.trim());
     const result = await db.query(
@@ -211,7 +217,9 @@ router.patch('/:id/locations/:locationId', async (req, res) => {
       values
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
-    res.json({ ok: true, location: result.rows[0] });
+    // S2: Strip encrypted API key — never return it in responses
+    const { kisi_api_key, ...safeLocation } = result.rows[0];
+    res.json({ ok: true, location: safeLocation });
   } catch (err) {
     console.error('[Admin/clients] PATCH /:id/locations/:locationId error:', err.message);
     res.status(500).json({ error: err.message });

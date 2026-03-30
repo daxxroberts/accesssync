@@ -80,7 +80,7 @@ class GrantRevokeLogic {
     const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [tenantId]);
     const enc = result.rows[0]?.kisi_api_key;
     if (enc) return decryptApiKey(enc);
-    return process.env.KISI_API_KEY_MOCK; // fallback: remove after all clients have DB keys
+    return null; // DR-028: no API key in DB — hardware calls will fail with a clear error. Set key via Admin Hub.
   }
 
   async processRevoke(tenantId, memberId, hardwareUserId, roleAssignmentIds, hardwarePlatform, eventType, wixEvent) {

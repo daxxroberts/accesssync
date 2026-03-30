@@ -58,9 +58,8 @@ class PlanMappingResolver {
       hardwarePlatform: 'kisi', // Phase 1 only. Seam post-V1.
       tierName:         row.tier_name,
       accessType:       row.access_type || 'group',
-      apiKey:           row.kisi_api_key_enc
-                          ? decryptApiKey(row.kisi_api_key_enc)
-                          : process.env.KISI_API_KEY_MOCK, // fallback: remove after OB-23 fully wired
+      apiKey:           row.kisi_api_key_enc ? decryptApiKey(row.kisi_api_key_enc) : null,
+                          // DR-028: null means no API key configured — hardware calls will fail with a clear error
     }));
   }
 }

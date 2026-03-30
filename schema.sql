@@ -23,6 +23,7 @@ CREATE TABLE clients (
     last_sync_at TIMESTAMP WITH TIME ZONE,       -- DR-018: single timestamp per client, updated on each member sync sweep
     site_url VARCHAR(255),                       -- OD-10: operator site URL (e.g. "houseofgains.com") — dashboard header chip
     last_wix_webhook_at TIMESTAMP WITH TIME ZONE, -- OD-10: last webhook received — drives Wix LIVE/WARN/ERROR health status
+    kisi_api_key VARCHAR(500),                    -- DR-028: AES-256-GCM encrypted org-level Kisi API key (KISI_ENCRYPTION_KEY env var)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -36,6 +37,11 @@ CREATE TABLE locations (
     name VARCHAR(255) NOT NULL,                  -- Display name (e.g. "House of Gains - Fort Smith")
     city VARCHAR(100),
     state VARCHAR(50),
+    subscription_status VARCHAR(50) NOT NULL DEFAULT 'inactive', -- DR-027: 'inactive', 'active', 'lapsed'
+    tier              VARCHAR(50),                               -- DR-027: AccessSync billing tier for this location
+    subscribed_at     TIMESTAMP WITH TIME ZONE,                 -- DR-027: when subscription was activated
+    subscription_id   VARCHAR(255),                             -- DR-027: Wix/billing subscription reference ID
+    kisi_api_key      VARCHAR(500),                             -- DR-028: AES-256-GCM encrypted override key (null = use client default)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
