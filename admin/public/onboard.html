@@ -1109,7 +1109,7 @@ async function goToDone() {
     `You're all set, ${esc(state.name)}!`;
 
   // Wire up "Back to Dashboard" link now that we have a clientId
-  const dashUrl = `/dashboard.html?clientId=${state.clientId}`;
+  const dashUrl = `/dashboard-final.html?clientId=${state.clientId}`;
   document.getElementById('btn-dashboard').href = dashUrl;
 
   // Build mapping links for each location added
@@ -1121,7 +1121,7 @@ async function goToDone() {
           <div class="loc-name">${esc(loc.name)}</div>
           <div class="loc-sub">${[loc.city, loc.state].filter(Boolean).join(', ') || 'Location added'}</div>
         </div>
-        <a href="/mapping.html?clientId=${esc(state.clientId)}&locationId=${esc(loc.id)}"
+        <a href="/operator_plan_setup_dashboard.html?clientId=${esc(state.clientId)}&locationId=${esc(loc.id)}"
            class="btn btn-primary"
            style="height:36px;padding:0 16px;font-size:12px">
           Map Plans →
@@ -1132,7 +1132,7 @@ async function goToDone() {
     // Primary CTA → first location mapping
     const first = state.locations[0];
     const mapBtn = document.getElementById('btn-map-first');
-    mapBtn.href = `/mapping.html?clientId=${state.clientId}&locationId=${first.id}`;
+    mapBtn.href = `/operator_plan_setup_dashboard.html?clientId=${state.clientId}&locationId=${first.id}`;
     mapBtn.classList.remove('hidden');
   }
 

@@ -50,9 +50,12 @@ AccessSync is a Wix App Market SaaS product that automates physical space access
 - `admin/public/index.html` — ✅ Built. Dashboard shell — 5 panels, login screen, drawer, modal.
 - `admin/public/app.js` — ✅ Built. Full frontend logic — auth, panels, polling, interactions.
 - `admin/public/styles.css` — ✅ Built. Full CSS v2.0 — brand, layout, components, responsive.
-- `admin/public/dashboard.html` — ✅ Built. Operator dashboard. Edit button navigates to /mapping.html.
-- `admin/public/onboard.html` — ✅ Built. Operator-facing multi-step onboarding wizard (Wix Site → Your Plan → Location → Connect Doors → All Set). No admin auth gate. Calls `/operator/*` endpoints. Pro tier = high-traffic door. Step 5 amber reminder if API key skipped. Back to Dashboard links to `/dashboard.html?clientId=...`.
-- `admin/public/mapping.html` — ✅ Built. Plan mapping matrix screen. Wired to live data via /operator/:clientId/locations/:locationId/mappings.
+- `admin/public/dashboard-final.html` — ✅ Built. Operator console Overview tab. Sora font, CSS variables, dark mode, location accordions, member sync comparison, error management. Sub-nav links to all 5 operator screens.
+- `admin/public/operator_members_page.html` — ✅ Built. Operator console Members tab. Plan holder/sub-member relationships, filters (plan/status/role/search), detail drawer, pagination. Mock data.
+- `admin/public/operator_plan_setup_dashboard.html` — ✅ Built. Operator console Plan Mapping tab. Multi-member plan setup with toggle, max members input, Kisi group dropdown. Mock data.
+- `admin/public/operator_access_dashboard.html` — ✅ Built. Operator console Access tab. 30-day access activity with hourly bar chart, event filter tags, paginated activity grid. Mock data.
+- `admin/public/operator_admin.html` — ✅ Built. Operator console Admin tab. Wix-synced administrators, role badges, collapsible info section. Mock data.
+- `admin/public/onboard.html` — ✅ Built. Operator-facing multi-step onboarding wizard (Wix Site → Your Plan → Location → Connect Doors → All Set). No admin auth gate. Calls `/operator/*` endpoints. Pro tier = high-traffic door. Step 5 amber reminder if API key skipped. Back to Dashboard links to `/dashboard-final.html?clientId=...`.
 - `admin/routes/operator.js` — ✅ Built. Operator API. Public signup endpoints: POST /operator/clients, POST /operator/clients/:id/locations, POST /operator/clients/:id/api-key (no admin JWT — OB-24 tracks pre-launch auth). Operator data endpoints: GET /operator/:clientId/members, /alerts, /errors, /locations/:locationId/mappings + PATCH /operator/:clientId/plan-mappings/:id.
 
 ---

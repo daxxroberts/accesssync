@@ -214,7 +214,7 @@ async function seed() {
 
   console.log('\n[seed] ✅ Done. House of Gains data loaded.');
   console.log(`\n[seed] Dashboard URL:`);
-  console.log(`  https://accesssync-admin.up.railway.app/dashboard.html?client=${IDS.client}`);
+  console.log(`  https://accesssync-admin.up.railway.app/dashboard-final.html?client=${IDS.client}`);
 
   await db.pool.end();
 }
