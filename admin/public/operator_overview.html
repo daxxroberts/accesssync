@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AccessSync — Operator Dashboard: Overview</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #f4f6f9;
+      min-height: 100vh;
+    }
+
+    /* ── Dashboard shell (shared) ── */
+    .dash-nav {
+      background: #0f1923;
+      padding: 0 16px;
+      display: flex; align-items: center;
+      height: 56px; gap: 12px;
+      overflow-x: auto;
+    }
+
+    .dash-logo {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 16px; font-weight: 700; color: #fff;
+      flex-shrink: 0;
+    }
+
+    .dash-logo-icon {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: linear-gradient(135deg, #1a6fc4, #0d4a8a);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; color: #fff; font-weight: 800;
+    }
+
+    .dash-nav-links {
+      display: flex; gap: 0; margin-left: 16px;
+      flex-shrink: 0;
+    }
+
+    .dash-nav-link {
+      padding: 16px 14px;
+      font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.5);
+      text-decoration: none; border-bottom: 2px solid transparent;
+      transition: all 0.15s; position: relative;
+      white-space: nowrap;
+    }
+
+    .dash-nav-link:hover { color: rgba(255,255,255,0.8); }
+    .dash-nav-link.active { color: #fff; border-bottom-color: #1a6fc4; }
+
+    .nav-badge {
+      position: absolute; top: 10px; right: 2px;
+      min-width: 15px; height: 15px; padding: 0 4px;
+      border-radius: 8px; background: #dc2626;
+      font-size: 9px; font-weight: 700; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      line-height: 1;
+    }
+
+    /* ── Content ── */
+    .dash-content {
+      max-width: 1020px;
+      margin: 0 auto;
+      padding: 24px 16px;
+    }
+
+    /* ── Page header ── */
+    .page-header {
+      margin-bottom: 24px;
+    }
+
+    .page-title {
+      font-size: 24px; font-weight: 700; color: #0f1923;
+      letter-spacing: -0.3px; margin-bottom: 4px;
+    }
+
+    .page-subtitle { font-size: 14px; color: #6b7a8d; line-height: 1.5; }
+
+    /* ── Stats grid ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: #fff; border: 1.5px solid #e8edf3;
+      border-radius: 10px; padding: 16px;
+    }
+
+    .stat-value { font-size: 28px; font-weight: 700; color: #0f1923; }
+    .stat-label { font-size: 11px; font-weight: 600; color: #9aa5b4; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+    .stat-card.alert .stat-value { color: #dc2626; }
+    .stat-card.warn .stat-value { color: #d97706; }
+    .stat-card.good .stat-value { color: #18a058; }
+
+    /* ── Section cards ── */
+    .section-card {
+      background: #fff; border: 1.5px solid #e8edf3;
+      border-radius: 12px; padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px; flex-wrap: wrap; gap: 8px;
+    }
+
+    .section-title {
+      font-size: 16px; font-weight: 700; color: #0f1923;
+    }
+
+    .section-link {
+      font-size: 13px; font-weight: 600; color: #1a6fc4;
+      text-decoration: none; display: flex; align-items: center; gap: 4px;
+    }
+
+    .section-link:hover { text-decoration: underline; }
+
+    /* ── Activity feed ── */
+    .activity-list { list-style: none; }
+
+    .activity-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid #f0f2f5;
+    }
+
+    .activity-item:last-child { border-bottom: none; }
+
+    .activity-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      margin-top: 5px; flex-shrink: 0;
+    }
+
+    .activity-dot.green { background: #18a058; }
+    .activity-dot.red { background: #dc2626; }
+    .activity-dot.blue { background: #1a6fc4; }
+    .activity-dot.orange { background: #d97706; }
+
+    .activity-text { font-size: 13px; color: #374151; line-height: 1.5; }
+    .activity-time { font-size: 11px; color: #9aa5b4; margin-top: 2px; }
+
+    /* ── Health bar ── */
+    .health-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f2f5;
+    }
+
+    .health-row:last-child { border-bottom: none; }
+
+    .health-indicator {
+      width: 10px; height: 10px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .health-indicator.ok { background: #18a058; }
+    .health-indicator.warn { background: #d97706; }
+    .health-indicator.error { background: #dc2626; }
+
+    .health-label { font-size: 13px; font-weight: 600; color: #374151; flex: 1; }
+    .health-status { font-size: 12px; color: #9aa5b4; }
+
+    /* ── Platform badge ── */
+    .platform-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #f0f7ff; border: 1px solid #d0e3f7;
+      border-radius: 6px; padding: 6px 12px;
+      font-size: 12px; font-weight: 600; color: #1a6fc4;
+    }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: -60px; left: 50%; transform: translateX(-50%);
+      background: #0f1923; color: #fff; padding: 12px 20px;
+      border-radius: 10px; font-size: 13px; font-weight: 600;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      z-index: 800; transition: transform 0.3s ease;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    .toast.visible { transform: translateX(-50%) translateY(-80px); }
+    .toast.success { border-left: 4px solid #18a058; }
+    .toast.info { border-left: 4px solid #1a6fc4; }
+
+    /* ── Responsive — mobile-first ── */
+    @media (max-width: 640px) {
+      .dash-nav { height: auto; flex-wrap: wrap; padding: 12px 16px; gap: 8px; }
+      .dash-nav-links { margin-left: 0; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .dash-nav-link { padding: 10px 12px; font-size: 12px; }
+      .page-title { font-size: 20px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .quick-actions { grid-template-columns: 1fr; }
+      .section-card { padding: 16px; }
+    }
+
+    @media (min-width: 641px) and (max-width: 768px) {
+      .dash-nav-links { margin-left: 16px; }
+      .stats-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    @media (min-width: 769px) {
+      .dash-nav { padding: 0 32px; gap: 24px; }
+      .dash-nav-links { margin-left: 32px; }
+      .dash-content { padding: 32px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="dash-nav">
+    <div class="dash-logo">
+      <div class="dash-logo-icon">A</div>
+      AccessSync
+    </div>
+    <div class="dash-nav-links" id="navLinks"></div>
+  </nav>
+
+  <div class="dash-content">
+    <div class="page-header">
+      <div class="page-title">Overview</div>
+      <div class="page-subtitle" id="pageSubtitle"></div>
+    </div>
+
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <!-- Two-column layout for activity + health -->
+    <div style="display:grid;grid-template-columns:1fr;gap:16px;" id="twoCol">
+
+      <!-- Recent Activity -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">Recent Activity</div>
+          <a href="operator_members_page.html" class="section-link">View all members &#8250;</a>
+        </div>
+        <ul class="activity-list" id="activityFeed"></ul>
+      </div>
+
+      <!-- System Health -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">System Health</div>
+          <a href="#" class="section-link">View details &#8250;</a>
+        </div>
+        <div id="healthPanel"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ═══════════════════════════════════════
+    // Platform config (dynamic — no static text)
+    // ═══════════════════════════════════════
+    var PLATFORM_CONFIG = { name: 'Kisi', groupLabel: 'Access Group' };
+    function platformName() { return PLATFORM_CONFIG.name; }
+    function groupLabel() { return PLATFORM_CONFIG.groupLabel; }
+
+    // ═══════════════════════════════════════
+    // Demo data
+    // ═══════════════════════════════════════
+
+    var stats = {
+      totalMembers: 20,
+      active: 16,
+      pending: 1,
+      failed: 2,
+      suspended: 1,
+      totalPlans: 4,
+      multiMemberPlans: 3,
+      unlinkedPlans: 1
+    };
+
+    var recentActivity = [
+      { type: 'green', text: 'Sarah Roberts — access provisioned successfully', time: '2 min ago' },
+      { type: 'red', text: 'Kim Roberts — access provisioning failed (email mismatch)', time: '15 min ago' },
+      { type: 'blue', text: 'Marcus Roberts — added as additional member to Family Monthly', time: '28 min ago' },
+      { type: 'orange', text: 'Ryan Wilson — access suspended by operator', time: '1 hour ago' },
+      { type: 'green', text: 'David Tran — access provisioned successfully', time: '3 hours ago' },
+      { type: 'green', text: 'Grace Park — access provisioned successfully', time: '5 hours ago' },
+      { type: 'blue', text: 'Studio Pass plan created — pending ' + platformName() + ' group link', time: '1 day ago' },
+      { type: 'red', text: platformName() + ' API rate limit hit — retried after 30s', time: '1 day ago' },
+    ];
+
+    var healthChecks = [
+      { label: platformName() + ' API Connection', status: 'ok', detail: 'Connected · 24ms' },
+      { label: 'Wix Webhook Listener', status: 'ok', detail: 'Healthy · last ping 12s ago' },
+      { label: 'Member Sync Queue', status: 'warn', detail: '2 retries queued' },
+      { label: 'Unlinked Plans', status: 'error', detail: '1 plan without ' + groupLabel().toLowerCase() },
+    ];
+
+    // ═══════════════════════════════════════
+    // Dynamic messaging
+    // ═══════════════════════════════════════
+
+    function getPageSubtitle() {
+      return 'Your AccessSync dashboard. ' + stats.totalMembers + ' members across ' + stats.totalPlans + ' plans, syncing with ' + platformName() + '.';
+    }
+
+    // ═══════════════════════════════════════
+    // Navigation
+    // ═══════════════════════════════════════
+
+    function getNavTabs() {
+      return [
+        { label: 'Overview', href: 'operator_overview.html', badge: 0, active: true },
+        { label: 'Members', href: 'operator_members_page.html', badge: stats.failed, active: false },
+        { label: 'Plan Mapping', href: 'operator_plan_setup_dashboard.html', badge: stats.unlinkedPlans, active: false },
+        { label: platformName() + ' Config', href: '#', badge: 0, active: false },
+        { label: 'Admin', href: 'operator_admin.html', badge: 0, active: false },
+      ];
+    }
+
+    function renderNav() {
+      var container = document.getElementById('navLinks');
+      container.innerHTML = '';
+      getNavTabs().forEach(function(tab) {
+        var a = document.createElement('a');
+        a.href = tab.href;
+        a.className = 'dash-nav-link' + (tab.active ? ' active' : '');
+        a.textContent = tab.label;
+        if (tab.badge > 0) {
+          var badge = document.createElement('span');
+          badge.className = 'nav-badge';
+          badge.textContent = tab.badge;
+          a.appendChild(badge);
+        }
+        container.appendChild(a);
+      });
+    }
+
+    // ═══════════════════════════════════════
+    // Render functions
+    // ═══════════════════════════════════════
+
+    function renderStats() {
+      var grid = document.getElementById('statsGrid');
+      grid.innerHTML =
+        '<div class="stat-card"><div class="stat-value">' + stats.totalMembers + '</div><div class="stat-label">Total Members</div></div>' +
+        '<div class="stat-card good"><div class="stat-value">' + stats.active + '</div><div class="stat-label">Active</div></div>' +
+        '<div class="stat-card warn"><div class="stat-value">' + stats.pending + '</div><div class="stat-label">Pending</div></div>' +
+        (stats.failed > 0 ? '<div class="stat-card alert"><div class="stat-value">' + stats.failed + '</div><div class="stat-label">Failed</div></div>' : '') +
+        '<div class="stat-card"><div class="stat-value">' + stats.totalPlans + '</div><div class="stat-label">Plans</div></div>' +
+        (stats.unlinkedPlans > 0 ? '<div class="stat-card warn"><div class="stat-value">' + stats.unlinkedPlans + '</div><div class="stat-label">Unlinked</div></div>' : '');
+    }
+
+    function renderQuickActions() {
+      var el = document.getElementById('quickActions');
+      var actions = [
+        { icon: '&#9998;', color: 'blue', label: 'Manage Members', sub: stats.totalMembers + ' across ' + stats.totalPlans + ' plans', href: 'operator_members_page.html' },
+        { icon: '&#9881;', color: 'green', label: 'Plan Mapping', sub: stats.multiMemberPlans + ' multi-member plans', href: 'operator_plan_setup_dashboard.html' },
+        { icon: '&#128274;', color: 'orange', label: platformName() + ' Config', sub: 'Groups & credentials', href: '#' },
+        { icon: '&#128101;', color: 'blue', label: 'Admin', sub: 'Manage administrators', href: 'operator_admin.html' },
+      ];
+
+      if (stats.failed > 0) {
+        actions.unshift({ icon: '&#9888;', color: 'red', label: 'Resolve Failed (' + stats.failed + ')', sub: 'Members need attention', href: 'operator_members_page.html?status=failed' });
+      }
+
+      el.innerHTML = actions.map(function(a) {
+        return '<a class="quick-action" href="' + a.href + '">' +
+          '<div class="quick-action-icon ' + a.color + '">' + a.icon + '</div>' +
+          '<div><div class="quick-action-text">' + a.label + '</div><div class="quick-action-sub">' + a.sub + '</div></div>' +
+        '</a>';
+      }).join('');
+    }
+
+    function renderActivity() {
+      var el = document.getElementById('activityFeed');
+      el.innerHTML = recentActivity.map(function(a) {
+        return '<li class="activity-item">' +
+          '<div class="activity-dot ' + a.type + '"></div>' +
+          '<div><div class="activity-text">' + a.text + '</div><div class="activity-time">' + a.time + '</div></div>' +
+        '</li>';
+      }).join('');
+    }
+
+    function renderHealth() {
+      var el = document.getElementById('healthPanel');
+      el.innerHTML = healthChecks.map(function(h) {
+        return '<div class="health-row">' +
+          '<div class="health-indicator ' + h.status + '"></div>' +
+          '<div class="health-label">' + h.label + '</div>' +
+          '<div class="health-status">' + h.detail + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function setupTwoCol() {
+      var el = document.getElementById('twoCol');
+      if (window.innerWidth >= 769) {
+        el.style.gridTemplateColumns = '1fr 1fr';
+      } else {
+        el.style.gridTemplateColumns = '1fr';
+      }
+    }
+
+    // ═══════════════════════════════════════
+    // Toast
+    // ═══════════════════════════════════════
+    var toastTimer;
+    function showToast(type, msg) {
+      var t = document.getElementById('toast');
+      var icons = { success: '&#10003;', info: '&#8505;' };
+      t.className = 'toast ' + type;
+      t.innerHTML = (icons[type] || '') + ' ' + msg;
+      t.classList.add('visible');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function() { t.classList.remove('visible'); }, 3000);
+    }
+
+    // ═══════════════════════════════════════
+    // Init
+    // ═══════════════════════════════════════
+
+    document.getElementById('pageSubtitle').textContent = getPageSubtitle();
+    renderNav();
+    renderStats();
+    renderActivity();
+    renderHealth();
+    setupTwoCol();
+    window.addEventListener('resize', setupTwoCol);
+  </script>
+</body>
+</html>
