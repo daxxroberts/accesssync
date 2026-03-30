@@ -709,44 +709,6 @@
     }
 
     // ═══════════════════════════════════════
-    // Nav tabs — with dynamic notification badges
-    // ═══════════════════════════════════════
-
-    function getNavTabs() {
-      var unlinkedCount = plans.filter(function(p) { return !p.kisiGroupId; }).length;
-      var failedMembers = plans.reduce(function(sum, p) {
-        return sum + ((p.activeMembers || []).filter(function(am) { return am.status === 'failed'; }).length);
-      }, 0);
-      var healthIssues = 2; // would come from API in production
-
-      return [
-        { label: 'Overview', href: 'dashboard-final.html', badge: 0, active: false },
-        { label: 'Members', href: 'operator_members_page.html', badge: failedMembers, active: false },
-        { label: 'Plan Mapping', href: 'operator_plan_setup_dashboard.html', badge: unlinkedCount, active: true },
-        { label: platformName() + ' Config', href: '#', badge: 0, active: false },
-        { label: 'Admin', href: 'operator_admin.html', badge: 0, active: false },
-      ];
-    }
-
-    function renderNav() {
-      var container = document.getElementById('navLinks');
-      container.innerHTML = '';
-      getNavTabs().forEach(function(tab) {
-        var a = document.createElement('a');
-        a.href = tab.href;
-        a.className = 'dash-nav-link' + (tab.active ? ' active' : '');
-        a.textContent = tab.label;
-        if (tab.badge > 0) {
-          var badge = document.createElement('span');
-          badge.className = 'nav-badge';
-          badge.textContent = tab.badge;
-          a.appendChild(badge);
-        }
-        container.appendChild(a);
-      });
-    }
-
-    // ═══════════════════════════════════════
     // Data
     // ═══════════════════════════════════════
 
