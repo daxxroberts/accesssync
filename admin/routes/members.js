@@ -33,6 +33,7 @@ router.get('/search', async (req, res) => {
 
     params.push(parseInt(limit));
 
+    // Note: email/display_name are not stored (data minimization — fetched from Wix on-demand)
     const result = await db.query(
       `SELECT mi.id,
               mi.client_id,
@@ -40,8 +41,6 @@ router.get('/search', async (req, res) => {
               mi.source_platform,
               mi.hardware_platform,
               mi.hardware_user_id,
-              mi.email,
-              mi.display_name,
               mi.created_at,
               mi.updated_at,
               mas.status          AS access_status,
@@ -172,6 +171,101 @@ router.post('/:id/retry', async (req, res) => {
     res.json({ ok: true, queued: jobName, errorId });
   } catch (err) {
     console.error('[Admin/members] POST /:id/retry error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /admin/members/by-client — Member Sync Panel ──────────────
+// Returns paginated members for a client with optional location + status filters.
+// Used by the Admin Hub Member Sync panel.
+router.get('/by-client', async (req, res) => {
+  try {
+    const { client_id, location_id, status, page = 1, limit = 50 } = req.query;
+    if (!client_id) return res.status(400).json({ error: 'client_id is required' });
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const params = [client_id];
+    const conditions = ['mi.client_id = $1'];
+
+    if (status && status !== 'all') {
+      params.push(status);
+      conditions.push(`mas.status = $${params.length}`);
+    }
+
+    if (location_id) {
+      // Filter members who have role assignments at this location
+      params.push(location_id);
+      conditions.push(
+        `EXISTS (
+           SELECT 1 FROM member_role_assignments mra
+           JOIN plan_mappings pm ON pm.id = mra.mapping_id AND pm.location_id = $${params.length}
+           WHERE mra.member_id = mi.id
+         )`
+      );
+    }
+
+    params.push(parseInt(limit));
+    params.push(offset);
+
+    const [membersResult, countResult] = await Promise.all([
+      db.query(
+        `SELECT mi.id,
+                mi.platform_member_id,
+                mi.source_platform,
+                mi.hardware_platform,
+                mi.hardware_user_id,
+                mi.created_at,
+                mas.status          AS access_status,
+                mas.provisioned_at,
+                mas.updated_at      AS state_updated_at,
+                mal.event_type      AS last_event_type,
+                mal.created_at      AS last_event_at
+         FROM   member_identity mi
+         LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+         LEFT JOIN LATERAL (
+           SELECT event_type, created_at
+           FROM   member_access_log
+           WHERE  member_id = mi.id
+           ORDER  BY created_at DESC
+           LIMIT  1
+         ) mal ON TRUE
+         WHERE  ${conditions.join(' AND ')}
+         ORDER  BY mas.provisioned_at DESC NULLS LAST
+         LIMIT  $${params.length - 1} OFFSET $${params.length}`,
+        params
+      ),
+      db.query(
+        `SELECT COUNT(*)::int AS total
+         FROM   member_identity mi
+         LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+         WHERE  ${conditions.join(' AND ')}`,
+        params.slice(0, params.length - 2) // exclude limit + offset
+      ),
+    ]);
+
+    // Status breakdown
+    const breakdownResult = await db.query(
+      `SELECT mas.status, COUNT(*)::int AS count
+       FROM   member_identity mi
+       LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+       WHERE  mi.client_id = $1
+       GROUP  BY mas.status`,
+      [client_id]
+    );
+    const breakdown = {};
+    for (const r of breakdownResult.rows) {
+      breakdown[r.status || 'unknown'] = r.count;
+    }
+
+    res.json({
+      data:      membersResult.rows,
+      total:     countResult.rows[0].total,
+      page:      parseInt(page),
+      limit:     parseInt(limit),
+      breakdown,
+    });
+  } catch (err) {
+    console.error('[Admin/members] GET /by-client error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

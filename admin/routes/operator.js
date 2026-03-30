@@ -11,6 +11,96 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
+const { encryptApiKey } = require('../../core/crypto-utils');
+
+// ── GET /operator/webhook-url ────────────────────────────────────
+// Returns the core engine webhook URL for this installation.
+// Used by the onboarding wizard Step 5. Must be before /:clientId.
+router.get('/webhook-url', (req, res) => {
+  const base = (process.env.CORE_ENGINE_URL || '').replace(/\/$/, '');
+  res.json({ url: base ? `${base}/webhooks/wix` : null });
+});
+
+// ══ Operator Signup Endpoints (OB-24: add auth before public launch) ══════════
+
+// ── POST /operator/clients ───────────────────────────────────────
+// Operator self-onboarding: create a new client account.
+// Mirrors POST /admin/clients logic but requires no admin JWT.
+router.post('/clients', async (req, res) => {
+  try {
+    const {
+      name, platform = 'wix', hardware_platform, tier,
+      site_id, site_name, site_url, notification_email,
+    } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
+
+    // Business rule: tier determines hardware_platform (Connect=Kisi, Base/Pro=Seam)
+    // Explicit hardware_platform override allowed.
+    const derivedHardware = hardware_platform || (tier === 'Connect' ? 'kisi' : tier ? 'seam' : null);
+
+    const result = await db.query(
+      `INSERT INTO clients (name, platform, hardware_platform, tier, site_id, site_name, site_url, notification_email, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), NOW())
+       RETURNING id, name, platform, hardware_platform, tier, site_id, site_name, notification_email, status, created_at`,
+      [name.trim(), platform, derivedHardware, tier || null, site_id || null, site_name || null, site_url || null, notification_email || null]
+    );
+    console.log(`[operator/setup] Created client: ${result.rows[0].name} (${result.rows[0].id})`);
+    res.status(201).json({ ok: true, client: result.rows[0] });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Site ID already in use' });
+    console.error('[operator/setup] POST /clients error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /operator/clients/:clientId/locations ───────────────────
+// Operator self-onboarding: add a location to a new client account.
+router.post('/clients/:clientId/locations', async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const { name, city, state, tier } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
+
+    const clientCheck = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!clientCheck.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    const result = await db.query(
+      `INSERT INTO locations (client_id, name, city, state, tier, subscription_status, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'inactive', NOW())
+       RETURNING id, client_id, name, city, state, tier, subscription_status, created_at`,
+      [clientId, name.trim(), city || null, state || null, tier || null]
+    );
+    console.log(`[operator/setup] Created location ${result.rows[0].name} for client ${clientId}`);
+    res.status(201).json({ ok: true, location: result.rows[0] });
+  } catch (err) {
+    console.error('[operator/setup] POST /clients/:clientId/locations error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /operator/clients/:clientId/api-key ─────────────────────
+// Operator self-onboarding: store encrypted door system API key.
+// Write-only: key is AES-256-GCM encrypted, never returned.
+router.post('/clients/:clientId/api-key', async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const { apiKey } = req.body;
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return res.status(400).json({ error: 'apiKey is required' });
+    }
+    const encrypted = encryptApiKey(apiKey.trim());
+    const result = await db.query(
+      `UPDATE clients SET kisi_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
+      [encrypted, clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    console.log(`[operator/setup] API key set for client ${clientId} (${result.rows[0].name})`);
+    res.json({ ok: true, message: 'API key saved' });
+  } catch (err) {
+    console.error('[operator/setup] POST /clients/:clientId/api-key error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── GET /operator/:clientId ─────────────────────────────────────
 // Client overview: name, platform status, all-location stats
@@ -286,6 +376,127 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[operator] PATCH plan-mappings/:mappingId error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ══ OB-05: Operator-facing visibility endpoints ════════════════════
+// These are consumed by OB-06 (Wix widget) once built.
+// Auth: OB-08 (Wix JWT) will gate these before widget launch.
+
+// ── GET /operator/:clientId/members ─────────────────────────────
+// Paginated member list for operator's account view.
+router.get('/:clientId/members', async (req, res) => {
+  const { clientId } = req.params;
+  const { location_id, status, page = 1, limit = 25 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  try {
+    const params = [clientId];
+    const conditions = ['mi.client_id = $1'];
+
+    if (status && status !== 'all') {
+      params.push(status);
+      conditions.push(`mas.status = $${params.length}`);
+    }
+
+    if (location_id) {
+      params.push(location_id);
+      conditions.push(
+        `EXISTS (
+           SELECT 1 FROM member_role_assignments mra
+           JOIN plan_mappings pm ON pm.id = mra.mapping_id AND pm.location_id = $${params.length}
+           WHERE mra.member_id = mi.id
+         )`
+      );
+    }
+
+    params.push(parseInt(limit));
+    params.push(offset);
+
+    const [rows, countRow] = await Promise.all([
+      db.query(
+        `SELECT mi.id,
+                mi.platform_member_id,
+                mi.hardware_platform,
+                mas.status          AS access_status,
+                mas.provisioned_at
+         FROM   member_identity mi
+         LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+         WHERE  ${conditions.join(' AND ')}
+         ORDER  BY mas.provisioned_at DESC NULLS LAST
+         LIMIT  $${params.length - 1} OFFSET $${params.length}`,
+        params
+      ),
+      db.query(
+        `SELECT COUNT(*)::int AS total
+         FROM   member_identity mi
+         LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+         WHERE  ${conditions.join(' AND ')}`,
+        params.slice(0, params.length - 2)
+      ),
+    ]);
+
+    res.json({
+      members: rows.rows,
+      total:   countRow.rows[0].total,
+      page:    parseInt(page),
+      limit:   parseInt(limit),
+    });
+  } catch (err) {
+    console.error('[operator] GET /:clientId/members error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /operator/:clientId/alerts ───────────────────────────────
+// Config alerts (missing doors, expired credentials, location mismatches).
+router.get('/:clientId/alerts', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const result = await db.query(
+      `SELECT id, alert_type, hardware_ref, affected_member_count, resolved_at,
+              created_at, last_seen_at
+       FROM config_alert_log
+       WHERE client_id = $1
+         AND resolved_at IS NULL
+       ORDER BY last_seen_at DESC
+       LIMIT 50`,
+      [clientId]
+    );
+    res.json({ alerts: result.rows });
+  } catch (err) {
+    console.error('[operator] GET /:clientId/alerts error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /operator/:clientId/errors ───────────────────────────────
+// Error queue summary for operator view — recent failed jobs.
+router.get('/:clientId/errors', async (req, res) => {
+  const { clientId } = req.params;
+  const { limit = 20 } = req.query;
+  try {
+    const result = await db.query(
+      `SELECT id, event_type, error_reason AS plain_message,
+              plan_name, door_name, location_id,
+              retry_count, status, created_at
+       FROM error_queue
+       WHERE client_id = $1 AND status = 'failed'
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [clientId, parseInt(limit)]
+    );
+    const countResult = await db.query(
+      `SELECT COUNT(*)::int AS total FROM error_queue WHERE client_id = $1 AND status = 'failed'`,
+      [clientId]
+    );
+    res.json({
+      errors: result.rows,
+      total:  countResult.rows[0].total,
+    });
+  } catch (err) {
+    console.error('[operator] GET /:clientId/errors error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

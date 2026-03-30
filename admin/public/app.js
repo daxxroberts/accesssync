@@ -258,10 +258,11 @@ function switchPanel(panel) {
   document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
   document.getElementById(`panel-${panel}`).classList.remove('hidden');
 
-  if (panel === 'errors')   loadErrors();
-  if (panel === 'webhooks') startWebhookPolling();
-  if (panel === 'queue')    startQueuePolling();
-  if (panel === 'clients')  loadClients();
+  if (panel === 'errors')     loadErrors();
+  if (panel === 'webhooks')   startWebhookPolling();
+  if (panel === 'queue')      startQueuePolling();
+  if (panel === 'clients')    loadClients();
+  if (panel === 'membersync') initMemberSync();
 }
 
 // ── Dashboard Init ─────────────────────────────────────────────────
@@ -925,14 +926,20 @@ function renderClients(data) {
 }
 
 function openClientDetail(id) {
-  const res = apiFetch('/admin/clients').then(r => r.json()).then(json => {
+  Promise.all([
+    apiFetch('/admin/clients').then(r => r.json()),
+    apiFetch(`/admin/clients/${id}/api-key/status`).then(r => r.json()).catch(() => ({ hasKey: null })),
+  ]).then(([json, keyStatus]) => {
     const c = (json.data || []).find(x => x.id === id);
     if (!c) return;
-    openDrawer(`Client: ${c.name}`, renderClientDetail(c));
+    openDrawer(`Client: ${c.name}`, renderClientDetail(c, keyStatus.hasKey));
   }).catch(() => {});
 }
 
-function renderClientDetail(c) {
+function renderClientDetail(c, hasKey) {
+  const keyLabel = hasKey === true ? '••••••••' : (hasKey === false ? 'Not set' : '—');
+  const keyLabelClass = hasKey === false ? 'style="opacity:0.5"' : '';
+  const keyBtnLabel = hasKey ? 'Rotate Key' : 'Set Key';
   return `
     <div class="detail-section">
       <div class="detail-row"><span class="detail-label">Name</span><span>${esc(c.name)}</span></div>
@@ -946,12 +953,60 @@ function renderClientDetail(c) {
       <div class="detail-row"><span class="detail-label">Members</span><span>${c.member_count} total, ${c.active_count} active</span></div>
       <div class="detail-row"><span class="detail-label">Last Sync</span><span>${fmt(c.last_sync_at)}</span></div>
       <div class="detail-row"><span class="detail-label">Created</span><span>${fmt(c.created_at)}</span></div>
+      <div class="detail-row">
+        <span class="detail-label">Kisi API Key</span>
+        <span ${keyLabelClass}>${keyLabel}</span>
+        <button class="btn btn-sm btn-secondary" style="margin-left:auto" onclick="openApiKeyForm('${c.id}', '${esc(c.name)}')">${keyBtnLabel}</button>
+      </div>
     </div>
     <div class="drawer-footer-actions">
       <button class="btn btn-secondary" onclick="openClientEdit('${c.id}')">Edit Client</button>
       <button class="btn btn-accent" onclick="openOperatorDashboard('${c.id}', '${esc(c.name)}')">Open Dashboard</button>
     </div>
   `;
+}
+
+function openApiKeyForm(clientId, clientName) {
+  openDrawer(`API Key: ${clientName}`, `
+    <div class="detail-section">
+      <p style="font-size:0.85rem;color:var(--neutral-500);margin-bottom:1rem;">
+        Write-only. Once saved, the key cannot be viewed — only rotated. The key is encrypted at rest (AES-256-GCM).
+      </p>
+      <div class="form-field">
+        <label>Kisi API Key</label>
+        <input type="password" id="api-key-input" class="form-input" placeholder="Paste Kisi API key…" autocomplete="off" />
+      </div>
+    </div>
+    <div class="drawer-footer-actions">
+      <button class="btn btn-secondary" onclick="openClientDetail('${clientId}')">Back</button>
+      <button class="btn btn-accent" onclick="saveApiKey('${clientId}')">Save Key</button>
+    </div>
+  `);
+  // Auto-focus the input after the drawer renders
+  setTimeout(() => { const el = document.getElementById('api-key-input'); if (el) el.focus(); }, 50);
+}
+
+async function saveApiKey(clientId) {
+  const input = document.getElementById('api-key-input');
+  const key = input ? input.value.trim() : '';
+  if (!key) { toast('API key cannot be empty', 'error'); return; }
+
+  try {
+    const res = await apiFetch(`/admin/clients/${clientId}/api-key`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ apiKey: key }),
+    });
+    if (res.ok) {
+      toast('API key saved', 'success');
+      openClientDetail(clientId); // reload detail with updated key status
+    } else {
+      const j = await res.json().catch(() => ({}));
+      toast(`Save failed: ${j.error || 'unknown error'}`, 'error');
+    }
+  } catch {
+    toast('Save failed', 'error');
+  }
 }
 
 function openClientEdit(id) {
@@ -1047,6 +1102,157 @@ function openOperatorDashboard(id, name) {
 }
 
 document.getElementById('clients-refresh-btn').addEventListener('click', () => loadClients());
+
+// ══ Member Sync Panel ══════════════════════════════════════════════
+
+const msState = {
+  clients:    [],
+  page:       1,
+  limit:      50,
+  total:      0,
+};
+
+async function initMemberSync() {
+  // Populate client selector
+  try {
+    const res = await apiFetch('/admin/clients');
+    const j   = await res.json();
+    msState.clients = j.data || [];
+    const sel = document.getElementById('ms-client-select');
+    sel.innerHTML = '<option value="">— Select Client —</option>' +
+      msState.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  } catch { /* ignore */ }
+}
+
+async function loadMemberSyncLocations(clientId) {
+  const sel = document.getElementById('ms-location-select');
+  sel.innerHTML = '<option value="">All Locations</option>';
+  if (!clientId) return;
+  try {
+    const res = await apiFetch(`/admin/clients/${clientId}/locations`);
+    const j   = await res.json();
+    sel.innerHTML = '<option value="">All Locations</option>' +
+      (j.data || []).map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+  } catch { /* ignore */ }
+}
+
+async function loadMemberSync() {
+  const clientId  = document.getElementById('ms-client-select').value;
+  const locationId = document.getElementById('ms-location-select').value;
+  const status    = document.getElementById('ms-status-select').value;
+
+  if (!clientId) {
+    document.getElementById('ms-empty').classList.remove('hidden');
+    document.getElementById('ms-table-wrap').classList.add('hidden');
+    document.getElementById('ms-stat-cards').classList.add('hidden');
+    document.getElementById('ms-pagination').classList.add('hidden');
+    return;
+  }
+
+  document.getElementById('ms-loading').classList.remove('hidden');
+  document.getElementById('ms-empty').classList.add('hidden');
+  document.getElementById('ms-table-wrap').classList.add('hidden');
+
+  try {
+    const params = new URLSearchParams({
+      client_id: clientId,
+      page:      msState.page,
+      limit:     msState.limit,
+    });
+    if (locationId) params.set('location_id', locationId);
+    if (status && status !== 'all') params.set('status', status);
+
+    const res = await apiFetch(`/admin/members/by-client?${params}`);
+    const j   = await res.json();
+
+    msState.total = j.total || 0;
+    renderMemberSyncStats(j.breakdown || {}, j.total || 0);
+    renderMemberSyncTable(j.data || []);
+
+    // Pagination
+    const totalPages = Math.ceil(msState.total / msState.limit);
+    const pageInfo   = document.getElementById('ms-page-info');
+    if (pageInfo) pageInfo.textContent = `Page ${msState.page} of ${Math.max(1, totalPages)}`;
+    const pg = document.getElementById('ms-pagination');
+    pg.classList.toggle('hidden', msState.total <= msState.limit);
+    document.getElementById('ms-prev-btn').disabled = msState.page <= 1;
+    document.getElementById('ms-next-btn').disabled = msState.page >= totalPages;
+
+  } catch (err) {
+    toast(`Member Sync load failed: ${err.message}`, 'error');
+  } finally {
+    document.getElementById('ms-loading').classList.add('hidden');
+  }
+}
+
+function renderMemberSyncStats(breakdown, total) {
+  document.getElementById('ms-stat-cards').classList.remove('hidden');
+  document.getElementById('ms-stat-active').textContent   = breakdown.active   || 0;
+  document.getElementById('ms-stat-disabled').textContent = breakdown.disabled  || 0;
+  document.getElementById('ms-stat-failed').textContent   = breakdown.failed    || 0;
+  document.getElementById('ms-stat-pending').textContent  = (breakdown.pending_sync || 0) + (breakdown.in_flight || 0);
+  document.getElementById('ms-stat-total').textContent    = total;
+}
+
+function renderMemberSyncTable(rows) {
+  const tbody = document.getElementById('ms-tbody');
+  if (!rows.length) {
+    document.getElementById('ms-empty').classList.remove('hidden');
+    document.getElementById('ms-table-wrap').classList.add('hidden');
+    document.getElementById('ms-empty').querySelector('p').textContent = 'No members match the current filters';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(m => {
+    const lastEvt = m.last_event_type
+      ? `<span title="${fmt(m.last_event_at)}">${esc(m.last_event_type)}</span>`
+      : '—';
+    return `
+      <tr>
+        <td><code style="font-size:11px">${esc(m.platform_member_id)}</code></td>
+        <td>${esc(m.source_platform) || '—'}</td>
+        <td>${esc(m.hardware_platform) || '—'}</td>
+        <td>${pill(m.access_status || 'unknown')}</td>
+        <td>${fmt(m.provisioned_at)}</td>
+        <td>${lastEvt}</td>
+        <td>
+          <button class="btn btn-sm btn-secondary" onclick="openMemberDetail('${m.id}')">Timeline</button>
+          ${m.access_status === 'failed' || m.access_status === 'disabled'
+            ? `<button class="btn btn-sm btn-accent" onclick="retryMember('${m.id}')" style="margin-left:4px">Retry</button>`
+            : ''}
+        </td>
+      </tr>`;
+  }).join('');
+
+  document.getElementById('ms-table-wrap').classList.remove('hidden');
+}
+
+async function retryMember(memberId) {
+  try {
+    const res = await apiFetch(`/admin/members/${memberId}/retry`, { method: 'POST' });
+    if (res.ok) {
+      toast('Retry queued', 'success');
+      loadMemberSync();
+    } else {
+      const j = await res.json().catch(() => ({}));
+      toast(`Retry failed: ${j.error || 'unknown'}`, 'error');
+    }
+  } catch {
+    toast('Retry failed', 'error');
+  }
+}
+
+// Wire up Member Sync controls
+document.getElementById('ms-client-select').addEventListener('change', async (e) => {
+  msState.page = 1;
+  await loadMemberSyncLocations(e.target.value);
+  loadMemberSync();
+});
+document.getElementById('ms-location-select').addEventListener('change', () => { msState.page = 1; loadMemberSync(); });
+document.getElementById('ms-status-select').addEventListener('change',   () => { msState.page = 1; loadMemberSync(); });
+document.getElementById('ms-refresh-btn').addEventListener('click',      () => loadMemberSync());
+document.getElementById('ms-prev-btn').addEventListener('click', () => { msState.page--; loadMemberSync(); });
+document.getElementById('ms-next-btn').addEventListener('click', () => { msState.page++; loadMemberSync(); });
 
 // ── Stop all polling ────────────────────────────────────────────────
 function stopPolling() {

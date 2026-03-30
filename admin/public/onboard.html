@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Set Up AccessSync</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --brand-mid:  rgba(79,110,247,0.22);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --red:        #EF4444;
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+}
+html, body {
+  height: 100%;
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Page layout ──────────────────────────────────────────────── */
+.page-wrap { min-height: 100vh; display: flex; flex-direction: column; }
+
+/* ── Topbar ───────────────────────────────────────────────────── */
+.topbar {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 0 28px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: inherit;
+}
+.logo-wordmark {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.3px;
+}
+.topbar-sep { color: var(--border); font-size: 20px; font-weight: 200; }
+.topbar-page { font-size: 13px; font-weight: 500; color: var(--text2); }
+.topbar-back {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 500;
+}
+.topbar-back:hover { color: var(--text2); }
+
+/* ── Main ─────────────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  padding: 44px 24px 72px;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ── Step indicator ───────────────────────────────────────────── */
+.steps-bar {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 36px;
+}
+.step-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+.step-item + .step-item::before {
+  content: '';
+  position: absolute;
+  left: calc(-50% + 14px);
+  right: calc(50% + 14px);
+  top: 12px;
+  height: 2px;
+  background: var(--border);
+  z-index: 0;
+  transition: background 0.3s;
+}
+.step-item.done + .step-item::before { background: var(--brand); }
+.step-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+  border: 2px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  z-index: 1;
+  position: relative;
+  transition: all 0.2s;
+}
+.step-item.active .step-dot {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: white;
+  box-shadow: 0 0 0 4px var(--brand-dim);
+}
+.step-item.done .step-dot {
+  background: var(--green);
+  border-color: var(--green);
+  color: white;
+}
+.step-label {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 6px;
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+}
+.step-item.active .step-label { color: var(--brand); font-weight: 600; }
+.step-item.done .step-label   { color: var(--green); }
+
+/* ── Card ─────────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 36px;
+  box-shadow: var(--shadow-md);
+}
+.card-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--brand);
+  margin-bottom: 8px;
+}
+.card-title {
+  font-size: 21px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  line-height: 1.25;
+}
+.card-sub {
+  font-size: 13px;
+  color: var(--text2);
+  margin-bottom: 28px;
+  line-height: 1.65;
+}
+
+/* ── Found-site banner ────────────────────────────────────────── */
+.found-banner {
+  background: var(--brand-dim);
+  border: 1.5px solid var(--brand-mid);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.found-icon {
+  width: 38px;
+  height: 38px;
+  background: var(--brand);
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.found-body { flex: 1; }
+.found-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--brand);
+  margin-bottom: 4px;
+}
+.found-site  { font-weight: 700; font-size: 15px; color: var(--text); }
+.found-email { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.edit-link {
+  font-size: 11px;
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: underline;
+  margin-top: 8px;
+  display: inline-block;
+  font-weight: 500;
+}
+
+/* ── Form ─────────────────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.form-grid .full { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  letter-spacing: 0.2px;
+}
+.field input, .field select {
+  height: 42px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 0 13px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: #FAFBFD;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field input:focus, .field select:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-dim);
+  background: white;
+}
+.field .hint { font-size: 11px; color: var(--muted); line-height: 1.45; }
+.field .link-hint { font-size: 11px; color: var(--brand); text-decoration: none; display: inline-block; margin-top: 2px; }
+.field .link-hint:hover { text-decoration: underline; }
+
+/* ── Tier cards ───────────────────────────────────────────────── */
+.tier-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.tier-card {
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  background: #FAFBFD;
+  user-select: none;
+}
+.tier-card:hover {
+  border-color: #CBD5E1;
+  background: white;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.tier-card.selected {
+  border-color: var(--brand);
+  background: var(--brand-dim);
+  box-shadow: 0 0 0 3px var(--brand-dim);
+  transform: translateY(-1px);
+}
+.popular-tag {
+  position: absolute;
+  top: -1px;
+  right: 14px;
+  background: var(--brand);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 0 0 7px 7px;
+}
+.tier-name  { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.tier-price {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 12px;
+  letter-spacing: -0.5px;
+}
+.tier-price span { font-size: 11px; font-weight: 400; color: var(--muted); }
+.tier-bullets { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.tier-bullets li {
+  font-size: 11px;
+  color: var(--text2);
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  line-height: 1.4;
+}
+.tier-bullets li::before {
+  content: '✓';
+  color: var(--green);
+  font-weight: 700;
+  font-size: 10px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.tier-card.selected .tier-bullets li { color: var(--text); }
+.tier-system {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tier-card.selected .tier-system {
+  border-top-color: var(--brand-mid);
+  color: var(--brand);
+}
+
+/* ── Key context box ──────────────────────────────────────────── */
+.key-context {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 22px;
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.65;
+}
+.key-context strong { color: var(--text); }
+
+/* ── Webhook box ──────────────────────────────────────────────── */
+.webhook-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 18px;
+  margin: 4px 0 8px;
+}
+.webhook-box .wb-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 10px;
+  display: block;
+}
+.webhook-row { display: flex; gap: 8px; align-items: center; }
+.webhook-row input {
+  flex: 1;
+  height: 38px;
+  border: 1.5px solid var(--border);
+  border-radius: 7px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-family: 'SFMono-Regular', 'Consolas', monospace;
+  color: var(--text2);
+  background: white;
+  outline: none;
+}
+.btn-copy {
+  height: 38px;
+  padding: 0 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 7px;
+  background: white;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.btn-copy:hover { background: var(--brand); border-color: var(--brand); color: white; }
+.webhook-note {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 10px;
+  line-height: 1.5;
+}
+
+/* ── Done section ─────────────────────────────────────────────── */
+.done-header { text-align: center; padding: 8px 0 28px; }
+.done-check {
+  width: 66px;
+  height: 66px;
+  background: var(--green-dim);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 18px;
+}
+.done-header h2  { font-size: 22px; font-weight: 700; margin-bottom: 10px; }
+.done-header p   { font-size: 13px; color: var(--text2); line-height: 1.65; max-width: 420px; margin: 0 auto; }
+.done-divider    { border: 0; border-top: 1px solid var(--border); margin: 26px 0; }
+.done-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.mapping-links   { display: flex; flex-direction: column; gap: 10px; }
+.mapping-link-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  gap: 12px;
+}
+.mapping-link-row .loc-name { font-size: 13px; font-weight: 600; }
+.mapping-link-row .loc-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* ── Buttons ──────────────────────────────────────────────────── */
+.btn-row {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 28px;
+}
+.btn-row.right { justify-content: flex-end; }
+.btn {
+  height: 42px;
+  padding: 0 22px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: 0.42; cursor: not-allowed; pointer-events: none; }
+.btn-primary  { background: var(--brand); color: white; }
+.btn-primary:hover:not(:disabled) { background: var(--brand-dark); }
+.btn-ghost    { background: transparent; color: var(--text2); border: 1.5px solid var(--border); }
+.btn-ghost:hover:not(:disabled) { background: var(--bg); }
+.btn-skip {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+  height: 42px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.btn-skip:hover { color: var(--text2); }
+
+/* ── Spinner ──────────────────────────────────────────────────── */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Toast ────────────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 11px 18px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  z-index: 9999;
+  max-width: 340px;
+  line-height: 1.4;
+}
+#toast.show    { opacity: 1; }
+#toast.success { background: #0F172A; color: #4ADE80; }
+#toast.error   { background: #0F172A; color: #F87171; }
+
+/* ── API key skip reminder ────────────────────────────────────── */
+.reminder-box {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: #FFFBEB;
+  border: 1.5px solid #FCD34D;
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+.reminder-title { font-weight: 700; font-size: 14px; color: #92400E; margin-bottom: 6px; }
+.reminder-box p  { font-size: 13px; color: #78350F; line-height: 1.6; margin-bottom: 8px; }
+.reminder-link   { font-size: 12px; font-weight: 600; color: #B45309; text-decoration: none; }
+.reminder-link:hover { text-decoration: underline; }
+
+/* ── Utilities ────────────────────────────────────────────────── */
+.hidden { display: none !important; }
+
+/* ── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 520px) {
+  .main  { padding: 28px 16px 56px; }
+  .card  { padding: 26px 20px; }
+  .tier-grid { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .form-grid .full { grid-column: 1; }
+  .step-label { display: none; }
+  .topbar-page { display: none; }
+  .topbar-sep  { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="page-wrap">
+
+  <!-- ── Topbar ────────────────────────────────────────────────── -->
+  <header class="topbar">
+    <a href="/" class="logo-link">
+      <!-- AccessSync logo mark -->
+      <svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="30" height="30" rx="7" fill="#1A1A2E"/>
+        <path d="M15 7L20.5 20H17.8L15 13.5L12.2 20H9.5L15 7Z" fill="white"/>
+        <circle cx="15" cy="22.5" r="1.8" fill="#E94560"/>
+      </svg>
+      <span class="logo-wordmark">AccessSync</span>
+    </a>
+    <span class="topbar-sep">|</span>
+    <span class="topbar-page">New Gym Setup</span>
+  </header>
+
+  <main class="main">
+
+    <!-- ── Step indicator ──────────────────────────────────────── -->
+    <div class="steps-bar">
+      <div class="step-item active" id="si-1"><div class="step-dot">1</div><div class="step-label">Wix Site</div></div>
+      <div class="step-item"        id="si-2"><div class="step-dot">2</div><div class="step-label">Your Plan</div></div>
+      <div class="step-item"        id="si-3"><div class="step-dot">3</div><div class="step-label">Location</div></div>
+      <div class="step-item"        id="si-4"><div class="step-dot">4</div><div class="step-label">Doors</div></div>
+      <div class="step-item"        id="si-5"><div class="step-dot">5</div><div class="step-label">All Set</div></div>
+    </div>
+
+    <!-- ══ Step 1: Wix Site ══════════════════════════════════════ -->
+    <div id="step-1" class="card">
+      <div class="card-eyebrow">Step 1 of 5</div>
+      <div class="card-title">Let's find your Wix site</div>
+      <div class="card-sub">We'll link your gym's Wix site to AccessSync so member access is managed automatically — no manual steps.</div>
+
+      <!-- Auto-detected from Velo URL params -->
+      <div id="found-panel" class="hidden">
+        <div class="found-banner">
+          <div class="found-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm3.7 6.3l-4.2 4.2a.75.75 0 01-1.06 0l-2.1-2.1a.75.75 0 011.06-1.06l1.57 1.57 3.67-3.67a.75.75 0 011.06 1.06z" fill="white"/>
+            </svg>
+          </div>
+          <div class="found-body">
+            <div class="found-label">Wix site detected</div>
+            <div class="found-site" id="found-site-name">—</div>
+            <div class="found-email" id="found-site-email"></div>
+            <span class="edit-link" onclick="toggleManualForm()">Edit details</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manual entry form -->
+      <div id="manual-form">
+        <div class="form-grid">
+          <div class="field full">
+            <label>Gym / Business Name *</label>
+            <input type="text" id="c-name" placeholder="e.g. House of Gains" autocomplete="organization" />
+          </div>
+          <div class="field full">
+            <label>Notification Email <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+            <input type="email" id="c-email" placeholder="owner@yourgym.com" autocomplete="email" />
+            <span class="hint">We'll email you if anything needs your attention.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-row right">
+        <button class="btn btn-primary" id="btn-s1" onclick="nextStep1()">Choose Your Plan →</button>
+      </div>
+    </div>
+
+    <!-- ══ Step 2: Your Plan ══════════════════════════════════════ -->
+    <div id="step-2" class="card hidden">
+      <div class="card-eyebrow">Step 2 of 5</div>
+      <div class="card-title">Which plan fits your gym?</div>
+      <div class="card-sub">Your plan determines how AccessSync connects to your door system. You can change this any time.</div>
+
+      <div class="tier-grid">
+        <!-- Base -->
+        <div class="tier-card" data-tier="Base" onclick="selectTier(this)">
+          <div class="tier-name">Base</div>
+          <div class="tier-price">$30<span>/mo per location</span></div>
+          <ul class="tier-bullets">
+            <li>Single door access</li>
+            <li>Auto-unlock for members</li>
+            <li>Up to 2 entry points</li>
+          </ul>
+          <div class="tier-system">Works with Seam smart locks</div>
+        </div>
+
+        <!-- Pro -->
+        <div class="tier-card" data-tier="Pro" onclick="selectTier(this)">
+          <div class="tier-name">Pro</div>
+          <div class="tier-price">$60<span>/mo per location</span></div>
+          <ul class="tier-bullets">
+            <li>High-traffic door access</li>
+            <li>Class booking access</li>
+            <li>Member self-service widget</li>
+          </ul>
+          <div class="tier-system">Works with Seam smart locks</div>
+        </div>
+
+        <!-- Connect -->
+        <div class="tier-card" data-tier="Connect" onclick="selectTier(this)">
+          <div class="popular-tag">Most Popular</div>
+          <div class="tier-name">Connect</div>
+          <div class="tier-price">$150<span>/mo per location</span></div>
+          <ul class="tier-bullets">
+            <li>Full ACS integration</li>
+            <li>Unlimited doors &amp; zones</li>
+            <li>Enterprise access control</li>
+          </ul>
+          <div class="tier-system">Works with Kisi ACS</div>
+        </div>
+      </div>
+
+      <!-- Door system — auto-set from tier, operator can override -->
+      <div class="field" style="margin-top:18px">
+        <label>Door System <span style="font-weight:400;color:var(--muted)">(set automatically from your plan)</span></label>
+        <select id="c-hardware" onchange="onHardwareChange()">
+          <option value="">— choose a plan above first —</option>
+          <option value="kisi">Kisi</option>
+          <option value="seam">Seam</option>
+        </select>
+        <span class="hint">Connect uses Kisi. Base and Pro use Seam. You can change this if needed.</span>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="showStep(1)">← Back</button>
+        <button class="btn btn-primary" id="btn-s2" onclick="nextStep2()" disabled>
+          Next: Your Location →
+        </button>
+      </div>
+    </div>
+
+    <!-- ══ Step 3: Location ════════════════════════════════════════ -->
+    <div id="step-3" class="card hidden">
+      <div class="card-eyebrow">Step 3 of 5</div>
+      <div class="card-title">Where is your gym?</div>
+      <div class="card-sub" id="s3-sub">Add your first location. You can add more from the Admin Hub later.</div>
+
+      <div class="form-grid">
+        <div class="field full">
+          <label>Location Name *</label>
+          <input type="text" id="loc-name" placeholder="e.g. House of Gains — Main" autocomplete="off" />
+          <span class="hint">Usually your gym name + city, or just "Main"</span>
+        </div>
+        <div class="field">
+          <label>City</label>
+          <input type="text" id="loc-city" placeholder="Fort Smith" autocomplete="address-level2" />
+        </div>
+        <div class="field">
+          <label>State</label>
+          <input type="text" id="loc-state" placeholder="AR" autocomplete="address-level1" maxlength="3" style="text-transform:uppercase" />
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="showStep(2)">← Back</button>
+        <button class="btn btn-primary" id="btn-s3" onclick="nextStep3()">Next: Connect Doors →</button>
+      </div>
+    </div>
+
+    <!-- ══ Step 4: Connect Doors ══════════════════════════════════ -->
+    <div id="step-4" class="card hidden">
+      <div class="card-eyebrow">Step 4 of 5</div>
+      <div class="card-title" id="s4-title">Connect Your Door System</div>
+      <div class="card-sub" id="s4-sub">We need a key to talk to your door system. It's encrypted and stored securely — you won't need to enter it again.</div>
+
+      <div class="key-context" id="s4-context"></div>
+
+      <div class="form-grid">
+        <div class="field full">
+          <label id="s4-key-label">API Key *</label>
+          <input type="password" id="api-key" placeholder="Paste your key here…" autocomplete="off" />
+          <a href="#" class="link-hint" id="s4-help-link" target="_blank" rel="noopener">Where do I find this? →</a>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-skip" onclick="skipApiKey()">I'll connect later</button>
+        <button class="btn btn-primary" id="btn-s4" onclick="nextStep4()">
+          <span id="s4-btn-text">Connect →</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ══ Step 5: All Set ════════════════════════════════════════ -->
+    <div id="step-5" class="card hidden">
+      <div class="done-header">
+        <div class="done-check">
+          <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
+            <path d="M7 15l6 6L23 9" stroke="#16A34A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h2 id="done-headline">You're all set!</h2>
+        <p>AccessSync is now connected to your Wix site. When a member purchases a pricing plan, they'll automatically get door access — no manual steps needed.</p>
+      </div>
+
+      <hr class="done-divider">
+
+      <!-- Webhook URL -->
+      <div>
+        <div class="done-section-title">One more thing — add your webhook</div>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.65">
+          Paste this URL into your Wix dashboard under <strong>Settings → Webhooks</strong> so Wix notifies AccessSync when members join or cancel.
+        </p>
+        <div class="webhook-box">
+          <span class="wb-label">Your AccessSync Webhook URL</span>
+          <div class="webhook-row">
+            <input type="text" id="webhook-url-display" readonly value="Loading…" />
+            <button class="btn-copy" onclick="copyWebhook()">Copy</button>
+          </div>
+          <div class="webhook-note" id="webhook-note">Fetching your webhook URL…</div>
+        </div>
+      </div>
+
+      <!-- API key skip reminder (only shown if operator clicked "I'll connect later") -->
+      <div id="apikey-reminder" class="hidden">
+        <hr class="done-divider">
+        <div class="reminder-box">
+          <div style="font-size:20px;flex-shrink:0;margin-top:1px">⚠</div>
+          <div>
+            <div class="reminder-title" id="reminder-title">Door system not connected yet</div>
+            <p id="reminder-body">Members won't get automatic door access until you connect it.</p>
+            <a href="#" id="reminder-link" class="reminder-link">Connect your door system from your dashboard →</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Location mapping links -->
+      <div id="mapping-section" class="hidden">
+        <hr class="done-divider">
+        <div class="done-section-title">Map your pricing plans to doors</div>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.65">
+          Tell AccessSync which Wix plan unlocks which door. This takes about 2 minutes.
+        </p>
+        <div class="mapping-links" id="mapping-links"></div>
+      </div>
+
+      <div class="btn-row" style="margin-top:28px">
+        <a href="#" id="btn-dashboard" class="btn btn-ghost">← Back to Dashboard</a>
+        <a href="#" id="btn-map-first" class="btn btn-primary hidden">Map Plans Now →</a>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────
+const state = {
+  name:      null,   // business name
+  email:     null,   // notification email
+  tier:      null,   // 'Base' | 'Pro' | 'Connect'
+  hw:        null,   // 'kisi' | 'seam' — default derived from tier, operator can override
+  hwLabel:   null,   // 'Kisi' | 'Seam' — display label derived from hw
+  siteId:    null,   // Wix site ID (from URL param, hidden from operator)
+  siteName:  null,   // Wix site name (from URL param)
+  clientId:      null,   // set after POST /operator/clients
+  apiKeySkipped: false,  // true if operator clicked "I'll connect later" on Step 4
+  locations:     [],     // { id, name, city, state }
+  prefill:       {},     // URL params read on load
+};
+
+// ── Read URL params (set by Velo redirect) ─────────────────────────
+(function initFromParams() {
+  const p = new URLSearchParams(window.location.search);
+  state.prefill = {
+    siteId:     p.get('siteId')     || '',
+    siteName:   p.get('siteName')   || '',
+    ownerEmail: p.get('ownerEmail') || '',
+    city:       p.get('city')       || '',
+    state:      p.get('state')      || '',
+    tier:       p.get('tier')       || '',
+  };
+
+  const hasSite = state.prefill.siteName || state.prefill.ownerEmail;
+
+  if (hasSite) {
+    // Wix data available — show detected-site banner, hide manual form
+    document.getElementById('found-panel').classList.remove('hidden');
+    document.getElementById('manual-form').classList.add('hidden');
+    document.getElementById('found-site-name').textContent =
+      state.prefill.siteName || 'Your Wix Site';
+    if (state.prefill.ownerEmail) {
+      document.getElementById('found-site-email').textContent =
+        state.prefill.ownerEmail;
+    }
+    // Store into state so Step 1 "next" works without typing
+    state.name    = state.prefill.siteName   || '';
+    state.email   = state.prefill.ownerEmail || null;
+    state.siteId  = state.prefill.siteId     || null;
+    state.siteName = state.prefill.siteName  || null;
+  } else {
+    document.getElementById('found-panel').classList.add('hidden');
+  }
+
+  // Pre-select tier card if param was passed
+  if (state.prefill.tier) {
+    const map = { base: 'Base', pro: 'Pro', connect: 'Connect' };
+    const normTier = map[state.prefill.tier.toLowerCase()] || state.prefill.tier;
+    const card = document.querySelector(`[data-tier="${normTier}"]`);
+    if (card) selectTier(card);
+  }
+})();
+
+// ── Helpers ────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function toast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  setTimeout(() => { el.className = ''; }, 3500);
+}
+
+function setBusy(btnId, busy, idleHtml) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = busy;
+  btn.innerHTML = busy ? '<span class="spinner"></span> Working…' : idleHtml;
+}
+
+async function apiFetch(url, opts = {}) {
+  return fetch(url, { ...opts, credentials: 'include' });
+}
+
+// ── Step indicator ─────────────────────────────────────────────────
+function showStep(n) {
+  for (let i = 1; i <= 5; i++) {
+    document.getElementById(`step-${i}`).classList.toggle('hidden', i !== n);
+    const ind = document.getElementById(`si-${i}`);
+    ind.classList.remove('active', 'done');
+    if (i <  n) ind.classList.add('done');
+    if (i === n) ind.classList.add('active');
+    ind.querySelector('.step-dot').textContent = i < n ? '✓' : String(i);
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Step 1: Site info ──────────────────────────────────────────────
+function toggleManualForm() {
+  const mf = document.getElementById('manual-form');
+  const wasHidden = mf.classList.contains('hidden');
+  mf.classList.toggle('hidden', !wasHidden);
+  if (wasHidden) {
+    // Pre-fill form with whatever we know
+    document.getElementById('c-name').value  = state.name  || '';
+    document.getElementById('c-email').value = state.email || '';
+  }
+}
+
+function nextStep1() {
+  const foundShowing  = !document.getElementById('found-panel').classList.contains('hidden');
+  const manualShowing = !document.getElementById('manual-form').classList.contains('hidden');
+
+  if (foundShowing && !manualShowing) {
+    // Using Wix-detected data — just validate we have a name
+    if (!state.name || !state.name.trim()) {
+      toast('No business name found — click "Edit details" to add it', 'error');
+      return;
+    }
+  } else {
+    // Reading from manual form
+    const name  = document.getElementById('c-name').value.trim();
+    const email = document.getElementById('c-email').value.trim();
+    if (!name) { toast('Please enter your gym name', 'error'); return; }
+    state.name  = name;
+    state.email = email || null;
+  }
+  showStep(2);
+}
+
+// ── Step 2: Plan selection ─────────────────────────────────────────
+function selectTier(cardEl) {
+  document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
+  cardEl.classList.add('selected');
+  state.tier = cardEl.dataset.tier;
+
+  // Default the door system from the tier rule. Operator can override below.
+  const hwDefault = state.tier === 'Connect' ? 'kisi' : 'seam';
+  state.hw      = hwDefault;
+  state.hwLabel = hwDefault === 'kisi' ? 'Kisi' : 'Seam';
+  document.getElementById('c-hardware').value = hwDefault;
+
+  document.getElementById('btn-s2').disabled = false;
+}
+
+function onHardwareChange() {
+  const val     = document.getElementById('c-hardware').value;
+  state.hw      = val || null;
+  state.hwLabel = val === 'kisi' ? 'Kisi' : val === 'seam' ? 'Seam' : null;
+}
+
+async function nextStep2() {
+  if (!state.tier) { toast('Please choose a plan first', 'error'); return; }
+
+  // Read hardware — may have been overridden by operator after tier selection
+  const hw = document.getElementById('c-hardware').value;
+  if (!hw) { toast('Please select a door system', 'error'); return; }
+  state.hw      = hw;
+  state.hwLabel = hw === 'kisi' ? 'Kisi' : 'Seam';
+
+  setBusy('btn-s2', true, 'Next: Your Location →');
+  try {
+    const res = await apiFetch('/operator/clients', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name:               state.name,
+        tier:               state.tier,
+        hardware_platform:  state.hw,
+        site_id:            state.siteId   || null,
+        site_name:          state.siteName || null,
+        notification_email: state.email    || null,
+      }),
+    });
+
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      toast(j.error || 'Something went wrong — please try again', 'error');
+      return;
+    }
+
+    const j = await res.json();
+    state.clientId = j.client.id;
+
+    // Pre-fill Step 3 from Wix params
+    const pf = state.prefill;
+    const defaultLocName = pf.siteName
+      ? `${pf.siteName}${pf.city ? ` — ${pf.city}` : ''}`
+      : '';
+    document.getElementById('loc-name').value  = defaultLocName;
+    document.getElementById('loc-city').value  = pf.city  || '';
+    document.getElementById('loc-state').value = pf.state || '';
+
+    if (pf.city || pf.state) {
+      document.getElementById('s3-sub').textContent =
+        "We've pre-filled your location from your Wix settings — adjust if needed.";
+    }
+
+    // Set up Step 4 copy for the selected door system
+    _configureStep4();
+
+    showStep(3);
+  } catch {
+    toast('Network error — check your connection and try again', 'error');
+  } finally {
+    setBusy('btn-s2', false, 'Next: Your Location →');
+  }
+}
+
+// ── Step 3: Location ───────────────────────────────────────────────
+async function nextStep3() {
+  const name   = document.getElementById('loc-name').value.trim();
+  const city   = document.getElementById('loc-city').value.trim();
+  const stateV = document.getElementById('loc-state').value.trim().toUpperCase();
+
+  if (!name) { toast('Please enter a location name', 'error'); return; }
+
+  setBusy('btn-s3', true, 'Next: Connect Doors →');
+  try {
+    const res = await apiFetch(`/operator/clients/${state.clientId}/locations`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        city:  city   || null,
+        state: stateV || null,
+        tier:  state.tier,
+      }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      toast(j.error || 'Failed to add location — try again', 'error');
+      return;
+    }
+    const j = await res.json();
+    state.locations.push(j.location);
+    showStep(4);
+  } catch {
+    toast('Network error — check your connection and try again', 'error');
+  } finally {
+    setBusy('btn-s3', false, 'Next: Connect Doors →');
+  }
+}
+
+// ── Step 4: API key ────────────────────────────────────────────────
+function _configureStep4() {
+  const isKisi = state.hwLabel === 'Kisi';
+  document.getElementById('s4-title').textContent =
+    isKisi ? 'Connect Your Kisi Account' : 'Connect Your Door System';
+  document.getElementById('s4-context').innerHTML = isKisi
+    ? `AccessSync needs your <strong>Kisi API Token</strong> to automatically grant and revoke access for your members. It's stored encrypted — you'll never need to re-enter it.`
+    : `AccessSync needs your <strong>Seam API Key</strong> to control your smart locks automatically. It's stored encrypted — you'll never need to re-enter it.`;
+  document.getElementById('s4-key-label').textContent =
+    isKisi ? 'Kisi API Token *' : 'Seam API Key *';
+  document.getElementById('api-key').placeholder =
+    isKisi ? 'Paste your Kisi API token here…' : 'Paste your Seam API key here…';
+  document.getElementById('s4-help-link').href = isKisi
+    ? 'https://docs.kisi.io/dashboard/account/generate_api_key/'
+    : 'https://docs.seam.co/latest/api-clients/authentication';
+  document.getElementById('s4-help-link').textContent =
+    isKisi
+      ? 'Generate your Kisi API Token →'
+      : 'Find it in Seam Dashboard → Settings → API Keys →';
+  document.getElementById('s4-btn-text').textContent =
+    isKisi ? 'Connect Kisi →' : 'Connect Seam →';
+}
+
+async function nextStep4() {
+  const key = document.getElementById('api-key').value.trim();
+  if (!key) {
+    toast(`Please paste your ${state.hwLabel} key, or click "I'll connect later"`, 'error');
+    return;
+  }
+
+  setBusy('btn-s4', true, 'Connecting…');
+  try {
+    const res = await apiFetch(`/operator/clients/${state.clientId}/api-key`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: key }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      toast(j.error || 'Failed to save — check the key and try again', 'error');
+      return;
+    }
+    toast(`${state.hwLabel} connected!`, 'success');
+    goToDone();
+  } catch {
+    toast('Network error — check your connection and try again', 'error');
+  } finally {
+    const idleLabel = state.hwLabel === 'Kisi' ? 'Connect Kisi →' : 'Connect Seam →';
+    setBusy('btn-s4', false, `<span id="s4-btn-text">${idleLabel}</span>`);
+  }
+}
+
+function skipApiKey() {
+  state.apiKeySkipped = true;
+  toast('No problem — you can connect it from your dashboard before going live', 'error');
+  setTimeout(goToDone, 700);
+}
+
+// ── Step 5: All Set ────────────────────────────────────────────────
+async function goToDone() {
+  document.getElementById('done-headline').textContent =
+    `You're all set, ${esc(state.name)}!`;
+
+  // Wire up "Back to Dashboard" link now that we have a clientId
+  const dashUrl = `/dashboard.html?clientId=${state.clientId}`;
+  document.getElementById('btn-dashboard').href = dashUrl;
+
+  // Build mapping links for each location added
+  if (state.locations.length) {
+    document.getElementById('mapping-section').classList.remove('hidden');
+    document.getElementById('mapping-links').innerHTML = state.locations.map(loc => `
+      <div class="mapping-link-row">
+        <div>
+          <div class="loc-name">${esc(loc.name)}</div>
+          <div class="loc-sub">${[loc.city, loc.state].filter(Boolean).join(', ') || 'Location added'}</div>
+        </div>
+        <a href="/mapping.html?clientId=${esc(state.clientId)}&locationId=${esc(loc.id)}"
+           class="btn btn-primary"
+           style="height:36px;padding:0 16px;font-size:12px">
+          Map Plans →
+        </a>
+      </div>
+    `).join('');
+
+    // Primary CTA → first location mapping
+    const first = state.locations[0];
+    const mapBtn = document.getElementById('btn-map-first');
+    mapBtn.href = `/mapping.html?clientId=${state.clientId}&locationId=${first.id}`;
+    mapBtn.classList.remove('hidden');
+  }
+
+  // Show API key reminder if operator skipped Step 4
+  if (state.apiKeySkipped) {
+    document.getElementById('apikey-reminder').classList.remove('hidden');
+    document.getElementById('reminder-title').textContent =
+      `Your ${state.hwLabel} account isn't connected yet`;
+    document.getElementById('reminder-body').textContent =
+      `Members won't get automatic door access until you connect your ${state.hwLabel} account. You can do this from your dashboard.`;
+    document.getElementById('reminder-link').href = dashUrl;
+  }
+
+  showStep(5);
+
+  // Fetch webhook URL from backend (reads CORE_ENGINE_URL env var)
+  try {
+    const r = await apiFetch('/admin/operator/webhook-url');
+    if (r.ok) {
+      const j = await r.json();
+      if (j.url) {
+        document.getElementById('webhook-url-display').value = j.url;
+        document.getElementById('webhook-note').textContent =
+          'Paste this into Wix → Settings → Webhooks → Add Webhook.';
+      } else {
+        document.getElementById('webhook-url-display').value = '';
+        document.getElementById('webhook-note').textContent =
+          'Your webhook URL is not configured yet. Ask your AccessSync administrator for it.';
+      }
+    }
+  } catch {
+    document.getElementById('webhook-url-display').value = '';
+    document.getElementById('webhook-note').textContent =
+      "Couldn't load your webhook URL — check with your AccessSync administrator.";
+  }
+}
+
+function copyWebhook() {
+  const val = document.getElementById('webhook-url-display').value;
+  if (!val) { toast('No webhook URL available yet', 'error'); return; }
+  navigator.clipboard.writeText(val).then(() => {
+    toast('Webhook URL copied!', 'success');
+  }).catch(() => {
+    toast('Select the URL and copy it manually', 'error');
+  });
+}
+</script>
+
+</body>
+</html>

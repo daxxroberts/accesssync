@@ -53,9 +53,10 @@ class WixConnector {
       const eventId = req.headers['x-wix-event-id'] || 'fallback-id';
       const eventType = req.headers['x-wix-event-type'] || req.body?.eventType;
 
-      // OB-03-A [ASSUMPTION]: Header 'x-wix-site-id' — verify against Wix docs via PARSE before go-live.
-      // If incorrect, tenant resolution silently fails for all multi-tenant events.
-      const wixSiteId = req.headers['x-wix-site-id'] || req.body?.instanceId || null;
+      // OB-03-A RESOLVED (PARSE VERIFIED 2026-03-28): No 'x-wix-site-id' header exists.
+      // instanceId is the site identifier — present in the Wix webhook body.
+      // Full JWT decode (OB-08) will confirm exact path; req.body?.instanceId is correct for now.
+      const wixSiteId = req.body?.instanceId || null;
 
       const standardEvent = wixAdapter.parseEvent(eventType, wixSiteId, req.body);
 
