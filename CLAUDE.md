@@ -222,6 +222,7 @@ This project is managed by the Business Operating Team (BOT). The vault is the s
 - No vault changes without KEEPER proposal → SAGE review → Daxx approval
 - NOVA never designs against memory — always reads repo and vault first
 - Silence is not approval. Explicit confirmation required at every gate.
+- **Vault-First Question Rule (ALL agents — mandatory):** Before asking Daxx any question, the agent must first search the vault for the answer. If the vault has a clear answer, use it — do not ask. If the vault has a partial answer, state what was found and what specifically remains unresolved. Only ask Daxx questions the vault genuinely cannot answer.
 
 **Agents with direct build authority:**
 - NOVA — Engineering lead. Architecture, build sequencing, all technical decisions.
