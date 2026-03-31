@@ -244,6 +244,7 @@
     }
 
     function filterByLocation(location) {
+      if (location === currentLocation) return;
       currentLocation = location;
       currentPage = 1;
       document.querySelectorAll('#location-filter-strip .filter-tag').forEach(function(t) { t.classList.remove('active'); });
@@ -298,6 +299,7 @@
     }
 
     function filterByTag(tag) {
+      if (tag === currentFilter) return;
       currentFilter = tag;
       currentPage = 1;
       document.querySelectorAll('.filter-tag').forEach(function(t) { t.classList.remove('active'); });
@@ -312,13 +314,10 @@
     }
 
     function renderActivityGrid() {
-      var filtered = allActivities;
-      if (currentFilter !== 'all') {
-        filtered = filtered.filter(function(act) { return act.event === currentFilter; });
-      }
-      if (currentLocation !== 'all') {
-        filtered = filtered.filter(function(act) { return act.locationId === currentLocation; });
-      }
+      var filtered = allActivities.filter(function(act) {
+        return (currentFilter === 'all' || act.event === currentFilter) &&
+               (currentLocation === 'all' || act.locationId === currentLocation);
+      });
       var start = (currentPage - 1) * itemsPerPage;
       var end = start + itemsPerPage;
       var page = filtered.slice(start, end);

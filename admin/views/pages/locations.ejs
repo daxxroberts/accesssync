@@ -460,12 +460,6 @@
         .finally(function() { btn.disabled = false; btn.textContent = 'Test'; });
     }
 
-    // ── Utils ──────────────────────────────────────────────────────────
-    function esc(s) {
-      if (!s) return '';
-      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    }
-
     function toast(msg, type, duration) {
       type     = type     || 'info';
       duration = duration || 3500;

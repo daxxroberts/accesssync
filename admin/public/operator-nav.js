@@ -58,3 +58,22 @@ function renderNav() {
 }
 
 document.addEventListener('DOMContentLoaded', renderNav);
+
+// ── Toast ──────────────────────────────────────────────────────────
+var _toastTimer;
+function showToast(type, msg) {
+  var t = document.getElementById('toast');
+  if (!t) return;
+  var icons = { success: '&#10003;', error: '&#10005;', info: '&#8505;' };
+  t.className = 'toast ' + type;
+  t.innerHTML = (icons[type] || '') + ' ' + msg;
+  t.classList.add('visible');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function() { t.classList.remove('visible'); }, 3000);
+}
+
+// ── HTML escape ────────────────────────────────────────────────────
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}

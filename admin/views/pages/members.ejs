@@ -491,17 +491,6 @@
       }, 2500);
     }
 
-    var toastTimer;
-    function showToast(type, msg) {
-      var t = document.getElementById('toast');
-      var icons = { success: '&#10003;', error: '&#10005;', info: '&#8505;' };
-      t.className = 'toast ' + type;
-      t.innerHTML = (icons[type] || '') + ' ' + msg;
-      t.classList.add('visible');
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(function() { t.classList.remove('visible'); }, 3500);
-    }
-
     renderStats();
     buildPlanFilter();
     document.getElementById('pageSubtitle').textContent = 'All members across your plans. View access status, manage additional members, and resolve provisioning issues.';
