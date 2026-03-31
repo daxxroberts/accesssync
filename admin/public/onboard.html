@@ -734,16 +734,6 @@ html, body {
         </div>
       </div>
 
-      <!-- Door system — auto-set from tier, operator can override -->
-      <div class="field" style="margin-top:18px">
-        <label>Door System <span style="font-weight:400;color:var(--muted)">(set automatically from your plan)</span></label>
-        <select id="c-hardware" onchange="onHardwareChange()">
-          <option value="">— choose a plan above first —</option>
-          <option value="kisi">Kisi</option>
-          <option value="seam">Seam</option>
-        </select>
-        <span class="hint">Connect uses Kisi. Base and Pro use Seam. You can change this if needed.</span>
-      </div>
 
       <div class="btn-row">
         <button class="btn btn-ghost" onclick="showStep(1)">← Back</button>
@@ -1015,29 +1005,15 @@ function selectTier(cardEl) {
   cardEl.classList.add('selected');
   state.tier = cardEl.dataset.tier;
 
-  // Default the door system from the tier rule. Operator can override below.
-  const hwDefault = state.tier === 'Connect' ? 'kisi' : 'seam';
-  state.hw      = hwDefault;
-  state.hwLabel = hwDefault === 'kisi' ? 'Kisi' : 'Seam';
-  document.getElementById('c-hardware').value = hwDefault;
+  // Hardware platform is locked to tier — no operator override.
+  state.hw      = state.tier === 'Connect' ? 'kisi' : 'seam';
+  state.hwLabel = state.hw === 'kisi' ? 'Kisi' : 'Seam';
 
   document.getElementById('btn-s2').disabled = false;
 }
 
-function onHardwareChange() {
-  const val     = document.getElementById('c-hardware').value;
-  state.hw      = val || null;
-  state.hwLabel = val === 'kisi' ? 'Kisi' : val === 'seam' ? 'Seam' : null;
-}
-
 async function nextStep2() {
   if (!state.tier) { toast('Please choose a plan first', 'error'); return; }
-
-  // Read hardware — may have been overridden by operator after tier selection
-  const hw = document.getElementById('c-hardware').value;
-  if (!hw) { toast('Please select a door system', 'error'); return; }
-  state.hw      = hw;
-  state.hwLabel = hw === 'kisi' ? 'Kisi' : 'Seam';
 
   setBusy('btn-s2', true, 'Next: Your Location →');
   try {
