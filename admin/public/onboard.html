@@ -514,6 +514,18 @@ html, body {
 #toast.success { background: #0F172A; color: #4ADE80; }
 #toast.error   { background: #0F172A; color: #F87171; }
 
+/* ── Tier pricing note ────────────────────────────────────────── */
+.tier-pricing-note {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+.tier-pricing-note a { color: var(--brand); text-decoration: none; font-weight: 600; }
+.tier-pricing-note a:hover { text-decoration: underline; }
+
 /* ── Code block ───────────────────────────────────────────────── */
 .code-section-title {
   font-size: 13px;
@@ -649,8 +661,8 @@ html, body {
     <!-- ══ Step 1: Wix Site ══════════════════════════════════════ -->
     <div id="step-1" class="card">
       <div class="card-eyebrow">Step 1 of 5</div>
-      <div class="card-title">Let's find your Wix site</div>
-      <div class="card-sub">We'll link your gym's Wix site to AccessSync so member access is managed automatically — no manual steps.</div>
+      <div class="card-title">Set up your AccessSync account</div>
+      <div class="card-sub">Tell us about your gym and we'll get your account ready. This takes about 5 minutes.</div>
 
       <!-- Auto-detected from Velo URL params -->
       <div id="found-panel" class="hidden">
@@ -701,9 +713,9 @@ html, body {
           <div class="tier-name">Base</div>
           <div class="tier-price">$30<span>/mo per location</span></div>
           <ul class="tier-bullets">
-            <li>Single door access</li>
-            <li>Auto-unlock for members</li>
-            <li>Up to 2 entry points</li>
+            <li>1 entry door, auto-unlocks for members</li>
+            <li>Members get access the moment they sign up</li>
+            <li>Access revoked automatically when they cancel</li>
           </ul>
           <div class="tier-system">Works with Seam smart locks</div>
         </div>
@@ -713,9 +725,9 @@ html, body {
           <div class="tier-name">Pro</div>
           <div class="tier-price">$60<span>/mo per location</span></div>
           <ul class="tier-bullets">
-            <li>High-traffic door access</li>
-            <li>Class booking access</li>
-            <li>Member self-service widget</li>
+            <li>High-traffic door, handles 100+ check-ins/day</li>
+            <li>Access tied to class bookings</li>
+            <li>Members can check their own access status</li>
           </ul>
           <div class="tier-system">Works with Seam smart locks</div>
         </div>
@@ -726,11 +738,12 @@ html, body {
           <div class="tier-name">Connect</div>
           <div class="tier-price">$150<span>/mo per location</span></div>
           <ul class="tier-bullets">
-            <li>Full ACS integration</li>
-            <li>Unlimited doors &amp; zones</li>
-            <li>Enterprise access control</li>
+            <li>Unlimited doors, zones &amp; schedules</li>
+            <li>Full Kisi integration — enterprise-grade</li>
+            <li>AccessSync automates everything Kisi manages</li>
           </ul>
           <div class="tier-system">Works with Kisi ACS</div>
+          <div class="tier-pricing-note">Requires Kisi ($199/mo) — total $349/mo per location. <a href="https://www.getkisi.com/pricing/fitness" target="_blank" rel="noopener">Learn about Kisi →</a></div>
         </div>
       </div>
 
@@ -774,8 +787,8 @@ html, body {
     <!-- ══ Step 4: Connect Doors ══════════════════════════════════ -->
     <div id="step-4" class="card hidden">
       <div class="card-eyebrow">Step 4 of 5</div>
-      <div class="card-title" id="s4-title">Connect Your Door System</div>
-      <div class="card-sub" id="s4-sub">We need a key to talk to your door system. It's encrypted and stored securely — you won't need to enter it again.</div>
+      <div class="card-title" id="s4-title">Connect your door system</div>
+      <div class="card-sub" id="s4-sub">An API token is a password that lets AccessSync talk to your door system. You generate it once in Kisi — we store it encrypted so you never need to enter it again.</div>
 
       <div class="key-context" id="s4-context"></div>
 
@@ -788,7 +801,7 @@ html, body {
       </div>
 
       <div class="btn-row">
-        <button class="btn-skip" onclick="skipApiKey()">I'll connect later</button>
+        <button class="btn btn-ghost" onclick="showStep(3)">← Back</button>
         <button class="btn btn-primary" id="btn-s4" onclick="nextStep4()">
           <span id="s4-btn-text">Connect →</span>
         </button>
@@ -803,22 +816,32 @@ html, body {
             <path d="M7 15l6 6L23 9" stroke="#16A34A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
-        <h2 id="done-headline">You're all set!</h2>
-        <p>AccessSync is now connected to your Wix site. When a member purchases a pricing plan, they'll automatically get door access — no manual steps needed.</p>
+        <h2 id="done-headline">Account created!</h2>
+        <p>Your AccessSync account is ready. Complete the two steps below and your gym will be fully live — members will get door access the moment they sign up on Wix.</p>
       </div>
 
+      <!-- ── Step A: Map plans (required — do this first) ── -->
       <hr class="done-divider">
+      <div id="mapping-section" class="hidden">
+        <div class="done-section-title">Step 1 of 2 — Map your pricing plans to doors</div>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:6px;line-height:1.65">
+          Tell AccessSync which Wix plan unlocks which door. <strong>This is required</strong> — without it, no members will get access automatically.
+        </p>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">Takes about 2 minutes.</p>
+        <div class="mapping-links" id="mapping-links"></div>
+      </div>
 
-      <!-- Velo code block -->
+      <!-- ── Step B: Wix code ── -->
+      <hr class="done-divider">
       <div>
-        <div class="done-section-title">One more thing — add your Wix code</div>
+        <div class="done-section-title">Step 2 of 2 — Add your Wix code</div>
         <p class="code-instructions">
-          Paste this into your Wix site's backend so AccessSync receives member events automatically.
+          This code tells your Wix site to notify AccessSync when a member joins or cancels. Paste it once and you're done — no updates needed.
         </p>
         <ol class="code-steps">
-          <li>Open your Wix Editor → <strong>Dev Mode</strong> → <strong>Backend</strong></li>
-          <li>Create a new file named <strong>events.js</strong> (or open it if it exists)</li>
-          <li>Paste the code below → <strong>Publish</strong></li>
+          <li>In your Wix Editor, click <strong>Dev Mode</strong> in the top menu bar to enable it</li>
+          <li>In the left panel, click <strong>Backend</strong> → <strong>+ New File</strong> → name it <strong>events.js</strong></li>
+          <li>Paste the code below, then click <strong>Publish</strong></li>
         </ol>
         <div class="code-block-wrap">
           <div class="code-block-header">
@@ -831,31 +854,18 @@ html, body {
         </div>
       </div>
 
-      <!-- API key skip reminder (only shown if operator clicked "I'll connect later") -->
-      <div id="apikey-reminder" class="hidden">
-        <hr class="done-divider">
-        <div class="reminder-box">
-          <div style="font-size:20px;flex-shrink:0;margin-top:1px">⚠</div>
-          <div>
-            <div class="reminder-title" id="reminder-title">Door system not connected yet</div>
-            <p id="reminder-body">Members won't get automatic door access until you connect it.</p>
-            <a href="#" id="reminder-link" class="reminder-link">Connect your door system from your dashboard →</a>
-          </div>
-        </div>
-      </div>
-
-      <!-- Location mapping links -->
-      <div id="mapping-section" class="hidden">
-        <hr class="done-divider">
-        <div class="done-section-title">Map your pricing plans to doors</div>
-        <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.65">
-          Tell AccessSync which Wix plan unlocks which door. This takes about 2 minutes.
-        </p>
-        <div class="mapping-links" id="mapping-links"></div>
-      </div>
+      <!-- ── What happens next ── -->
+      <hr class="done-divider">
+      <div class="done-section-title">What happens next</div>
+      <ul style="font-size:13px;color:var(--text2);line-height:2;padding-left:18px;margin-bottom:4px;">
+        <li>A member buys a plan on your Wix site</li>
+        <li>AccessSync receives the event automatically</li>
+        <li>Their door access is provisioned in Kisi within seconds</li>
+        <li>When they cancel, access is revoked — no action needed from you</li>
+      </ul>
 
       <div class="btn-row" style="margin-top:28px">
-        <a href="#" id="btn-dashboard" class="btn btn-ghost">← Back to Dashboard</a>
+        <a href="#" id="btn-dashboard" class="btn btn-ghost">Go to Dashboard</a>
         <a href="#" id="btn-map-first" class="btn btn-primary hidden">Map Plans Now →</a>
       </div>
     </div>
@@ -1198,7 +1208,7 @@ function _buildEventsCode(clientId) {
 
 async function goToDone() {
   document.getElementById('done-headline').textContent =
-    `You're all set, ${esc(state.name)}!`;
+    `Account created, ${esc(state.name)}!`;
 
   // Wire up "Back to Dashboard" link now that we have a clientId
   const dashUrl = `/dashboard-final.html?clientId=${state.clientId}`;
