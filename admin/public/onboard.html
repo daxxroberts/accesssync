@@ -1103,7 +1103,7 @@ async function nextStep3() {
 function _configureStep4() {
   const isKisi = state.hwLabel === 'Kisi';
   document.getElementById('s4-title').textContent =
-    isKisi ? 'Connect Your Kisi Account' : 'Connect Your Door System';
+    isKisi ? 'Connect to your Kisi account' : 'Connect your door system';
   document.getElementById('s4-context').innerHTML = isKisi
     ? `AccessSync needs your <strong>Kisi API Token</strong> to automatically grant and revoke access for your members. It's stored encrypted — you'll never need to re-enter it.`
     : `AccessSync needs your <strong>Seam API Key</strong> to control your smart locks automatically. It's stored encrypted — you'll never need to re-enter it.`;
