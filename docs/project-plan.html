@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — Project Plan to Launch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --purple:     #8B5CF6;
+  --purple-dim: rgba(139,92,246,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body {
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1200px; margin: 0 auto; padding: 48px 32px 80px; }
+
+/* ── Header ─────────────────────────────────────────────────── */
+.header { margin-bottom: 48px; }
+.header-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--brand); margin-bottom: 8px;
+}
+.header h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.8px; color: var(--text); }
+.header-sub { font-size: 14px; color: var(--text2); margin-top: 6px; max-width: 600px; line-height: 1.6; }
+
+/* ── Section titles ─────────────────────────────────────────── */
+.section { margin-bottom: 48px; }
+.section-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-title::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
+/* ── Three paths ────────────────────────────────────────────── */
+.paths-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.path-card {
+  background: var(--card); border-radius: var(--r);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.path-header {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.path-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; margin-bottom: 4px;
+}
+.path-title { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+.path-sub { font-size: 11px; color: var(--text2); margin-top: 3px; }
+.path-header.blue  { background: var(--brand-dim); }
+.path-header.green { background: var(--green-dim); }
+.path-header.purple{ background: var(--purple-dim); }
+.path-label.blue   { color: var(--brand); }
+.path-label.green  { color: var(--green); }
+.path-label.purple { color: var(--purple); }
+.path-steps { padding: 16px 20px; display: flex; flex-direction: column; gap: 0; }
+.path-step {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.path-step:last-child { border-bottom: none; }
+.step-num {
+  width: 20px; height: 20px; border-radius: 50%;
+  font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+}
+.blue  .step-num { background: var(--brand-dim); color: var(--brand); }
+.green .step-num { background: var(--green-dim); color: var(--green); }
+.purple .step-num { background: var(--purple-dim); color: var(--purple); }
+.step-content .step-name { font-size: 12px; font-weight: 600; }
+.step-content .step-note { font-size: 11px; color: var(--text2); margin-top: 1px; }
+.step-broken { position: relative; }
+.step-broken .step-name::after {
+  content: '⚠ BLOCKED';
+  display: inline-block; margin-left: 6px;
+  font-size: 9px; font-weight: 700; color: var(--red);
+  background: var(--red-dim); padding: 1px 5px; border-radius: 4px; letter-spacing: 0.3px;
+}
+
+/* ── Broken today ───────────────────────────────────────────── */
+.broken-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.broken-card {
+  background: var(--card); border-radius: var(--r-sm);
+  border: 1px solid #FECACA; border-left: 4px solid var(--red);
+  padding: 14px 16px; box-shadow: var(--shadow);
+}
+.broken-path { font-size: 9px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--red); margin-bottom: 4px; }
+.broken-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.broken-body { font-size: 11px; color: var(--text2); line-height: 1.55; }
+.broken-ob { font-size: 10px; font-weight: 600; color: var(--muted); margin-top: 6px; }
+
+/* ── Sprints ─────────────────────────────────────────────────── */
+.sprint { margin-bottom: 24px; }
+.sprint-header {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border-radius: var(--r) var(--r) 0 0;
+  border: 1px solid var(--border); border-bottom: none;
+  padding: 14px 20px;
+}
+.sprint-num {
+  width: 28px; height: 28px; border-radius: 50%;
+  font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.s1 .sprint-num { background: var(--brand); color: white; }
+.s2 .sprint-num { background: var(--green); color: white; }
+.s3 .sprint-num { background: var(--purple); color: white; }
+.s4 .sprint-num { background: var(--amber); color: white; }
+.sprint-title { font-size: 15px; font-weight: 700; }
+.sprint-goal { font-size: 11px; color: var(--text2); margin-top: 1px; }
+.sprint-badge {
+  margin-left: auto; font-size: 10px; font-weight: 600; padding: 3px 8px;
+  border-radius: 20px; white-space: nowrap;
+}
+.s1 .sprint-badge { background: var(--brand-dim); color: var(--brand); }
+.s2 .sprint-badge { background: var(--green-dim); color: var(--green); }
+.s3 .sprint-badge { background: var(--purple-dim); color: var(--purple); }
+.s4 .sprint-badge { background: var(--amber-dim); color: var(--amber); }
+.sprint-body {
+  background: var(--card); border-radius: 0 0 var(--r) var(--r);
+  border: 1px solid var(--border); border-top: none;
+  overflow: hidden;
+}
+.sprint-items { display: flex; flex-direction: column; }
+.sprint-item {
+  display: grid; grid-template-columns: 64px 1fr 100px;
+  gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+.sprint-item:last-child { border-bottom: none; }
+.item-id {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  color: var(--muted); padding-top: 2px;
+}
+.item-title { font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+.item-body { font-size: 11px; color: var(--text2); line-height: 1.5; }
+.item-owner {
+  font-size: 10px; font-weight: 600; color: var(--text2);
+  background: var(--bg); padding: 3px 8px; border-radius: 20px;
+  text-align: center; white-space: nowrap; height: fit-content;
+  margin-top: 2px; border: 1px solid var(--border);
+}
+.sprint-dod {
+  padding: 14px 20px; background: var(--bg);
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text2);
+}
+.sprint-dod strong { color: var(--text); }
+.dod-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 4px;
+}
+
+/* ── Dependency map ──────────────────────────────────────────── */
+.dep-map {
+  background: var(--card); border-radius: var(--r);
+  border: 1px solid var(--border); padding: 24px;
+  box-shadow: var(--shadow);
+}
+.dep-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.dep-row:last-child { margin-bottom: 0; }
+.dep-node {
+  font-size: 11px; font-weight: 600; padding: 5px 10px;
+  border-radius: 6px; white-space: nowrap;
+}
+.dep-arrow { color: var(--muted); font-size: 14px; flex-shrink: 0; }
+.dep-node.brand   { background: var(--brand-dim); color: var(--brand); border: 1px solid rgba(79,110,247,0.25); }
+.dep-node.green   { background: var(--green-dim); color: #16A34A; border: 1px solid rgba(34,197,94,0.25); }
+.dep-node.amber   { background: var(--amber-dim); color: #D97706; border: 1px solid rgba(245,158,11,0.25); }
+.dep-node.purple  { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(139,92,246,0.25); }
+.dep-node.red     { background: var(--red-dim); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
+.dep-node.result  {
+  background: var(--text); color: white; border: none;
+  font-size: 12px; font-weight: 700; padding: 7px 14px;
+}
+.dep-indent { padding-left: 40px; }
+.dep-label { font-size: 10px; color: var(--muted); font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; align-self: center; }
+
+/* ── Business gates ──────────────────────────────────────────── */
+.gates-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.gate-card {
+  background: var(--card); border-radius: var(--r-sm);
+  border: 1px solid var(--border); padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+.gate-id { font-size: 9px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.gate-title { font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+.gate-urgency { font-size: 10px; color: var(--text2); }
+.gate-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+.gate-dot.open { background: var(--amber); }
+.gate-dot.critical { background: var(--red); }
+
+/* ── Footer ──────────────────────────────────────────────────── */
+.footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <div class="header">
+    <div class="header-eyebrow">AccessSync · REX Project Plan</div>
+    <h1>From Sign-Up to Live System</h1>
+    <p class="header-sub">Four sprints to a fully working product. Three user journeys. Every open item placed on the path it unblocks. Generated 2026-03-31.</p>
+  </div>
+
+  <!-- ── Three Paths ────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">The Three User Journeys</div>
+    <div class="paths-grid">
+
+      <!-- Path A -->
+      <div class="path-card">
+        <div class="path-header blue">
+          <div class="path-label blue">Path A</div>
+          <div class="path-title">Operator Onboarding</div>
+          <div class="path-sub">New gym owner → has Wix site → needs AccessSync</div>
+        </div>
+        <div class="path-steps blue">
+          <div class="path-step"><div class="step-num">1</div><div class="step-content"><div class="step-name">Discovery &amp; Pricing</div><div class="step-note">Operator finds AccessSync, chooses a tier</div></div></div>
+          <div class="path-step"><div class="step-num">2</div><div class="step-content"><div class="step-name">Onboarding Wizard</div><div class="step-note">5-step setup: account → plan → location → Kisi → done</div></div></div>
+          <div class="path-step step-broken"><div class="step-num">3</div><div class="step-content"><div class="step-name">Kisi Validation</div><div class="step-note">API key tested, groups discovered, zero-groups warning</div></div></div>
+          <div class="path-step step-broken"><div class="step-num">4</div><div class="step-content"><div class="step-name">Plan Mapping</div><div class="step-note">Map Wix plans → Kisi groups (dropdown currently empty)</div></div></div>
+          <div class="path-step step-broken"><div class="step-num">5</div><div class="step-content"><div class="step-name">Location Activation</div><div class="step-note">subscription_status → 'active' so provisioning fires</div></div></div>
+          <div class="path-step"><div class="step-num">6</div><div class="step-content"><div class="step-name">Operator Console</div><div class="step-note">Dashboard, members, access log, settings</div></div></div>
+        </div>
+      </div>
+
+      <!-- Path B -->
+      <div class="path-card">
+        <div class="path-header green">
+          <div class="path-label green">Path B</div>
+          <div class="path-title">Member Experience</div>
+          <div class="path-sub">Gym member → buys plan → needs door access</div>
+        </div>
+        <div class="path-steps green">
+          <div class="path-step"><div class="step-num">1</div><div class="step-content"><div class="step-name">Member Buys Plan</div><div class="step-note">Checkout on Wix site completes</div></div></div>
+          <div class="path-step step-broken"><div class="step-num">2</div><div class="step-content"><div class="step-name">Post-Purchase Page</div><div class="step-note">Wix redirect → "Setting up your access…" status page</div></div></div>
+          <div class="path-step step-broken"><div class="step-num">3</div><div class="step-content"><div class="step-name">Webhook Fires</div><div class="step-note">events.js field paths unverified vs live Wix API (P6)</div></div></div>
+          <div class="path-step"><div class="step-num">4</div><div class="step-content"><div class="step-name">Kisi Provisioned</div><div class="step-note">User created, role assigned, door access live</div></div></div>
+          <div class="path-step step-broken"><div class="step-num">5</div><div class="step-content"><div class="step-name">Member Sees Status</div><div class="step-note">Wix widget shows access state (PENDING → ACTIVE)</div></div></div>
+          <div class="path-step"><div class="step-num">6</div><div class="step-content"><div class="step-name">Cancel → Revoke</div><div class="step-note">Plan cancelled → access removed automatically</div></div></div>
+        </div>
+      </div>
+
+      <!-- Path C -->
+      <div class="path-card">
+        <div class="path-header purple">
+          <div class="path-label purple">Path C</div>
+          <div class="path-title">Operator Daily Use</div>
+          <div class="path-sub">Operator → logs in → manages members + access</div>
+        </div>
+        <div class="path-steps purple">
+          <div class="path-step"><div class="step-num">1</div><div class="step-content"><div class="step-name">Dashboard Login</div><div class="step-note">Google OAuth → operator console</div></div></div>
+          <div class="path-step step-broken"><div class="step-num">2</div><div class="step-content"><div class="step-name">Members Tab</div><div class="step-note">See real members, access state, plan assignments (mock data today)</div></div></div>
+          <div class="path-step step-broken"><div class="step-num">3</div><div class="step-content"><div class="step-name">Access Log</div><div class="step-note">30-day bar chart + event feed (mock data today)</div></div></div>
+          <div class="path-step step-broken"><div class="step-num">4</div><div class="step-content"><div class="step-name">Error Management</div><div class="step-note">View + retry failed provisioning jobs (mock data today)</div></div></div>
+          <div class="path-step step-broken"><div class="step-num">5</div><div class="step-content"><div class="step-name">API Key Management</div><div class="step-note">No post-onboarding key entry or rotation path exists</div></div></div>
+          <div class="path-step"><div class="step-num">6</div><div class="step-content"><div class="step-name">Plan Mapping</div><div class="step-note">Add/remove plan→door assignments anytime</div></div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── What's Broken ──────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">What Breaks a Real Customer Today</div>
+    <div class="broken-grid">
+
+      <div class="broken-card">
+        <div class="broken-path">Path A — #1 Blocker</div>
+        <div class="broken-title">Location never activates → zero members provision</div>
+        <div class="broken-body">Onboarding completes → <code>subscription_status = 'inactive'</code> → DR-027 blocks plan-mapping-resolver → no grant/revoke jobs ever fire. The system looks complete but does nothing.</div>
+        <div class="broken-ob">OB-44 · OB-45</div>
+      </div>
+
+      <div class="broken-card">
+        <div class="broken-path">Path A — Plan Mapping</div>
+        <div class="broken-title">Kisi group dropdown is empty → can't map plans</div>
+        <div class="broken-body">After connecting Kisi, operator goes to plan mapping and sees an empty dropdown. <code>GET /groups</code> is never called. <code>getGroups()</code> method doesn't exist yet. Mapping is impossible.</div>
+        <div class="broken-ob">OB-42 · OB-47</div>
+      </div>
+
+      <div class="broken-card">
+        <div class="broken-path">Path A — Onboarding Step 5</div>
+        <div class="broken-title">Webhook secret never mentioned → every webhook fails HMAC</div>
+        <div class="broken-body">events.js requires <code>accesssync_webhook_secret</code> in Wix Secrets Manager. Onboarding never tells the operator to add it. Every webhook sent fails signature verification silently.</div>
+        <div class="broken-ob">OB-41</div>
+      </div>
+
+      <div class="broken-card">
+        <div class="broken-path">Path B — Member UX</div>
+        <div class="broken-title">No post-purchase page → member has zero feedback</div>
+        <div class="broken-body">Member completes checkout → sees Wix order confirmation → no AccessSync context → shows up at gym → door doesn't open (if provisioning is slow) → calls the gym. Bad first impression on every new signup.</div>
+        <div class="broken-ob">OB-46</div>
+      </div>
+
+      <div class="broken-card">
+        <div class="broken-path">Path B — Webhook Pipeline</div>
+        <div class="broken-title">events.js field paths unverified against live Wix API</div>
+        <div class="broken-body">The Velo events.js extracts <code>memberId</code>, <code>planId</code>, etc. from webhook payloads. These paths have never been confirmed against a live Wix event. If any path is wrong, that event type silently drops all members.</div>
+        <div class="broken-ob">P6</div>
+      </div>
+
+      <div class="broken-card">
+        <div class="broken-path">Path C — Console</div>
+        <div class="broken-title">All 6 console pages show mock data</div>
+        <div class="broken-body">Dashboard, Members, Plan Mapping, Access, Locations, Admin Panel all render static fake data. Operators see a working-looking UI but none of it reflects their actual members, errors, or access events.</div>
+        <div class="broken-ob">OB-29</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Sprint 1 ────────────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">Sprint Plan</div>
+
+    <div class="sprint s1">
+      <div class="sprint-header">
+        <div class="sprint-num">1</div>
+        <div>
+          <div class="sprint-title">Make the System Actually Work</div>
+          <div class="sprint-goal">Goal: A real operator can complete onboarding and have provisioning fire for a real member</div>
+        </div>
+        <div class="sprint-badge">Path A · Critical path</div>
+      </div>
+      <div class="sprint-body">
+        <div class="sprint-items">
+          <div class="sprint-item">
+            <div class="item-id">OB-44 + OB-45</div>
+            <div>
+              <div class="item-title">Location Activation on Onboarding Complete</div>
+              <div class="item-body">When owner bypass PIN is used OR when a payment is confirmed, auto-set <code>subscription_status = 'active'</code>. Without this, provisioning never fires. Wire bypass to also call the activate endpoint. This is the single most important item in the entire backlog.</div>
+            </div>
+            <div class="item-owner">NOVA</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-42</div>
+            <div>
+              <div class="item-title">Kisi Groups Discovery After Key Validation</div>
+              <div class="item-body">After API key is saved, call <code>GET /groups</code> (full list), show operator a summary of what AccessSync found. Warn if zero groups. Builds <code>kisi-adapter.getGroups()</code> + <code>GET /operator/clients/:id/kisi-groups</code> endpoint. This also feeds OB-47 (plan mapping dropdown).</div>
+            </div>
+            <div class="item-owner">NOVA</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-47</div>
+            <div>
+              <div class="item-title">Plan Mapping Screen — Live Kisi Groups Dropdown</div>
+              <div class="item-body">Wire the <code>/plan-mapping</code> EJS page's group dropdown to <code>GET /operator/clients/:id/kisi-groups</code>. Currently shows nothing. Once OB-42 builds the endpoint, this wires the UI to it. Operators can now actually map plans to doors.</div>
+            </div>
+            <div class="item-owner">NOVA + FORGE</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-41 (partial)</div>
+            <div>
+              <div class="item-title">Webhook Secret Setup Instructions in Onboarding Step 5</div>
+              <div class="item-body">Add a Step 5 instruction block: "Add <code>accesssync_webhook_secret</code> to your Wix Secrets Manager." Without this, every webhook fails HMAC verification. Add it before the events.js code block so operators see it in sequence.</div>
+            </div>
+            <div class="item-owner">NOVA</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-25</div>
+            <div>
+              <div class="item-title">Set CORE_ENGINE_URL on Railway Admin Hub Service</div>
+              <div class="item-body">Quick Railway config — not code. Without this env var set, Step 5 shows a blank webhook URL in the events.js code block. Operators paste a broken URL into their Wix backend.</div>
+            </div>
+            <div class="item-owner">Daxx</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">P6</div>
+            <div>
+              <div class="item-title">Verify events.js Field Paths Against Live Wix Event</div>
+              <div class="item-body">Run a real test purchase on the HOG Wix site and log the full payload AccessSync receives. Confirm <code>memberId</code>, <code>planId</code>, <code>orderId</code> paths match what <code>wix-adapter.js</code> expects. Fix any mismatches. This is the only way to know the pipeline is correct.</div>
+            </div>
+            <div class="item-owner">NOVA + Daxx</div>
+          </div>
+        </div>
+        <div class="sprint-dod">
+          <div class="dod-label">Definition of Done</div>
+          <strong>Daxx uses the owner PIN → location activates → maps one Wix plan to one Kisi group → adds events.js + webhook secret to HOG Wix backend → buys a test plan → member appears in Kisi within 10 seconds.</strong> This is the first end-to-end proof the system works.
+        </div>
+      </div>
+    </div>
+
+    <!-- Sprint 2 -->
+    <div class="sprint s2">
+      <div class="sprint-header">
+        <div class="sprint-num">2</div>
+        <div>
+          <div class="sprint-title">Member-Facing Wix Screens</div>
+          <div class="sprint-goal">Goal: A gym member has visible feedback after purchasing — they know AccessSync is working</div>
+        </div>
+        <div class="sprint-badge">Path B · Member UX</div>
+      </div>
+      <div class="sprint-body">
+        <div class="sprint-items">
+          <div class="sprint-item">
+            <div class="item-id">OB-46</div>
+            <div>
+              <div class="item-title">Post-Purchase Member Status Page</div>
+              <div class="item-body">Wix page that loads after checkout. Shows "Setting up your access…" with a spinner, polls <code>member-sync-api.js</code> every 3 seconds, transitions to "You're in! Here's your door access." on ACTIVE status, shows error state with gym contact if provisioning fails. This is the member's first AccessSync touchpoint.</div>
+            </div>
+            <div class="item-owner">PIXEL</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-06 + OB-07</div>
+            <div>
+              <div class="item-title">Member Account Widget (Ongoing Status)</div>
+              <div class="item-body">Embedded Wix widget on the member's account page showing current plan, access status, and which doors they have. Confirm Velo owns the state-to-copy mapping (PENDING / ACTIVE / SUSPENDED / ERROR). Reads from <code>member-sync-api.js</code> which is already built and RS256-secured.</div>
+            </div>
+            <div class="item-owner">PIXEL</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-34</div>
+            <div>
+              <div class="item-title">Rename "Family Member" → "Additional Member" in Widget</div>
+              <div class="item-body">Terminology consistency. Member widget still uses "Family Member" in some places. Align with the "Additional Member" rename applied everywhere else.</div>
+            </div>
+            <div class="item-owner">PIXEL</div>
+          </div>
+        </div>
+        <div class="sprint-dod">
+          <div class="dod-label">Definition of Done</div>
+          <strong>A test member buys a plan on HOG → lands on the AccessSync status page → sees the spinner → within 10 seconds it flips to "You're in!" → member's account page also shows their door access.</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sprint 3 -->
+    <div class="sprint s3">
+      <div class="sprint-header">
+        <div class="sprint-num">3</div>
+        <div>
+          <div class="sprint-title">Operator Console Live Data</div>
+          <div class="sprint-goal">Goal: Operator logs in and sees their real members, real errors, real access events</div>
+        </div>
+        <div class="sprint-badge">Path C · Dashboard</div>
+      </div>
+      <div class="sprint-body">
+        <div class="sprint-items">
+          <div class="sprint-item">
+            <div class="item-id">OB-29</div>
+            <div>
+              <div class="item-title">Wire All 6 EJS Pages to Live API Endpoints</div>
+              <div class="item-body">Replace mock data across Dashboard, Members, Plan Mapping, Access, Locations, and Admin Panel with real fetch calls to operator API endpoints. This is the critical integration step — all 6 pages are structurally complete but data-blind.</div>
+            </div>
+            <div class="item-owner">NOVA + FORGE</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-31 + OB-32</div>
+            <div>
+              <div class="item-title">Access Log + Stats API Endpoints</div>
+              <div class="item-body">Build <code>GET /operator/:clientId/access-log</code> (paginated, 30 days, location + type filter) and <code>GET /operator/:clientId/access-stats</code> (hourly averages for bar chart). Both needed to wire the Access tab to real data.</div>
+            </div>
+            <div class="item-owner">NOVA</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-35 + OB-38</div>
+            <div>
+              <div class="item-title">Operator Self-Service API Key Management</div>
+              <div class="item-body">Post-onboarding, operators have no way to update or rotate their Kisi key. Build a Settings section or modal on the operator console for org-level key entry + rotation and location-level key override (DR-028). Includes an operator-facing test endpoint to validate keys.</div>
+            </div>
+            <div class="item-owner">NOVA + FORGE</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-13</div>
+            <div>
+              <div class="item-title">Debug Center Email Search</div>
+              <div class="item-body">Wire <code>GET /members/search?email=</code> — calls Wix API to resolve email → <code>platformMemberId</code> → DB query. OB-08 (RS256 JWT) is closed so this is now unblocked. NOVA build.</div>
+            </div>
+            <div class="item-owner">NOVA</div>
+          </div>
+        </div>
+        <div class="sprint-dod">
+          <div class="dod-label">Definition of Done</div>
+          <strong>Operator logs into the console → Members tab shows HOG's real member list → Access tab shows real door events from today → Errors tab shows real failed jobs if any → Dashboard shows real sync counts.</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sprint 4 -->
+    <div class="sprint s4">
+      <div class="sprint-header">
+        <div class="sprint-num">4</div>
+        <div>
+          <div class="sprint-title">Hardening + Security</div>
+          <div class="sprint-goal">Goal: Safe to open to real paying clients beyond internal testing</div>
+        </div>
+        <div class="sprint-badge">All paths · Pre-launch</div>
+      </div>
+      <div class="sprint-body">
+        <div class="sprint-items">
+          <div class="sprint-item">
+            <div class="item-id">OB-24</div>
+            <div>
+              <div class="item-title">Protect Operator Signup Endpoints</div>
+              <div class="item-body">Currently <code>POST /operator/clients</code> is fully public — anyone can create a client record. Options: invite token, Wix app install JWT, or rate limiting. Must be resolved before promoting the onboarding URL publicly.</div>
+            </div>
+            <div class="item-owner">NOVA</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-43</div>
+            <div>
+              <div class="item-title">End-to-End Validation Step in Onboarding</div>
+              <div class="item-body">After wizard completes, run: (a) Kisi key valid ✓, (b) at least one plan mapping exists ✓, (c) optional test webhook fires ✓. Operator sees a checklist before "Account Created!" — confidence that the system is actually connected.</div>
+            </div>
+            <div class="item-owner">NOVA</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">OB-26</div>
+            <div>
+              <div class="item-title">Dashboard Surfaces "Connect Kisi" CTA When Key is Missing</div>
+              <div class="item-body">Operators who complete onboarding without a Kisi key currently have no recovery path. Dashboard must detect <code>kisi_api_key = null</code> and surface a prominent "Connect your Kisi account" call to action.</div>
+            </div>
+            <div class="item-owner">NOVA</div>
+          </div>
+          <div class="sprint-item">
+            <div class="item-id">G-06 + G-10</div>
+            <div>
+              <div class="item-title">Failure Runbook + Kisi Schema Review</div>
+              <div class="item-body">G-06: Document the optimistic error resolve risk in the failure runbook. G-10: NOVA reviews full Kisi API docs and confirms all schema assumptions (field names, endpoint behavior, pagination). Both are hard gates for commercial launch.</div>
+            </div>
+            <div class="item-owner">NOVA + Daxx</div>
+          </div>
+        </div>
+        <div class="sprint-dod">
+          <div class="dod-label">Definition of Done</div>
+          <strong>A second operator (not Daxx) can complete onboarding using only the wizard — no admin intervention, no Railway console access — and have a working provisioning system within 15 minutes.</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Dependency Map ──────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">Dependency Map — Critical Path</div>
+    <div class="dep-map">
+
+      <div class="dep-row">
+        <div class="dep-node amber">G-08 email Joe at Kisi</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node amber">G-10 NOVA reviews Kisi API docs</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node brand">OB-42 getGroups() built</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node brand">OB-47 plan mapping dropdown live</div>
+      </div>
+
+      <div class="dep-row">
+        <div class="dep-node brand">OB-45 finish bypass</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node brand">OB-44 location activates</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-label">+ OB-41 webhook secret + P6 field paths</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node result">🚀 First Working Provision</div>
+      </div>
+
+      <div class="dep-row dep-indent">
+        <div class="dep-label">Sprint 1 Done</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node green">OB-46 post-purchase page</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node green">OB-06/07 member account widget</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node result">✅ Sprint 2 Done</div>
+      </div>
+
+      <div class="dep-row dep-indent">
+        <div class="dep-label">Sprint 2 Done</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node purple">OB-29 wire live data</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node purple">OB-31/32 access APIs</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node result">✅ Console Functional</div>
+      </div>
+
+      <div class="dep-row dep-indent">
+        <div class="dep-label">Console Done</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node amber">OB-24 protect endpoints</div>
+        <div class="dep-arrow">+</div>
+        <div class="dep-node amber">OB-43 validation step</div>
+        <div class="dep-arrow">+</div>
+        <div class="dep-node amber">G-01/02/03 business gates</div>
+        <div class="dep-arrow">→</div>
+        <div class="dep-node result">🎯 Launch Ready</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Business Gates ──────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">Business Gates (Daxx — Parallel Track)</div>
+    <div class="gates-grid">
+      <div class="gate-card">
+        <div class="gate-id">G-01</div>
+        <div class="gate-title"><span class="gate-dot critical"></span>Chad signed agreement</div>
+        <div class="gate-urgency">Before HOG goes live · Pitch sent, awaiting response</div>
+      </div>
+      <div class="gate-card">
+        <div class="gate-id">G-02</div>
+        <div class="gate-title"><span class="gate-dot critical"></span>LLC formation</div>
+        <div class="gate-urgency">Before any revenue is collected</div>
+      </div>
+      <div class="gate-card">
+        <div class="gate-id">G-03</div>
+        <div class="gate-title"><span class="gate-dot critical"></span>Kisi reseller agreement</div>
+        <div class="gate-urgency">Attorney review required · Before commercial launch</div>
+      </div>
+      <div class="gate-card">
+        <div class="gate-id">G-08</div>
+        <div class="gate-title"><span class="gate-dot open"></span>Email Joe at Kisi</div>
+        <div class="gate-urgency">API access + 2 open questions · Blocks G-10</div>
+      </div>
+      <div class="gate-card">
+        <div class="gate-id">G-09</div>
+        <div class="gate-title"><span class="gate-dot open"></span>Chad confirmed on Kisi Pro tier</div>
+        <div class="gate-urgency">Must be in service agreement ($199/mo/location)</div>
+      </div>
+      <div class="gate-card">
+        <div class="gate-id">G-04 + G-05</div>
+        <div class="gate-title"><span class="gate-dot open"></span>Wix dev account + Tech insurance</div>
+        <div class="gate-urgency">G-04 before App Market · G-05 before go-live</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Footer ─────────────────────────────────────────────── -->
+  <div class="footer">
+    <span>AccessSync · REX Project Plan · 2026-03-31</span>
+    <span>Open items tracked in vault <code>AccessSync/open_items.md</code></span>
+  </div>
+
+</div>
+</body>
+</html>
