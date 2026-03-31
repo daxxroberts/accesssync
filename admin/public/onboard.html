@@ -1243,7 +1243,6 @@ document.getElementById('bypass-pin').addEventListener('keydown', e => {
 const EVENTS_JS_TEMPLATE = `import { fetch } from 'wix-fetch';
 import { getSecret } from 'wix-secrets-backend';
 import { createHmac } from 'crypto';
-import { appInstance } from 'wix-application';
 
 const CORE_ENGINE_URL = 'https://accesssync-production.up.railway.app/webhooks/wix';
 const CLIENT_ID = '{{CLIENT_ID}}'; // Your AccessSync client ID
@@ -1251,8 +1250,7 @@ const CLIENT_ID = '{{CLIENT_ID}}'; // Your AccessSync client ID
 async function _send(eventType, data) {
   try {
     const secret = await getSecret('accesssync_webhook_secret');
-    const instance = await appInstance.getInstance();
-    const payload = { eventType, instanceId: instance.instanceId, data };
+    const payload = { eventType, data };
     const body = JSON.stringify(payload);
     const sig = createHmac('sha256', secret).update(body).digest('base64');
     await fetch(CORE_ENGINE_URL, {
