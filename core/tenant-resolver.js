@@ -49,11 +49,22 @@ class TenantResolver {
       );
 
       if (result.rows.length === 0) {
-        // Phase 1 fallback — DEFAULT_TENANT_ID covers HOG before site_id is registered in DB.
-        // Remove once all clients have site_id set. See CLAUDE.md env vars.
+        // Phase 1 fallback — DEFAULT_TENANT_ID bootstraps HOG before site_id is registered.
+        // On first use, auto-wires the real site_id to that client so future lookups resolve
+        // normally. Remove DEFAULT_TENANT_ID from env after first successful webhook.
         const fallback = process.env.DEFAULT_TENANT_ID || null;
         if (fallback) {
           console.warn(`[Tenant Resolver] No client for site_id: ${wixSiteId} — using DEFAULT_TENANT_ID fallback.`);
+          // Auto-wire: write this site_id to the fallback client row (only if not already set)
+          try {
+            await db.query(
+              `UPDATE clients SET site_id = $1 WHERE id = $2 AND (site_id IS NULL OR site_id = '')`,
+              [wixSiteId, fallback]
+            );
+            console.log(`[Tenant Resolver] Auto-wired site_id ${wixSiteId} to client ${fallback}`);
+          } catch (wireErr) {
+            console.error('[Tenant Resolver] Auto-wire failed (non-fatal):', wireErr.message);
+          }
           this._cache.set(wixSiteId, { clientId: fallback, cachedAt: Date.now() });
           return fallback;
         }
