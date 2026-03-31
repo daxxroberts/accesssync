@@ -186,7 +186,7 @@ OPERATOR_NOTIFICATION_EMAIL   Phase 1 HOG fallback — until setup wizard OB-09 
 ADMIN_JWT_SECRET              Random 64-char string — JWT signing secret for admin sessions
 GOOGLE_CLIENT_ID              OAuth 2.0 Client ID from Google Cloud Console (public — safe to expose)
 ADMIN_ALLOWED_EMAIL           daxxroberts@gmail.com — only this Google account can log in
-OWNER_BYPASS_PIN              Owner PIN to bypass Kisi validation during onboarding (e.g. 2096)
+OWNER_PIN                     Owner PIN to bypass Kisi validation during onboarding — stored in Railway ADMIN service vars
 ```
 
 ---

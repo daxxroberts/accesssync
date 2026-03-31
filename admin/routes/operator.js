@@ -23,10 +23,10 @@ router.get('/webhook-url', (req, res) => {
 
 // ── POST /operator/verify-bypass ─────────────────────────────────
 // Owner bypass PIN validation for onboarding (skips Kisi key step).
-// PIN checked against OWNER_BYPASS_PIN env var — never hardcoded.
+// PIN checked against OWNER_PIN env var (Railway ADMIN service) — never hardcoded.
 router.post('/verify-bypass', (req, res) => {
   const { pin } = req.body;
-  const expected = process.env.OWNER_BYPASS_PIN;
+  const expected = process.env.OWNER_PIN;
   if (!expected || !pin || pin !== expected) {
     return res.status(403).json({ error: 'Invalid PIN' });
   }
