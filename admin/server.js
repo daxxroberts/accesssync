@@ -57,8 +57,10 @@ app.get('/access',       (req, res) => res.render('pages/access',         { acti
 app.get('/locations',    (req, res) => res.render('pages/locations',      { activeTab: 'config' }));
 app.get('/admin-panel',  (req, res) => res.render('pages/admin-panel',    { activeTab: 'admin' }));
 
-// ── Admin Hub catch-all (must remain last) ─────────────────────
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+// ── Admin Hub ──────────────────────────────────────────────────
+app.get('/',               (req, res) => res.redirect('/OwnerDashboard'));
+app.get('/OwnerDashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('*',               (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.listen(PORT, () => {
   console.log(`[AccessSync Admin Hub] Running on port ${PORT}`);
