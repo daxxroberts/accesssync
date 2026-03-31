@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="light">
+<head>
+  <%- include('../partials/head', { title: 'Operator Dashboard: Access' }) %>
+  <style>
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 16px;
+    }
+
+    .breadcrumb { font-size: 13px; color: var(--text2); margin-bottom: 12px; }
+    .breadcrumb a { color: var(--brand); text-decoration: none; transition: color 0.2s; }
+    .breadcrumb a:hover { color: var(--brand-dark); }
+
+    .stats-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .stat-value { font-size: 24px; font-weight: 700; color: var(--text); }
+
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; box-shadow: var(--shadow); margin-bottom: 24px; }
+    .card-header { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 16px; }
+
+    /* ── Chart ── */
+    .chart-container {
+      height: 300px; display: flex; align-items: flex-end; gap: 4px;
+      margin-bottom: 20px; position: relative;
+    }
+    .bar-wrapper {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: flex-end; position: relative; min-height: 100%;
+      cursor: pointer; transition: transform 0.2s;
+    }
+    .bar-wrapper:hover { transform: translateY(-4px); }
+    .bar {
+      width: 100%; background: var(--brand); border-radius: 4px 4px 0 0;
+      transition: all 0.3s; position: relative;
+    }
+    .bar:hover::after {
+      content: attr(data-value); position: absolute; bottom: 100%; left: 50%;
+      transform: translateX(-50%); background: var(--text); color: #fff;
+      padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+      white-space: nowrap; margin-bottom: 4px; z-index: 10;
+    }
+    .bar.filtered { opacity: 0.3; }
+    .chart-labels {
+      display: flex; gap: 4px; margin-top: 12px;
+      align-items: flex-start; justify-content: space-between;
+    }
+    .chart-label { flex: 1; text-align: center; font-size: 10px; color: var(--muted); font-weight: 500; }
+
+    /* ── Filter tags ── */
+    .filter-strip { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+    .filter-tag {
+      padding: 8px 14px; border-radius: 20px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text2); font-size: 13px;
+      font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .filter-tag:hover { border-color: currentColor; }
+    .filter-tag.active { color: #fff; border-color: transparent; }
+    .filter-tag.all.active         { background: var(--brand); }
+    .filter-tag.granted.active     { background: var(--sage); }
+    .filter-tag.provisioned.active { background: var(--brand); }
+    .filter-tag.revoked.active     { background: var(--red); }
+    .filter-tag.error.active       { background: var(--red); }
+    .filter-tag.denied.active      { background: var(--amber); }
+
+    /* ── Activity grid ── */
+    .activity-grid { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .grid-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .grid-table thead { background: var(--surface); border-bottom: 2px solid var(--border); }
+    .grid-table th {
+      padding: 12px 16px; text-align: left; font-weight: 700; color: var(--text);
+      font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .grid-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); color: var(--text2); }
+    .grid-table tbody tr:nth-child(even) { background: var(--surface); }
+    .grid-table tbody tr:hover { background: var(--brand-dim); }
+
+    .event-tag { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .event-tag.granted     { background: var(--sage-dim);  color: var(--sage-dark); }
+    .event-tag.provisioned { background: var(--brand-dim); color: var(--brand-dark); }
+    .event-tag.revoked     { background: var(--red-dim);   color: var(--red); }
+    .event-tag.error       { background: var(--red-dim);   color: var(--red); }
+    .event-tag.denied      { background: var(--amber-dim); color: var(--amber); }
+
+    .location-text { color: var(--text2); font-size: 12px; }
+
+    .load-more-btn {
+      display: block; margin: 24px auto 0; padding: 12px 24px;
+      background: var(--brand); color: #fff; border: none; border-radius: 8px;
+      font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;
+    }
+    .load-more-btn:hover { background: var(--brand-dark); box-shadow: var(--shadow-md); }
+    .load-more-btn:active { transform: scale(0.98); }
+    .load-more-btn.hidden { display: none; }
+
+    @media (max-width: 768px) {
+      .container { padding: 16px 12px; }
+      .page-title { font-size: 22px; }
+      .stats-strip { grid-template-columns: repeat(2, 1fr); }
+      .chart-container { height: 200px; }
+      .chart-label { font-size: 9px; }
+      .filter-strip { gap: 6px; }
+      .filter-tag { padding: 6px 12px; font-size: 12px; }
+      .grid-table th, .grid-table td { padding: 10px 12px; font-size: 12px; }
+    }
+
+    @media (max-width: 480px) {
+      .stats-strip { grid-template-columns: 1fr; }
+      .chart-container { height: 150px; gap: 2px; }
+      .filter-tag { padding: 6px 10px; font-size: 11px; }
+      .grid-table th, .grid-table td { padding: 8px 10px; font-size: 11px; }
+      .page-title { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <%- include('../partials/topbar') %>
+  <%- include('../partials/subnav', { activeTab: activeTab }) %>
+
+  <div class="container">
+    <div class="page-header" style="margin-bottom:24px;">
+      <div class="breadcrumb">
+        <a href="/dashboard">← Back to Overview</a>
+      </div>
+      <h1 class="page-title">Access Dashboard</h1>
+      <p class="page-subtitle">Access activity across all locations over the last 30 days</p>
+    </div>
+
+    <div class="filter-strip" id="location-filter-strip"></div>
+
+    <div class="stats-strip">
+      <div class="stat-card">
+        <div class="stat-label">Total Events</div>
+        <div class="stat-value">1,247</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Daily Average</div>
+        <div class="stat-value">42</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Peak Hour</div>
+        <div class="stat-value">6:00 PM</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Error Rate</div>
+        <div class="stat-value">2.1%</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Hourly Access Average (Last 30 Days)</div>
+      <div class="chart-container" id="chart-container"></div>
+      <div class="chart-labels" id="chart-labels"></div>
+    </div>
+
+    <div class="filter-strip" id="filter-strip"></div>
+
+    <div class="card">
+      <div class="activity-grid">
+        <table class="grid-table">
+          <thead>
+            <tr>
+              <th>Date/Time</th>
+              <th>Member</th>
+              <th>Event</th>
+              <th>Plan</th>
+              <th>Location</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="activity-tbody"></tbody>
+        </table>
+      </div>
+      <button class="load-more-btn" id="load-more-btn" onclick="loadMore()">Load More</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/operator-nav.js"></script>
+  <script>
+    var chartData = [2, 1, 0, 1, 8, 15, 20, 25, 18, 10, 14, 16, 18, 14, 12, 16, 22, 30, 28, 25, 18, 10, 6, 3];
+
+    var allActivities = [
+      { date: 'Mar 30', time: '10:42 AM', member: 'Jake Morrison',  event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge scan' },
+      { date: 'Mar 30', time: '10:15 AM', member: 'Sara Rhodes',    event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Keypad entry' },
+      { date: 'Mar 30', time: '9:58 AM',  member: 'Amber Knox',     event: 'provisioned', plan: 'Day Pass',        location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'New access activated' },
+      { date: 'Mar 29', time: '6:32 PM',  member: 'Derek Lane',     event: 'granted',     plan: 'Monthly Member', location: 'Roland — Weight Room',       locationId: 'roland',     details: 'Badge scan' },
+      { date: 'Mar 29', time: '5:47 PM',  member: 'Chris Martin',   event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Keypad entry' },
+      { date: 'Mar 29', time: '5:12 PM',  member: 'Lisa Torres',    event: 'denied',      plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Membership expired' },
+      { date: 'Mar 29', time: '4:28 PM',  member: 'Ryan Nash',      event: 'granted',     plan: 'Monthly Member', location: 'Roland — Yoga Studio',      locationId: 'roland',     details: 'Badge scan' },
+      { date: 'Mar 29', time: '3:55 PM',  member: 'Marcus Bell',    event: 'error',       plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'System timeout' },
+      { date: 'Mar 29', time: '3:12 PM',  member: 'Tina Park',      event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Badge scan' },
+      { date: 'Mar 28', time: '7:42 AM',  member: 'Jake Morrison',  event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Badge scan' },
+      { date: 'Mar 28', time: '7:15 AM',  member: 'Nina Patel',     event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge scan' },
+      { date: 'Mar 28', time: '6:48 AM',  member: 'Owen West',      event: 'provisioned', plan: 'Monthly Member', location: 'Roland — Weight Room',       locationId: 'roland',     details: 'Badge activated' },
+      { date: 'Mar 28', time: '6:22 AM',  member: 'Sara Rhodes',    event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Keypad entry' },
+      { date: 'Mar 27', time: '8:35 PM',  member: 'Paige Adams',    event: 'revoked',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Access terminated' },
+      { date: 'Mar 27', time: '7:52 PM',  member: 'Quinn Foster',   event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Badge scan' },
+      { date: 'Mar 27', time: '7:10 PM',  member: 'Ray Cooper',     event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Badge scan' },
+      { date: 'Mar 27', time: '6:45 PM',  member: 'Sage Hunter',    event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Keypad entry' },
+      { date: 'Mar 27', time: '6:12 PM',  member: 'Taylor Jackson', event: 'error',       plan: 'Monthly Member', location: 'Roland — Yoga Studio',      locationId: 'roland',     details: 'Network error' },
+      { date: 'Mar 26', time: '9:30 AM',  member: 'Amber Knox',     event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge scan' },
+      { date: 'Mar 26', time: '8:58 AM',  member: 'Blake Morgan',   event: 'provisioned', plan: 'Weekly Pass',    location: 'Roland — Front Door',        locationId: 'roland',     details: 'Temporary access' },
+      { date: 'Mar 26', time: '8:22 AM',  member: 'Cameron Drew',   event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Badge scan' },
+      { date: 'Mar 26', time: '7:45 AM',  member: 'Dana Wells',     event: 'denied',      plan: 'Suspended',      location: 'Roland — Weight Room',       locationId: 'roland',     details: 'Account suspended' },
+      { date: 'Mar 25', time: '6:20 PM',  member: 'Derek Lane',     event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge scan' },
+      { date: 'Mar 25', time: '5:58 PM',  member: 'Eva Martinez',   event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Keypad entry' },
+      { date: 'Mar 25', time: '5:30 PM',  member: 'Frank Gibson',   event: 'error',       plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge malfunction' },
+      { date: 'Mar 25', time: '4:48 PM',  member: 'Grace Lee',      event: 'granted',     plan: 'Monthly Member', location: 'Roland — Yoga Studio',      locationId: 'roland',     details: 'Badge scan' },
+      { date: 'Mar 24', time: '9:15 AM',  member: 'Henry Brown',    event: 'provisioned', plan: 'Corporate',      location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Bulk assignment' },
+      { date: 'Mar 24', time: '8:42 AM',  member: 'Iris Chang',     event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Badge scan' },
+      { date: 'Mar 24', time: '8:10 AM',  member: 'Jack Rivera',    event: 'revoked',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Membership cancelled' },
+      { date: 'Mar 23', time: '7:35 PM',  member: 'Karen White',    event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Badge scan' },
+      { date: 'Mar 23', time: '6:58 PM',  member: 'Leo Santos',     event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Keypad entry' },
+      { date: 'Mar 23', time: '6:15 PM',  member: 'Megan Price',    event: 'denied',      plan: 'Expired',        location: 'Roland — Weight Room',       locationId: 'roland',     details: 'Membership expired' },
+      { date: 'Mar 22', time: '7:42 AM',  member: 'Nathan Hill',    event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge scan' },
+    ];
+
+    var currentFilter = 'all';
+    var currentLocation = 'all';
+    var itemsPerPage = 15;
+    var currentPage = 1;
+
+    function initLocationFilter() {
+      var locations = [
+        { label: 'All Locations',     value: 'all' },
+        { label: 'Fort Smith — Main', value: 'fort-smith' },
+        { label: 'Roland — Annex',    value: 'roland' },
+      ];
+      var html = '';
+      locations.forEach(function(loc) {
+        var activeClass = loc.value === currentLocation ? ' active' : '';
+        html += '<button class="filter-tag' + activeClass + '" onclick="filterByLocation(\'' + loc.value + '\')">' + loc.label + '</button>';
+      });
+      document.getElementById('location-filter-strip').innerHTML = html;
+    }
+
+    function filterByLocation(location) {
+      currentLocation = location;
+      currentPage = 1;
+      document.querySelectorAll('#location-filter-strip .filter-tag').forEach(function(t) { t.classList.remove('active'); });
+      event.target.classList.add('active');
+      updateStats();
+      renderActivityGrid();
+    }
+
+    function updateStats() {
+      var filtered = allActivities;
+      if (currentLocation !== 'all') {
+        filtered = filtered.filter(function(act) { return act.locationId === currentLocation; });
+      }
+      var totalEvents = filtered.length;
+      var dailyAverage = Math.round(totalEvents / 30);
+      var errorCount = filtered.filter(function(act) { return act.event === 'error'; }).length;
+      var errorRate = totalEvents > 0 ? ((errorCount / totalEvents) * 100).toFixed(1) : '0';
+      document.querySelectorAll('.stat-value')[0].textContent = totalEvents.toLocaleString();
+      document.querySelectorAll('.stat-value')[1].textContent = dailyAverage;
+      document.querySelectorAll('.stat-value')[3].textContent = errorRate + '%';
+    }
+
+    function initChart() {
+      var maxValue = Math.max.apply(null, chartData);
+      var chartHtml = '';
+      var labelsHtml = '';
+      chartData.forEach(function(val, idx) {
+        var height = (val / maxValue) * 100;
+        chartHtml += '<div class="bar-wrapper"><div class="bar" data-value="' + val + '" style="height: ' + height + '%"></div></div>';
+        var hour = idx === 0 ? '12am' : idx < 12 ? idx + 'am' : idx === 12 ? '12pm' : (idx - 12) + 'pm';
+        labelsHtml += '<div class="chart-label">' + hour + '</div>';
+      });
+      document.getElementById('chart-container').innerHTML = chartHtml;
+      document.getElementById('chart-labels').innerHTML = labelsHtml;
+    }
+
+    function initFilterTags() {
+      var filters = [
+        { label: 'All',               value: 'all',         cls: 'all' },
+        { label: 'Access Granted',    value: 'granted',     cls: 'granted' },
+        { label: 'Access Provisioned',value: 'provisioned', cls: 'provisioned' },
+        { label: 'Access Revoked',    value: 'revoked',     cls: 'revoked' },
+        { label: 'Error',             value: 'error',       cls: 'error' },
+        { label: 'Access Denied',     value: 'denied',      cls: 'denied' },
+      ];
+      var html = '';
+      filters.forEach(function(filter) {
+        var activeClass = filter.value === 'all' ? ' active' : '';
+        html += '<button class="filter-tag ' + filter.cls + activeClass + '" onclick="filterByTag(\'' + filter.value + '\')">' + filter.label + '</button>';
+      });
+      document.getElementById('filter-strip').innerHTML = html;
+    }
+
+    function filterByTag(tag) {
+      currentFilter = tag;
+      currentPage = 1;
+      document.querySelectorAll('.filter-tag').forEach(function(t) { t.classList.remove('active'); });
+      event.target.classList.add('active');
+      var bars = document.querySelectorAll('.bar');
+      if (tag === 'all') {
+        bars.forEach(function(bar) { bar.classList.remove('filtered'); });
+      } else {
+        bars.forEach(function(bar) { bar.classList.add('filtered'); });
+      }
+      renderActivityGrid();
+    }
+
+    function renderActivityGrid() {
+      var filtered = allActivities;
+      if (currentFilter !== 'all') {
+        filtered = filtered.filter(function(act) { return act.event === currentFilter; });
+      }
+      if (currentLocation !== 'all') {
+        filtered = filtered.filter(function(act) { return act.locationId === currentLocation; });
+      }
+      var start = (currentPage - 1) * itemsPerPage;
+      var end = start + itemsPerPage;
+      var page = filtered.slice(start, end);
+
+      var html = '';
+      page.forEach(function(act) {
+        html += '<tr>' +
+          '<td>' + act.date + ', ' + act.time + '</td>' +
+          '<td>' + act.member + '</td>' +
+          '<td><span class="event-tag ' + act.event + '">' + capitalize(act.event.replace(/_/g, ' ')) + '</span></td>' +
+          '<td>' + act.plan + '</td>' +
+          '<td><span class="location-text">' + act.location + '</span></td>' +
+          '<td>' + act.details + '</td>' +
+          '</tr>';
+      });
+      document.getElementById('activity-tbody').innerHTML = html;
+
+      var btn = document.getElementById('load-more-btn');
+      btn.classList.toggle('hidden', end >= filtered.length);
+    }
+
+    function loadMore() {
+      currentPage++;
+      renderActivityGrid();
+    }
+
+    function capitalize(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    // Read optional location param from URL
+    (function() {
+      var params = new URLSearchParams(window.location.search);
+      var loc = params.get('location');
+      if (loc === 'fort-smith' || loc === 'roland') {
+        currentLocation = loc;
+      }
+    })();
+
+    initLocationFilter();
+    initChart();
+    initFilterTags();
+    updateStats();
+    renderActivityGrid();
+  </script>
+</body>
+</html>

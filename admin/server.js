@@ -24,6 +24,9 @@ const { requireAuth } = require('./middleware/auth');
 const app  = express();
 const PORT = process.env.ADMIN_PORT || process.env.PORT || 3001;
 
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -45,6 +48,16 @@ app.get('/health', (req, res) => res.json({ status: 'ok', service: 'admin-hub' }
 
 // ── Serve frontend ─────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Operator dashboard pages ───────────────────────────────────
+app.get('/dashboard',    (req, res) => res.render('pages/dashboard',     { activeTab: 'overview' }));
+app.get('/members',      (req, res) => res.render('pages/members',        { activeTab: 'members' }));
+app.get('/plan-mapping', (req, res) => res.render('pages/plan-mapping',   { activeTab: 'plan-mapping' }));
+app.get('/access',       (req, res) => res.render('pages/access',         { activeTab: 'access' }));
+app.get('/locations',    (req, res) => res.render('pages/locations',      { activeTab: 'config' }));
+app.get('/admin-panel',  (req, res) => res.render('pages/admin-panel',    { activeTab: 'admin' }));
+
+// ── Admin Hub catch-all (must remain last) ─────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.listen(PORT, () => {

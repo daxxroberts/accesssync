@@ -1211,7 +1211,7 @@ async function goToDone() {
     `Account created, ${esc(state.name)}!`;
 
   // Wire up "Back to Dashboard" link now that we have a clientId
-  const dashUrl = `/dashboard-final.html?clientId=${state.clientId}`;
+  const dashUrl = `/dashboard`;
   document.getElementById('btn-dashboard').href = dashUrl;
 
   // Inject personalized events.js code block
