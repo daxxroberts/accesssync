@@ -87,6 +87,29 @@ class TenantResolver {
   }
 
   /**
+   * Register a Wix site ID against a client UUID.
+   * Called on first webhook from a new client whose events.js includes their CLIENT_ID.
+   * Only writes if site_id is currently NULL — safe to call on every request.
+   *
+   * @param {string} clientId - UUID from the X-AccessSync-Client-Id header
+   * @param {string} siteId   - instanceId from the Wix webhook payload
+   */
+  async registerSiteId(clientId, siteId) {
+    if (!clientId || !siteId) return;
+    try {
+      const result = await db.query(
+        `UPDATE clients SET site_id = $1 WHERE id = $2 AND (site_id IS NULL OR site_id = '') RETURNING id`,
+        [siteId, clientId]
+      );
+      if (result.rowCount > 0) {
+        console.log(`[Tenant Resolver] Registered site_id ${siteId} for client ${clientId}`);
+      }
+    } catch (err) {
+      console.error('[Tenant Resolver] registerSiteId failed (non-fatal):', err.message);
+    }
+  }
+
+  /**
    * Invalidate a specific site ID from the cache.
    * Called if a client's status changes (e.g. cancelled).
    *

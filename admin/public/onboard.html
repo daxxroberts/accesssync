@@ -514,6 +514,77 @@ html, body {
 #toast.success { background: #0F172A; color: #4ADE80; }
 #toast.error   { background: #0F172A; color: #F87171; }
 
+/* ── Code block ───────────────────────────────────────────────── */
+.code-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.code-instructions {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.65;
+  margin-bottom: 14px;
+}
+.code-steps {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.8;
+  margin-bottom: 14px;
+  padding-left: 18px;
+}
+.code-block-wrap {
+  background: #0F172A;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #1E293B;
+}
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid #1E293B;
+}
+.code-block-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748B;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.btn-copy-code {
+  background: #1E293B;
+  color: #94A3B8;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-copy-code:hover { background: #334155; color: #E2E8F0; }
+.code-scroll {
+  overflow-x: auto;
+  padding: 16px;
+}
+.code-scroll pre {
+  margin: 0;
+  font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: #94A3B8;
+  white-space: pre;
+}
+.code-scroll pre .kw  { color: #7DD3FC; }
+.code-scroll pre .str { color: #86EFAC; }
+.code-scroll pre .cmt { color: #475569; }
+.code-scroll pre .fn  { color: #FCA5A5; }
+.code-scroll pre .hi  { color: #FDE68A; }
+
 /* ── API key skip reminder ────────────────────────────────────── */
 .reminder-box {
   display: flex;
@@ -748,19 +819,25 @@ html, body {
 
       <hr class="done-divider">
 
-      <!-- Webhook URL -->
+      <!-- Velo code block -->
       <div>
-        <div class="done-section-title">One more thing — add your webhook</div>
-        <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.65">
-          Paste this URL into your Wix dashboard under <strong>Settings → Webhooks</strong> so Wix notifies AccessSync when members join or cancel.
+        <div class="done-section-title">One more thing — add your Wix code</div>
+        <p class="code-instructions">
+          Paste this into your Wix site's backend so AccessSync receives member events automatically.
         </p>
-        <div class="webhook-box">
-          <span class="wb-label">Your AccessSync Webhook URL</span>
-          <div class="webhook-row">
-            <input type="text" id="webhook-url-display" readonly value="Loading…" />
-            <button class="btn-copy" onclick="copyWebhook()">Copy</button>
+        <ol class="code-steps">
+          <li>Open your Wix Editor → <strong>Dev Mode</strong> → <strong>Backend</strong></li>
+          <li>Create a new file named <strong>events.js</strong> (or open it if it exists)</li>
+          <li>Paste the code below → <strong>Publish</strong></li>
+        </ol>
+        <div class="code-block-wrap">
+          <div class="code-block-header">
+            <span class="code-block-label">backend / events.js</span>
+            <button class="btn-copy-code" onclick="copyEventsCode()">Copy</button>
           </div>
-          <div class="webhook-note" id="webhook-note">Fetching your webhook URL…</div>
+          <div class="code-scroll">
+            <pre id="events-code-display"></pre>
+          </div>
         </div>
       </div>
 
@@ -1104,6 +1181,44 @@ function skipApiKey() {
 }
 
 // ── Step 5: All Set ────────────────────────────────────────────────
+const EVENTS_JS_TEMPLATE = `import { fetch } from 'wix-fetch';
+import { getSecret } from 'wix-secrets-backend';
+import { createHmac } from 'crypto';
+import { appInstance } from 'wix-application';
+
+const CORE_ENGINE_URL = 'https://accesssync-production.up.railway.app/webhooks/wix';
+const CLIENT_ID = '{{CLIENT_ID}}'; // Your AccessSync client ID
+
+async function _send(eventType, data) {
+  try {
+    const secret = await getSecret('accesssync_webhook_secret');
+    const instance = await appInstance.getInstance();
+    const payload = { eventType, instanceId: instance.instanceId, data };
+    const body = JSON.stringify(payload);
+    const sig = createHmac('sha256', secret).update(body).digest('base64');
+    await fetch(CORE_ENGINE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-wix-signature': sig,
+        'x-accesssync-client-id': CLIENT_ID
+      },
+      body
+    });
+  } catch (e) { console.error('AccessSync webhook error:', e); }
+}
+
+export function wixPricingPlans_onOrderCreated(event)  { return _send('wixPricingPlans.orderCreated', event); }
+export function wixPricingPlans_onOrderCanceled(event) { return _send('wixPricingPlans.orderCanceled', event); }
+export function wixPricingPlans_onOrderUpdated(event)  { return _send('wixPricingPlans.orderUpdated', event); }
+export function wixBookings_onBookingConfirmed(event)  { return _send('wixBookings.bookingConfirmed', event); }
+export function wixBookings_onBookingCanceled(event)   { return _send('wixBookings.bookingCanceled', event); }
+export function wixMembers_onMemberDeleted(event)      { return _send('wixMembers.memberDeleted', event); }`;
+
+function _buildEventsCode(clientId) {
+  return EVENTS_JS_TEMPLATE.replace('{{CLIENT_ID}}', clientId);
+}
+
 async function goToDone() {
   document.getElementById('done-headline').textContent =
     `You're all set, ${esc(state.name)}!`;
@@ -1111,6 +1226,10 @@ async function goToDone() {
   // Wire up "Back to Dashboard" link now that we have a clientId
   const dashUrl = `/dashboard-final.html?clientId=${state.clientId}`;
   document.getElementById('btn-dashboard').href = dashUrl;
+
+  // Inject personalized events.js code block
+  const code = _buildEventsCode(state.clientId);
+  document.getElementById('events-code-display').textContent = code;
 
   // Build mapping links for each location added
   if (state.locations.length) {
@@ -1147,36 +1266,15 @@ async function goToDone() {
   }
 
   showStep(5);
-
-  // Fetch webhook URL from backend (reads CORE_ENGINE_URL env var)
-  try {
-    const r = await apiFetch('/admin/operator/webhook-url');
-    if (r.ok) {
-      const j = await r.json();
-      if (j.url) {
-        document.getElementById('webhook-url-display').value = j.url;
-        document.getElementById('webhook-note').textContent =
-          'Paste this into Wix → Settings → Webhooks → Add Webhook.';
-      } else {
-        document.getElementById('webhook-url-display').value = '';
-        document.getElementById('webhook-note').textContent =
-          'Your webhook URL is not configured yet. Ask your AccessSync administrator for it.';
-      }
-    }
-  } catch {
-    document.getElementById('webhook-url-display').value = '';
-    document.getElementById('webhook-note').textContent =
-      "Couldn't load your webhook URL — check with your AccessSync administrator.";
-  }
 }
 
-function copyWebhook() {
-  const val = document.getElementById('webhook-url-display').value;
-  if (!val) { toast('No webhook URL available yet', 'error'); return; }
-  navigator.clipboard.writeText(val).then(() => {
-    toast('Webhook URL copied!', 'success');
+function copyEventsCode() {
+  const code = document.getElementById('events-code-display').textContent;
+  if (!code) { toast('Code not ready yet', 'error'); return; }
+  navigator.clipboard.writeText(code).then(() => {
+    toast('Code copied — paste it into Wix backend/events.js', 'success');
   }).catch(() => {
-    toast('Select the URL and copy it manually', 'error');
+    toast('Select the code and copy it manually', 'error');
   });
 }
 </script>

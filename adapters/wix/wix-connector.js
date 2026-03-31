@@ -16,6 +16,7 @@
 const crypto = require('crypto');
 const wixAdapter = require('./wix-adapter');
 const webhookProcessor = require('../../core/webhook-processor');
+const tenantResolver = require('../../core/tenant-resolver');
 
 class WixConnector {
   constructor() {
@@ -57,8 +58,14 @@ class WixConnector {
 
       // OB-03-A RESOLVED (PARSE VERIFIED 2026-03-28): No 'x-wix-site-id' header exists.
       // instanceId is the site identifier — present in the Wix webhook body.
-      // Full JWT decode (OB-08) will confirm exact path; req.body?.instanceId is correct for now.
       const wixSiteId = req.body?.instanceId || null;
+
+      // Self-registration: if events.js includes X-AccessSync-Client-Id, wire site_id on
+      // first arrival so future lookups resolve by site_id without DEFAULT_TENANT_ID.
+      const clientIdHint = req.headers['x-accesssync-client-id'] || null;
+      if (clientIdHint && wixSiteId) {
+        tenantResolver.registerSiteId(clientIdHint, wixSiteId).catch(() => {});
+      }
 
       const standardEvent = wixAdapter.parseEvent(eventType, wixSiteId, req.body);
 
