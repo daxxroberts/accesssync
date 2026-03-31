@@ -1049,6 +1049,7 @@ function nextStep1() {
     const email = document.getElementById('c-email').value.trim();
     if (!name)  { toast('Please enter your gym name', 'error'); return; }
     if (!email) { toast('Please enter a notification email', 'error'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('Please enter a valid email address', 'error'); return; }
     state.name  = name;
     state.email = email;
   }
