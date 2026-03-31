@@ -930,9 +930,12 @@ const state = {
   tier:      null,   // 'Base' | 'Pro' | 'Connect'
   siteId:    null,   // Wix site ID (from URL param, hidden from operator)
   siteName:  null,   // Wix site name (from URL param)
-  clientId:      null,   // set after POST /operator/clients
+  clientId:      null,   // set after _provisionClient() completes
   ownerBypass:   false,  // true if owner used bypass PIN on Step 4
-  locations:     [],     // { id, name, city, state }
+  locations:     [],     // { id, name, city, state } — populated after _provisionClient()
+  locName:       null,   // buffered from Step 3 form
+  locCity:       null,
+  locState:      null,
   prefill:       {},     // URL params read on load
 };
 
@@ -1065,90 +1068,79 @@ function selectTier(cardEl) {
   document.getElementById('btn-s2').disabled = false;
 }
 
-async function nextStep2() {
+function nextStep2() {
   if (!state.tier) { toast('Please choose a plan first', 'error'); return; }
 
-  setBusy('btn-s2', true, 'Next: Your Location →');
-  try {
-    const res = await apiFetch('/operator/clients', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name:               state.name,
-        tier:               state.tier,
-        hardware_platform:  state.tier === 'Connect' ? 'kisi' : 'seam',
-        site_id:            state.siteId   || null,
-        site_name:          state.siteName || null,
-        notification_email: state.email    || null,
-      }),
-    });
-
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast(j.error || 'Something went wrong — please try again', 'error');
-      return;
-    }
-
-    const j = await res.json();
-    state.clientId = j.client.id;
-
-    // Pre-fill Step 3 from Wix params
-    const pf = state.prefill;
-    const defaultLocName = pf.siteName
-      ? `${pf.siteName}${pf.city ? ` — ${pf.city}` : ''}`
-      : '';
-    document.getElementById('loc-name').value  = defaultLocName;
-    document.getElementById('loc-city').value  = pf.city  || '';
-    document.getElementById('loc-state').value = pf.state || '';
-
-    if (pf.city || pf.state) {
-      document.getElementById('s3-sub').textContent =
-        "We've pre-filled your location from your Wix settings — adjust if needed.";
-    }
-
-    _configureStep4();
-
-    showStep(3);
-  } catch {
-    toast('Network error — check your connection and try again', 'error');
-  } finally {
-    setBusy('btn-s2', false, 'Next: Your Location →');
+  // Pre-fill Step 3 from Wix params (no API call — client created at Step 4)
+  const pf = state.prefill;
+  const defaultLocName = pf.siteName
+    ? `${pf.siteName}${pf.city ? ` — ${pf.city}` : ''}`
+    : '';
+  document.getElementById('loc-name').value  = defaultLocName;
+  document.getElementById('loc-city').value  = pf.city  || '';
+  document.getElementById('loc-state').value = pf.state || '';
+  if (pf.city || pf.state) {
+    document.getElementById('s3-sub').textContent =
+      "We've pre-filled your location from your Wix settings — adjust if needed.";
   }
+
+  _configureStep4();
+  showStep(3);
 }
 
 // ── Step 3: Location ───────────────────────────────────────────────
-async function nextStep3() {
+function nextStep3() {
   const name   = document.getElementById('loc-name').value.trim();
   const city   = document.getElementById('loc-city').value.trim();
   const stateV = document.getElementById('loc-state').value.trim().toUpperCase();
 
   if (!name) { toast('Please enter a location name', 'error'); return; }
 
-  setBusy('btn-s3', true, 'Next: Connect Doors →');
-  try {
-    const res = await apiFetch(`/operator/clients/${state.clientId}/locations`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name,
-        city:  city   || null,
-        state: stateV || null,
-        tier:  state.tier,
-      }),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast(j.error || 'Failed to add location — try again', 'error');
-      return;
-    }
-    const j = await res.json();
-    state.locations.push(j.location);
-    showStep(4);
-  } catch {
-    toast('Network error — check your connection and try again', 'error');
-  } finally {
-    setBusy('btn-s3', false, 'Next: Connect Doors →');
+  // Buffer location data — API call deferred until Step 4 completes
+  state.locName  = name;
+  state.locCity  = city   || null;
+  state.locState = stateV || null;
+  showStep(4);
+}
+
+// ── Provision client + location (called at Step 4 completion) ─────
+// Nothing hits the DB until the operator finishes the full flow.
+async function _provisionClient() {
+  const clientRes = await apiFetch('/operator/clients', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name:               state.name,
+      tier:               state.tier,
+      hardware_platform:  state.tier === 'Connect' ? 'kisi' : 'seam',
+      site_id:            state.siteId   || null,
+      site_name:          state.siteName || null,
+      notification_email: state.email    || null,
+    }),
+  });
+  if (!clientRes.ok) {
+    const j = await clientRes.json().catch(() => ({}));
+    throw new Error(j.error || 'Failed to create account — please try again');
   }
+  const { client } = await clientRes.json();
+  state.clientId = client.id;
+
+  const locRes = await apiFetch(`/operator/clients/${state.clientId}/locations`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name:  state.locName,
+      city:  state.locCity,
+      state: state.locState,
+      tier:  state.tier,
+    }),
+  });
+  if (!locRes.ok) {
+    const j = await locRes.json().catch(() => ({}));
+    throw new Error(j.error || 'Failed to add location — please try again');
+  }
+  const { location } = await locRes.json();
+  state.locations.push(location);
 }
 
 // ── Step 4: API key ────────────────────────────────────────────────
@@ -1184,6 +1176,8 @@ async function nextStep4() {
 
   setBusy('btn-s4', true, 'Connecting…');
   try {
+    await _provisionClient();
+
     const res = await apiFetch(`/operator/clients/${state.clientId}/api-key`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1196,8 +1190,8 @@ async function nextStep4() {
     }
     toast(`${hwLabel} connected!`, 'success');
     goToDone();
-  } catch {
-    toast('Network error — check your connection and try again', 'error');
+  } catch (err) {
+    toast(err.message || 'Network error — check your connection and try again', 'error');
   } finally {
     setBusy('btn-s4', false, `Connect ${hwLabel} →`);
   }
@@ -1226,11 +1220,12 @@ async function verifyBypass() {
       document.getElementById('bypass-pin').value = '';
       return;
     }
+    await _provisionClient();
     state.ownerBypass = true;
     toast('Owner bypass accepted', 'success');
     setTimeout(goToDone, 500); // let the toast register before the page transitions
-  } catch {
-    toast('Network error', 'error');
+  } catch (err) {
+    toast(err.message || 'Network error', 'error');
   }
 }
 
