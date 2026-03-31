@@ -430,7 +430,7 @@
 
     function toggleHolderExpand(holderId, event) {
       event.stopPropagation();
-      var current = expandedHolders[holderId] !== false;
+      var current = expandedHolders[holderId] === true;
       expandedHolders[holderId] = !current;
       document.querySelectorAll('tr[data-holder="' + holderId + '"]').forEach(function(row) {
         row.style.display = current ? 'none' : '';

@@ -351,6 +351,38 @@ html, body {
 }
 .key-context strong { color: var(--text); }
 
+/* ── Owner bypass ────────────────────────────────────────────── */
+.bypass-toggle {
+  font-size: 10px;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.4;
+  user-select: none;
+  transition: opacity 0.15s;
+}
+.bypass-toggle:hover { opacity: 0.7; }
+.bypass-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.bypass-input {
+  width: 80px;
+  height: 32px;
+  border: 1.5px solid var(--border);
+  border-radius: 7px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-family: 'Sora', sans-serif;
+  text-align: center;
+  letter-spacing: 2px;
+  color: var(--text);
+  background: white;
+}
+.bypass-input:focus { border-color: var(--brand); outline: none; }
+.bypass-go { height: 32px; padding: 0 12px; font-size: 11px; }
+
 /* ── Webhook box ──────────────────────────────────────────────── */
 .webhook-box {
   background: var(--bg);
@@ -800,11 +832,16 @@ html, body {
         </div>
       </div>
 
+      <!-- Owner bypass -->
+      <div id="bypass-row" class="bypass-row hidden">
+        <input type="password" id="bypass-pin" class="bypass-input" placeholder="PIN" maxlength="6" autocomplete="off" />
+        <button class="btn btn-ghost bypass-go" onclick="verifyBypass()">Go</button>
+      </div>
+
       <div class="btn-row">
         <button class="btn btn-ghost" onclick="showStep(3)">← Back</button>
-        <button class="btn btn-primary" id="btn-s4" onclick="nextStep4()">
-          <span id="s4-btn-text">Connect →</span>
-        </button>
+        <span class="bypass-toggle" onclick="toggleBypass()">Owner</span>
+        <button class="btn btn-primary" id="btn-s4" onclick="nextStep4()">Connect →</button>
       </div>
     </div>
 
@@ -864,6 +901,14 @@ html, body {
         <li>When they cancel, access is revoked — no action needed from you</li>
       </ul>
 
+      <div id="apikey-reminder" class="reminder-box hidden" style="margin-top:24px">
+        <div>
+          <div class="reminder-title" id="reminder-title"></div>
+          <p id="reminder-body"></p>
+          <a href="#" id="reminder-link" class="reminder-link">Go to Dashboard to connect →</a>
+        </div>
+      </div>
+
       <div class="btn-row" style="margin-top:28px">
         <a href="#" id="btn-dashboard" class="btn btn-ghost">Go to Dashboard</a>
         <a href="#" id="btn-map-first" class="btn btn-primary hidden">Map Plans Now →</a>
@@ -883,12 +928,10 @@ const state = {
   name:      null,   // business name
   email:     null,   // notification email
   tier:      null,   // 'Base' | 'Pro' | 'Connect'
-  hw:        null,   // 'kisi' | 'seam' — default derived from tier, operator can override
-  hwLabel:   null,   // 'Kisi' | 'Seam' — display label derived from hw
   siteId:    null,   // Wix site ID (from URL param, hidden from operator)
   siteName:  null,   // Wix site name (from URL param)
   clientId:      null,   // set after POST /operator/clients
-  apiKeySkipped: false,  // true if operator clicked "I'll connect later" on Step 4
+  ownerBypass:   false,  // true if owner used bypass PIN on Step 4
   locations:     [],     // { id, name, city, state }
   prefill:       {},     // URL params read on load
 };
@@ -918,6 +961,7 @@ const state = {
         state.prefill.ownerEmail;
     }
     // Store into state so Step 1 "next" works without typing
+    // Store into state so Step 1 "next" works without manual input
     state.name    = state.prefill.siteName   || '';
     state.email   = state.prefill.ownerEmail || null;
     state.siteId  = state.prefill.siteId     || null;
@@ -959,7 +1003,9 @@ function setBusy(btnId, busy, idleHtml) {
 }
 
 async function apiFetch(url, opts = {}) {
-  return fetch(url, { ...opts, credentials: 'include' });
+  const res = await fetch(url, { ...opts, credentials: 'include' });
+  if (res.status === 401) { window.location.href = '/'; return; }
+  return res;
 }
 
 // ── Step indicator ─────────────────────────────────────────────────
@@ -1011,14 +1057,10 @@ function nextStep1() {
 
 // ── Step 2: Plan selection ─────────────────────────────────────────
 function selectTier(cardEl) {
+  if (state.tier === cardEl.dataset.tier) return;
   document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
   cardEl.classList.add('selected');
   state.tier = cardEl.dataset.tier;
-
-  // Hardware platform is locked to tier — no operator override.
-  state.hw      = state.tier === 'Connect' ? 'kisi' : 'seam';
-  state.hwLabel = state.hw === 'kisi' ? 'Kisi' : 'Seam';
-
   document.getElementById('btn-s2').disabled = false;
 }
 
@@ -1033,7 +1075,7 @@ async function nextStep2() {
       body: JSON.stringify({
         name:               state.name,
         tier:               state.tier,
-        hardware_platform:  state.hw,
+        hardware_platform:  state.tier === 'Connect' ? 'kisi' : 'seam',
         site_id:            state.siteId   || null,
         site_name:          state.siteName || null,
         notification_email: state.email    || null,
@@ -1063,7 +1105,6 @@ async function nextStep2() {
         "We've pre-filled your location from your Wix settings — adjust if needed.";
     }
 
-    // Set up Step 4 copy for the selected door system
     _configureStep4();
 
     showStep(3);
@@ -1111,7 +1152,7 @@ async function nextStep3() {
 
 // ── Step 4: API key ────────────────────────────────────────────────
 function _configureStep4() {
-  const isKisi = state.hwLabel === 'Kisi';
+  const isKisi = state.tier === 'Connect';
   document.getElementById('s4-title').textContent =
     isKisi ? 'Connect to your Kisi account' : 'Connect your door system';
   document.getElementById('s4-context').innerHTML = isKisi
@@ -1128,14 +1169,15 @@ function _configureStep4() {
     isKisi
       ? 'Generate your Kisi API Token →'
       : 'Find it in Seam Dashboard → Settings → API Keys →';
-  document.getElementById('s4-btn-text').textContent =
+  document.getElementById('btn-s4').textContent =
     isKisi ? 'Connect Kisi →' : 'Connect Seam →';
 }
 
 async function nextStep4() {
+  const hwLabel = state.tier === 'Connect' ? 'Kisi' : 'Seam';
   const key = document.getElementById('api-key').value.trim();
   if (!key) {
-    toast(`Please paste your ${state.hwLabel} key, or click "I'll connect later"`, 'error');
+    toast(`Please paste your ${hwLabel} API key to continue`, 'error');
     return;
   }
 
@@ -1151,21 +1193,50 @@ async function nextStep4() {
       toast(j.error || 'Failed to save — check the key and try again', 'error');
       return;
     }
-    toast(`${state.hwLabel} connected!`, 'success');
+    toast(`${hwLabel} connected!`, 'success');
     goToDone();
   } catch {
     toast('Network error — check your connection and try again', 'error');
   } finally {
-    const idleLabel = state.hwLabel === 'Kisi' ? 'Connect Kisi →' : 'Connect Seam →';
-    setBusy('btn-s4', false, `<span id="s4-btn-text">${idleLabel}</span>`);
+    setBusy('btn-s4', false, `Connect ${hwLabel} →`);
   }
 }
 
-function skipApiKey() {
-  state.apiKeySkipped = true;
-  toast('No problem — you can connect it from your dashboard before going live', 'error');
-  setTimeout(goToDone, 700);
+// ── Owner bypass PIN ──────────────────────────────────────────────
+function toggleBypass() {
+  const row = document.getElementById('bypass-row');
+  row.classList.toggle('hidden');
+  if (!row.classList.contains('hidden')) {
+    document.getElementById('bypass-pin').focus();
+  }
 }
+
+async function verifyBypass() {
+  const pin = document.getElementById('bypass-pin').value.trim();
+  if (!pin) return;
+  try {
+    const res = await apiFetch('/operator/verify-bypass', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    });
+    if (!res.ok) {
+      toast('Invalid PIN', 'error');
+      document.getElementById('bypass-pin').value = '';
+      return;
+    }
+    state.ownerBypass = true;
+    toast('Owner bypass accepted', 'success');
+    setTimeout(goToDone, 500); // let the toast register before the page transitions
+  } catch {
+    toast('Network error', 'error');
+  }
+}
+
+// Enter key on PIN input triggers verify
+document.getElementById('bypass-pin').addEventListener('keydown', e => {
+  if (e.key === 'Enter') verifyBypass();
+});
 
 // ── Step 5: All Set ────────────────────────────────────────────────
 const EVENTS_JS_TEMPLATE = `import { fetch } from 'wix-fetch';
@@ -1207,27 +1278,25 @@ function _buildEventsCode(clientId) {
 }
 
 async function goToDone() {
+  const hwLabel = state.tier === 'Connect' ? 'Kisi' : 'Seam';
   document.getElementById('done-headline').textContent =
     `Account created, ${esc(state.name)}!`;
 
-  // Wire up "Back to Dashboard" link now that we have a clientId
-  const dashUrl = `/dashboard`;
+  const dashUrl = `/dashboard?clientId=${state.clientId}`;
   document.getElementById('btn-dashboard').href = dashUrl;
 
-  // Inject personalized events.js code block
   const code = _buildEventsCode(state.clientId);
   document.getElementById('events-code-display').textContent = code;
 
-  // Build mapping links for each location added
   if (state.locations.length) {
     document.getElementById('mapping-section').classList.remove('hidden');
     document.getElementById('mapping-links').innerHTML = state.locations.map(loc => `
       <div class="mapping-link-row">
         <div>
           <div class="loc-name">${esc(loc.name)}</div>
-          <div class="loc-sub">${[loc.city, loc.state].filter(Boolean).join(', ') || 'Location added'}</div>
+          <div class="loc-sub">${[esc(loc.city), esc(loc.state)].filter(Boolean).join(', ') || 'Location added'}</div>
         </div>
-        <a href="/operator_plan_setup_dashboard.html?clientId=${esc(state.clientId)}&locationId=${esc(loc.id)}"
+        <a href="/plan-mapping?clientId=${esc(state.clientId)}&locationId=${esc(loc.id)}"
            class="btn btn-primary"
            style="height:36px;padding:0 16px;font-size:12px">
           Map Plans →
@@ -1235,20 +1304,18 @@ async function goToDone() {
       </div>
     `).join('');
 
-    // Primary CTA → first location mapping
     const first = state.locations[0];
     const mapBtn = document.getElementById('btn-map-first');
-    mapBtn.href = `/operator_plan_setup_dashboard.html?clientId=${state.clientId}&locationId=${first.id}`;
+    mapBtn.href = `/plan-mapping?clientId=${state.clientId}&locationId=${first.id}`;
     mapBtn.classList.remove('hidden');
   }
 
-  // Show API key reminder if operator skipped Step 4
-  if (state.apiKeySkipped) {
+  if (state.ownerBypass) {
     document.getElementById('apikey-reminder').classList.remove('hidden');
     document.getElementById('reminder-title').textContent =
-      `Your ${state.hwLabel} account isn't connected yet`;
+      `${hwLabel} not connected (owner bypass)`;
     document.getElementById('reminder-body').textContent =
-      `Members won't get automatic door access until you connect your ${state.hwLabel} account. You can do this from your dashboard.`;
+      `You bypassed ${hwLabel} setup. Members won't get automatic door access until you add your API key from the dashboard.`;
     document.getElementById('reminder-link').href = dashUrl;
   }
 
