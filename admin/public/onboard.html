@@ -677,7 +677,7 @@ html, body {
             <input type="text" id="c-name" placeholder="e.g. House of Gains" autocomplete="organization" />
           </div>
           <div class="field full">
-            <label>Notification Email <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+            <label>Notification Email *</label>
             <input type="email" id="c-email" placeholder="owner@yourgym.com" autocomplete="email" />
             <span class="hint">We'll email you if anything needs your attention.</span>
           </div>
@@ -1001,9 +1001,10 @@ function nextStep1() {
     // Reading from manual form
     const name  = document.getElementById('c-name').value.trim();
     const email = document.getElementById('c-email').value.trim();
-    if (!name) { toast('Please enter your gym name', 'error'); return; }
+    if (!name)  { toast('Please enter your gym name', 'error'); return; }
+    if (!email) { toast('Please enter a notification email', 'error'); return; }
     state.name  = name;
-    state.email = email || null;
+    state.email = email;
   }
   showStep(2);
 }
