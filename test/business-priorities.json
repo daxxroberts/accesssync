@@ -1,0 +1,86 @@
+{
+  "version": "1.0.0",
+  "description": "AccessSync test priority tiers — organized by business impact, not code coverage %.",
+  "principle": "A 92% coverage score that misses the 'member pays but can't get in' path is worse than 70% coverage that fully covers it.",
+
+  "tiers": {
+    "p1": {
+      "label": "Critical Path — Churn Risk",
+      "severity": "CRITICAL",
+      "emoji": "🚨",
+      "businessConsequence": "Member pays for gym membership and cannot enter the facility. Maximum churn risk. This is the most expensive bug regardless of how rarely it occurs.",
+      "deployBlock": true,
+      "testPathPattern": "test/p1-critical-path",
+      "criticalPath": "payment → webhook → provisioning → door opens",
+      "scenarios": [
+        "Member purchases Wix plan → access provisioned in hardware within 10 seconds",
+        "Member cancels plan → access revoked from all doors",
+        "Payment fails → access suspended (roles preserved for fast recovery)",
+        "Payment recovers → access re-enabled without re-provisioning"
+      ]
+    },
+
+    "p2": {
+      "label": "Operator Onboarding — Revenue Risk",
+      "severity": "HIGH",
+      "emoji": "🔴",
+      "businessConsequence": "New gym operator cannot complete setup. Blocks new client revenue and onboarding.",
+      "deployBlock": true,
+      "testPathPattern": "test/p2-onboarding",
+      "scenarios": [
+        "Kisi API key encrypts, stores, and decrypts correctly — no plaintext ever in DB",
+        "Plan mapping resolver gates inactive subscription locations (DR-027)",
+        "Operator completes 5-step wizard → client, location, mapping created in DB"
+      ]
+    },
+
+    "p3": {
+      "label": "Data Integrity — Silent Failure Risk",
+      "severity": "HIGH",
+      "emoji": "🔴",
+      "businessConsequence": "Wrong data stored, wrong member provisioned, or duplicate operations executed. Silent failures that are hard to detect and damage trust.",
+      "deployBlock": true,
+      "testPathPattern": "test/p3-data-integrity",
+      "scenarios": [
+        "Wix webhook payload → member ID resolves correctly across all Wix event structures",
+        "Duplicate webhook does not trigger double-provisioning (idempotency)",
+        "In-flight lock prevents concurrent grant + revoke for same member (DR-011)"
+      ]
+    },
+
+    "p4": {
+      "label": "Operator Visibility — Support Burden",
+      "severity": "MEDIUM",
+      "emoji": "🟡",
+      "businessConsequence": "Operator cannot diagnose access issues through the console. Increases support ticket volume.",
+      "deployBlock": false,
+      "testPathPattern": "test/p4-operator-visibility",
+      "scenarios": [
+        "Error queue surfaces failed jobs with correct member + plan context",
+        "Member timeline shows accurate event history in chronological order",
+        "Dashboard member counts match DB actuals"
+      ]
+    },
+
+    "p5": {
+      "label": "Admin Console UI — Low Business Risk",
+      "severity": "LOW",
+      "emoji": "🟢",
+      "businessConsequence": "Visual or UX issue. Does not block access control operations or revenue.",
+      "deployBlock": false,
+      "testPathPattern": "test/p5-admin-ui",
+      "scenarios": [
+        "Dark mode preference persists across page navigation",
+        "Plan mapping drawer opens and closes without JS errors",
+        "Member search input returns results within 300ms"
+      ]
+    }
+  },
+
+  "deployPolicy": {
+    "blockingTiers": ["p1", "p2", "p3"],
+    "warningTiers": ["p4"],
+    "ignoredTiers": ["p5"],
+    "message": "Deploy is BLOCKED if any P1, P2, or P3 test fails. P4 failures trigger a warning. P5 failures are advisory only."
+  }
+}

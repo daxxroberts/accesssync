@@ -5,7 +5,17 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "cron": "node core/reconciliation.js"
+    "cron": "node core/reconciliation.js",
+    "test": "jest",
+    "test:p1": "jest test/p1-critical-path --verbose",
+    "test:p2": "jest test/p2-onboarding --verbose",
+    "test:p3": "jest test/p3-data-integrity --verbose",
+    "test:deploy": "jest test/p1-critical-path test/p2-onboarding test/p3-data-integrity --verbose",
+    "test:coverage": "jest --coverage"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
   },
   "dependencies": {
     "bullmq": "^4.0.0",
