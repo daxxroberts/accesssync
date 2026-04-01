@@ -36,13 +36,13 @@ const connection = getRedisConnection();
 /**
  * Resolves the client-level Kisi API key for a tenant.
  * Used for user resolution (findUserByEmail, createUser) and payment.recovered.
- * Falls back to KISI_API_KEY_MOCK during transition — remove fallback after OB-23 fully rolled out.
+ * DR-028: KISI_API_KEY_MOCK fallback removed — set key via Admin Hub.
  */
 async function getClientApiKey(tenantId) {
   const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [tenantId]);
   const enc = result.rows[0]?.kisi_api_key;
   if (enc) return decryptApiKey(enc);
-  return process.env.KISI_API_KEY_MOCK;
+  return null;
 }
 
 /**

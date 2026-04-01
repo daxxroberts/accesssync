@@ -62,7 +62,7 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
   }
 
   const encKey = location_key || client_key;
-  const apiKey = encKey ? decryptApiKey(encKey) : process.env.KISI_API_KEY_MOCK;
+  const apiKey = encKey ? decryptApiKey(encKey) : null; // DR-028: KISI_API_KEY_MOCK removed — set key via Admin Hub
   if (!apiKey) throw new Error(`[LocationLapse] No API key available for client ${clientId}`);
 
   const platform = hardware_platform || 'kisi';

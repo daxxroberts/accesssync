@@ -66,7 +66,7 @@ class NightlyReconciliation {
 
     for (const client of clientsResult.rows) {
       const enc = client.kisi_api_key;
-      const apiKey = enc ? decryptApiKey(enc) : process.env.KISI_API_KEY_MOCK;
+      const apiKey = enc ? decryptApiKey(enc) : null; // DR-028: KISI_API_KEY_MOCK removed — set key via Admin Hub
       if (!apiKey) {
         console.warn(`[Nightly Reconciliation] No API key for client ${client.id} — skipping lockdown sync.`);
         continue;
