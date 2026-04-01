@@ -15,16 +15,59 @@ const { getRedisConnection } = require('../../core/redis-utils');
 const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
 
 // ── GET /admin/members/search ──────────────────────────────────
+// OB-13: Searches by platform_member_id OR email.
+// Email search: calls Wix API to resolve email → platformMemberId → DB query.
 router.get('/search', async (req, res) => {
   try {
     const { q = '', client_id, limit = 50 } = req.query;
     if (!q.trim()) return res.json({ data: [] });
 
-    // Search by platform_member_id only — email/name resolved from Wix on-demand (data minimization)
-    const params = [`%${q.trim()}%`];
-    const conditions = [
-      `mi.platform_member_id ILIKE $1`
-    ];
+    const isEmail = q.includes('@');
+    let platformMemberIds = null;
+
+    // OB-13: If searching by email, try to resolve via Wix API first
+    if (isEmail && client_id) {
+      try {
+        const clientResult = await db.query('SELECT site_id FROM clients WHERE id = $1', [client_id]);
+        const siteId = clientResult.rows[0]?.site_id;
+        if (siteId) {
+          // Call Wix Members API to search by email
+          const wixRes = await fetch(
+            `https://www.wixapis.com/members/v1/members/query`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': siteId, // Site-level auth
+              },
+              body: JSON.stringify({
+                query: { filter: { 'loginEmail': { '$eq': q.trim() } } }
+              })
+            }
+          );
+          if (wixRes.ok) {
+            const wixData = await wixRes.json();
+            if (wixData.members && wixData.members.length > 0) {
+              platformMemberIds = wixData.members.map(m => m._id);
+            }
+          }
+        }
+      } catch (wixErr) {
+        console.warn('[Admin/members] Wix email lookup failed (falling back to DB search):', wixErr.message);
+      }
+    }
+
+    // Build query — search by resolved IDs or by pattern match
+    const params = [];
+    const conditions = [];
+
+    if (platformMemberIds && platformMemberIds.length > 0) {
+      params.push(platformMemberIds);
+      conditions.push(`mi.platform_member_id = ANY($${params.length})`);
+    } else {
+      params.push(`%${q.trim()}%`);
+      conditions.push(`mi.platform_member_id ILIKE $${params.length}`);
+    }
 
     if (client_id) {
       params.push(client_id);
@@ -33,7 +76,6 @@ router.get('/search', async (req, res) => {
 
     params.push(parseInt(limit));
 
-    // Note: email/display_name are not stored (data minimization — fetched from Wix on-demand)
     const result = await db.query(
       `SELECT mi.id,
               mi.client_id,
@@ -56,7 +98,10 @@ router.get('/search', async (req, res) => {
       params
     );
 
-    res.json({ data: result.rows });
+    res.json({
+      data: result.rows,
+      searchType: platformMemberIds ? 'email_resolved' : 'pattern_match',
+    });
   } catch (err) {
     console.error('[Admin/members] GET /search error:', err.message);
     res.status(500).json({ error: err.message });

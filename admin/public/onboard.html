@@ -644,6 +644,19 @@ html, body {
 .reminder-link   { font-size: 12px; font-weight: 600; color: #B45309; text-decoration: none; }
 .reminder-link:hover { text-decoration: underline; }
 
+/* OB-43: Validation checklist */
+.val-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 9px;
+  background: #F8FAFC; border: 1px solid var(--border);
+  font-size: 13px; color: var(--text2); transition: all 0.2s;
+}
+.val-row.pass { background: #F0FDF4; border-color: #BBF7D0; }
+.val-row.fail { background: #FEF2F2; border-color: #FECACA; }
+.val-row.skip { background: #FFFBEB; border-color: #FDE68A; }
+.val-icon { flex-shrink: 0; font-size: 16px; width: 22px; text-align: center; }
+.val-label { flex: 1; }
+
 /* ── Utilities ────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 
@@ -877,6 +890,11 @@ html, body {
         </p>
         <ol class="code-steps">
           <li>In your Wix Editor, click <strong>Dev Mode</strong> in the top menu bar to enable it</li>
+          <li>Go to <strong>Dashboard → Developer Tools → Secrets Manager</strong> and add a new secret:
+            <br>• <strong>Name:</strong> <code style="background:#F1F5F9;padding:1px 5px;border-radius:4px;font-size:12px">accesssync_webhook_secret</code>
+            <br>• <strong>Value:</strong> a secure random string (at least 32 characters — use a password generator)
+            <br>• <span style="color:var(--muted);font-size:11px">Then share this same secret with your AccessSync admin so they can verify incoming webhooks.</span>
+          </li>
           <li>In the left panel, click <strong>Backend</strong> → <strong>+ New File</strong> → name it <strong>events.js</strong></li>
           <li>Paste the code below, then click <strong>Publish</strong></li>
         </ol>
@@ -900,6 +918,19 @@ html, body {
         <li>Their door access is provisioned in Kisi within seconds</li>
         <li>When they cancel, access is revoked — no action needed from you</li>
       </ul>
+
+      <!-- OB-43: End-to-end validation checklist -->
+      <div id="validation-panel" class="hidden" style="margin-top:20px">
+        <hr class="done-divider">
+        <div class="done-section-title">System Check</div>
+        <div id="validation-checks" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
+          <div class="val-row" id="val-key"><span class="val-icon" id="val-key-icon">⏳</span><span class="val-label">API key connected</span></div>
+          <div class="val-row" id="val-key-valid"><span class="val-icon" id="val-key-valid-icon">⏳</span><span class="val-label">API key validates against door system</span></div>
+          <div class="val-row" id="val-mapping"><span class="val-icon" id="val-mapping-icon">⏳</span><span class="val-label">At least one plan → door mapping configured</span></div>
+          <div class="val-row" id="val-location"><span class="val-icon" id="val-location-icon">⏳</span><span class="val-label">Location activated for provisioning</span></div>
+        </div>
+        <div id="val-summary" style="font-size:12px;color:var(--muted);margin-top:8px;"></div>
+      </div>
 
       <div id="apikey-reminder" class="reminder-box hidden" style="margin-top:24px">
         <div>
@@ -1005,9 +1036,21 @@ function setBusy(btnId, busy, idleHtml) {
   btn.innerHTML = busy ? '<span class="spinner"></span> Working…' : idleHtml;
 }
 
+// OB-24: Read invite token from URL (?invite=TOKEN) for signup endpoint auth
+const _inviteToken = new URLSearchParams(window.location.search).get('invite');
+
 async function apiFetch(url, opts = {}) {
-  const res = await fetch(url, { ...opts, credentials: 'include' });
+  const headers = { ...(opts.headers || {}) };
+  if (_inviteToken) headers['X-Invite-Token'] = _inviteToken;
+  const res = await fetch(url, { ...opts, headers, credentials: 'include' });
   if (res.status === 401) { window.location.href = '/'; return; }
+  if (res.status === 403) {
+    const data = await res.clone().json().catch(() => ({}));
+    if (data.error === 'Valid invite link required') {
+      toast('This onboarding link is invalid or expired. Contact support.', 'error');
+      return res;
+    }
+  }
   return res;
 }
 
@@ -1141,6 +1184,15 @@ async function _provisionClient() {
   }
   const { location } = await locRes.json();
   state.locations.push(location);
+
+  // OB-44/OB-45: Auto-activate location so provisioning fires (DR-027 gate).
+  const actRes = await apiFetch(`/operator/clients/${state.clientId}/locations/${location.id}/activate`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (actRes.ok) {
+    console.log(`[onboard] Location ${location.id} activated`);
+  }
 }
 
 // ── Step 4: API key ────────────────────────────────────────────────
@@ -1189,6 +1241,21 @@ async function nextStep4() {
       return;
     }
     toast(`${hwLabel} connected!`, 'success');
+
+    // OB-42: Fetch and show Kisi groups after key is validated
+    if (state.tier === 'Connect') {
+      try {
+        const groupRes = await apiFetch(`/operator/clients/${state.clientId}/kisi-groups`);
+        if (groupRes.ok) {
+          const { groups, count } = await groupRes.json();
+          state.kisiGroups = groups;
+          if (count === 0) {
+            toast('Warning: No access groups found in Kisi. Create groups in Kisi before mapping plans.', 'error');
+          }
+        }
+      } catch (e) { /* non-blocking */ }
+    }
+
     goToDone();
   } catch (err) {
     toast(err.message || 'Network error — check your connection and try again', 'error');
@@ -1314,6 +1381,87 @@ async function goToDone() {
   }
 
   showStep(5);
+
+  // OB-43: Run end-to-end validation after rendering Step 5
+  runValidation();
+}
+
+async function runValidation() {
+  if (!state.clientId) return;
+  document.getElementById('validation-panel').classList.remove('hidden');
+
+  function setCheck(id, status) {
+    const row = document.getElementById(id);
+    const icon = document.getElementById(id + '-icon');
+    row.className = 'val-row ' + status;
+    icon.textContent = status === 'pass' ? '✓' : status === 'fail' ? '✗' : '—';
+  }
+
+  let passes = 0;
+  const total = 4;
+
+  // Check 1: API key exists
+  try {
+    const r = await apiFetch(`/operator/clients/${state.clientId}/api-key/status`);
+    if (r && r.ok) {
+      const d = await r.json();
+      if (d.hasKey) { setCheck('val-key', 'pass'); passes++; }
+      else { setCheck('val-key', state.ownerBypass ? 'skip' : 'fail'); }
+    } else { setCheck('val-key', 'fail'); }
+  } catch { setCheck('val-key', 'fail'); }
+
+  // Check 2: API key validates against door system
+  if (passes >= 1) {
+    try {
+      const r = await apiFetch(`/operator/clients/${state.clientId}/api-key/test`);
+      if (r && r.ok) {
+        const d = await r.json();
+        if (d.valid) { setCheck('val-key-valid', 'pass'); passes++; }
+        else { setCheck('val-key-valid', 'fail'); }
+      } else { setCheck('val-key-valid', 'fail'); }
+    } catch { setCheck('val-key-valid', 'fail'); }
+  } else {
+    setCheck('val-key-valid', state.ownerBypass ? 'skip' : 'fail');
+  }
+
+  // Check 3: At least one mapping exists
+  let hasMappings = false;
+  if (state.locations.length) {
+    try {
+      const loc = state.locations[0];
+      const r = await apiFetch(`/operator/${state.clientId}/locations/${loc.id}/mappings`);
+      if (r && r.ok) {
+        const d = await r.json();
+        hasMappings = d.mappings && d.mappings.length > 0;
+      }
+    } catch {}
+  }
+  if (hasMappings) { setCheck('val-mapping', 'pass'); passes++; }
+  else { setCheck('val-mapping', 'skip'); } // expected — operator does this after onboarding
+
+  // Check 4: Location activated
+  let locationActive = false;
+  if (state.locations.length) {
+    try {
+      const r = await apiFetch(`/operator/${state.clientId}/locations`);
+      if (r && r.ok) {
+        const d = await r.json();
+        locationActive = d.locations && d.locations.some(l => l.subscription_status === 'active');
+      }
+    } catch {}
+  }
+  if (locationActive) { setCheck('val-location', 'pass'); passes++; }
+  else { setCheck('val-location', 'fail'); }
+
+  // Summary
+  const summary = document.getElementById('val-summary');
+  if (passes === total) {
+    summary.innerHTML = '<span style="color:#16A34A;font-weight:600;">All checks passed</span> — your system is ready to go.';
+  } else if (passes >= 2) {
+    summary.innerHTML = `<span style="color:#D97706;font-weight:600;">${passes}/${total} checks passed</span> — complete the remaining steps from your dashboard to go fully live.`;
+  } else {
+    summary.innerHTML = `<span style="color:#DC2626;font-weight:600;">${passes}/${total} checks passed</span> — connect your API key and configure mappings to activate.`;
+  }
 }
 
 function copyEventsCode() {

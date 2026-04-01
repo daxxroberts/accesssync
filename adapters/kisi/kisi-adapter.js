@@ -102,6 +102,25 @@ class KisiAdapter {
   }
 
   /**
+   * Fetch all access groups for the org (OB-42).
+   * Used by onboarding (show groups after key validated) and plan-mapping dropdown.
+   * Returns [] on error or missing key.
+   */
+  async getGroups(apiKey) {
+    if (!apiKey) {
+      console.warn('[Kisi Adapter] getGroups called with no API key. Skipping.');
+      return [];
+    }
+    try {
+      const data = await kisiConnector.makeRequest('/groups', { method: 'GET' }, apiKey);
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      console.error('[Kisi Adapter] getGroups failed:', err.message);
+      return [];
+    }
+  }
+
+  /**
    * Fetch all locks for the org. Used by reconciliation._syncDoorLockdownStates().
    * Returns [] on error or missing key.
    */

@@ -668,6 +668,75 @@
 
     // ═══════════════════════════════════════
     render();
+
+    // ══ OB-29 + OB-42 part 2: Live data loading ══════════════════
+    (function loadLiveMappings() {
+      var urlParams = new URLSearchParams(window.location.search);
+      var clientId = urlParams.get('clientId');
+      var locationId = urlParams.get('locationId');
+      if (!clientId || !locationId) return;
+
+      // Fetch live Kisi groups (OB-42 part 2)
+      fetch('/operator/clients/' + clientId + '/kisi-groups')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.groups && d.groups.length > 0) {
+            PLATFORM_GROUPS = d.groups.map(function(g) {
+              return { id: String(g.id), name: g.name };
+            });
+            render(); // re-render with real groups
+          }
+          if (d.count === 0) {
+            showToast('warn', 'No access groups found in Kisi. Create groups in your Kisi dashboard first.');
+          }
+        }).catch(function(e) { console.error('Kisi groups load error:', e); });
+
+      // Fetch live mappings for this location
+      fetch('/operator/' + clientId + '/locations/' + locationId + '/mappings')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.mappings || !d.mappings.length) return;
+          plans = d.mappings.map(function(m) {
+            return {
+              id: m.id,
+              name: m.plan_name || 'Plan ' + m.wix_plan_id,
+              wixPlanId: m.wix_plan_id,
+              isMultiMember: false,
+              maxMembers: 1,
+              kisiGroupId: m.hardware_group_id ? String(m.hardware_group_id) : null,
+              activeHolders: 0,
+            };
+          });
+          originalState = JSON.stringify(plans);
+          render();
+        }).catch(function(e) { console.error('Mappings load error:', e); });
+
+      // Override saveChanges to POST to API
+      var origSave = saveChanges;
+      saveChanges = function() {
+        var promises = plans.map(function(plan) {
+          return fetch('/operator/' + clientId + '/plan-mappings/' + plan.id, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              hardware_group_id: plan.kisiGroupId || null,
+              door_name: PLATFORM_GROUPS.find(function(g) { return g.id === plan.kisiGroupId; })?.name || null,
+              status: plan.kisiGroupId ? 'active' : 'inactive',
+            })
+          });
+        });
+        Promise.all(promises)
+          .then(function() {
+            originalState = JSON.stringify(plans);
+            dirty = false;
+            document.getElementById('saveBar').classList.remove('visible');
+            showToast('success', 'Mappings saved to AccessSync');
+          })
+          .catch(function(e) {
+            showToast('error', 'Save failed: ' + e.message);
+          });
+      };
+    })();
   </script>
 </body>
 </html>

@@ -362,6 +362,46 @@
     initFilterTags();
     updateStats();
     renderActivityGrid();
+
+    // ══ OB-29 + OB-31/32: Live data loading ═══════════════════════
+    (function loadLiveAccess() {
+      var params = new URLSearchParams(window.location.search);
+      var clientId = params.get('clientId');
+      if (!clientId) return;
+
+      // Fetch access log (OB-31)
+      fetch('/operator/' + clientId + '/access-log?limit=50')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.events || !d.events.length) return;
+          allActivities = d.events.map(function(evt) {
+            var dt = new Date(evt.created_at);
+            var eventMap = { grant_success: 'granted', revoke_success: 'revoked', grant_failed: 'error', revoke_failed: 'error' };
+            return {
+              date: dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              time: dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+              member: evt.platform_member_id || 'Unknown',
+              event: eventMap[evt.event_type] || evt.event_type || 'unknown',
+              plan: evt.credential_type || 'Membership',
+              location: 'All Locations',
+              locationId: 'all',
+              details: evt.error_code || evt.event_type || ''
+            };
+          });
+          currentPage = 1;
+          updateStats();
+          renderActivityGrid();
+        }).catch(function(e) { console.error('Access log load error:', e); });
+
+      // Fetch hourly stats (OB-32) for chart
+      fetch('/operator/' + clientId + '/access-stats')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.hourly) return;
+          chartData = d.hourly.map(function(h) { return h.avg; });
+          initChart();
+        }).catch(function(e) { console.error('Access stats load error:', e); });
+    })();
   </script>
 </body>
 </html>

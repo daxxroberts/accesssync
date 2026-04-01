@@ -104,7 +104,24 @@ class MemberSyncApi {
 
       const lastEvent = logResult.rows[0] || null;
 
-      // Return raw fields — Velo (OB-07) maps these to UI states
+      // 4. Fetch active role assignments with plan/door names (OB-06 — Wix widget needs this)
+      const rolesResult = await db.query(
+        `SELECT mra.id, mra.hardware_role_id,
+                pm.plan_name, pm.door_name, pm.hardware_group_id,
+                l.name AS location_name
+         FROM member_role_assignments mra
+         JOIN plan_mappings pm ON pm.id = mra.mapping_id
+         LEFT JOIN locations l ON pm.location_id = l.id
+         WHERE mra.member_id = $1 AND mra.status = 'active'
+         ORDER BY pm.plan_name`,
+        [identity.id]
+      );
+
+      // Return raw fields — Velo (OB-07) maps these to UI states:
+      //   status='active' + provisionedAt → "YOUR ACCESS IS ACTIVE"
+      //   status='in_flight'              → "SYNCING"
+      //   status='failed' || lastEvent.errorCode → "ERROR"
+      //   status=null (not found)         → "PENDING" (webhook not yet processed)
       return res.status(200).json({
         platformMemberId,
         clientId,
@@ -119,6 +136,12 @@ class MemberSyncApi {
           errorCode:      lastEvent.error_code,
           createdAt:      lastEvent.created_at,
         } : null,
+        access: rolesResult.rows.map(r => ({
+          planName:     r.plan_name,
+          doorName:     r.door_name,
+          locationName: r.location_name,
+          groupId:      r.hardware_group_id,
+        })),
       });
 
     } catch (error) {

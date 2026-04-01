@@ -56,6 +56,7 @@ app.get('/plan-mapping', (req, res) => res.render('pages/plan-mapping',   { acti
 app.get('/access',       (req, res) => res.render('pages/access',         { activeTab: 'access' }));
 app.get('/locations',    (req, res) => res.render('pages/locations',      { activeTab: 'config' }));
 app.get('/admin-panel',  (req, res) => res.render('pages/admin-panel',    { activeTab: 'admin' }));
+app.get('/sync-status',  (req, res) => res.render('pages/sync-status'));
 
 // ── Admin Hub ──────────────────────────────────────────────────
 app.get('/',               (req, res) => res.redirect('/OwnerDashboard'));

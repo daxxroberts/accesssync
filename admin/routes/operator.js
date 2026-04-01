@@ -4,10 +4,11 @@
  *
  * Operator-facing endpoints — no admin JWT required.
  * Client identified by UUID in URL path.
- * Auth: OB-08 (Wix JWT) will gate this properly pre-launch.
+ * Auth: OB-24 invite token on signup endpoints. OPERATOR_INVITE_TOKEN env var.
  */
 
 const express = require('express');
+const crypto  = require('crypto');
 const router = express.Router();
 const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
@@ -34,12 +35,42 @@ router.post('/verify-bypass', (req, res) => {
   res.json({ ok: true });
 });
 
-// ══ Operator Signup Endpoints (OB-24: add auth before public launch) ══════════
+// ══ Operator Signup Endpoints ═════════════════════════════════════════════════
+// OB-24: Protected by invite token. Operators receive a link with ?invite=TOKEN.
+// Token checked against OPERATOR_INVITE_TOKEN env var. Without it, 403.
+// Rate-limited to 5 requests per IP per minute as defense-in-depth.
+
+const signupLimiter = {};
+function requireInviteToken(req, res, next) {
+  // Rate limiting: 5 signup requests per IP per minute
+  const ip = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  if (!signupLimiter[ip]) signupLimiter[ip] = [];
+  signupLimiter[ip] = signupLimiter[ip].filter(t => now - t < 60_000);
+  if (signupLimiter[ip].length === 0) delete signupLimiter[ip]; // prevent unbounded growth
+  else if (signupLimiter[ip].length >= 5) {
+    return res.status(429).json({ error: 'Too many requests. Try again in a minute.' });
+  }
+  if (signupLimiter[ip]) signupLimiter[ip].push(now);
+  else signupLimiter[ip] = [now];
+
+  // Token check — timing-safe comparison to prevent side-channel attacks
+  const expected = process.env.OPERATOR_INVITE_TOKEN;
+  if (!expected) {
+    console.warn('[operator/auth] OPERATOR_INVITE_TOKEN not configured — blocking signup');
+    return res.status(503).json({ error: 'Signup is not currently available' });
+  }
+  const token = req.headers['x-invite-token'];
+  if (!token || Buffer.byteLength(token) !== Buffer.byteLength(expected) ||
+      !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected))) {
+    return res.status(403).json({ error: 'Valid invite link required' });
+  }
+  next();
+}
 
 // ── POST /operator/clients ───────────────────────────────────────
 // Operator self-onboarding: create a new client account.
-// Mirrors POST /admin/clients logic but requires no admin JWT.
-router.post('/clients', async (req, res) => {
+router.post('/clients', requireInviteToken, async (req, res) => {
   try {
     const {
       name, platform = 'wix', hardware_platform, tier,
@@ -68,7 +99,7 @@ router.post('/clients', async (req, res) => {
 
 // ── POST /operator/clients/:clientId/locations ───────────────────
 // Operator self-onboarding: add a location to a new client account.
-router.post('/clients/:clientId/locations', async (req, res) => {
+router.post('/clients/:clientId/locations', requireInviteToken, async (req, res) => {
   try {
     const { clientId } = req.params;
     const { name, city, state, tier } = req.body;
@@ -94,7 +125,7 @@ router.post('/clients/:clientId/locations', async (req, res) => {
 // ── POST /operator/clients/:clientId/api-key ─────────────────────
 // Operator self-onboarding: store encrypted door system API key.
 // Write-only: key is AES-256-GCM encrypted, never returned.
-router.post('/clients/:clientId/api-key', async (req, res) => {
+router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) => {
   try {
     const { clientId } = req.params;
     const { apiKey } = req.body;
@@ -111,6 +142,125 @@ router.post('/clients/:clientId/api-key', async (req, res) => {
     res.json({ ok: true, message: 'API key saved' });
   } catch (err) {
     console.error('[operator/setup] POST /clients/:clientId/api-key error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /operator/clients/:clientId/locations/:locationId/activate ──
+// Activates a location during onboarding (OB-44/OB-45).
+// Sets subscription_status = 'active' so plan-mapping-resolver (DR-027) allows provisioning.
+router.post('/clients/:clientId/locations/:locationId/activate', requireInviteToken, async (req, res) => {
+  const { clientId, locationId } = req.params;
+  try {
+    const result = await db.query(
+      `UPDATE locations
+       SET subscription_status = 'active', subscribed_at = NOW()
+       WHERE id = $1 AND client_id = $2 AND subscription_status = 'inactive'
+       RETURNING id, name, subscription_status, subscribed_at`,
+      [locationId, clientId]
+    );
+    if (!result.rows.length) {
+      const check = await db.query(
+        'SELECT subscription_status FROM locations WHERE id = $1 AND client_id = $2',
+        [locationId, clientId]
+      );
+      if (!check.rows.length) return res.status(404).json({ error: 'Location not found' });
+      return res.json({ ok: true, location: check.rows[0], already_active: true });
+    }
+    console.log(`[operator/setup] Location ${result.rows[0].name} (${locationId}) activated for client ${clientId}`);
+    res.json({ ok: true, location: result.rows[0] });
+  } catch (err) {
+    console.error('[operator] POST activate error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /operator/clients/:clientId/kisi-groups ─────────────────
+// Returns all Kisi access groups for the client's org (OB-42).
+// Used by onboarding Step 4 (after key validation) and plan-mapping screen.
+router.get('/clients/:clientId/kisi-groups', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const { decryptApiKey } = require('../../core/crypto-utils');
+    const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
+
+    const clientResult = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [clientId]);
+    if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
+    if (!clientResult.rows[0].kisi_api_key) return res.status(400).json({ error: 'No API key configured' });
+
+    const apiKey = decryptApiKey(clientResult.rows[0].kisi_api_key);
+    const groups = await kisiAdapter.getGroups(apiKey);
+
+    res.json({
+      groups: groups.map(g => ({
+        id: g.id,
+        name: g.name,
+        description: g.description || null,
+      })),
+      count: groups.length,
+    });
+  } catch (err) {
+    if (err.statusCode === 401) return res.json({ groups: [], count: 0, error: 'Invalid API key' });
+    console.error('[operator] GET kisi-groups error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /operator/clients/:clientId/api-key/status ──────────────
+// Returns whether an org-level API key is configured (OB-35/38).
+router.get('/clients/:clientId/api-key/status', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [clientId]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    res.json({ hasKey: !!result.rows[0].kisi_api_key });
+  } catch (err) {
+    console.error('[operator] GET api-key/status error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /operator/clients/:clientId/api-key/test ────────────────
+// Validates the org-level API key against Kisi (OB-35/38).
+router.get('/clients/:clientId/api-key/test', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const { decryptApiKey } = require('../../core/crypto-utils');
+    const kisiConnector = require('../../adapters/kisi/kisi-connector');
+    const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [clientId]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    if (!result.rows[0].kisi_api_key) return res.status(400).json({ valid: false, error: 'No API key set' });
+
+    const apiKey = decryptApiKey(result.rows[0].kisi_api_key);
+    await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
+    res.json({ valid: true });
+  } catch (err) {
+    if (err.statusCode === 401) return res.json({ valid: false, error: 'Invalid API key' });
+    if (err.statusCode === 403) return res.json({ valid: false, error: 'Lacks required permissions' });
+    console.error('[operator] GET api-key/test error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PUT /operator/clients/:clientId/api-key ─────────────────────
+// Update (rotate) the org-level API key (OB-35/38).
+router.put('/clients/:clientId/api-key', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const { apiKey } = req.body;
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return res.status(400).json({ error: 'apiKey is required' });
+    }
+    const encrypted = encryptApiKey(apiKey.trim());
+    const result = await db.query(
+      `UPDATE clients SET kisi_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
+      [encrypted, clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    console.log(`[operator] API key rotated for client ${clientId}`);
+    res.json({ ok: true, message: 'API key updated' });
+  } catch (err) {
+    console.error('[operator] PUT api-key error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -572,6 +722,109 @@ router.get('/:clientId/errors', async (req, res) => {
     });
   } catch (err) {
     console.error('[operator] GET /:clientId/errors error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ══ OB-31: Access Log endpoint ════════════════════════════════════
+// GET /operator/:clientId/access-log
+// Paginated access events for last 30 days with location + type filter.
+router.get('/:clientId/access-log', async (req, res) => {
+  const { clientId } = req.params;
+  const { location_id, event_type, page = 1, limit = 25 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  try {
+    const params = [clientId];
+    const conditions = ['mal.client_id = $1', "mal.created_at > NOW() - INTERVAL '30 days'"];
+
+    if (location_id) {
+      params.push(location_id);
+      conditions.push(
+        `EXISTS (SELECT 1 FROM member_role_assignments mra
+                 JOIN plan_mappings pm ON pm.id = mra.mapping_id AND pm.location_id = $${params.length}
+                 WHERE mra.member_id = mal.member_id)`
+      );
+    }
+    if (event_type) {
+      params.push(event_type);
+      conditions.push(`mal.event_type = $${params.length}`);
+    }
+
+    params.push(parseInt(limit));
+    params.push(offset);
+
+    const [rows, countRow] = await Promise.all([
+      db.query(
+        `SELECT mal.id, mal.event_type, mal.credential_type, mal.error_code,
+                mal.created_at, mi.platform_member_id
+         FROM member_access_log mal
+         JOIN member_identity mi ON mi.id = mal.member_id
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY mal.created_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params
+      ),
+      db.query(
+        `SELECT COUNT(*)::int AS total
+         FROM member_access_log mal
+         WHERE ${conditions.join(' AND ')}`,
+        params.slice(0, params.length - 2)
+      ),
+    ]);
+
+    res.json({
+      events: rows.rows,
+      total:  countRow.rows[0].total,
+      page:   parseInt(page),
+      limit:  parseInt(limit),
+    });
+  } catch (err) {
+    console.error('[operator] GET /:clientId/access-log error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ══ OB-32: Access Stats endpoint ══════════════════════════════════
+// GET /operator/:clientId/access-stats
+// Aggregated hourly averages over last 30 days for bar chart.
+router.get('/:clientId/access-stats', async (req, res) => {
+  const { clientId } = req.params;
+  const { location_id } = req.query;
+
+  try {
+    const params = [clientId];
+    let locationFilter = '';
+    if (location_id) {
+      params.push(location_id);
+      locationFilter = `AND EXISTS (SELECT 1 FROM member_role_assignments mra
+                         JOIN plan_mappings pm ON pm.id = mra.mapping_id AND pm.location_id = $${params.length}
+                         WHERE mra.member_id = mal.member_id)`;
+    }
+
+    const result = await db.query(
+      `SELECT EXTRACT(HOUR FROM mal.created_at)::int AS hour,
+              COUNT(*)::int AS event_count,
+              COUNT(DISTINCT DATE(mal.created_at))::int AS day_count
+       FROM member_access_log mal
+       WHERE mal.client_id = $1
+         AND mal.created_at > NOW() - INTERVAL '30 days'
+         ${locationFilter}
+       GROUP BY EXTRACT(HOUR FROM mal.created_at)
+       ORDER BY hour`,
+      params
+    );
+
+    // Build 24-hour array with averages
+    const hourly = Array.from({ length: 24 }, (_, i) => ({ hour: i, avg: 0 }));
+    result.rows.forEach(row => {
+      const days = row.day_count || 1;
+      hourly[row.hour].avg = Math.round((row.event_count / days) * 10) / 10;
+    });
+
+    res.json({ hourly });
+  } catch (err) {
+    console.error('[operator] GET /:clientId/access-stats error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

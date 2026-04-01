@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Access Status — AccessSync</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand: #4F6EF7;
+  --green: #22C55E;
+  --green-dim: rgba(34,197,94,0.12);
+  --amber: #F59E0B;
+  --amber-dim: rgba(245,158,11,0.12);
+  --red: #EF4444;
+  --red-dim: rgba(239,68,68,0.10);
+  --bg: #F1F5F9;
+  --card: #FFFFFF;
+  --border: #E2E8F0;
+  --text: #0F172A;
+  --text2: #475569;
+  --muted: #94A3B8;
+  --r: 12px;
+}
+html, body {
+  height: 100%;
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+.page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 40px 36px;
+  max-width: 460px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.09);
+}
+
+/* Status icon */
+.status-icon {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 20px;
+  transition: background 0.3s;
+}
+.status-icon.syncing { background: var(--amber-dim); }
+.status-icon.active  { background: var(--green-dim); }
+.status-icon.error   { background: var(--red-dim); }
+
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner-ring {
+  width: 32px; height: 32px;
+  border: 3px solid var(--amber-dim);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.card h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+.card p  { font-size: 13px; color: var(--text2); line-height: 1.65; margin-bottom: 0; }
+
+/* Access list */
+.access-list {
+  margin-top: 24px;
+  text-align: left;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.access-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.access-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+.access-item .door { font-weight: 600; font-size: 13px; }
+.access-item .plan { font-size: 11px; color: var(--muted); }
+
+.timestamp {
+  margin-top: 20px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.timestamp.stale { color: var(--amber); }
+.stale-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); margin-right: 5px; vertical-align: middle; }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="card">
+    <!-- Syncing state (default) -->
+    <div id="state-syncing">
+      <div class="status-icon syncing"><div class="spinner-ring"></div></div>
+      <h2>Setting up your access...</h2>
+      <p>We're connecting your membership to your gym's door system. This usually takes less than 30 seconds.</p>
+    </div>
+
+    <!-- Active state -->
+    <div id="state-active" class="hidden">
+      <div class="status-icon active">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <path d="M8 16l6 6L24 10" stroke="#22C55E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h2>You're all set!</h2>
+      <p>Your access is active. Use the Kisi app or your assigned credential to enter the gym.</p>
+      <div id="access-list" class="access-list"></div>
+    </div>
+
+    <!-- Error state -->
+    <div id="state-error" class="hidden">
+      <div class="status-icon error">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="12" stroke="#EF4444" stroke-width="2.5"/>
+          <path d="M16 11v6M16 20v1" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2>Something went wrong</h2>
+      <p>We couldn't set up your access automatically. Your gym has been notified and will resolve this shortly. No action needed from you.</p>
+    </div>
+
+    <!-- Pending state (member not found yet — webhook hasn't arrived) -->
+    <div id="state-pending" class="hidden">
+      <div class="status-icon syncing"><div class="spinner-ring"></div></div>
+      <h2>Waiting for confirmation...</h2>
+      <p>Your purchase is confirmed. We're waiting for the notification from your gym's website — this usually takes a few seconds.</p>
+    </div>
+
+    <div id="timestamp" class="timestamp hidden"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const params = new URLSearchParams(window.location.search);
+const platformMemberId = params.get('memberId');
+const clientId = params.get('clientId');
+
+// Core Engine base URL (same origin if embedded, or set explicitly)
+const CORE_URL = params.get('coreUrl') || '';
+
+let pollCount = 0;
+const MAX_POLLS = 60; // 60 * 3s = 3 minutes max polling
+const POLL_INTERVAL = 3000;
+const STALE_THRESHOLD = 30000; // 30s — show amber freshness indicator
+const REFRESH_INTERVAL = 30000; // re-check every 30s after settling
+let lastFetchTime = null;
+let settled = false; // true once we reach a terminal state (active/error/suspended)
+let freshnessInterval = null;
+
+function showState(name) {
+  ['syncing', 'active', 'error', 'pending'].forEach(s => {
+    document.getElementById(`state-${s}`).classList.toggle('hidden', s !== name);
+  });
+}
+
+function renderAccess(accessItems) {
+  if (!accessItems || !accessItems.length) return;
+  const list = document.getElementById('access-list');
+  list.innerHTML = accessItems.map(a => `
+    <div class="access-item">
+      <div class="access-dot"></div>
+      <div>
+        <div class="door">${esc(a.doorName || a.locationName || 'Door Access')}</div>
+        <div class="plan">${esc(a.planName || 'Membership')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function poll() {
+  if (!platformMemberId || !clientId) {
+    showState('error');
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `${CORE_URL}/member/access-status?platformMemberId=${encodeURIComponent(platformMemberId)}&clientId=${encodeURIComponent(clientId)}`
+    );
+
+    if (res.status === 404) {
+      // Member not in system yet — webhook hasn't been processed
+      showState('pending');
+      if (++pollCount < MAX_POLLS) setTimeout(poll, POLL_INTERVAL);
+      return;
+    }
+
+    if (!res.ok) {
+      showState('error');
+      return;
+    }
+
+    const data = await res.json();
+
+    if (data.status === 'active') {
+      showState('active');
+      renderAccess(data.access || []);
+      lastFetchTime = Date.now();
+      updateTimestamp(data.provisionedAt);
+      if (!settled) { settled = true; startFreshnessCheck(); }
+      return; // stop fast polling
+    }
+
+    if (data.status === 'failed' || data.status === 'error') {
+      showState('error');
+      return; // stop polling
+    }
+
+    if (data.status === 'suspended') {
+      showState('error');
+      document.querySelector('#state-error p').textContent =
+        'Your access has been suspended. Contact your gym for more information.';
+      return;
+    }
+
+    // in_flight or other transitional state — keep polling
+    showState('syncing');
+    if (++pollCount < MAX_POLLS) setTimeout(poll, POLL_INTERVAL);
+
+  } catch (err) {
+    console.error('Poll error:', err);
+    if (++pollCount < MAX_POLLS) setTimeout(poll, POLL_INTERVAL);
+  }
+}
+
+// OI-05: Freshness tracking — shows amber when data age exceeds threshold
+function updateTimestamp(provisionedAt) {
+  const ts = document.getElementById('timestamp');
+  if (!provisionedAt) { ts.classList.add('hidden'); return; }
+  ts.classList.remove('hidden');
+  ts.classList.remove('stale');
+  ts.innerHTML = `Access granted ${new Date(provisionedAt).toLocaleString()}`;
+}
+
+function startFreshnessCheck() {
+  if (freshnessInterval) return; // already running
+  freshnessInterval = setInterval(() => {
+    const ts = document.getElementById('timestamp');
+    if (lastFetchTime && Date.now() - lastFetchTime > STALE_THRESHOLD) {
+      const ago = Math.round((Date.now() - lastFetchTime) / 1000);
+      const agoText = ago < 60 ? `${ago}s ago` : `${Math.round(ago/60)}m ago`;
+      ts.classList.add('stale');
+      ts.innerHTML = `<span class="stale-dot"></span>Last verified ${agoText} — refreshing...`;
+      ts.classList.remove('hidden');
+      // Background re-check
+      fetch(`${CORE_URL}/member/access-status?platformMemberId=${encodeURIComponent(platformMemberId)}&clientId=${encodeURIComponent(clientId)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return;
+          lastFetchTime = Date.now();
+          if (data.status === 'active') {
+            showState('active');
+            renderAccess(data.access || []);
+            updateTimestamp(data.provisionedAt);
+          } else if (data.status === 'suspended') {
+            showState('error');
+            document.querySelector('#state-error p').textContent =
+              'Your access has been suspended. Contact your gym for more information.';
+          } else if (data.status === 'failed' || data.status === 'error') {
+            showState('error');
+          }
+        }).catch(() => {});
+    }
+  }, REFRESH_INTERVAL);
+}
+
+// Start polling
+if (platformMemberId && clientId) {
+  poll();
+} else {
+  showState('pending');
+}
+
+window.addEventListener('beforeunload', () => {
+  if (freshnessInterval) clearInterval(freshnessInterval);
+});
+</script>
+</body>
+</html>

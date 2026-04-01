@@ -262,6 +262,25 @@
     .unmanaged-note { display: flex; align-items: center; gap: 8px; padding: 9px 16px; background: var(--surface); border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
     .unmanaged-note strong { color: var(--text2); font-weight: 500; }
 
+    /* OB-26: Kisi key CTA banner */
+    .key-cta {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px; border-radius: 12px;
+      background: var(--amber-dim); border: 1px solid rgba(245,166,35,0.3);
+      color: var(--text); font-size: 12px; line-height: 1.5;
+    }
+    .key-cta-icon { flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px;
+      background: rgba(245,166,35,0.15); display: flex; align-items: center; justify-content: center; }
+    .key-cta-text { flex: 1; }
+    .key-cta-text strong { font-weight: 600; }
+    .key-cta-link {
+      flex-shrink: 0; padding: 7px 14px; border-radius: 8px; border: none;
+      font-family: inherit; font-size: 11px; font-weight: 600;
+      background: var(--amber); color: #fff; cursor: pointer;
+      text-decoration: none; white-space: nowrap;
+    }
+    .key-cta-link:hover { opacity: 0.85; }
+
     @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
     @media (min-width: 640px) {
@@ -412,7 +431,7 @@
         <span class="locations-hint">Tap to expand</span>
       </div>
 
-      <div class="locations-stack">
+      <div class="locations-stack" id="location-section">
 
         <!-- Fort Smith — has error -->
         <div class="loc-card err" id="loc-fs">
@@ -801,6 +820,103 @@
         document.getElementById('sync-label').textContent = 'Just now';
       }, 2500);
     }
+    // ══ OB-29: Live data loading ══════════════════════════════════
+    (function loadLiveData() {
+      var clientId = new URLSearchParams(window.location.search).get('clientId');
+      if (!clientId) return; // keep mock data for demo
+
+      function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+      // Fetch client overview
+      fetch('/operator/' + clientId)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.client) return;
+          var c = d.client, s = d.stats;
+          document.querySelector('.client-name').textContent = c.name || 'Unnamed';
+          document.getElementById('client-sub-text').textContent =
+            [s.location_count + ' location' + (s.location_count !== 1 ? 's' : ''),
+             c.tier ? c.tier + ' tier' : ''].filter(Boolean).join(' · ');
+          // Update stats
+          document.getElementById('top-err-n').textContent = s.error_count;
+          document.getElementById('top-err-n').className = s.error_count > 0 ? 'stat-n red' : 'stat-n sage';
+          // Update platform detail
+          var wixDetail = document.querySelector('.platform-chip:first-child .platform-detail');
+          if (wixDetail && c.site_url) wixDetail.textContent = c.site_url.replace(/^https?:\/\//, '') + ' · Webhooks active';
+          // Sync label
+          var syncLabel = document.getElementById('sync-label');
+          if (syncLabel && c.last_sync_at) {
+            syncLabel.textContent = new Date(c.last_sync_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+          }
+        }).catch(function(e) { console.error('Dashboard load error:', e); });
+
+      // OB-26: Check API key status — show CTA banner if missing
+      fetch('/operator/clients/' + clientId + '/api-key/status')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.hasKey) return; // key exists, no CTA needed
+          var platformRow = document.querySelector('.platform-row');
+          if (!platformRow) return;
+          var cta = document.createElement('div');
+          cta.className = 'key-cta';
+          cta.innerHTML =
+            '<div class="key-cta-icon"><svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M7.5 10.5a3 3 0 113-3" stroke="#F5A623" stroke-width="1.3" stroke-linecap="round"/><path d="M10.5 7.5h4.5v3h-1.5v1.5h-1.5v-1.5h-1.5z" stroke="#F5A623" stroke-width="1.3" stroke-linejoin="round" fill="none"/></svg></div>' +
+            '<div class="key-cta-text"><strong>Connect your Kisi API key</strong> to start syncing members. Without it, AccessSync cannot provision door access.</div>' +
+            '<a class="key-cta-link" href="/locations?clientId=' + clientId + '">Add Key</a>';
+          platformRow.parentNode.insertBefore(cta, platformRow.nextSibling);
+          // Update Kisi platform chip to show disconnected state
+          var kisiPill = document.querySelectorAll('.platform-chip')[1];
+          if (kisiPill) {
+            var pill = kisiPill.querySelector('.pill');
+            if (pill) { pill.className = 'pill amber'; pill.innerHTML = '<span class="pdot"></span>No Key'; }
+          }
+        }).catch(function() {});
+
+      // Fetch locations and build accordion
+      fetch('/operator/' + clientId + '/locations')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.locations || !d.locations.length) return;
+          var container = document.getElementById('location-section');
+          if (!container) return;
+          container.innerHTML = d.locations.map(function(loc, i) {
+            var locId = 'loc-' + i;
+            var hasErr = loc.error_count > 0;
+            var statusPill = loc.subscription_status === 'active'
+              ? '<span class="pill sage"><span class="pdot pulse"></span>Active</span>'
+              : '<span class="pill amber"><span class="pdot"></span>' + esc(loc.subscription_status) + '</span>';
+            return '<div class="card loc-card' + (hasErr ? ' err' : '') + '" id="card-' + locId + '">' +
+              '<div class="loc-trigger" id="trig-' + locId + '" onclick="toggleLoc(\'' + locId + '\')">' +
+                '<div class="loc-icon" style="background:' + (hasErr ? 'var(--red-dim)' : 'var(--sage-dim)') + '">' +
+                  '<svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 1.5C6.5 1.5 4.5 3.5 4.5 6c0 3.75 4.5 10.5 4.5 10.5S13.5 9.75 13.5 6c0-2.5-2-4.5-4.5-4.5z" stroke="currentColor" stroke-width="1.3" fill="none"/><circle cx="9" cy="6" r="1.5" fill="currentColor"/></svg>' +
+                '</div>' +
+                '<div class="loc-info"><div class="loc-name">' + esc(loc.name) + '</div>' +
+                  '<div class="loc-sub">' + [esc(loc.city), esc(loc.state)].filter(Boolean).join(', ') + '</div></div>' +
+                statusPill +
+                (hasErr ? '<span class="count red">' + loc.error_count + '</span>' : '') +
+                '<svg class="loc-chev" id="chev-' + locId + '" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              '</div>' +
+              '<div class="loc-body" id="body-' + locId + '">' +
+                '<div style="padding:16px;color:var(--muted);font-size:12px;">Loading details...</div>' +
+              '</div>' +
+            '</div>';
+          }).join('');
+        }).catch(function(e) { console.error('Locations load error:', e); });
+
+      // Fetch errors
+      fetch('/operator/' + clientId + '/errors')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          var errSection = document.getElementById('error-summary');
+          if (errSection && d.errors) {
+            var statCards = document.querySelectorAll('.stat-card');
+            if (statCards[2]) {
+              var n = statCards[2].querySelector('.stat-n');
+              if (n) { n.textContent = d.total; n.className = d.total > 0 ? 'stat-n red' : 'stat-n sage'; }
+            }
+          }
+        }).catch(function() {});
+    })();
   </script>
 </body>
 </html>

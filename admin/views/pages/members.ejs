@@ -501,6 +501,37 @@
     }
     applyFilters();
     if (prefilterHolder) setTimeout(function() { openDrawer(prefilterHolder); }, 400);
+
+    // ══ OB-29: Live data loading ══════════════════════════════════
+    (function loadLiveMembers() {
+      var clientId = urlParams.get('clientId');
+      if (!clientId) return;
+
+      fetch('/operator/' + clientId + '/members?limit=100')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.members || !d.members.length) return;
+          allMembers = d.members.map(function(m) {
+            var parts = (m.platform_member_id || '').split('_');
+            return {
+              id: m.id,
+              firstName: parts[0] || m.platform_member_id || 'Member',
+              lastName: parts[1] || '',
+              email: m.platform_member_id + '@member',
+              phone: '',
+              planId: '',
+              role: 'holder',
+              status: m.access_status || 'pending',
+              addedDate: m.provisioned_at ? new Date(m.provisioned_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—',
+              holderId: null
+            };
+          });
+          plans = [];
+          renderStats();
+          buildPlanFilter();
+          applyFilters();
+        }).catch(function(e) { console.error('Members load error:', e); });
+    })();
   </script>
 </body>
 </html>
