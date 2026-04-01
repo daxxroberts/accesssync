@@ -1,5 +1,5 @@
 # CLAUDE.md — AccessSync Core Engine
-**Version:** 3.6 | **Updated:** 2026-03-31 | **Author:** KEEPER (Business Operating Team)
+**Version:** 3.7 | **Updated:** 2026-04-01 | **Author:** KEEPER (Business Operating Team)
 
 ---
 
@@ -13,22 +13,16 @@ AccessSync is a Wix App Market SaaS product that automates physical space access
 
 ## Repository State
 
-**V1 code-complete. Admin Hub V1 deployed and live. 7-layer architecture complete (DR-022/023/024/025/026/027/028). Operator console refactored to EJS server-side templates (6 pages, 3 shared partials, shared CSS + JS). Site_id auto-registration via `X-AccessSync-Client-Id` header + `registerSiteId()`. Personalized `events.js` code block in onboarding Step 5. Onboarding UX overhaul complete (5 steps rewritten). Owner bypass PIN built (POST /operator/verify-bypass + onboard Step 4 UI). Client creation deferred to Step 4 (`_provisionClient()` — no DB writes until API key or bypass). OB-36 dead code cleaned. Pending: OB-13 (email search), P6 (Velo field paths — verify with live event), HOG site_id + Kisi key entry in Railway DB.**
-
-**Current status as of 2026-03-31 (post-session commits):**
-- Email format validation added to onboarding Step 1.
-- `admin/server.js` — root `/` redirects to `/dashboard` (Admin Hub entry point).
-- `events.js` template — broken `wix-application` import removed. `appInstance.getInstance()` is not valid in Wix Velo backend event handlers. CLIENT_ID header carries the client ID instead.
-- `OWNER_BYPASS_PIN` env var name corrected to `OWNER_PIN` (matches Railway ADMIN service config).
+**All 4 project-plan sprints complete. End-to-end provisioning pipeline working. Member-facing sync status page live. Operator console wired to live data. Onboarding hardened with invite token auth, end-to-end validation step, and location auto-activation. 12 files modified across sprints. New file: `admin/views/pages/sync-status.ejs`. Pending: HOG site_id + Kisi key entry in Railway DB, business gates G-01/02/03/08/09.**
 
 **Current status as of 2026-03-31:**
 - `schema.sql` — DR-018 through DR-026 applied. 13 tables total. Added: `member_role_assignments` (DR-026), `access_type` column on `plan_mappings` (DR-026). ✅ OB-18 closed — both Railway migrations applied.
 - `db.js` — ✅ Built. pg pool, query helper, `getClient()`, `healthCheck()`, `pool` exported.
 - `adapters/wix/wix-connector.js` — ✅ Layer 1. HTTP handler, HMAC verification (uses `req.rawBody`). Reads `X-AccessSync-Client-Id` header → calls `tenantResolver.registerSiteId()` for self-registration. Calls wix-adapter.parseEvent().
-- `adapters/wix/wix-adapter.js` — ✅ Layer 2. Wix payload parsing only. parseEvent() → standard event object. Zero dependencies.
+- `adapters/wix/wix-adapter.js` — ✅ Layer 2. Wix payload parsing only. parseEvent() → standard event object. Zero dependencies. Multi-path resolution for memberId + planId across Pricing Plans, Bookings, and Members event structures (P6 fix).
 - `adapters/standard-adapter.js` — ✅ Layer 3. Owns member_identity, member_access_state, in_flight lock (DR-023). resolveAndLock(), resolveIdentity(), completeGrant(), completeRevoke(), releaseLock(). Writes client_activity_summary (DR-024).
 - `adapters/hardware-adapter.js` — ✅ Layer 5. Hardware platform router. Delegates to kisi/seam by hardwarePlatform string (DR-022).
-- `adapters/kisi/kisi-adapter.js` — ✅ Layer 6. Kisi business methods. Calls kisi-connector.
+- `adapters/kisi/kisi-adapter.js` — ✅ Layer 6. Kisi business methods. Calls kisi-connector. Added: `getGroups(apiKey)` — calls `GET /groups`, returns full group list for plan mapping dropdown (OB-42).
 - `adapters/kisi/kisi-connector.js` — ✅ Layer 7. Kisi HTTP client, rate limiting, auth headers.
 - `adapters/seam/seam-adapter.js` — Stub. Layer 6 equivalent. Post-V1.
 - `adapters/seam/seam-connector.js` — Stub. Layer 7 equivalent. Post-V1.
@@ -43,23 +37,23 @@ AccessSync is a Wix App Market SaaS product that automates physical space access
 - `core/grant-revoke.js` — ✅ Built. `processGrant` loops all mappings[], returns `assignments[]`. `processRevoke` loops all `roleAssignmentIds[]`. Identity/lock/state owned by Standard Adapter (DR-023).
 - `core/retry-engine.js` — ✅ Built. `_moveToDeadLetter` (error_queue), `_notifyOperator` (Resend SDK, DR-020).
 - `core/reconciliation.js` — ✅ Built. Calls hardwareAdapter.getLocks() (DR-022). Stale lock cleanup, failed job re-queue, operator digest.
-- `core/member-sync-api.js` — ✅ Built. RS256 JWT verification live (OB-08 closed). Raw DB access state for Velo frontend.
+- `core/member-sync-api.js` — ✅ Built. RS256 JWT verification live (OB-08 closed). Returns enriched access array: plan names, door names, location info (OB-06 enrichment).
 - `core/location-lapse.js` — ✅ Built. OB-20. suspendLocationMembers() — suspends all active members at a location when subscription lapses. DR-027 billing integrity.
 - `admin/server.js` — ✅ Built. Separate Express app. Crash-isolated from Core Engine. EJS view engine (`admin/views/`). 6 operator page routes (`/dashboard`, `/members`, `/plan-mapping`, `/access`, `/locations`, `/admin-panel`). Passes `activeTab` to subnav partial.
 - `admin/middleware/auth.js` — ✅ Built. JWT httpOnly cookie.
 - `admin/routes/auth.js` — ✅ Built. Google OAuth. Auth-001 closed.
 - `admin/routes/errors.js` — ✅ Built. Full Error Queue CRUD + BullMQ retry.
-- `admin/routes/members.js` — ✅ Built. Debug Center — search, timeline, retry.
+- `admin/routes/members.js` — ✅ Built. Debug Center — search (email detection → Wix Members API resolve → ILIKE fallback), timeline, retry. OB-13 closed.
 - `admin/routes/webhooks.js` — ✅ Built. Webhook Inspector — recent + detail.
 - `admin/routes/queue.js` — ✅ Built. Queue Monitor — counts + jobs by state.
 - `admin/routes/clients.js` — ✅ Built. Clients panel — GET / (with member counts), PATCH /:id. POST /:id/api-key, GET /:id/api-key/status, GET /:id/api-key/test (validates stored key against Kisi GET /groups?limit=1). decryptApiKey + kisiConnector imported.
 - `admin/public/index.html` — ✅ Built. Dashboard shell — 5 panels, login screen, drawer, modal.
 - `admin/public/app.js` — ✅ Built. Full frontend logic — auth, panels, polling, interactions. `testApiKey()` function added. "Test Key" button in client detail drawer (visible when hasKey=true). Calls GET /admin/clients/:id/api-key/test → toast pass/fail.
 - `admin/public/styles.css` — ✅ Built. Full CSS v2.0 — brand, layout, components, responsive.
-- `admin/views/pages/dashboard.ejs` — ✅ Built. Operator console Overview tab. Sora font, CSS variables, dark mode, location accordions, member sync comparison, error management. Served at `/dashboard`.
-- `admin/views/pages/members.ejs` — ✅ Built. Operator console Members tab. Plan holder/sub-member relationships, filters (plan/status/role/search), detail drawer, pagination. Served at `/members`. Mock data.
-- `admin/views/pages/plan-mapping.ejs` — ✅ Built. Operator console Plan Mapping tab. Multi-member plan setup with toggle, max members input, Kisi group dropdown. Served at `/plan-mapping`. Mock data.
-- `admin/views/pages/access.ejs` — ✅ Built. Operator console Access tab. 30-day access activity with hourly bar chart, event filter tags, paginated activity grid. Served at `/access`. Mock data.
+- `admin/views/pages/dashboard.ejs` — ✅ Built. Operator console Overview tab. `loadLiveData()` fetches client overview, locations, errors. Amber "Connect your Kisi API key" banner when key missing (OB-26). Kisi platform chip shows amber "No Key" pill. Served at `/dashboard`.
+- `admin/views/pages/members.ejs` — ✅ Built. Operator console Members tab. `loadLiveMembers()` replaces mock array. Filters, detail drawer, pagination. Live data. Served at `/members`.
+- `admin/views/pages/plan-mapping.ejs` — ✅ Built. Operator console Plan Mapping tab. `loadLiveMappings()` fetches real Kisi groups + mappings. Multi-member toggle, group dropdown now live. Served at `/plan-mapping`.
+- `admin/views/pages/access.ejs` — ✅ Built. Operator console Access tab. `loadLiveAccess()` fetches access log + hourly stats. 30-day bar chart, event filters, activity grid. Live data. Served at `/access`.
 - `admin/views/pages/admin-panel.ejs` — ✅ Built. Operator console Admin tab. Wix-synced administrators, role badges, collapsible info section. Served at `/admin-panel`. Mock data.
 - `admin/views/pages/locations.ejs` — ✅ Built. Platform Config tab. Org-level key card (set/rotate/test). Location cards with subscription status pill, door/plan/error stats, per-location API key override. Served at `/locations`.
 - `admin/views/partials/head.ejs` — ✅ Built. Shared `<head>` partial — meta, Sora font, operator-styles.css link.
@@ -67,8 +61,9 @@ AccessSync is a Wix App Market SaaS product that automates physical space access
 - `admin/views/partials/subnav.ejs` — ✅ Built. Shared sub-nav container — `data-active` attribute drives tab highlighting via operator-nav.js.
 - `admin/public/operator-nav.js` — ✅ Built. Shared JS — sub-nav rendering (6 tabs with routes), dark mode toggle, `showToast()`, `esc()` utility. Loaded on all operator pages.
 - `admin/public/operator-styles.css` — ✅ Built. Shared CSS — all operator page styling extracted from individual pages. Sora font, CSS variables, responsive.
-- `admin/public/onboard.html` — ✅ Built. Operator-facing multi-step onboarding wizard (Set Up Account → Choose Plan → Location → Connect Kisi → Account Created). No admin auth gate. Calls `/operator/*` endpoints. Client + location creation deferred to Step 4 via `_provisionClient()` — no DB writes until API key submitted or owner bypass. Step 4: owner bypass PIN (subtle "Owner" link → PIN input → `POST /operator/verify-bypass`). Step 5: personalized `events.js` code block with `CLIENT_ID` baked in + `X-AccessSync-Client-Id` header. Plan mapping promoted to "Step 1 of 2 (required)".
-- `admin/routes/operator.js` — ✅ Built. Operator API. POST /operator/verify-bypass (owner PIN validation against `OWNER_PIN` env var). Public signup endpoints: POST /operator/clients, POST /operator/clients/:id/locations, POST /operator/clients/:id/api-key (no admin JWT — OB-24 tracks pre-launch auth). Operator data endpoints: GET /operator/:clientId/members, /alerts, /errors, /locations/:locationId/mappings + PATCH /operator/:clientId/plan-mappings/:id. Added: POST /operator/:clientId/locations/:locationId/api-key (per-location key override, DR-028), GET /operator/:clientId/locations/:locationId/api-key/test (validates location or inherited org key). GET /operator/:clientId/locations now returns subscription_status, tier, subscribed_at, has_location_key.
+- `admin/views/pages/sync-status.ejs` — ✅ Built (OB-46). Member-facing post-purchase sync status page at `/sync-status?memberId=X&clientId=Y`. 4 visual states: syncing (spinner), active (checkmark + access list), error, pending. Polls `/member/access-status` every 3s, max 60 polls. Stale data indicator: amber "Last verified Xs ago" badge after 30s (OI-05). Served by admin/server.js.
+- `admin/public/onboard.html` — ✅ Built. Operator-facing multi-step onboarding wizard. Client + location creation deferred to Step 4 via `_provisionClient()` which also calls location activate endpoint. Step 4: Kisi key validated, groups fetched + displayed, owner bypass PIN. Step 5: webhook secret instructions (`accesssync_webhook_secret`), events.js code block, "System Check" panel (`runValidation()` — key exists, key valid, mapping exists, location activated). Reads `?invite=TOKEN`, sends `X-Invite-Token` header (OB-24).
+- `admin/routes/operator.js` — ✅ Built. POST /operator/verify-bypass (owner PIN). Signup endpoints protected by `requireInviteToken` middleware (OPERATOR_INVITE_TOKEN env var) + 5 req/IP/min rate limiter (OB-24). POST /clients, /locations, /api-key, /activate. GET /operator/:clientId/kisi-groups (decrypts key, calls getGroups). Access log: GET /operator/:clientId/access-log (paginated, 30-day, filters), GET /operator/:clientId/access-stats (hourly averages). API key management: GET .../api-key/status, GET .../api-key/test, PUT .../api-key. Data: GET members, alerts, errors, mappings, PATCH mappings.
 
 ---
 
@@ -156,7 +151,7 @@ Full decision records are in the vault: `AccessSync/13_Decision_Records/`
 | ~~OB-12~~ | ~~Deploy Admin Hub V1 to Railway~~ — ~~CLOSED 2026-03-27. Live at https://accesssync-admin.up.railway.app~~ | ~~Admin Hub live~~ |
 | ~~OB-14~~ | ~~Run 6 pending Railway schema migrations on live Postgres~~ — ~~CLOSED 2026-03-28. All migrations applied.~~ | ~~Admin Hub panels functional~~ |
 | ~~OB-18~~ | ~~Railway DB migration — DR-026: `access_type` column + `member_role_assignments` table~~ — ~~CLOSED 2026-03-28. Both migrations applied to live Railway Postgres.~~ | ~~Multi-door grant/revoke in production~~ |
-| OB-13 | Debug Center email search — GET /members/search?email= calls Wix API to resolve email → platformMemberId. OB-08 now closed — **UNBLOCKED**. Build next session. | Debug Center full search |
+| ~~OB-13~~ | ~~Debug Center email search — CLOSED 2026-04-01. `/search` detects email queries, calls Wix Members API to resolve → platformMemberId, falls back to ILIKE pattern match.~~ | ~~Debug Center full search~~ |
 | ~~OB-03-A~~ | ~~CLOSED 2026-03-29 — `wix-connector.js` corrected. Reads `req.body?.instanceId`. PARSE VERIFIED: no `x-wix-site-id` header.~~ | ~~Multi-tenant correctness~~ |
 | ~~OB-19~~ | ~~Railway migration — 6 ALTER statements (DR-027 + DR-028 bundled).~~ CLOSED 2026-03-28. All 6 columns applied. | ~~Per-location billing + API key DB storage~~ |
 | ~~OB-23~~ | ~~Build `core/crypto-utils.js` (AES-256-GCM).~~ CLOSED 2026-03-28. crypto-utils built, DB lookup wired. | ~~Multi-client onboarding~~ |
@@ -164,7 +159,7 @@ Full decision records are in the vault: `AccessSync/13_Decision_Records/`
 | ~~OB-21~~ | ~~`plan-mapping-resolver.js` — subscription_status filter.~~ CLOSED 2026-03-28 — done as part of OB-23. | ~~Provisioning gate~~ |
 | ~~OB-22~~ | ~~Confirm HOG Wix pattern~~ — CLOSED 2026-03-30. Architecture handles both patterns. | ~~HOG Phase 1 correctness~~ |
 | ~~OB-05~~ | ~~CLOSED 2026-03-29 — Operator API endpoints added to `admin/routes/operator.js`: GET /:clientId/members, /alerts, /errors. OB-06 Wix widget unblocked.~~ | ~~OB-06, operator visibility~~ |
-| OB-06 | PIXEL — Wix Account screen widget reading from OB-05 | Operator dashboard |
+| ~~OB-06~~ | ~~CLOSED 2026-04-01 — `member-sync-api.js` enriched to return access array with plan names, door names, location info.~~ | ~~Member sync enrichment~~ |
 | OB-07 | Confirm Velo owns UI state display logic for `member-sync-api.js` output | Sync screen Velo build |
 | ~~OB-08~~ | ~~CLOSED 2026-03-29 — Real RS256 JWT verification in `member-sync-api.js`. JWKS from Wix, cached 1hr. Blocks unauthenticated calls in production.~~ | ~~Phase 5 launch (security gate)~~ |
 | OB-09 | FORGE — setup wizard email input → `clients.notification_email` | DR-020 operator notifications |
@@ -193,6 +188,7 @@ ADMIN_JWT_SECRET              Random 64-char string — JWT signing secret for a
 GOOGLE_CLIENT_ID              OAuth 2.0 Client ID from Google Cloud Console (public — safe to expose)
 ADMIN_ALLOWED_EMAIL           daxxroberts@gmail.com — only this Google account can log in
 OWNER_PIN                     Owner PIN to bypass Kisi validation during onboarding — stored in Railway ADMIN service vars
+OPERATOR_INVITE_TOKEN         Shared secret for onboarding signup endpoints (OB-24). Generate: node -e "console.log(require('crypto').randomBytes(24).toString('hex'))" — operator receives link with ?invite=TOKEN
 ```
 
 ---
@@ -402,3 +398,4 @@ KEEPER must explicitly surface proposed updates and receive confirmation. If a s
 | v3.4 | 2026-03-30 | Vault audit complete — all 39 files confirmed in repo. OB-22 closed. Wix Velo `events.js` written. OB-37 closed — API key test endpoint + Admin Hub Test Key button. P1 fix (req.rawBody) + DEFAULT_TENANT_ID fallback applied. `operator_locations.html` built — Platform Config tab with org-level key card + per-location key override + inline test. 2 new operator.js endpoints (location api-key POST + test GET). All 5 Platform Config sub-nav links wired (were href="#"). OB-35, OB-36, OB-38 logged. Vault-First Question Rule + Deferred-UI enforcement applied. |
 | v3.5 | 2026-03-31 | **Sessions 14+15 vault catch-up.** Session 14: site_id auto-registration (`registerSiteId()` + `X-AccessSync-Client-Id` header), personalized `events.js` code block in onboard Step 5, full onboarding UX overhaul (5 steps rewritten — honest headlines, gym-language bullets, pricing transparency, skip button removed). Session 15: 6 static HTML operator pages refactored to EJS server-side templates (`admin/views/pages/` + `admin/views/partials/`). Shared `operator-nav.js` (subnav, dark mode, toast, esc) + `operator-styles.css`. `ejs` package added. 6 Express routes added to `admin/server.js`. `showToast()`/`esc()` consolidated. OB-27/OB-30 superseded by EJS refactor. |
 | v3.6 | 2026-03-31 | **Session 16: Owner bypass PIN + onboarding client-deferral refactor.** `POST /operator/verify-bypass` endpoint validates PIN against `OWNER_PIN` env var. onboard.html Step 4: subtle "Owner" link reveals PIN input, bypasses Kisi key requirement. Client creation deferred from Step 2 to Step 4 via `_provisionClient()` — no DB writes until operator completes flow. OB-36 dead code cleaned (skipApiKey, apiKeySkipped, stale toast). members.ejs expand toggle bug fixed. `OWNER_PIN` env var added. OB-40 through OB-45 added (onboarding completion gap analysis). Post-session commits: email format validation (Step 1), root `/` redirect to `/dashboard`, broken `wix-application` import removed from events.js template, `OWNER_BYPASS_PIN` → `OWNER_PIN` rename. OB-46/47 added (post-purchase member page, plan mapping live data). `docs/project-plan.html` created — full 4-sprint visual plan. |
+| v3.7 | 2026-04-01 | **Sessions 17–20: All 4 project-plan sprints complete.** Sprint 1: OB-44/45 (location activation endpoint + auto-activate in `_provisionClient()`), P6 (wix-adapter.js multi-path field resolution), OB-42 (`kisi-adapter.getGroups()` + `/kisi-groups` endpoint), OB-41 (webhook secret instructions in Step 5), OB-06 (member-sync-api enriched with plan/door/location). Sprint 2: OB-46 (`sync-status.ejs` — 4-state polling page, OI-05 stale indicator). Sprint 3: OB-29 (all 4 EJS pages wired to live data), OB-31/32 (access-log + access-stats endpoints), OB-35/38 (API key status/test/PUT on operator path), OB-13 (Debug Center email search via Wix Members API). Sprint 4: OB-24 (`requireInviteToken` middleware + rate limiter), OB-26 (dashboard "Connect Kisi" amber banner), OB-43 (onboard Step 5 `runValidation()` system check). `OPERATOR_INVITE_TOKEN` env var added. |
