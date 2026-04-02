@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — API Endpoints</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --purple:     #8B5CF6;
+  --purple-dim: rgba(139,92,246,0.10);
+  --teal:       #0EA5E9;
+  --teal-dim:   rgba(14,165,233,0.10);
+  --slate:      #64748B;
+  --slate-dim:  rgba(100,116,139,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body {
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.page { max-width: 1000px; margin: 0 auto; padding: 48px 24px 80px; }
+
+/* Header */
+.page-header { margin-bottom: 40px; }
+.page-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--brand); margin-bottom: 10px; }
+.page-title { font-size: 32px; font-weight: 800; letter-spacing: -0.8px; line-height: 1.15; margin-bottom: 12px; }
+.page-desc { font-size: 14px; color: var(--text2); max-width: 620px; line-height: 1.7; }
+
+/* Stats strip */
+.stats-strip { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 40px; }
+.stat-pill {
+  background: var(--card); border: 1px solid var(--border); border-radius: 20px;
+  padding: 6px 16px; font-size: 12px; font-weight: 600; color: var(--text2);
+  display: flex; align-items: center; gap: 6px;
+}
+.stat-pill strong { color: var(--text); }
+
+/* Service section */
+.service-section { margin-bottom: 36px; }
+.service-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 14px;
+}
+.service-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0;
+}
+.service-title { font-size: 15px; font-weight: 700; }
+.service-subtitle { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+/* Auth badge */
+.auth-note {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--amber-dim); border: 1px solid rgba(245,158,11,0.25);
+  border-radius: 6px; padding: 3px 9px; font-size: 11px; font-weight: 600; color: #92400e;
+  margin-bottom: 12px;
+}
+
+/* Endpoint table */
+.endpoint-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow);
+  margin-bottom: 8px;
+}
+.endpoint-row {
+  display: grid; grid-template-columns: 72px 1fr auto;
+  align-items: center; gap: 12px;
+  padding: 11px 16px; border-bottom: 1px solid var(--border);
+}
+.endpoint-row:last-child { border-bottom: none; }
+.endpoint-row:hover { background: var(--bg); }
+
+.method {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.5px;
+  border-radius: 5px; padding: 3px 8px; text-align: center;
+  width: 60px;
+}
+.method.GET    { background: var(--green-dim);  color: #15803d; }
+.method.POST   { background: var(--brand-dim);  color: var(--brand-dark); }
+.method.PUT    { background: var(--purple-dim); color: #6d28d9; }
+.method.PATCH  { background: var(--amber-dim);  color: #92400e; }
+.method.DELETE { background: var(--red-dim);    color: #b91c1c; }
+
+.endpoint-path {
+  font-family: 'Courier New', monospace; font-size: 12px;
+  font-weight: 600; color: var(--text); word-break: break-all;
+}
+.endpoint-path .param { color: var(--brand); }
+.endpoint-desc { font-size: 12px; color: var(--text2); }
+
+.endpoint-inner { padding: 0 16px 10px 16px; display: none; }
+.endpoint-inner.open { display: block; }
+
+/* Auth chip */
+.chip {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  border-radius: 20px; padding: 2px 8px; white-space: nowrap; flex-shrink: 0;
+}
+.chip.admin-jwt { background: var(--red-dim);    color: #b91c1c; }
+.chip.invite    { background: var(--amber-dim);  color: #92400e; }
+.chip.public    { background: var(--green-dim);  color: #15803d; }
+.chip.none      { background: var(--slate-dim);  color: var(--slate); }
+
+/* Section divider */
+.section-divider {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--muted); padding: 10px 16px 6px; background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .endpoint-row { grid-template-columns: 60px 1fr; }
+  .chip { display: none; }
+  .page-title { font-size: 24px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="page-header">
+    <div class="page-eyebrow">Reference</div>
+    <div class="page-title">API Endpoints</div>
+    <div class="page-desc">All HTTP routes across the Core Engine and Admin Hub. 77 endpoints total across two Railway services. Use this to find any URL quickly.</div>
+  </div>
+
+  <div class="stats-strip">
+    <div class="stat-pill"><strong>2</strong> services</div>
+    <div class="stat-pill"><strong>77</strong> total endpoints</div>
+    <div class="stat-pill" style="background:var(--green-dim);border-color:rgba(34,197,94,0.2);color:#15803d;">Core Engine — server.js</div>
+    <div class="stat-pill" style="background:var(--brand-dim);border-color:rgba(79,110,247,0.2);color:var(--brand-dark);">Admin Hub — admin/server.js</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       CORE ENGINE
+  ═══════════════════════════════════════════════════ -->
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--green-dim);">⚙️</div>
+      <div>
+        <div class="service-title">Core Engine</div>
+        <div class="service-subtitle">server.js · Webhook processing, member sync API</div>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/health</div>
+          <div class="endpoint-desc">Railway health check — validates DB connectivity</div>
+        </div>
+        <span class="chip public">Public</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/webhooks/wix</div>
+          <div class="endpoint-desc">Wix webhook entry point — HMAC-SHA256 verification, deduplication, BullMQ enqueue</div>
+        </div>
+        <span class="chip none">HMAC</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/member/access-status?memberId=&amp;clientId=</div>
+          <div class="endpoint-desc">Member access status — RS256 JWT verified. Returns enriched access array with plan names, door names, location info. Polled by sync-status page.</div>
+        </div>
+        <span class="chip none">Wix JWT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       ADMIN HUB AUTH
+  ═══════════════════════════════════════════════════ -->
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--red-dim);">🔐</div>
+      <div>
+        <div class="service-title">Auth</div>
+        <div class="service-subtitle">admin/routes/auth.js · Google OAuth, session management</div>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/auth/config</div>
+          <div class="endpoint-desc">Returns Google Client ID for frontend GIS initialization</div>
+        </div>
+        <span class="chip public">Public</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/auth/google</div>
+          <div class="endpoint-desc">Google Identity Services token verification — gates on ADMIN_ALLOWED_EMAIL, issues JWT httpOnly cookie</div>
+        </div>
+        <span class="chip public">Public</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/auth/logout</div>
+          <div class="endpoint-desc">Clear adminToken cookie</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/auth/check</div>
+          <div class="endpoint-desc">Verify session validity — used by frontend on load</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       CLIENTS
+  ═══════════════════════════════════════════════════ -->
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--brand-dim);">🏢</div>
+      <div>
+        <div class="service-title">Clients Panel</div>
+        <div class="service-subtitle">admin/routes/clients.js · mounted at /admin/clients · Admin JWT required on all routes</div>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/clients</div>
+          <div class="endpoint-desc">List all clients with member counts</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/admin/clients</div>
+          <div class="endpoint-desc">Create new client account</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method PATCH">PATCH</span>
+        <div>
+          <div class="endpoint-path">/admin/clients/<span class="param">:id</span></div>
+          <div class="endpoint-desc">Update client fields (name, hardware_platform, tier, notification_email, status, site_id)</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/admin/clients/<span class="param">:id</span>/api-key</div>
+          <div class="endpoint-desc">Set or rotate encrypted hardware API key for client</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/clients/<span class="param">:id</span>/api-key/status</div>
+          <div class="endpoint-desc">Check if API key is configured — returns { hasKey: boolean }</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/clients/<span class="param">:id</span>/api-key/test</div>
+          <div class="endpoint-desc">Validate stored API key — calls GET /groups?limit=1 against hardware system</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/clients/<span class="param">:id</span>/locations</div>
+          <div class="endpoint-desc">List locations for a client with subscription status and mapping counts</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/admin/clients/<span class="param">:id</span>/locations</div>
+          <div class="endpoint-desc">Create new location for client</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method PATCH">PATCH</span>
+        <div>
+          <div class="endpoint-path">/admin/clients/<span class="param">:id</span>/locations/<span class="param">:locationId</span></div>
+          <div class="endpoint-desc">Update location fields (name, city, state, tier, subscription_status, subscription_id)</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/admin/clients/<span class="param">:id</span>/locations/<span class="param">:locationId</span>/api-key</div>
+          <div class="endpoint-desc">Set per-location API key override (multi-org operators only)</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/admin/clients/<span class="param">:id</span>/locations/<span class="param">:locationId</span>/suspend</div>
+          <div class="endpoint-desc">Suspend all provisioned members at location — triggers subscription lapse flow</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/admin/clients/<span class="param">:id</span>/locations/<span class="param">:locationId</span>/activate</div>
+          <div class="endpoint-desc">Reactivate location subscription — does NOT re-provision members</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       ERROR QUEUE
+  ═══════════════════════════════════════════════════ -->
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--red-dim);">🚨</div>
+      <div>
+        <div class="service-title">Error Queue</div>
+        <div class="service-subtitle">admin/routes/errors.js · mounted at /admin/errors · Admin JWT required</div>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/errors?status=&amp;client_id=&amp;limit=&amp;offset=</div>
+          <div class="endpoint-desc">Paginated error queue — filter by status, client</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/errors/<span class="param">:id</span></div>
+          <div class="endpoint-desc">Full detail for one error queue entry</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/admin/errors/<span class="param">:id</span>/dismiss</div>
+          <div class="endpoint-desc">Mark error resolved with optional note</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/admin/errors/<span class="param">:id</span>/retry</div>
+          <div class="endpoint-desc">Re-enqueue failed job to BullMQ</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/admin/errors/bulk-retry</div>
+          <div class="endpoint-desc">Re-enqueue multiple errors by ID array</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       MEMBERS DEBUG CENTER
+  ═══════════════════════════════════════════════════ -->
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--teal-dim);">🔍</div>
+      <div>
+        <div class="service-title">Members Debug Center</div>
+        <div class="service-subtitle">admin/routes/members.js · mounted at /admin/members · Admin JWT required</div>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/members/search?q=</div>
+          <div class="endpoint-desc">Cross-tenant search — email triggers Wix Members API resolve + ILIKE fallback. Returns matching members across all clients.</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/members/<span class="param">:id</span>/timeline</div>
+          <div class="endpoint-desc">Full event timeline for one member — access_log, error_queue, adapter_log unified</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/admin/members/<span class="param">:id</span>/retry</div>
+          <div class="endpoint-desc">Re-queue most recent failed job for member</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/members/by-client?clientId=&amp;locationId=&amp;status=</div>
+          <div class="endpoint-desc">Paginated members for a client — optional location + status filters, includes status breakdown</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       QUEUE MONITOR + WEBHOOKS
+  ═══════════════════════════════════════════════════ -->
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--purple-dim);">📊</div>
+      <div>
+        <div class="service-title">Queue Monitor &amp; Webhook Inspector</div>
+        <div class="service-subtitle">admin/routes/queue.js + webhooks.js · Admin JWT required</div>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="section-divider">Queue Monitor — /admin/queue</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/queue/counts</div>
+          <div class="endpoint-desc">BullMQ job counts — waiting, active, completed, failed, delayed, paused</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/queue/jobs?state=</div>
+          <div class="endpoint-desc">Job list by state — max 50 returned</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="section-divider">Webhook Inspector — /admin/webhooks</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/webhooks/recent?since=</div>
+          <div class="endpoint-desc">Recent webhook log entries — supports since param for incremental updates</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin/webhooks/<span class="param">:id</span></div>
+          <div class="endpoint-desc">Full detail for one webhook log entry</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       OPERATOR DASHBOARD — SETUP
+  ═══════════════════════════════════════════════════ -->
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--amber-dim);">🚀</div>
+      <div>
+        <div class="service-title">Operator Dashboard — Onboarding &amp; Setup</div>
+        <div class="service-subtitle">admin/routes/operator.js · mounted at /operator · No admin JWT — invite token on signup routes</div>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="section-divider">Public</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/webhook-url</div>
+          <div class="endpoint-desc">Returns core engine webhook URL — used by onboarding Step 5</div>
+        </div>
+        <span class="chip public">Public</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/operator/verify-bypass</div>
+          <div class="endpoint-desc">Owner PIN validation — bypasses Kisi key requirement during onboarding</div>
+        </div>
+        <span class="chip public">Public</span>
+      </div>
+      <div class="section-divider">Signup — Invite Token + 5 req/IP/min rate limiter</div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/operator/clients</div>
+          <div class="endpoint-desc">Create new client account during onboarding</div>
+        </div>
+        <span class="chip invite">Invite Token</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/operator/clients/<span class="param">:clientId</span>/locations</div>
+          <div class="endpoint-desc">Add location to client during onboarding</div>
+        </div>
+        <span class="chip invite">Invite Token</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/operator/clients/<span class="param">:clientId</span>/api-key</div>
+          <div class="endpoint-desc">Store encrypted hardware API key during onboarding</div>
+        </div>
+        <span class="chip invite">Invite Token</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/operator/clients/<span class="param">:clientId</span>/locations/<span class="param">:locationId</span>/activate</div>
+          <div class="endpoint-desc">Activate location subscription — sets subscription_status = 'active', enables provisioning</div>
+        </div>
+        <span class="chip invite">Invite Token</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       OPERATOR DASHBOARD — CONFIG
+  ═══════════════════════════════════════════════════ -->
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--slate-dim);">⚙️</div>
+      <div>
+        <div class="service-title">Operator Dashboard — Configuration</div>
+        <div class="service-subtitle">admin/routes/operator.js · API key management, notification email, location config</div>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="section-divider">API Key Management</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/clients/<span class="param">:clientId</span>/api-key/status</div>
+          <div class="endpoint-desc">Check if org-level API key is configured — { hasKey: boolean }</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/clients/<span class="param">:clientId</span>/api-key/test</div>
+          <div class="endpoint-desc">Validate org-level API key against hardware system</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method PUT">PUT</span>
+        <div>
+          <div class="endpoint-path">/operator/clients/<span class="param">:clientId</span>/api-key</div>
+          <div class="endpoint-desc">Update / rotate org-level API key</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="section-divider">Notification Email</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/clients/<span class="param">:clientId</span>/notification-email</div>
+          <div class="endpoint-desc">Get current operator alert email address</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method PUT">PUT</span>
+        <div>
+          <div class="endpoint-path">/operator/clients/<span class="param">:clientId</span>/notification-email</div>
+          <div class="endpoint-desc">Update operator alert email — validated format, stored to clients.notification_email</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="section-divider">Location Config</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/locations</div>
+          <div class="endpoint-desc">Location list with per-location error count, door count, plan count</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/locations/<span class="param">:locationId</span></div>
+          <div class="endpoint-desc">Location detail — errors, plan mappings, recent access log, active members</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/locations/<span class="param">:locationId</span>/mappings</div>
+          <div class="endpoint-desc">Plan mapping screen data — location info + client info + all plan_mappings</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/locations/<span class="param">:locationId</span>/api-key</div>
+          <div class="endpoint-desc">Store per-location API key override</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/locations/<span class="param">:locationId</span>/api-key/test</div>
+          <div class="endpoint-desc">Validate location API key — falls back to client-level key if no override</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="section-divider">Kisi Groups</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/kisi-groups</div>
+          <div class="endpoint-desc">All Kisi access groups for client's org — used by plan-mapping screen and onboarding Step 4</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       OPERATOR DASHBOARD — DATA
+  ═══════════════════════════════════════════════════ -->
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--green-dim);">📋</div>
+      <div>
+        <div class="service-title">Operator Dashboard — Data &amp; Actions</div>
+        <div class="service-subtitle">admin/routes/operator.js · Overview, members, access log, plan mappings, errors</div>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="section-divider">Overview</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span></div>
+          <div class="endpoint-desc">Client overview — name, platform, error count, active members, total members, location count</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/sync</div>
+          <div class="endpoint-desc">Trigger sync — V1 placeholder, updates last_sync_at timestamp</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="section-divider">Members</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/members?locationId=&amp;status=&amp;limit=&amp;offset=</div>
+          <div class="endpoint-desc">Paginated member list with optional location and status filters</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="section-divider">Access Log</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/access-log?locationId=&amp;event_type=&amp;limit=&amp;offset=</div>
+          <div class="endpoint-desc">Paginated access events — last 30 days, filter by location and event type</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/access-stats?locationId=</div>
+          <div class="endpoint-desc">Hourly averages over last 30 days — feeds Access tab bar chart</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="section-divider">Plan Mappings</div>
+      <div class="endpoint-row">
+        <span class="method PATCH">PATCH</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/plan-mappings/<span class="param">:mappingId</span></div>
+          <div class="endpoint-desc">Update plan mapping — status, door_name, hardware_group_id</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="section-divider">Alerts &amp; Errors</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/alerts</div>
+          <div class="endpoint-desc">Config alerts — missing doors, expired credentials, location mismatches</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/errors</div>
+          <div class="endpoint-desc">Error queue summary — recent failed jobs</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/errors/<span class="param">:errorId</span>/dismiss</div>
+          <div class="endpoint-desc">Dismiss error from operator view</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method POST">POST</span>
+        <div>
+          <div class="endpoint-path">/operator/<span class="param">:clientId</span>/errors/<span class="param">:errorId</span>/retry</div>
+          <div class="endpoint-desc">Retry failed job from operator view</div>
+        </div>
+        <span class="chip none">ClientId</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       ADMIN HUB PAGE ROUTES
+  ═══════════════════════════════════════════════════ -->
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--brand-dim);">🖥️</div>
+      <div>
+        <div class="service-title">Admin Hub — Page Routes</div>
+        <div class="service-subtitle">admin/server.js · EJS templates served server-side · Admin JWT required on operator pages</div>
+      </div>
+    </div>
+    <div class="endpoint-card">
+      <div class="section-divider">Operator Console (Admin JWT required)</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/dashboard</div>
+          <div class="endpoint-desc">Overview tab — client health, location status, error summary</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/members</div>
+          <div class="endpoint-desc">Members tab — full member list with filters, drawer, CSV export</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/plan-mapping</div>
+          <div class="endpoint-desc">Plan Mapping tab — Wix plan → Kisi group configuration</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/access</div>
+          <div class="endpoint-desc">Access tab — 30-day bar chart, event log, CSV export</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/locations</div>
+          <div class="endpoint-desc">Platform Config tab — API keys, notification email, location suspend/activate</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/admin-panel</div>
+          <div class="endpoint-desc">Admin tab — Wix-synced administrators, role badges</div>
+        </div>
+        <span class="chip admin-jwt">Admin JWT</span>
+      </div>
+      <div class="section-divider">Member-Facing</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/sync-status?memberId=&amp;clientId=</div>
+          <div class="endpoint-desc">Post-purchase sync status page — 4 states (syncing, active, error, pending). Polls /member/access-status every 3s.</div>
+        </div>
+        <span class="chip public">Public</span>
+      </div>
+      <div class="section-divider">Static / Shell</div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/</div>
+          <div class="endpoint-desc">Redirect to /dashboard</div>
+        </div>
+        <span class="chip public">Public</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method GET">GET</span>
+        <div>
+          <div class="endpoint-path">/OwnerDashboard</div>
+          <div class="endpoint-desc">Admin Hub shell — index.html (login screen, Google OAuth flow)</div>
+        </div>
+        <span class="chip public">Public</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
