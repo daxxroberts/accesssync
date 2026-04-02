@@ -1033,9 +1033,11 @@ async function saveApiKey(clientId) {
 function openClientEdit(id) {
   apiFetch('/admin/clients').then(r => r.json()).then(json => {
     const c = (json.data || []).find(x => x.id === id);
-    if (!c) return;
+    if (!c) { toast('Client not found', 'error'); return; }
     openDrawer(`Edit: ${c.name}`, renderClientEditForm(c));
-  }).catch(() => {});
+  }).catch(err => {
+    if (err.message !== 'Unauthorized') toast('Failed to load client', 'error');
+  });
 }
 
 function renderClientEditForm(c) {
@@ -1117,9 +1119,7 @@ async function saveClientEdit(id) {
 }
 
 function openOperatorDashboard(id, name) {
-  // Operator Dashboard (FORGE/OB-06) — not yet built.
-  // When live, this will link to the operator-facing dashboard for this client.
-  toast(`Operator Dashboard for ${name} coming soon (OB-06)`, 'info');
+  window.open(`/dashboard?clientId=${encodeURIComponent(id)}`, '_blank');
 }
 
 document.getElementById('clients-refresh-btn').addEventListener('click', () => loadClients());
