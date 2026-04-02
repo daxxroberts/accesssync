@@ -17,6 +17,7 @@ const crypto = require('crypto');
 const wixAdapter = require('./wix-adapter');
 const webhookProcessor = require('../../core/webhook-processor');
 const tenantResolver = require('../../core/tenant-resolver');
+const hmacMonitor = require('../../core/hmac-monitor'); // Sprint 5.1
 
 class WixConnector {
   constructor() {
@@ -40,6 +41,8 @@ class WixConnector {
       // 1. Verify Signature (DR-009)
       if (!this._verifySignature(rawBody, signature)) {
         console.warn('[Wix Connector] Invalid webhook signature rejected.');
+        const clientHint = req.headers['x-accesssync-client-id'] || 'unknown';
+        hmacMonitor.recordFailure(clientHint).catch(() => {}); // Sprint 5.1 — non-blocking
         await webhookProcessor.logWebhookAttempt({
           eventId: req.headers['x-wix-event-id'] || null,
           hmacStatus: 'rejected',

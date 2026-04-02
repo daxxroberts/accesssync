@@ -34,13 +34,14 @@ const { decryptApiKey } = require('./crypto-utils');
 const connection = getRedisConnection();
 
 /**
- * Resolves the client-level Kisi API key for a tenant.
+ * Resolves the client-level hardware API key for a tenant.
  * Used for user resolution (findUserByEmail, createUser) and payment.recovered.
  * DR-028: KISI_API_KEY_MOCK fallback removed — set key via Admin Hub.
+ * DR-035: Column renamed kisi_api_key → hardware_api_key.
  */
 async function getClientApiKey(tenantId) {
-  const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [tenantId]);
-  const enc = result.rows[0]?.kisi_api_key;
+  const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [tenantId]);
+  const enc = result.rows[0]?.hardware_api_key;
   if (enc) return decryptApiKey(enc);
   return null;
 }
@@ -152,7 +153,8 @@ async function processJob(job) {
 function startWorker() {
   const worker = new Worker('accesssync-events', processJob, {
     connection,
-    concurrency: 5,   // Kisi rate limit (5 req/sec, DR-008) enforced inside kisi-connector
+    concurrency: 20,  // DR-035: rate limiting is per-adapter inside each connector (e.g. kisi-connector enforces 5 req/sec).
+                      // Worker concurrency is not the rate limit — it's max parallel jobs across all tenants/platforms.
   });
 
   worker.on('completed', (job) => {

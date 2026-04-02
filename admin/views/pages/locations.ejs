@@ -183,6 +183,36 @@
       </div>
     </div>
 
+    <!-- Notification email -->
+    <div class="org-key-card" id="notif-card">
+      <div class="org-key-header">
+        <div class="org-key-icon">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect x="2" y="4" width="14" height="10" rx="2" stroke="var(--brand)" stroke-width="1.4" fill="none"/>
+            <path d="M2 6.5l7 4.5 7-4.5" stroke="var(--brand)" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div>
+          <div class="org-key-title">Alert Email</div>
+          <div class="org-key-desc">Receive provisioning errors, key failures, and grant confirmations</div>
+        </div>
+      </div>
+      <div class="org-key-row">
+        <span class="org-key-status" id="notif-email-display">Loading…</span>
+        <button class="btn btn-sm btn-secondary" id="notif-edit-btn" onclick="toggleNotifForm()">Edit</button>
+      </div>
+      <div class="key-form" id="notif-form">
+        <div class="key-form-inner" style="margin-top:10px;">
+          <div class="key-input-hint">Email address for system alerts — errors, API key failures, and first-grant confirmation.</div>
+          <input type="email" class="key-input" id="notif-email-input" placeholder="alerts@yourgym.com" autocomplete="off"/>
+          <div class="key-form-actions">
+            <button class="btn btn-ghost btn-sm" onclick="toggleNotifForm()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="saveNotifEmail()">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Locations -->
     <div class="section-label">Locations</div>
     <div id="loc-loading" class="loading"><div class="spinner"></div>Loading locations…</div>
@@ -214,6 +244,7 @@
         return;
       }
       loadOrgKeyStatus();
+      loadNotifEmail();
       loadLocations();
     });
 
@@ -258,6 +289,57 @@
         testBtn.style.display = 'none';
         keyBtn.textContent    = 'Set Key';
       }
+    }
+
+    // ── Notification email ─────────────────────────────────────────────
+    function loadNotifEmail() {
+      apiFetch('/operator/clients/' + clientId + '/notification-email')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          var el = document.getElementById('notif-email-display');
+          if (data.email) {
+            el.textContent = data.email;
+            el.className   = 'org-key-status set';
+          } else {
+            el.textContent = 'Not set — alerts will use the system default';
+            el.className   = 'org-key-status';
+          }
+        })
+        .catch(function() {
+          document.getElementById('notif-email-display').textContent = 'Unable to load';
+        });
+    }
+
+    function toggleNotifForm() {
+      var form = document.getElementById('notif-form');
+      form.classList.toggle('open');
+      if (form.classList.contains('open')) {
+        setTimeout(function() { document.getElementById('notif-email-input').focus(); }, 50);
+      }
+    }
+
+    function saveNotifEmail() {
+      var email = document.getElementById('notif-email-input').value.trim();
+      if (!email) { toast('Email cannot be empty', 'error'); return; }
+      apiFetch('/operator/clients/' + clientId + '/notification-email', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email: email }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            toast('Alert email updated', 'success');
+            var el = document.getElementById('notif-email-display');
+            el.textContent = email;
+            el.className   = 'org-key-status set';
+            document.getElementById('notif-form').classList.remove('open');
+            document.getElementById('notif-email-input').value = '';
+          } else {
+            toast(data.error || 'Save failed', 'error');
+          }
+        })
+        .catch(function() { toast('Save failed — network error', 'error'); });
     }
 
     function toggleOrgKeyForm() {
@@ -363,6 +445,12 @@
             '<div class="loc-stat"><div class="loc-stat-val">' + loc.plan_count + '</div><div class="loc-stat-lbl">Plan Mappings</div></div>' +
             '<div class="loc-stat"><div class="loc-stat-val" style="color:' + errorColor + '">' + loc.error_count + '</div><div class="loc-stat-lbl">Errors</div></div>' +
           '</div>' +
+          '<div class="loc-actions">' +
+            (loc.subscription_status === 'active'
+              ? '<button class="btn btn-sm btn-danger" onclick="suspendLocation(\'' + loc.id + '\')">Suspend Location</button>'
+              : '<button class="btn btn-sm btn-secondary" onclick="reactivateLocation(\'' + loc.id + '\')">Reactivate Location</button>'
+            ) +
+          '</div>' +
           '<div class="key-section">' +
             '<div class="key-section-title">' +
               '<svg width="12" height="12" viewBox="0 0 14 14" fill="none">' +
@@ -458,6 +546,46 @@
           resEl.textContent = '✗ Test failed — network error';
         })
         .finally(function() { btn.disabled = false; btn.textContent = 'Test'; });
+    }
+
+    function suspendLocation(locationId) {
+      if (!confirm('Suspend this location? All provisioned members will lose access.')) return;
+      apiFetch('/admin/clients/' + clientId + '/locations/' + locationId + '/suspend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'suspended' }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            toast('Location suspended — ' + (data.suspended || 0) + ' member(s) affected', 'success');
+            var loc = state.locations.find(function(l) { return l.id === locationId; });
+            if (loc) { loc.subscription_status = 'lapsed'; }
+            renderLocations();
+          } else {
+            toast(data.error || 'Suspend failed', 'error');
+          }
+        })
+        .catch(function() { toast('Suspend failed — network error', 'error'); });
+    }
+
+    function reactivateLocation(locationId) {
+      apiFetch('/admin/clients/' + clientId + '/locations/' + locationId + '/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            toast('Location reactivated', 'success');
+            var loc = state.locations.find(function(l) { return l.id === locationId; });
+            if (loc) { loc.subscription_status = 'active'; }
+            renderLocations();
+          } else {
+            toast(data.error || 'Reactivate failed', 'error');
+          }
+        })
+        .catch(function() { toast('Reactivate failed — network error', 'error'); });
     }
 
     function toast(msg, type, duration) {

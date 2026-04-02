@@ -130,7 +130,7 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 | DR-017 | HOG Phase 1: Regular users (not managed) per Kisi — reversed for HOG only |
 | DR-018 | `last_sync_at` added as column to `clients` table. Separate sync_state table deferred to V2. |
 | DR-019 | `adapter_admin_log` — `configured_by` + `configured_at` added as nullable columns |
-| DR-020 | Operator email via Resend SDK from Core Engine. `clients.notification_email` per-client; `OPERATOR_NOTIFICATION_EMAIL` env var is HOG Phase 1 fallback (until OB-09 setup wizard). |
+| DR-020 | Operator email via Resend SDK from Core Engine. `clients.notification_email` per-client; `ACCESSSYNC_OWNER_NOTIFICATION_EMAIL` env var is HOG Phase 1 fallback (until OB-09 setup wizard). |
 | DR-021 | `member_identity.platform_member_id` (was `wix_member_id`) + `source_platform` column. All adapters set `platformMemberId` + `sourcePlatform`. UNIQUE: `(client_id, source_platform, platform_member_id)`. |
 | DR-022 | 7-layer architecture — canonical layer model, file paths, shim pattern for backward compat. |
 | DR-023 | Standard Adapter Layer (Layer 3) exclusively owns `member_identity` UPSERT, `member_access_state` writes, and in_flight lock acquire/release. Core Engine never writes these tables directly. |
@@ -181,7 +181,7 @@ NODE_ENV                      development | production
 DEFAULT_TENANT_ID             Temporary placeholder — remove when multi-tenant routing is built
 RESEND_API_KEY                Resend API key (from resend.com dashboard) — DR-020
 RESEND_FROM_EMAIL             Sender address (e.g. alerts@accesssync.io) — DR-020
-OPERATOR_NOTIFICATION_EMAIL   Phase 1 HOG fallback — until setup wizard OB-09 is built — DR-020
+ACCESSSYNC_OWNER_NOTIFICATION_EMAIL   Phase 1 HOG fallback — until setup wizard OB-09 is built — DR-020
 
 # Admin Hub service (separate Railway service — node admin/server.js)
 ADMIN_JWT_SECRET              Random 64-char string — JWT signing secret for admin sessions

@@ -44,17 +44,22 @@ class KisiAdapter {
   /**
    * Assign a user to a Kisi access group.
    * Returns role assignment ID.
+   *
+   * Gap 6: options.validUntil (ISO8601 string | null) — time-bounded grants for booking/session use cases.
+   * Kisi field: valid_until. GD-02: behavior unverified against live API — test before relying on it.
    */
-  async assignRole(apiKey, userId, groupId) {
+  async assignRole(apiKey, userId, groupId, options = {}) {
+    const body = {
+      role_assignment: {
+        user_id: userId,
+        role_id: 'group_basic', // VERIFIED in llms.txt
+        group_id: groupId,
+        ...(options.validUntil ? { valid_until: options.validUntil } : {}),
+      }
+    };
     const data = await kisiConnector.makeRequest('/role_assignments', {
       method: 'POST',
-      body: JSON.stringify({
-        role_assignment: {
-          user_id: userId,
-          role_id: 'group_basic', // VERIFIED in llms.txt
-          group_id: groupId
-        }
-      })
+      body: JSON.stringify(body)
     }, apiKey);
     return data.id;
   }
@@ -122,6 +127,11 @@ class KisiAdapter {
 
   /**
    * Fetch all locks for the org. Used by reconciliation._syncDoorLockdownStates().
+   *
+   * DR-035: Normalized return shape — { id, name, locked: boolean }.
+   * All hardware adapters must return this shape. Reconciliation reads 'locked', not platform-specific fields.
+   * Kisi source field: is_locked (boolean).
+   *
    * Returns [] on error or missing key.
    */
   async getLocks(apiKey) {
@@ -131,7 +141,12 @@ class KisiAdapter {
     }
     try {
       const data = await kisiConnector.makeRequest('/locks', { method: 'GET' }, apiKey);
-      return Array.isArray(data) ? data : [];
+      const locks = Array.isArray(data) ? data : [];
+      return locks.map(l => ({
+        id:     l.id,
+        name:   l.name || String(l.id),
+        locked: l.is_locked === true,
+      }));
     } catch (err) {
       console.error('[Kisi Adapter] getLocks failed:', err.message);
       return [];

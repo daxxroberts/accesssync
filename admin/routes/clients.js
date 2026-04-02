@@ -95,7 +95,7 @@ router.patch('/:id', async (req, res) => {
 
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     // S1: Strip encrypted API key — never return it in responses
-    const { kisi_api_key, ...safeClient } = result.rows[0];
+    const { hardware_api_key, ...safeClient } = result.rows[0];
     res.json({ ok: true, client: safeClient });
   } catch (err) {
     console.error('[Admin/clients] PATCH /:id error:', err.message);
@@ -119,7 +119,7 @@ router.post('/:id/api-key', async (req, res) => {
     }
     const encrypted = encryptApiKey(apiKey.trim());
     const result = await db.query(
-      `UPDATE clients SET kisi_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
+      `UPDATE clients SET hardware_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
       [encrypted, id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
@@ -138,11 +138,11 @@ router.post('/:id/api-key', async (req, res) => {
 router.get('/:id/api-key/test', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [id]);
+    const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [id]);
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    if (!result.rows[0].kisi_api_key) return res.status(400).json({ valid: false, error: 'No API key set for this client' });
+    if (!result.rows[0].hardware_api_key) return res.status(400).json({ valid: false, error: 'No API key set for this client' });
 
-    const apiKey = decryptApiKey(result.rows[0].kisi_api_key);
+    const apiKey = decryptApiKey(result.rows[0].hardware_api_key);
     await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
 
     res.json({ valid: true });
@@ -159,9 +159,9 @@ router.get('/:id/api-key/test', async (req, res) => {
 router.get('/:id/api-key/status', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [id]);
+    const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [id]);
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    res.json({ hasKey: !!result.rows[0].kisi_api_key });
+    res.json({ hasKey: !!result.rows[0].hardware_api_key });
   } catch (err) {
     console.error('[Admin/clients] GET /:id/api-key/status error:', err.message);
     res.status(500).json({ error: err.message });
@@ -178,7 +178,7 @@ router.get('/:id/locations', async (req, res) => {
       `SELECT l.id, l.name, l.city, l.state,
               l.subscription_status, l.tier, l.subscribed_at, l.subscription_id,
               l.created_at,
-              (l.kisi_api_key IS NOT NULL) AS has_location_key,
+              (l.hardware_api_key IS NOT NULL) AS has_location_key,
               COUNT(DISTINCT pm.id)::int  AS mapping_count
        FROM locations l
        LEFT JOIN plan_mappings pm ON pm.location_id = l.id
@@ -242,7 +242,7 @@ router.patch('/:id/locations/:locationId', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
     // S2: Strip encrypted API key — never return it in responses
-    const { kisi_api_key, ...safeLocation } = result.rows[0];
+    const { hardware_api_key, ...safeLocation } = result.rows[0];
     res.json({ ok: true, location: safeLocation });
   } catch (err) {
     console.error('[Admin/clients] PATCH /:id/locations/:locationId error:', err.message);
@@ -260,7 +260,7 @@ router.post('/:id/locations/:locationId/api-key', async (req, res) => {
 
     const encrypted = encryptApiKey(apiKey.trim());
     const result = await db.query(
-      `UPDATE locations SET kisi_api_key = $1
+      `UPDATE locations SET hardware_api_key = $1
        WHERE id = $2 AND client_id = $3
        RETURNING id, name`,
       [encrypted, locationId, id]

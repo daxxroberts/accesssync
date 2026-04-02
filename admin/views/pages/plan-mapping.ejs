@@ -519,6 +519,18 @@
             '</div>';
         }
 
+        if (plan.kisiGroupId) {
+          var dupPlans = plans.filter(function(p) { return p.id !== plan.id && p.kisiGroupId === plan.kisiGroupId; });
+          if (dupPlans.length > 0) {
+            var dupNames = dupPlans.map(function(p) { return esc(p.name); }).join(', ');
+            bodyHTML +=
+              '<div style="margin-top:16px; background:#fef3c7; border:1px solid #fbbf24; border-radius:8px; padding:12px 16px; display:flex; align-items:center; gap:10px;">' +
+                '<span style="font-size:18px;">&#9888;</span>' +
+                '<div style="font-size:13px; color:#92400e;">This ' + groupLabel().toLowerCase() + ' is also assigned to: <strong>' + dupNames + '</strong>. Members on these plans will share the same door access.</div>' +
+              '</div>';
+          }
+        }
+
         bodyHTML += '</div>'; // close plan-card-body
 
         card.innerHTML = headerHTML + bodyHTML;

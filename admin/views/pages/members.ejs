@@ -193,6 +193,7 @@
       <input class="filter-search" id="filterSearch" type="text" placeholder="Search by name or email..." oninput="applyFilters()"/>
       <button class="filter-clear" id="filterClear" onclick="clearFilters()">Clear filters</button>
       <div class="filter-count" id="filterCount"></div>
+      <button class="btn btn-sm btn-ghost" onclick="downloadMembersCSV()" style="margin-left:auto;">&#11015; CSV</button>
     </div>
 
     <div class="active-filter" id="activeFilterBanner">
@@ -350,6 +351,33 @@
       prefilterPlan   = '';
       expandedHolders = {};
       applyFilters();
+    }
+
+    function downloadMembersCSV() {
+      var rows = getFiltered();
+      var headers = ['First Name', 'Last Name', 'Email', 'Status', 'Plan', 'Role', 'Provisioned At'];
+      var csvRows = [headers.join(',')];
+      rows.forEach(function(m) {
+        csvRows.push([
+          csvEsc(m.firstName), csvEsc(m.lastName), csvEsc(m.email),
+          csvEsc(m.status), csvEsc(m.planName || ''), csvEsc(m.role || ''),
+          csvEsc(m.provisionedAt || ''),
+        ].join(','));
+      });
+      var blob = new Blob([csvRows.join('\r\n')], { type: 'text/csv' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'members-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function csvEsc(val) {
+      var s = String(val == null ? '' : val);
+      if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
     }
 
     function renderTable(filtered) {

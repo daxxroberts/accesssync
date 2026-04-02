@@ -87,7 +87,7 @@ class RetryEngine {
         );
         toEmail = clientRow.rows[0]?.notification_email || null;
       }
-      toEmail = toEmail || process.env.OPERATOR_NOTIFICATION_EMAIL || null;
+      toEmail = toEmail || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL || null;
 
       if (!toEmail) {
         console.error(`[Retry Engine] OPERATOR ALERT (no email configured) | tenant=${tenantId} | ${error.message}`);

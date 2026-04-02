@@ -40,9 +40,9 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
   // 1. Resolve client + location context
   const ctxResult = await db.query(
     `SELECT c.hardware_platform,
-            c.kisi_api_key   AS client_key,
-            l.kisi_api_key   AS location_key,
-            l.name           AS location_name,
+            c.hardware_api_key   AS client_key,
+            l.hardware_api_key   AS location_key,
+            l.name               AS location_name,
             l.subscription_status AS current_status
      FROM clients c
      JOIN locations l ON l.id = $2 AND l.client_id = $1

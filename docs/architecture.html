@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --purple:     #8B5CF6;
+  --purple-dim: rgba(139,92,246,0.10);
+  --teal:       #0EA5E9;
+  --teal-dim:   rgba(14,165,233,0.10);
+  --slate:      #64748B;
+  --slate-dim:  rgba(100,116,139,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body {
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 48px 32px 80px; }
+
+/* ── Header ─────────────────────────────────────────────────── */
+.header { margin-bottom: 48px; }
+.header-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--brand); margin-bottom: 8px;
+}
+.header h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.8px; color: var(--text); }
+.header-sub { font-size: 14px; color: var(--text2); margin-top: 6px; max-width: 640px; line-height: 1.6; }
+
+/* ── Section titles ─────────────────────────────────────────── */
+.section { margin-bottom: 48px; }
+.section-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* ── 7-Layer Stack ───────────────────────────────────────────── */
+.layer-stack { display: flex; flex-direction: column; gap: 4px; }
+.layer-row {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 0;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.layer-num {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.4px;
+  padding: 0 16px;
+  min-height: 72px;
+  flex-direction: column; gap: 2px;
+}
+.layer-num-label { font-size: 8px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; opacity: 0.7; }
+.layer-num-val   { font-size: 18px; font-weight: 800; }
+
+.layer-body {
+  background: var(--card);
+  padding: 14px 20px;
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
+}
+.layer-name { font-size: 13px; font-weight: 700; }
+.layer-file { font-size: 10px; font-weight: 600; letter-spacing: 0.2px; font-family: 'Courier New', monospace; }
+.layer-desc { font-size: 11px; color: var(--text2); line-height: 1.5; margin-top: 2px; }
+
+/* Zone colors */
+.layer-row.zone-input  .layer-num { background: var(--brand-dim);  color: var(--brand); }
+.layer-row.zone-core   .layer-num { background: #0F172A;            color: #F1F5F9; }
+.layer-row.zone-output .layer-num { background: var(--purple-dim);  color: var(--purple); }
+.layer-row.zone-input  .layer-file { color: var(--brand); }
+.layer-row.zone-core   .layer-file { color: var(--slate); }
+.layer-row.zone-output .layer-file { color: var(--purple); }
+
+.zone-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+  padding: 4px 12px; border-radius: 20px; display: inline-block; margin-bottom: 6px;
+  align-self: flex-start;
+}
+.zone-label.input  { background: var(--brand-dim);  color: var(--brand); }
+.zone-label.core   { background: #0F172A;            color: #94A3B8; }
+.zone-label.output { background: var(--purple-dim);  color: var(--purple); }
+
+.stack-zone { display: flex; flex-direction: column; gap: 4px; }
+.zone-gap { height: 16px; display: flex; align-items: center; }
+.zone-gap-line { flex: 1; border-top: 2px dashed var(--border); }
+.zone-gap-arrow { color: var(--muted); font-size: 20px; padding: 0 8px; }
+
+/* ── Standard Event Contract ─────────────────────────────────── */
+.contract-card {
+  background: #0F172A; border-radius: var(--r);
+  padding: 28px 32px; box-shadow: var(--shadow-md);
+}
+.contract-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+  color: #64748B; margin-bottom: 16px;
+}
+.contract-title { font-size: 18px; font-weight: 800; color: #F8FAFC; margin-bottom: 8px; letter-spacing: -0.4px; }
+.contract-sub { font-size: 12px; color: #94A3B8; margin-bottom: 24px; line-height: 1.6; max-width: 560px; }
+.contract-fields {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+}
+.contract-field {
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--r-sm); padding: 12px 14px;
+}
+.field-name { font-size: 11px; font-weight: 700; font-family: 'Courier New', monospace; color: #7DD3FC; margin-bottom: 4px; }
+.field-type { font-size: 9px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: #94A3B8; margin-bottom: 6px; }
+.field-desc { font-size: 11px; color: #CBD5E1; line-height: 1.5; }
+
+/* ── Adapter Matrix ──────────────────────────────────────────── */
+.matrix-wrap {
+  display: grid; grid-template-columns: 1fr 180px 1fr; gap: 16px; align-items: start;
+}
+.matrix-side { display: flex; flex-direction: column; gap: 10px; }
+.matrix-adapter {
+  background: var(--card); border-radius: var(--r-sm);
+  border: 1px solid var(--border); padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+.matrix-adapter.live {
+  border-color: #BBF7D0;
+  background: linear-gradient(135deg, #FFFFFF, #F0FDF4);
+}
+.matrix-adapter.stub {
+  border-style: dashed; opacity: 0.7;
+}
+.adapter-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.adapter-label.live-tag  { color: var(--green); }
+.adapter-label.stub-tag  { color: var(--muted); }
+.adapter-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.adapter-desc { font-size: 11px; color: var(--text2); line-height: 1.5; }
+.adapter-pill {
+  display: inline-block; margin-top: 8px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 20px;
+}
+.adapter-pill.live-tag  { background: var(--green-dim); color: #16A34A; }
+.adapter-pill.stub-tag  { background: var(--slate-dim); color: var(--slate); }
+.adapter-pill.planned   { background: var(--amber-dim); color: #D97706; }
+
+.matrix-core {
+  background: #0F172A; border-radius: var(--r);
+  padding: 24px 20px; text-align: center; box-shadow: var(--shadow-md);
+}
+.matrix-core-label { font-size: 9px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: #64748B; margin-bottom: 8px; }
+.matrix-core-name { font-size: 20px; font-weight: 800; color: #F8FAFC; letter-spacing: -0.4px; margin-bottom: 6px; }
+.matrix-core-sub { font-size: 10px; color: #94A3B8; line-height: 1.6; margin-bottom: 16px; }
+.matrix-core-line { height: 1px; background: rgba(255,255,255,0.08); margin: 12px 0; }
+.matrix-core-stat { font-size: 11px; color: #CBD5E1; text-align: left; padding: 4px 0; }
+.matrix-core-stat strong { color: #F8FAFC; }
+.matrix-arrow-col {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; padding: 0;
+}
+.side-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 8px; padding: 4px 10px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 20px; text-align: center;
+}
+
+/* ── Growth math ─────────────────────────────────────────────── */
+.math-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.math-card {
+  background: var(--card); border-radius: var(--r);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  padding: 24px 20px; text-align: center;
+}
+.math-num { font-size: 40px; font-weight: 800; letter-spacing: -2px; margin-bottom: 4px; }
+.math-card:nth-child(1) .math-num { color: var(--brand); }
+.math-card:nth-child(2) .math-num { color: var(--purple); }
+.math-card:nth-child(3) .math-num { color: var(--green); }
+.math-label { font-size: 12px; font-weight: 600; color: var(--text2); }
+.math-sub { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+.math-eq {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+  margin-top: 12px; color: var(--muted);
+  padding-top: 12px; border-top: 1px solid var(--border);
+}
+
+/* ── Contract interface ──────────────────────────────────────── */
+.interface-card {
+  background: var(--card); border-radius: var(--r);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.interface-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  background: var(--slate-dim);
+}
+.interface-title { font-size: 14px; font-weight: 700; }
+.interface-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.interface-methods {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+}
+.method-row {
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.method-row:nth-child(2n) { border-right: none; }
+.method-row:nth-last-child(-n+2) { border-bottom: none; }
+.method-name { font-size: 12px; font-weight: 700; font-family: 'Courier New', monospace; color: var(--brand); margin-bottom: 4px; }
+.method-sig  { font-size: 10px; font-family: 'Courier New', monospace; color: var(--muted); margin-bottom: 6px; }
+.method-desc { font-size: 11px; color: var(--text2); line-height: 1.5; }
+
+/* ── Principle cards ─────────────────────────────────────────── */
+.principle-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.principle-card {
+  background: var(--card); border-radius: var(--r);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  padding: 20px;
+}
+.principle-num {
+  width: 28px; height: 28px; border-radius: 50%; background: var(--brand-dim);
+  color: var(--brand); font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; margin-bottom: 10px;
+}
+.principle-title { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.principle-body { font-size: 12px; color: var(--text2); line-height: 1.6; }
+
+/* ── Footer ──────────────────────────────────────────────────── */
+.footer {
+  margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+  display: flex; justify-content: space-between; align-items: center;
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <div class="header">
+    <div class="header-eyebrow">AccessSync · System Architecture</div>
+    <h1>Seven Layers. One Standard. Infinite Adapters.</h1>
+    <p class="header-sub">AccessSync is not a Wix-to-Kisi connector. It's a platform-agnostic access provisioning engine. Wix and Kisi are just the first adapters. Every new integration multiplies every existing one.</p>
+  </div>
+
+  <!-- ── 7-Layer Stack ──────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">The Seven-Layer Model</div>
+
+    <div class="layer-stack">
+
+      <!-- INPUT ZONE -->
+      <div class="zone-label input">Input Zone — Membership Platforms</div>
+      <div class="stack-zone">
+
+        <div class="layer-row zone-input">
+          <div class="layer-num">
+            <div class="layer-num-label">Layer</div>
+            <div class="layer-num-val">1</div>
+          </div>
+          <div class="layer-body">
+            <div class="layer-name">Membership Connector</div>
+            <div class="layer-file">adapters/wix/wix-connector.js</div>
+            <div class="layer-desc">HTTP entry point only. Verifies the incoming request is authentic (HMAC-SHA256 signature), then hands the raw payload to Layer 2. Owns no business logic. One connector per membership platform.</div>
+          </div>
+        </div>
+
+        <div class="layer-row zone-input">
+          <div class="layer-num">
+            <div class="layer-num-label">Layer</div>
+            <div class="layer-num-val">2</div>
+          </div>
+          <div class="layer-body">
+            <div class="layer-name">Membership Adapter</div>
+            <div class="layer-file">adapters/wix/wix-adapter.js</div>
+            <div class="layer-desc">Parses the raw platform payload and converts it into a <strong>standard event object</strong> — the universal language every layer below understands. Zero dependencies. The entire platform translation happens here and nowhere else.</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Gap -->
+      <div class="zone-gap">
+        <div class="zone-gap-line"></div>
+        <div class="zone-gap-arrow">↓</div>
+        <div class="zone-gap-line"></div>
+      </div>
+
+      <!-- CORE ZONE -->
+      <div class="zone-label core">Core Engine — Platform Invariant</div>
+      <div class="stack-zone">
+
+        <div class="layer-row zone-core">
+          <div class="layer-num">
+            <div class="layer-num-label">Layer</div>
+            <div class="layer-num-val">3</div>
+          </div>
+          <div class="layer-body">
+            <div class="layer-name">Standard Adapter</div>
+            <div class="layer-file">adapters/standard-adapter.js</div>
+            <div class="layer-desc">Owns all database state. Exclusively controls <code>member_identity</code>, <code>member_access_state</code>, and the in-flight lock that prevents concurrent operations on the same member. No other layer writes these tables.</div>
+          </div>
+        </div>
+
+        <div class="layer-row zone-core">
+          <div class="layer-num">
+            <div class="layer-num-label">Layer</div>
+            <div class="layer-num-val">4</div>
+          </div>
+          <div class="layer-body">
+            <div class="layer-name">Core Engine</div>
+            <div class="layer-file">core/ — webhook-processor · queue-worker · grant-revoke · retry-engine · reconciliation</div>
+            <div class="layer-desc">The orchestration brain. Deduplicates events, queues jobs via BullMQ, coordinates grant and revoke operations, retries on failure, and runs a nightly reconciliation sweep. Knows nothing about Wix. Knows nothing about Kisi.</div>
+          </div>
+        </div>
+
+        <div class="layer-row zone-core">
+          <div class="layer-num">
+            <div class="layer-num-label">Layer</div>
+            <div class="layer-num-val">5</div>
+          </div>
+          <div class="layer-body">
+            <div class="layer-name">Hardware Standard Adapter</div>
+            <div class="layer-file">adapters/hardware-adapter.js</div>
+            <div class="layer-desc">The platform router. Receives a <code>hardwarePlatform</code> string and a standard method call, and delegates to the correct Layer 6 adapter. The Core Engine calls one interface. Hardware adapters implement it however they need to.</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Gap -->
+      <div class="zone-gap">
+        <div class="zone-gap-line"></div>
+        <div class="zone-gap-arrow">↓</div>
+        <div class="zone-gap-line"></div>
+      </div>
+
+      <!-- OUTPUT ZONE -->
+      <div class="zone-label output">Output Zone — Hardware Platforms</div>
+      <div class="stack-zone">
+
+        <div class="layer-row zone-output">
+          <div class="layer-num">
+            <div class="layer-num-label">Layer</div>
+            <div class="layer-num-val">6</div>
+          </div>
+          <div class="layer-body">
+            <div class="layer-name">Hardware Adapter</div>
+            <div class="layer-file">adapters/kisi/kisi-adapter.js · adapters/seam/seam-adapter.js</div>
+            <div class="layer-desc">Business logic for a specific hardware platform. Knows concepts like "users", "groups", and "role assignments" in the language that platform uses. Translates standard method calls into the right operations for that system.</div>
+          </div>
+        </div>
+
+        <div class="layer-row zone-output">
+          <div class="layer-num">
+            <div class="layer-num-label">Layer</div>
+            <div class="layer-num-val">7</div>
+          </div>
+          <div class="layer-body">
+            <div class="layer-name">Hardware Connector</div>
+            <div class="layer-file">adapters/kisi/kisi-connector.js · adapters/seam/seam-connector.js</div>
+            <div class="layer-desc">All HTTP calls, authentication headers, rate limiting, and retry logic for one specific platform API. Layer 6 never makes an HTTP call directly — it always delegates to Layer 7. Swapping an API version means touching only this file.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Standard Event Contract ───────────────────────────── -->
+  <div class="section">
+    <div class="section-title">The Standard Event Contract</div>
+    <div class="contract-card">
+      <div class="contract-label">DR-021 · Platform-Agnostic Event Object</div>
+      <div class="contract-title">Every platform speaks the same language at Layer 3.</div>
+      <div class="contract-sub">When Layer 2 finishes parsing a Wix webhook — or a Mindbody webhook, or a booking system webhook — it produces exactly this object. Layer 3 and below never know which platform sent the event. They operate entirely on this standard shape.</div>
+      <div class="contract-fields">
+        <div class="contract-field">
+          <div class="field-name">eventType</div>
+          <div class="field-type">string · required</div>
+          <div class="field-desc">Normalized action — <code>plan.purchased</code>, <code>plan.cancelled</code>, <code>booking.confirmed</code>, <code>member.deleted</code>. Core Engine routes on this, nothing else.</div>
+        </div>
+        <div class="contract-field">
+          <div class="field-name">platformMemberId</div>
+          <div class="field-type">string · required</div>
+          <div class="field-desc">The member's unique ID in the source platform. Used for deduplication and DB lookup. Never used directly in the hardware layer.</div>
+        </div>
+        <div class="contract-field">
+          <div class="field-name">sourcePlatform</div>
+          <div class="field-type">string · required</div>
+          <div class="field-desc">Which membership platform sent this event — <code>wix</code>, <code>mindbody</code>, etc. Combined with <code>platformMemberId</code> as a UNIQUE key in the DB.</div>
+        </div>
+        <div class="contract-field">
+          <div class="field-name">memberEmail</div>
+          <div class="field-type">string · required</div>
+          <div class="field-desc">The member's email address. Used to look up or create the member's account in the hardware platform. The only cross-platform identifier that hardware systems understand.</div>
+        </div>
+        <div class="contract-field">
+          <div class="field-name">planId</div>
+          <div class="field-type">string · required for grants</div>
+          <div class="field-desc">The membership plan or product ID from the source platform. The Plan Mapping Resolver uses this to find which hardware groups to assign.</div>
+        </div>
+        <div class="contract-field">
+          <div class="field-name">tenantId</div>
+          <div class="field-type">string · required</div>
+          <div class="field-desc">The AccessSync client this event belongs to. Resolved by the Tenant Resolver from the platform's site/account identifier. Every query scopes by this.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Hardware Adapter Interface ────────────────────────── -->
+  <div class="section">
+    <div class="section-title">Hardware Adapter Interface — Every Hardware Adapter Implements This</div>
+    <div class="interface-card">
+      <div class="interface-header">
+        <div class="interface-title">Layer 5 Contract — adapters/hardware-adapter.js</div>
+        <div class="interface-sub">The Core Engine calls these eight methods. It does not care what happens inside them. Kisi does it one way. Seam does it another. The engine is the same for both.</div>
+      </div>
+      <div class="interface-methods">
+        <div class="method-row">
+          <div class="method-name">findUserByEmail</div>
+          <div class="method-sig">(apiKey, email) → user | null</div>
+          <div class="method-desc">Look up an existing member in the hardware platform by email. Returns the platform's user object or null if they don't exist yet.</div>
+        </div>
+        <div class="method-row">
+          <div class="method-name">createUser</div>
+          <div class="method-sig">(apiKey, memberData) → user</div>
+          <div class="method-desc">Create a new user in the hardware platform. AccessSync manages users as silent credentials — no welcome emails sent from the hardware system.</div>
+        </div>
+        <div class="method-row">
+          <div class="method-name">assignRole</div>
+          <div class="method-sig">(apiKey, userId, groupId) → assignment</div>
+          <div class="method-desc">Grant the user access to a door group. In Kisi this is a role assignment. In Seam this is a different construct. The contract is the same.</div>
+        </div>
+        <div class="method-row">
+          <div class="method-name">removeRole</div>
+          <div class="method-sig">(apiKey, assignmentId) → void</div>
+          <div class="method-desc">Revoke access by removing the role assignment. Called when a plan is cancelled or a booking expires. Does not delete the user — just removes the access grant.</div>
+        </div>
+        <div class="method-row">
+          <div class="method-name">suspendAccess</div>
+          <div class="method-sig">(apiKey, userId) → void</div>
+          <div class="method-desc">Temporarily disable a member's access without removing their account. Used for payment failures and location subscription lapses. Reversible.</div>
+        </div>
+        <div class="method-row">
+          <div class="method-name">enableAccess</div>
+          <div class="method-sig">(apiKey, userId) → void</div>
+          <div class="method-desc">Restore access after a suspension. Called when a failed payment recovers. Pairs exactly with suspendAccess — same user, same state, reversed.</div>
+        </div>
+        <div class="method-row">
+          <div class="method-name">deleteUser</div>
+          <div class="method-sig">(apiKey, userId) → void</div>
+          <div class="method-desc">Fully remove the member from the hardware platform. Called only on member deletion — not on cancellation. Permanent. Removes all access grants.</div>
+        </div>
+        <div class="method-row">
+          <div class="method-name">getLocks</div>
+          <div class="method-sig">(apiKey) → lock[]</div>
+          <div class="method-desc">Fetch current door lock states. Used by the nightly reconciliation to detect lockdown conditions and skip provisioning on physically locked doors.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Adapter Matrix ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">The Adapter Matrix — Current State and Growth Path</div>
+    <div class="matrix-wrap">
+
+      <!-- Input adapters -->
+      <div class="matrix-side">
+        <div class="side-label">Membership Platforms (Input)</div>
+
+        <div class="matrix-adapter live">
+          <div class="adapter-label live-tag">Live — V1</div>
+          <div class="adapter-name">Wix</div>
+          <div class="adapter-desc">Pricing Plans, Bookings, and Members events. Full webhook pipeline live. First client: House of Gains.</div>
+          <div class="adapter-pill live-tag">Production</div>
+        </div>
+
+        <div class="matrix-adapter stub">
+          <div class="adapter-label stub-tag">Planned</div>
+          <div class="adapter-name">Mindbody</div>
+          <div class="adapter-desc">Industry-leading gym management software. Massive install base. High-value target for V2 expansion.</div>
+          <div class="adapter-pill planned">High Priority</div>
+        </div>
+
+        <div class="matrix-adapter stub">
+          <div class="adapter-label stub-tag">Planned</div>
+          <div class="adapter-name">ABC Fitness</div>
+          <div class="adapter-desc">Enterprise gym chains. Club OS and DataTrak platforms. Opens enterprise segment.</div>
+          <div class="adapter-pill planned">V2 Target</div>
+        </div>
+
+        <div class="matrix-adapter stub">
+          <div class="adapter-label stub-tag">Future</div>
+          <div class="adapter-name">Glofox</div>
+          <div class="adapter-desc">Boutique fitness studios. Yoga, cycling, CrossFit. Different buyer profile, same access problem.</div>
+          <div class="adapter-pill stub-tag">On Roadmap</div>
+        </div>
+
+        <div class="matrix-adapter stub">
+          <div class="adapter-label stub-tag">Future</div>
+          <div class="adapter-name">Squarespace / Shopify</div>
+          <div class="adapter-desc">Membership-enabled e-commerce platforms. Extends AccessSync beyond fitness into co-working, makerspaces, private clubs.</div>
+          <div class="adapter-pill stub-tag">On Roadmap</div>
+        </div>
+      </div>
+
+      <!-- Core -->
+      <div>
+        <div class="matrix-core">
+          <div class="matrix-core-label">Platform Invariant</div>
+          <div class="matrix-core-name">AccessSync Core</div>
+          <div class="matrix-core-sub">Layers 3, 4, and 5. Never changes when adapters are added. One engine. Any input. Any output.</div>
+          <div class="matrix-core-line"></div>
+          <div class="matrix-core-stat"><strong>Deduplication</strong> — processed_event_ids</div>
+          <div class="matrix-core-stat"><strong>Queue</strong> — BullMQ + Redis</div>
+          <div class="matrix-core-stat"><strong>Lock</strong> — in_flight guard</div>
+          <div class="matrix-core-stat"><strong>Retry</strong> — exponential backoff</div>
+          <div class="matrix-core-stat"><strong>Recovery</strong> — nightly reconciliation</div>
+          <div class="matrix-core-stat"><strong>Alerts</strong> — Resend digest</div>
+        </div>
+      </div>
+
+      <!-- Output adapters -->
+      <div class="matrix-side">
+        <div class="side-label">Hardware Platforms (Output)</div>
+
+        <div class="matrix-adapter live">
+          <div class="adapter-label live-tag">Live — V1</div>
+          <div class="adapter-name">Kisi</div>
+          <div class="adapter-desc">Direct API integration. Users, groups, role assignments, lockdown detection. Full 8-method contract implemented.</div>
+          <div class="adapter-pill live-tag">Production</div>
+        </div>
+
+        <div class="matrix-adapter stub">
+          <div class="adapter-label stub-tag">Stub Ready</div>
+          <div class="adapter-name">Seam</div>
+          <div class="adapter-desc">Universal access control API. Connects to Salto, Schlage, Yale, Assa Abloy, and 30+ hardware brands through one integration.</div>
+          <div class="adapter-pill planned">Stub Built</div>
+        </div>
+
+        <div class="matrix-adapter stub">
+          <div class="adapter-label stub-tag">Planned</div>
+          <div class="adapter-name">Brivo</div>
+          <div class="adapter-desc">Cloud access control for multi-tenant commercial buildings. Strong presence in co-working and managed office spaces.</div>
+          <div class="adapter-pill planned">V2 Target</div>
+        </div>
+
+        <div class="matrix-adapter stub">
+          <div class="adapter-label stub-tag">Future</div>
+          <div class="adapter-name">Verkada</div>
+          <div class="adapter-desc">Modern cloud security platform. Strong in enterprise and education. Adds camera + intercom integration possibilities.</div>
+          <div class="adapter-pill stub-tag">On Roadmap</div>
+        </div>
+
+        <div class="matrix-adapter stub">
+          <div class="adapter-label stub-tag">Future</div>
+          <div class="adapter-name">Salto / Assa Abloy</div>
+          <div class="adapter-desc">European market leaders. Direct integration (bypassing Seam) for operators who already have these systems deployed.</div>
+          <div class="adapter-pill stub-tag">On Roadmap</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── The Growth Math ────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">Why the Architecture Compounds</div>
+    <div class="math-grid">
+      <div class="math-card">
+        <div class="math-num">1×N</div>
+        <div class="math-label">Input × Hardware</div>
+        <div class="math-sub">Today: 1 membership platform × 1 hardware platform = 1 combination. Every new adapter on either side multiplies the matrix.</div>
+        <div class="math-eq">Wix × Kisi = 1 integration</div>
+      </div>
+      <div class="math-card">
+        <div class="math-num">4×5</div>
+        <div class="math-label">Planned Adapters</div>
+        <div class="math-sub">4 input platforms × 5 hardware platforms = 20 unique combinations. Each new adapter adds a column or row — all intersections unlock for free.</div>
+        <div class="math-eq">4 inputs × 5 outputs = 20 combos</div>
+      </div>
+      <div class="math-card">
+        <div class="math-num">0</div>
+        <div class="math-label">Core Changes Required</div>
+        <div class="math-sub">Adding a new adapter changes Layers 1–2 or 6–7 only. Layers 3, 4, and 5 — deduplication, queuing, retries, reconciliation — never change.</div>
+        <div class="math-eq">Core cost = constant</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Design Principles ──────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">Four Design Principles That Make This Work</div>
+    <div class="principle-grid">
+
+      <div class="principle-card">
+        <div class="principle-num">1</div>
+        <div class="principle-title">Translate at the boundary, not in the core.</div>
+        <div class="principle-body">Platform-specific knowledge lives only in Layers 1–2 (input) and 6–7 (output). The moment a Wix event enters Layer 3, it's a standard event. The moment the core calls Layer 5, it's a standard method. Neither side knows what the other looks like.</div>
+      </div>
+
+      <div class="principle-card">
+        <div class="principle-num">2</div>
+        <div class="principle-title">One layer owns each concern. No shared ownership.</div>
+        <div class="principle-body">Layer 3 exclusively owns the database state. Layer 4 exclusively owns job orchestration. Layer 7 exclusively owns HTTP calls. No layer reaches across this boundary. If it does, the architecture has a gap — not a feature.</div>
+      </div>
+
+      <div class="principle-card">
+        <div class="principle-num">3</div>
+        <div class="principle-title">The hardware contract is the product moat.</div>
+        <div class="principle-body">The 8-method hardware interface — findUserByEmail, createUser, assignRole, removeRole, suspendAccess, enableAccess, deleteUser, getLocks — is the specification every new hardware adapter must satisfy. It encodes years of edge-case knowledge: lockdowns, suspensions, idempotent retries, silent credentials. A competitor building a one-off integration gets none of this.</div>
+      </div>
+
+      <div class="principle-card">
+        <div class="principle-num">4</div>
+        <div class="principle-title">Reliability is built in, not bolted on.</div>
+        <div class="principle-body">The Core Engine ships with deduplication, an async job queue, an in-flight lock for concurrent safety, exponential backoff retries, a dead-letter queue, nightly reconciliation, and operator email alerts. Every new adapter inherits all of this on day one — for free.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Footer ─────────────────────────────────────────────── -->
+  <div class="footer">
+    <span>AccessSync · System Architecture · DR-022</span>
+    <span>7-Layer Model · Platform-Agnostic Core · Generated 2026-04-01</span>
+  </div>
+
+</div>
+</body>
+</html>

@@ -61,11 +61,11 @@ class NightlyReconciliation {
 
   async _syncDoorLockdownStates() {
     const clientsResult = await db.query(
-      `SELECT id, hardware_platform, kisi_api_key FROM clients WHERE status = 'active'`
+      `SELECT id, hardware_platform, hardware_api_key FROM clients WHERE status = 'active'`
     );
 
     for (const client of clientsResult.rows) {
-      const enc = client.kisi_api_key;
+      const enc = client.hardware_api_key;
       const apiKey = enc ? decryptApiKey(enc) : null; // DR-028: KISI_API_KEY_MOCK removed — set key via Admin Hub
       if (!apiKey) {
         console.warn(`[Nightly Reconciliation] No API key for client ${client.id} — skipping lockdown sync.`);
@@ -74,7 +74,9 @@ class NightlyReconciliation {
 
       const platform = client.hardware_platform || 'kisi';
       const locks = await hardwareAdapter.getLocks(platform, apiKey);
-      const lockedDoors = locks.filter(l => l.is_locked === true);
+      // DR-035: getLocks() normalized return shape — each adapter returns { id, name, locked: boolean }.
+      // 'locked' is the canonical field. Adapters are responsible for mapping platform-specific fields.
+      const lockedDoors = locks.filter(l => l.locked === true);
       for (const door of lockedDoors) {
         await db.query(
           `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, last_seen_at)
@@ -159,9 +161,9 @@ class NightlyReconciliation {
     }
 
     // DR-020: Send nightly digest via Resend — same pattern as retry-engine._notifyOperator
-    const toEmail = process.env.OPERATOR_NOTIFICATION_EMAIL || null;
+    const toEmail = process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL || null;
     if (!toEmail) {
-      console.warn('[Nightly Reconciliation] OPERATOR_NOTIFICATION_EMAIL not set — digest logged only.');
+      console.warn('[Nightly Reconciliation] ACCESSSYNC_OWNER_NOTIFICATION_EMAIL not set — digest logged only.');
       return;
     }
 

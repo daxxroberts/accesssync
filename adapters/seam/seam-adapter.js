@@ -16,7 +16,8 @@ class SeamAdapter {
     throw new Error('Seam adapter not implemented');
   }
 
-  async assignRole(apiKey, userId, groupId) {
+  async assignRole(apiKey, userId, groupId, options = {}) {
+    // Gap 6: options.validUntil supported in interface — implement when Seam adapter is built.
     throw new Error('Seam adapter not implemented');
   }
 
@@ -38,7 +39,8 @@ class SeamAdapter {
   }
 
   async getLocks(apiKey) {
-    // Returns empty array — reconciliation._syncDoorLockdownStates() requires this to be safe.
+    // DR-035: Returns normalized shape [] — reconciliation reads { id, name, locked }.
+    // Implement when Seam adapter is built: map Seam lock fields to { id, name, locked: boolean }.
     return [];
   }
 }

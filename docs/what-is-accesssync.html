@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What Is AccessSync?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --purple:     #8B5CF6;
+  --purple-dim: rgba(139,92,246,0.10);
+  --teal:       #0EA5E9;
+  --teal-dim:   rgba(14,165,233,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body {
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 48px 32px 80px; }
+
+/* ── Header ─────────────────────────────────────────────────── */
+.header { margin-bottom: 48px; }
+.header-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--brand); margin-bottom: 8px;
+}
+.header h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.8px; color: var(--text); }
+.header-sub { font-size: 14px; color: var(--text2); margin-top: 6px; max-width: 600px; line-height: 1.6; }
+
+/* ── Section titles ─────────────────────────────────────────── */
+.section { margin-bottom: 48px; }
+.section-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-title::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
+/* ── Three platform boxes ───────────────────────────────────── */
+.platform-row {
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr 40px 1fr;
+  gap: 0;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.platform-box {
+  background: var(--card);
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.platform-top {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.platform-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; margin-bottom: 6px;
+}
+.platform-name {
+  font-size: 22px; font-weight: 800; letter-spacing: -0.5px;
+}
+.platform-tagline {
+  font-size: 11px; color: var(--text2); margin-top: 4px;
+}
+.platform-top.wix    { background: var(--brand-dim); }
+.platform-top.sync   { background: var(--green-dim); }
+.platform-top.kisi   { background: var(--purple-dim); }
+.platform-label.wix  { color: var(--brand); }
+.platform-label.sync { color: var(--green); }
+.platform-label.kisi { color: var(--purple); }
+.platform-name.wix   { color: var(--brand); }
+.platform-name.sync  { color: var(--green); }
+.platform-name.kisi  { color: var(--purple); }
+.platform-facts { padding: 16px 24px; display: flex; flex-direction: column; gap: 10px; }
+.fact-row { display: flex; align-items: flex-start; gap: 10px; }
+.fact-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 4px;
+}
+.wix   .fact-dot { background: var(--brand); }
+.sync  .fact-dot { background: var(--green); }
+.kisi  .fact-dot { background: var(--purple); }
+.fact-text { font-size: 12px; color: var(--text2); line-height: 1.55; }
+.fact-text strong { color: var(--text); }
+
+.arrow-col {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 0 4px;
+}
+.arrow-line {
+  flex: 1; border-top: 2px dashed var(--border); width: 100%;
+  position: relative;
+}
+.arrow-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
+  text-transform: uppercase; color: var(--muted); text-align: center;
+  white-space: nowrap;
+}
+.arrow-chevron { color: var(--muted); font-size: 18px; line-height: 1; }
+
+/* ── How it works — flow steps ──────────────────────────────── */
+.flow-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+}
+.flow-card {
+  background: var(--card); border-radius: var(--r);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  padding: 20px; position: relative;
+}
+.flow-num {
+  width: 28px; height: 28px; border-radius: 50%;
+  font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 12px; flex-shrink: 0;
+}
+.flow-card.step1 .flow-num { background: var(--brand-dim); color: var(--brand); }
+.flow-card.step2 .flow-num { background: var(--amber-dim); color: var(--amber); }
+.flow-card.step3 .flow-num { background: var(--green-dim); color: var(--green); }
+.flow-card.step4 .flow-num { background: var(--purple-dim); color: var(--purple); }
+.flow-title { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.flow-body { font-size: 11px; color: var(--text2); line-height: 1.6; }
+.flow-tag {
+  display: inline-block; margin-top: 10px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; padding: 2px 7px; border-radius: 20px;
+}
+.flow-card.step1 .flow-tag { background: var(--brand-dim); color: var(--brand); }
+.flow-card.step2 .flow-tag { background: var(--amber-dim); color: #D97706; }
+.flow-card.step3 .flow-tag { background: var(--green-dim); color: #16A34A; }
+.flow-card.step4 .flow-tag { background: var(--purple-dim); color: var(--purple); }
+
+/* ── Who benefits ────────────────────────────────────────────── */
+.benefit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.benefit-card {
+  background: var(--card); border-radius: var(--r);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.benefit-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.benefit-header.operator { background: var(--brand-dim); }
+.benefit-header.member   { background: var(--green-dim); }
+.benefit-who {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; margin-bottom: 4px;
+}
+.benefit-header.operator .benefit-who { color: var(--brand); }
+.benefit-header.member   .benefit-who { color: var(--green); }
+.benefit-headline { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+.benefit-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.benefit-list { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.benefit-item { display: flex; align-items: flex-start; gap: 10px; }
+.benefit-icon {
+  width: 22px; height: 22px; border-radius: 6px;
+  font-size: 11px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.benefit-header.operator ~ .benefit-list .benefit-icon { background: var(--brand-dim); }
+.benefit-header.member   ~ .benefit-list .benefit-icon { background: var(--green-dim); }
+.benefit-item-body { font-size: 12px; color: var(--text2); line-height: 1.55; }
+.benefit-item-body strong { color: var(--text); }
+
+/* ── Without vs With ─────────────────────────────────────────── */
+.compare-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.compare-card {
+  background: var(--card); border-radius: var(--r);
+  border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden;
+}
+.compare-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.compare-header.without { background: var(--red-dim); border-color: #FECACA; }
+.compare-header.with    { background: var(--green-dim); }
+.compare-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.compare-header.without .compare-dot { background: var(--red); }
+.compare-header.with    .compare-dot { background: var(--green); }
+.compare-title { font-size: 13px; font-weight: 700; }
+.compare-header.without .compare-title { color: var(--red); }
+.compare-header.with    .compare-title { color: #16A34A; }
+.compare-items { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.compare-item { font-size: 12px; color: var(--text2); line-height: 1.55; padding-left: 12px; border-left: 2px solid var(--border); }
+.compare-header.without ~ .compare-items .compare-item { border-color: #FECACA; }
+.compare-header.with    ~ .compare-items .compare-item { border-color: #86EFAC; }
+
+/* ── Tiers ───────────────────────────────────────────────────── */
+.tiers-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.tier-card {
+  background: var(--card); border-radius: var(--r);
+  border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden;
+}
+.tier-header { padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
+.tier-header.base    { background: var(--brand-dim); }
+.tier-header.pro     { background: var(--amber-dim); }
+.tier-header.connect { background: var(--purple-dim); }
+.tier-name { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; }
+.tier-header.base    .tier-name { color: var(--brand); }
+.tier-header.pro     .tier-name { color: #D97706; }
+.tier-header.connect .tier-name { color: var(--purple); }
+.tier-price { font-size: 13px; font-weight: 600; color: var(--text2); margin-top: 4px; }
+.tier-price span { font-size: 22px; font-weight: 800; color: var(--text); }
+.tier-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+.tier-feature { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--text2); line-height: 1.5; }
+.tier-check { flex-shrink: 0; font-size: 11px; margin-top: 1px; }
+.tier-header.base    ~ .tier-body .tier-check { color: var(--brand); }
+.tier-header.pro     ~ .tier-body .tier-check { color: #D97706; }
+.tier-header.connect ~ .tier-body .tier-check { color: var(--purple); }
+
+/* ── Footer ──────────────────────────────────────────────────── */
+.footer {
+  margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+  display: flex; justify-content: space-between; align-items: center;
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <div class="header">
+    <div class="header-eyebrow">AccessSync · Product Overview</div>
+    <h1>Automated Access Control for Gym Operators</h1>
+    <p class="header-sub">When a member buys a plan on your Wix site, AccessSync automatically provisions their door access in Kisi. No manual steps. No chasing spreadsheets.</p>
+  </div>
+
+  <!-- ── Three Platform Boxes ──────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">The Three Platforms</div>
+
+    <div class="platform-row">
+
+      <!-- Wix -->
+      <div class="platform-box wix">
+        <div class="platform-top wix">
+          <div class="platform-label wix">Your Website</div>
+          <div class="platform-name wix">Wix</div>
+          <div class="platform-tagline">Memberships, plans, and payments</div>
+        </div>
+        <div class="platform-facts">
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Pricing Plans</strong> — monthly, annual, and drop-in memberships sold directly on your Wix site</div>
+          </div>
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Bookings</strong> — class and session reservations that require temporary access</div>
+          </div>
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Members</strong> — all customer accounts live here — names, emails, plan assignments</div>
+          </div>
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Webhooks</strong> — Wix fires events whenever a plan is purchased, renewed, cancelled, or a member is removed</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow 1 -->
+      <div class="arrow-col">
+        <div class="arrow-label">events</div>
+        <div class="arrow-chevron">→</div>
+      </div>
+
+      <!-- AccessSync -->
+      <div class="platform-box sync">
+        <div class="platform-top sync">
+          <div class="platform-label sync">The Connector</div>
+          <div class="platform-name sync">AccessSync</div>
+          <div class="platform-tagline">Translates plans into door permissions</div>
+        </div>
+        <div class="platform-facts">
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Plan Mapping</strong> — you define which Wix plan maps to which Kisi door group</div>
+          </div>
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Grant &amp; Revoke</strong> — when a member buys, access is granted; when they cancel, it's removed automatically</div>
+          </div>
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Error Recovery</strong> — failed jobs are retried with exponential backoff and surfaced in a nightly digest</div>
+          </div>
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Operator Console</strong> — dashboard, member list, access log, and location management in one place</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow 2 -->
+      <div class="arrow-col">
+        <div class="arrow-label">API calls</div>
+        <div class="arrow-chevron">→</div>
+      </div>
+
+      <!-- Kisi -->
+      <div class="platform-box kisi">
+        <div class="platform-top kisi">
+          <div class="platform-label kisi">Your Door System</div>
+          <div class="platform-name kisi">Kisi</div>
+          <div class="platform-tagline">Smart locks and mobile access credentials</div>
+        </div>
+        <div class="platform-facts">
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Users</strong> — each gym member becomes a Kisi user with a mobile credential tied to their email</div>
+          </div>
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Groups</strong> — a group is a set of doors; assigning a member to a group gives them access to every door in it</div>
+          </div>
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Role Assignments</strong> — the link between a user and a group; AccessSync creates and deletes these automatically</div>
+          </div>
+          <div class="fact-row">
+            <div class="fact-dot"></div>
+            <div class="fact-text"><strong>Lockdown</strong> — when a door is in lockdown, AccessSync detects it and skips provisioning until it clears</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── How It Works ───────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">How It Works — Four Steps</div>
+    <div class="flow-grid">
+
+      <div class="flow-card step1">
+        <div class="flow-num">1</div>
+        <div class="flow-title">Member Buys a Plan</div>
+        <div class="flow-body">A gym member completes checkout on your Wix site. Wix fires a <code>plan.purchased</code> or <code>booking.confirmed</code> webhook to AccessSync within seconds.</div>
+        <div class="flow-tag">Wix Event</div>
+      </div>
+
+      <div class="flow-card step2">
+        <div class="flow-num">2</div>
+        <div class="flow-title">AccessSync Processes It</div>
+        <div class="flow-body">The webhook is verified (HMAC signature), deduplicated, and queued. AccessSync looks up which Kisi group the plan maps to and locks the member record to prevent concurrent conflicts.</div>
+        <div class="flow-tag">Core Engine</div>
+      </div>
+
+      <div class="flow-card step3">
+        <div class="flow-num">3</div>
+        <div class="flow-title">Kisi Account Provisioned</div>
+        <div class="flow-body">AccessSync creates the member in Kisi (if they don't exist), then assigns them to the mapped group. The member instantly receives a mobile credential via the Kisi app — no email sent from Kisi.</div>
+        <div class="flow-tag">Kisi API</div>
+      </div>
+
+      <div class="flow-card step4">
+        <div class="flow-num">4</div>
+        <div class="flow-title">Access Stays in Sync</div>
+        <div class="flow-body">Renewals keep access active. Cancellations remove it. Plan upgrades add new door groups. Member deletions remove the Kisi user entirely. Every change is handled without operator action.</div>
+        <div class="flow-tag">Fully Automated</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Without vs With ───────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">Before and After AccessSync</div>
+    <div class="compare-grid">
+
+      <div class="compare-card">
+        <div class="compare-header without">
+          <div class="compare-dot"></div>
+          <div class="compare-title">Without AccessSync</div>
+        </div>
+        <div class="compare-items">
+          <div class="compare-item">Member buys a plan online → staff gets a notification → someone has to log into Kisi → manually create or update the user → assign them to the right group → hope they got it right</div>
+          <div class="compare-item">Member cancels → plan lapses → staff has to remember to remove Kisi access → often forgotten → ex-members walk in for months</div>
+          <div class="compare-item">New staff member doesn't know the process → member shows up at 5am → door doesn't work → angry text to the owner</div>
+          <div class="compare-item">No audit trail → who has access to which doors? → check Kisi manually → doesn't match what's in Wix</div>
+        </div>
+      </div>
+
+      <div class="compare-card">
+        <div class="compare-header with">
+          <div class="compare-dot"></div>
+          <div class="compare-title">With AccessSync</div>
+        </div>
+        <div class="compare-items">
+          <div class="compare-item">Member buys a plan online → Kisi user created and assigned to the correct group automatically within seconds → member opens the app and walks in</div>
+          <div class="compare-item">Member cancels → webhook fires → role assignment removed from Kisi immediately → access gone the same day, no manual step</div>
+          <div class="compare-item">Staff doesn't need to touch Kisi at all → AccessSync handles every new signup, upgrade, downgrade, and cancellation</div>
+          <div class="compare-item">Operator console shows every member, their access state, which doors they're assigned to, and a full event history</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Who Benefits ───────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">Who It's For</div>
+    <div class="benefit-grid">
+
+      <div class="benefit-card">
+        <div class="benefit-header operator">
+          <div class="benefit-who">Gym Operator</div>
+          <div class="benefit-headline">Run your gym without touching Kisi</div>
+          <div class="benefit-sub">Everything access-related happens automatically</div>
+        </div>
+        <div class="benefit-list">
+          <div class="benefit-item">
+            <div class="benefit-icon">🗺</div>
+            <div class="benefit-item-body"><strong>Map once, done forever.</strong> Connect a Wix plan to a Kisi door group one time. Every future purchase applies that mapping automatically.</div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">📊</div>
+            <div class="benefit-item-body"><strong>See everything in one console.</strong> Member status, access events, failed jobs, and location health — without logging into Kisi.</div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">🔁</div>
+            <div class="benefit-item-body"><strong>Automatic error recovery.</strong> If a provisioning job fails (network issue, lockdown), AccessSync retries it and sends you a nightly digest if anything remains unresolved.</div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">📍</div>
+            <div class="benefit-item-body"><strong>Multi-location support.</strong> Each location has its own subscription, API key, and door groups. One AccessSync account covers all your facilities.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="benefit-card">
+        <div class="benefit-header member">
+          <div class="benefit-who">Gym Member</div>
+          <div class="benefit-headline">Buy a plan, open the door</div>
+          <div class="benefit-sub">No waiting. No calls. No front desk.</div>
+        </div>
+        <div class="benefit-list">
+          <div class="benefit-item">
+            <div class="benefit-icon">⚡</div>
+            <div class="benefit-item-body"><strong>Access in seconds.</strong> Complete checkout on the gym's Wix site. Kisi sends a mobile credential. The door works before you leave the checkout page.</div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">📱</div>
+            <div class="benefit-item-body"><strong>No key card required.</strong> Access is entirely through the Kisi mobile app. One tap to unlock — whether it's 5am or midnight.</div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">🔒</div>
+            <div class="benefit-item-body"><strong>Access matches your plan.</strong> Upgrade to a higher plan and new doors appear automatically. Cancel and access is removed the same day — no overpaying or disputes.</div>
+          </div>
+          <div class="benefit-item">
+            <div class="benefit-icon">✅</div>
+            <div class="benefit-item-body"><strong>Status page after purchase.</strong> A post-checkout page shows real-time provisioning status — syncing spinner to active confirmation — so members always know their access is ready.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Pricing Tiers ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-title">AccessSync Plans</div>
+    <div class="tiers-grid">
+
+      <div class="tier-card">
+        <div class="tier-header base">
+          <div class="tier-name">Base</div>
+          <div class="tier-price"><span>$30</span> / mo per location</div>
+        </div>
+        <div class="tier-body">
+          <div class="tier-feature"><div class="tier-check">✓</div>Automated grant &amp; revoke on plan purchase and cancellation</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Single door group per Wix plan</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Operator console with member list and access log</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Nightly digest email for failed jobs</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Standard retry engine (3 attempts)</div>
+        </div>
+      </div>
+
+      <div class="tier-card">
+        <div class="tier-header pro">
+          <div class="tier-name">Pro</div>
+          <div class="tier-price"><span>$60</span> / mo per location</div>
+        </div>
+        <div class="tier-body">
+          <div class="tier-feature"><div class="tier-check">✓</div>Everything in Base</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Multi-door provisioning — one plan grants access to multiple groups</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Bookings integration — temporary access for class reservations</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Member-facing sync status page</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Priority error alerting</div>
+        </div>
+      </div>
+
+      <div class="tier-card">
+        <div class="tier-header connect">
+          <div class="tier-name">Connect</div>
+          <div class="tier-price"><span>$150</span> / mo per location</div>
+        </div>
+        <div class="tier-body">
+          <div class="tier-feature"><div class="tier-check">✓</div>Everything in Pro</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Direct Kisi integration — full API access with reseller support</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Multi-location management under one operator account</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Custom plan mapping configurations</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Dedicated onboarding and setup support</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Footer ─────────────────────────────────────────────── -->
+  <div class="footer">
+    <span>AccessSync · accesssync.io</span>
+    <span>Built for Wix App Market · Powered by Kisi · Generated 2026-04-01</span>
+  </div>
+
+</div>
+</body>
+</html>

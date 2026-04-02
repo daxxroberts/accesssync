@@ -8,7 +8,13 @@
  * - Core Engine (Layer 4) and Standard Adapter (Layer 3) call this — never Layer 6 directly
  *
  * To add a new hardware platform: import its Layer 6 adapter and add a case to _getAdapter().
- * Nothing else changes.
+ * Nothing else changes in this file or above.
+ *
+ * DR-035: Rate limiting is per-adapter inside each Layer 7 connector — NOT in this layer.
+ *         getRateLimit(platform) is available for informational use (e.g. worker configuration).
+ *
+ * getLocks() normalized return shape: { id, name, locked: boolean }
+ * assignRole() Gap 6: options.validUntil (ISO8601 | null) for time-bounded session grants.
  */
 
 const kisiAdapter = require('./kisi/kisi-adapter');
@@ -24,6 +30,19 @@ class HardwareAdapter {
     }
   }
 
+  /**
+   * Returns the requests-per-second rate limit for a given platform.
+   * Informational — actual enforcement is inside each Layer 7 connector.
+   * DR-035: use this when platform-aware configuration is needed (e.g. logging, alerting thresholds).
+   */
+  getRateLimit(hardwarePlatform) {
+    switch (hardwarePlatform) {
+      case 'kisi': return 5;
+      case 'seam': return 10; // Seam default — confirm when adapter is built
+      default:     return 5;  // Conservative fallback
+    }
+  }
+
   async findUserByEmail(hardwarePlatform, apiKey, email) {
     return this._getAdapter(hardwarePlatform).findUserByEmail(apiKey, email);
   }
@@ -32,8 +51,13 @@ class HardwareAdapter {
     return this._getAdapter(hardwarePlatform).createUser(apiKey, email, name);
   }
 
-  async assignRole(hardwarePlatform, apiKey, userId, groupId) {
-    return this._getAdapter(hardwarePlatform).assignRole(apiKey, userId, groupId);
+  /**
+   * Assign a user to a hardware access group.
+   * Gap 6: options.validUntil (ISO8601 string | null) for time-bounded grants (booking/session model).
+   * Adapters that do not support validUntil ignore the option safely.
+   */
+  async assignRole(hardwarePlatform, apiKey, userId, groupId, options = {}) {
+    return this._getAdapter(hardwarePlatform).assignRole(apiKey, userId, groupId, options);
   }
 
   async removeRole(hardwarePlatform, apiKey, roleAssignmentId) {

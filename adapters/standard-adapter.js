@@ -220,6 +220,57 @@ class StandardAdapter {
     this._incrementActivity(tenantId, 'grants_completed').catch(err =>
       console.warn('[Standard Adapter] client_activity_summary update failed (grants_completed):', err.message)
     );
+
+    // Sprint 5.5: First grant experience — send welcome email on first successful grant per client.
+    // Fault-tolerant: never blocks the grant completion path.
+    this._maybeFireFirstGrantEmail(tenantId, memberId).catch(err =>
+      console.warn('[Standard Adapter] first grant email check failed:', err.message)
+    );
+  }
+
+  /**
+   * Fires the first-grant welcome email once per client (Sprint 5.5).
+   * Uses clients.first_grant_sent flag — set atomically to prevent duplicate sends.
+   */
+  async _maybeFireFirstGrantEmail(tenantId, memberId) {
+    const result = await db.query(
+      `UPDATE clients
+       SET first_grant_sent = true
+       WHERE id = $1 AND first_grant_sent = false
+       RETURNING name, notification_email`,
+      [tenantId]
+    );
+    if (!result.rows.length) return; // Already sent — skip
+
+    const { name: clientName, notification_email } = result.rows[0];
+    const toEmail = notification_email || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
+    if (!toEmail) {
+      console.log(`[Standard Adapter] First grant fired for ${clientName} — no notification email configured.`);
+      return;
+    }
+
+    try {
+      const { Resend } = require('resend');
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      await resend.emails.send({
+        from:    process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io',
+        to:      toEmail,
+        subject: '[AccessSync] 🎉 First member access granted',
+        text: [
+          `AccessSync is working — ${new Date().toISOString()}`,
+          '',
+          `Client: ${clientName}`,
+          '',
+          'Your first member has been successfully provisioned in Kisi.',
+          'Their door access is live. AccessSync is running.',
+          '',
+          'You can view member status and access history in the AccessSync dashboard.',
+        ].join('\n'),
+      });
+      console.log(`[Standard Adapter] First grant email sent to ${toEmail} for client ${clientName}`);
+    } catch (err) {
+      console.error('[Standard Adapter] First grant email send failed:', err.message);
+    }
   }
 
   /**

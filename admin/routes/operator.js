@@ -134,7 +134,7 @@ router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) =
     }
     const encrypted = encryptApiKey(apiKey.trim());
     const result = await db.query(
-      `UPDATE clients SET kisi_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
+      `UPDATE clients SET hardware_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
       [encrypted, clientId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
@@ -184,11 +184,11 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
     const { decryptApiKey } = require('../../core/crypto-utils');
     const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
 
-    const clientResult = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [clientId]);
+    const clientResult = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
     if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
-    if (!clientResult.rows[0].kisi_api_key) return res.status(400).json({ error: 'No API key configured' });
+    if (!clientResult.rows[0].hardware_api_key) return res.status(400).json({ error: 'No API key configured' });
 
-    const apiKey = decryptApiKey(clientResult.rows[0].kisi_api_key);
+    const apiKey = decryptApiKey(clientResult.rows[0].hardware_api_key);
     const groups = await kisiAdapter.getGroups(apiKey);
 
     res.json({
@@ -211,9 +211,9 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
 router.get('/clients/:clientId/api-key/status', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [clientId]);
+    const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    res.json({ hasKey: !!result.rows[0].kisi_api_key });
+    res.json({ hasKey: !!result.rows[0].hardware_api_key });
   } catch (err) {
     console.error('[operator] GET api-key/status error:', err.message);
     res.status(500).json({ error: err.message });
@@ -227,11 +227,11 @@ router.get('/clients/:clientId/api-key/test', async (req, res) => {
   try {
     const { decryptApiKey } = require('../../core/crypto-utils');
     const kisiConnector = require('../../adapters/kisi/kisi-connector');
-    const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [clientId]);
+    const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    if (!result.rows[0].kisi_api_key) return res.status(400).json({ valid: false, error: 'No API key set' });
+    if (!result.rows[0].hardware_api_key) return res.status(400).json({ valid: false, error: 'No API key set' });
 
-    const apiKey = decryptApiKey(result.rows[0].kisi_api_key);
+    const apiKey = decryptApiKey(result.rows[0].hardware_api_key);
     await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
     res.json({ valid: true });
   } catch (err) {
@@ -253,7 +253,7 @@ router.put('/clients/:clientId/api-key', async (req, res) => {
     }
     const encrypted = encryptApiKey(apiKey.trim());
     const result = await db.query(
-      `UPDATE clients SET kisi_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
+      `UPDATE clients SET hardware_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
       [encrypted, clientId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
@@ -261,6 +261,47 @@ router.put('/clients/:clientId/api-key', async (req, res) => {
     res.json({ ok: true, message: 'API key updated' });
   } catch (err) {
     console.error('[operator] PUT api-key error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /operator/clients/:clientId/notification-email ─────────
+// Return the current notification email (Sprint 5.3).
+router.get('/clients/:clientId/notification-email', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const result = await db.query('SELECT notification_email FROM clients WHERE id = $1', [clientId]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    res.json({ email: result.rows[0].notification_email || null });
+  } catch (err) {
+    console.error('[operator] GET notification-email error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PUT /operator/clients/:clientId/notification-email ─────────
+// Update the operator notification email (Sprint 5.3).
+router.put('/clients/:clientId/notification-email', async (req, res) => {
+  const { clientId } = req.params;
+  const { email } = req.body;
+  if (!email || typeof email !== 'string' || !email.trim()) {
+    return res.status(400).json({ error: 'email is required' });
+  }
+  const trimmed = email.trim();
+  // Basic format check — block obviously malformed values
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    return res.status(400).json({ error: 'Invalid email address' });
+  }
+  try {
+    const result = await db.query(
+      `UPDATE clients SET notification_email = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
+      [trimmed, clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    console.log(`[operator] Notification email updated for client ${clientId}`);
+    res.json({ ok: true, message: 'Notification email updated' });
+  } catch (err) {
+    console.error('[operator] PUT notification-email error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -332,7 +373,7 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
     }
     const encrypted = encryptApiKey(apiKey.trim());
     const result = await db.query(
-      `UPDATE locations SET kisi_api_key = $1
+      `UPDATE locations SET hardware_api_key = $1
        WHERE id = $2 AND client_id = $3
        RETURNING id, name`,
       [encrypted, locationId, clientId]
@@ -356,15 +397,15 @@ router.get('/:clientId/locations/:locationId/api-key/test', async (req, res) => 
     const kisiConnector = require('../../adapters/kisi/kisi-connector');
 
     const [locResult, clientResult] = await Promise.all([
-      db.query('SELECT kisi_api_key FROM locations WHERE id = $1 AND client_id = $2', [locationId, clientId]),
-      db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [clientId]),
+      db.query('SELECT hardware_api_key FROM locations WHERE id = $1 AND client_id = $2', [locationId, clientId]),
+      db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]),
     ]);
     if (!locResult.rows.length) return res.status(404).json({ error: 'Location not found' });
 
-    const encryptedKey = locResult.rows[0].kisi_api_key || clientResult.rows[0]?.kisi_api_key;
+    const encryptedKey = locResult.rows[0].hardware_api_key || clientResult.rows[0]?.hardware_api_key;
     if (!encryptedKey) return res.status(400).json({ valid: false, error: 'No API key set', source: null });
 
-    const source = locResult.rows[0].kisi_api_key ? 'location' : 'client';
+    const source = locResult.rows[0].hardware_api_key ? 'location' : 'client';
     const apiKey = decryptApiKey(encryptedKey);
     await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
 
@@ -385,7 +426,7 @@ router.get('/:clientId/locations', async (req, res) => {
     const [locations, errorCounts, doorCounts, planCounts] = await Promise.all([
       db.query(
         `SELECT id, name, city, state, subscription_status, tier,
-                subscribed_at, kisi_api_key IS NOT NULL AS has_location_key
+                subscribed_at, hardware_api_key IS NOT NULL AS has_location_key
          FROM locations
          WHERE client_id = $1 ORDER BY created_at ASC`,
         [clientId]

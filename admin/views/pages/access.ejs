@@ -160,7 +160,10 @@
       <div class="chart-labels" id="chart-labels"></div>
     </div>
 
-    <div class="filter-strip" id="filter-strip"></div>
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+      <div class="filter-strip" id="filter-strip" style="margin-bottom:0; flex:1;"></div>
+      <button class="btn btn-sm btn-ghost" onclick="downloadAccessCSV()" style="flex-shrink:0;">&#11015; CSV</button>
+    </div>
 
     <div class="card">
       <div class="activity-grid">
@@ -311,6 +314,35 @@
         bars.forEach(function(bar) { bar.classList.add('filtered'); });
       }
       renderActivityGrid();
+    }
+
+    function downloadAccessCSV() {
+      var filtered = allActivities.filter(function(act) {
+        return (currentFilter === 'all' || act.event === currentFilter) &&
+               (currentLocation === 'all' || act.locationId === currentLocation);
+      });
+      var headers = ['Date', 'Time', 'Member', 'Event', 'Plan', 'Location', 'Details'];
+      var csvRows = [headers.join(',')];
+      filtered.forEach(function(act) {
+        csvRows.push([
+          csvEsc(act.date), csvEsc(act.time), csvEsc(act.member),
+          csvEsc(act.event), csvEsc(act.plan), csvEsc(act.location), csvEsc(act.details),
+        ].join(','));
+      });
+      var blob = new Blob([csvRows.join('\r\n')], { type: 'text/csv' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'access-log-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function csvEsc(val) {
+      var s = String(val == null ? '' : val);
+      if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
     }
 
     function renderActivityGrid() {
