@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — Knowledge Base</title>
+<link rel="alternate" type="text/plain" href="../llms.txt">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --purple:     #8B5CF6;
+  --purple-dim: rgba(139,92,246,0.10);
+  --teal:       #0EA5E9;
+  --teal-dim:   rgba(14,165,233,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body {
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 48px 32px 80px; }
+
+/* ── Header ─────────────────────────────────────────────────── */
+.header { margin-bottom: 48px; }
+.header-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--brand);
+  margin-bottom: 10px;
+}
+.header h1 {
+  font-size: 32px; font-weight: 800; color: var(--text);
+  line-height: 1.15; margin-bottom: 12px;
+}
+.header-sub {
+  font-size: 14px; color: var(--text2); max-width: 560px; line-height: 1.6;
+}
+.breadcrumb {
+  font-size: 11px; color: var(--muted); margin-bottom: 14px;
+}
+.breadcrumb a { color: var(--brand); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+/* ── Section headings ───────────────────────────────────────── */
+.section { margin-bottom: 48px; }
+.section-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 16px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Doc grid ───────────────────────────────────────────────── */
+.doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.doc-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 22px 22px 20px;
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.doc-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--brand);
+}
+.doc-card-icon {
+  font-size: 22px; margin-bottom: 2px;
+}
+.doc-card-title {
+  font-size: 14px; font-weight: 700; color: var(--text);
+}
+.doc-card-desc {
+  font-size: 12px; color: var(--text2); line-height: 1.55;
+}
+.doc-card-meta {
+  font-size: 10px; color: var(--muted); margin-top: 4px;
+}
+.doc-card .tag {
+  display: inline-block;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 2px 7px; border-radius: 99px; margin-top: 4px;
+}
+.tag-ai    { background: var(--brand-dim); color: var(--brand); }
+.tag-human { background: var(--green-dim); color: var(--green); }
+.tag-code  { background: var(--purple-dim); color: var(--purple); }
+
+/* ── Status table ───────────────────────────────────────────── */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.status-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+.status-card-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+}
+.status-card-value {
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+
+/* ── Hard gates table ───────────────────────────────────────── */
+.gates-table {
+  width: 100%; border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.gates-table th {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--muted);
+  background: var(--bg); padding: 10px 16px; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.gates-table td {
+  font-size: 12px; color: var(--text2);
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.gates-table tr:last-child td { border-bottom: none; }
+.gates-table td:first-child { font-weight: 600; color: var(--text); width: 60px; }
+.gate-open {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--amber); background: var(--amber-dim);
+  padding: 3px 9px; border-radius: 99px;
+}
+.gate-closed {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--green); background: var(--green-dim);
+  padding: 3px 9px; border-radius: 99px;
+}
+
+/* ── Sprint status ──────────────────────────────────────────── */
+.sprint-row {
+  display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.sprint-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 14px 18px;
+  flex: 1; min-width: 200px;
+  box-shadow: var(--shadow);
+}
+.sprint-card-name {
+  font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 4px;
+}
+.sprint-card-desc {
+  font-size: 11px; color: var(--text2); line-height: 1.5;
+}
+.sprint-done { border-left: 3px solid var(--green); }
+.sprint-pending { border-left: 3px solid var(--amber); }
+
+/* ── AI context banner ──────────────────────────────────────── */
+.ai-banner {
+  background: var(--brand-dim);
+  border: 1px solid rgba(79,110,247,0.22);
+  border-radius: var(--r-sm);
+  padding: 14px 18px;
+  margin-bottom: 40px;
+  display: flex; gap: 12px; align-items: flex-start;
+}
+.ai-banner-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.ai-banner-text { font-size: 12px; color: var(--brand-dark); line-height: 1.55; }
+.ai-banner-text a { color: var(--brand); font-weight: 600; }
+
+/* ── Footer ─────────────────────────────────────────────────── */
+.footer {
+  margin-top: 64px; padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+  display: flex; gap: 24px; flex-wrap: wrap;
+}
+.footer a { color: var(--muted); text-decoration: none; }
+.footer a:hover { color: var(--brand); }
+</style>
+</head>
+<body>
+
+<!-- AI_CONTEXT
+type: knowledge-base-index
+status: active
+last_updated: 2026-04-01
+key_facts:
+  - Hub page for all AccessSync documentation
+  - Product: Wix App Market SaaS, automates gym door access via Kisi
+  - Platform: Node.js on Railway, PostgreSQL, BullMQ + Redis
+  - Status: V1 code-complete, pre-launch pending business gates G-01 through G-10
+  - All 4 build sprints complete
+  - Hard gates G-01/02/03/08/09/10 all OPEN (business, not code)
+  - First client: House of Gains (Chad), Kisi Pro tier $199/mo/location
+  - For AI agents: start with llms.txt at repo root, or llms-full.txt for full context
+-->
+
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-eyebrow">AccessSync — Knowledge Base</div>
+    <h1>Documentation Hub</h1>
+    <div class="header-sub">
+      All product, architecture, data model, and operations documentation.
+      Start with <a href="../llms.txt" style="color:var(--brand);font-weight:600;">llms.txt</a> for an AI-optimized overview,
+      or browse by topic below.
+    </div>
+  </div>
+
+  <!-- AI agent banner -->
+  <div class="ai-banner">
+    <div class="ai-banner-icon">🤖</div>
+    <div class="ai-banner-text">
+      <strong>For AI agents:</strong> Load <a href="../llms.txt">llms.txt</a> (150 lines — product, all 35 DRs, env vars, file index)
+      or <a href="../llms-full.txt">llms-full.txt</a> (full context dump — all docs concatenated, dependency order).
+      Every page has an <code>AI_CONTEXT</code> block immediately after <code>&lt;body&gt;</code> with key facts in plain text.
+    </div>
+  </div>
+
+  <!-- Project Status -->
+  <div class="section">
+    <div class="section-label">Project Status — as of 2026-04-01</div>
+    <div class="status-grid">
+      <div class="status-card">
+        <div class="status-card-label">Build Status</div>
+        <div class="status-card-value">V1 Code-Complete</div>
+      </div>
+      <div class="status-card">
+        <div class="status-card-label">Platform</div>
+        <div class="status-card-value">Node.js · Railway · PostgreSQL</div>
+      </div>
+      <div class="status-card">
+        <div class="status-card-label">First Client</div>
+        <div class="status-card-value">House of Gains (Chad)</div>
+      </div>
+      <div class="status-card">
+        <div class="status-card-label">Hardware Integration</div>
+        <div class="status-card-value">Kisi · Seam (stub, post-V1)</div>
+      </div>
+      <div class="status-card">
+        <div class="status-card-label">Blocking Launch</div>
+        <div class="status-card-value">Business gates G-01/02/03/08/09</div>
+      </div>
+      <div class="status-card">
+        <div class="status-card-label">Locked Decisions</div>
+        <div class="status-card-value">35 DRs (DR-001 → DR-035)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sprint Summary -->
+  <div class="section">
+    <div class="section-label">Sprint Summary — All 4 Sprints Complete</div>
+    <div class="sprint-row">
+      <div class="sprint-card sprint-done">
+        <div class="sprint-card-name">Sprint 1 — Activation Fix</div>
+        <div class="sprint-card-desc">Location activation, wix-adapter multi-path field resolution, Kisi getGroups(), onboarding Step 5 validation, member-sync-api enrichment</div>
+      </div>
+      <div class="sprint-card sprint-done">
+        <div class="sprint-card-name">Sprint 2 — Member Screens</div>
+        <div class="sprint-card-desc">Post-purchase sync status page (4 visual states, polling, stale indicator). RS256 JWT verification live.</div>
+      </div>
+    </div>
+    <div class="sprint-row">
+      <div class="sprint-card sprint-done">
+        <div class="sprint-card-name">Sprint 3 — Live Data</div>
+        <div class="sprint-card-desc">All 4 operator console pages wired to live data. Access log + stats endpoints. Debug Center email search via Wix Members API. API key test/rotate.</div>
+      </div>
+      <div class="sprint-card sprint-done">
+        <div class="sprint-card-name">Sprint 4 — Hardening</div>
+        <div class="sprint-card-desc">Invite token auth on onboarding. Operator dashboard amber banners. System check panel. Business-risk test framework (32 tests, P1–P3, DEPLOY SAFE verdict).</div>
+      </div>
+    </div>
+    <div class="sprint-row">
+      <div class="sprint-card sprint-done">
+        <div class="sprint-card-name">Sprint 5 — Platform-Agnostic + Safety Net</div>
+        <div class="sprint-card-desc">DR-035 schema rename. HMAC spike alerting. Hardware health check cron. Alert email UI. Same-group warning. First grant email. CSV export. Suspend/reactivate button.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Knowledge Base Docs -->
+  <div class="section">
+    <div class="section-label">Knowledge Base</div>
+    <div class="doc-grid">
+
+      <a href="what-is-accesssync.html" class="doc-card" data-type="product">
+        <div class="doc-card-icon">🏋️</div>
+        <div class="doc-card-title">What Is AccessSync?</div>
+        <div class="doc-card-desc">Product explainer — how Wix, AccessSync, and Kisi connect. 4-step provisioning flow. Before/after for gym operators. Pricing tiers.</div>
+        <div class="doc-card-meta">Source: product copy + pricing DRs</div>
+        <span class="tag tag-human">Human</span>
+      </a>
+
+      <a href="architecture.html" class="doc-card" data-type="architecture">
+        <div class="doc-card-icon">🏗️</div>
+        <div class="doc-card-title">Architecture</div>
+        <div class="doc-card-desc">7-layer architecture (DR-022). Standard event contract. Hardware adapter interface. Layer ownership rules. Adapter growth matrix.</div>
+        <div class="doc-card-meta">Source: DR-022, DR-023, DR-035</div>
+        <span class="tag tag-code">Code</span>
+      </a>
+
+      <a href="data-model.html" class="doc-card" data-type="data-model">
+        <div class="doc-card-icon">🗄️</div>
+        <div class="doc-card-title">Data Model</div>
+        <div class="doc-card-desc">All 14 PostgreSQL tables. Column-level detail. Layer ownership per table. Which DR created each table. Live schema state (post DR-035 migration).</div>
+        <div class="doc-card-meta">Source: schema.sql (authoritative)</div>
+        <span class="tag tag-code">Code</span>
+        <span class="tag tag-ai">AI</span>
+      </a>
+
+      <a href="decision-log.html" class="doc-card" data-type="decisions">
+        <div class="doc-card-icon">🔒</div>
+        <div class="doc-card-title">Decision Log</div>
+        <div class="doc-card-desc">All 35 locked decisions (DR-001 → DR-035) as cards. "Do not revisit without SAGE" protection. Grouped by domain. AI-readable locked flags.</div>
+        <div class="doc-card-meta">Source: DECISION_LOG.md + CLAUDE.md</div>
+        <span class="tag tag-ai">AI</span>
+      </a>
+
+      <a href="feature-map.html" class="doc-card" data-type="features">
+        <div class="doc-card-icon">🗺️</div>
+        <div class="doc-card-title">Feature Map</div>
+        <div class="doc-card-desc">Full feature inventory with live/planned/backlog status. Sprint assignments. DR references. Covers Core Engine, Operator Console, Member Experience, and Growth.</div>
+        <div class="doc-card-meta">Source: Feature_Map.md (vault, active)</div>
+        <span class="tag tag-human">Human</span>
+        <span class="tag tag-ai">AI</span>
+      </a>
+
+      <a href="operations.html" class="doc-card" data-type="operations">
+        <div class="doc-card-icon">⚙️</div>
+        <div class="doc-card-title">Operations</div>
+        <div class="doc-card-desc">Deployment runbook — all env vars, Railway crons, migration history, hard gates checklist. Everything needed to deploy and verify a running instance.</div>
+        <div class="doc-card-meta">Source: CLAUDE.md env vars + Railway config</div>
+        <span class="tag tag-human">Human</span>
+      </a>
+
+      <a href="endpoints.html" class="doc-card" data-type="api">
+        <div class="doc-card-icon">🔌</div>
+        <div class="doc-card-title">API Endpoints</div>
+        <div class="doc-card-desc">All 77 endpoints across Core Engine and Admin Hub. Auth requirements, path params, method badges. Core Engine, Operator routes, Admin panel, Member sync.</div>
+        <div class="doc-card-meta">Source: admin/routes/ + server.js</div>
+        <span class="tag tag-code">Code</span>
+      </a>
+
+      <a href="url-reference.html" class="doc-card" data-type="urls">
+        <div class="doc-card-icon">🗺️</div>
+        <div class="doc-card-title">URL Reference</div>
+        <div class="doc-card-desc">Every URL in AccessSync — browser pages, onboarding flow, Core Engine webhooks, Operator Dashboard APIs, and Admin Hub APIs. Auth badges, method chips, plain-English descriptions.</div>
+        <div class="doc-card-meta">Source: admin/server.js + all routes files</div>
+        <span class="tag tag-human">Human</span>
+        <span class="tag tag-code">Code</span>
+      </a>
+
+      <a href="project-plan.html" class="doc-card" data-type="roadmap">
+        <div class="doc-card-icon">📅</div>
+        <div class="doc-card-title">Project Plan</div>
+        <div class="doc-card-desc">4-sprint visual roadmap to HOG launch. Sprint goals, deliverables, and completion status. Business gates and pre-launch checklist.</div>
+        <div class="doc-card-meta">Source: Sprint_Roadmap.md (vault)</div>
+        <span class="tag tag-human">Human</span>
+      </a>
+
+    </div>
+  </div>
+
+  <!-- Machine-readable files -->
+  <div class="section">
+    <div class="section-label">Machine-Readable Files</div>
+    <div class="doc-grid">
+
+      <a href="../llms.txt" class="doc-card" data-type="llm-context">
+        <div class="doc-card-icon">🤖</div>
+        <div class="doc-card-title">llms.txt</div>
+        <div class="doc-card-desc">AI entry point. ~250 lines plain markdown. Product description, 7-layer architecture, all 35 DRs, env vars, hard gates, key file index. Start here for any AI session.</div>
+        <div class="doc-card-meta">Updated: 2026-04-01</div>
+        <span class="tag tag-ai">AI</span>
+      </a>
+
+      <a href="../llms-full.txt" class="doc-card" data-type="llm-full">
+        <div class="doc-card-icon">📦</div>
+        <div class="doc-card-title">llms-full.txt</div>
+        <div class="doc-card-desc">Full context dump. All docs concatenated in dependency order, presentation markup stripped. Use for large-context LLM sessions where you need everything in one load.</div>
+        <div class="doc-card-meta">Built last — concatenates all finalized docs</div>
+        <span class="tag tag-ai">AI</span>
+      </a>
+
+    </div>
+  </div>
+
+  <!-- Hard Gates -->
+  <div class="section">
+    <div class="section-label">Hard Gates — Nothing Ships Without These</div>
+    <table class="gates-table">
+      <thead>
+        <tr>
+          <th>Gate</th>
+          <th>Description</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>G-01</td>
+          <td>Chad signed client agreement</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-02</td>
+          <td>LLC formation complete</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-03</td>
+          <td>Kisi reseller agreement — attorney review complete</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-04</td>
+          <td>Wix developer account confirmed</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-05</td>
+          <td>Business technology insurance in place</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-06</td>
+          <td>Failure runbook complete</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-07</td>
+          <td>Partnership decision (Michael)</td>
+          <td><span class="gate-closed">Closed — Solo</span></td>
+        </tr>
+        <tr>
+          <td>G-08</td>
+          <td>Kisi API access confirmed from Joe</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-09</td>
+          <td>Chad confirmed on Kisi Pro tier ($199/mo/location)</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-10</td>
+          <td>NOVA reviews Kisi API docs, confirms schema assumptions</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pending Daxx Actions -->
+  <div class="section">
+    <div class="section-label">Pending Daxx Actions (Pre-Deploy)</div>
+    <table class="gates-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Action</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>OB-19</td>
+          <td>Run <code>migrations/dr-035.sql</code> on Railway Postgres</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>OB-19</td>
+          <td>Run <code>migrations/sprint-5.sql</code> on Railway Postgres</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>OB-51</td>
+          <td>Set <code>RESEND_API_KEY</code> and <code>RESEND_FROM_EMAIL</code> in Railway</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>—</td>
+          <td>Set <code>ACCESSSYNC_OWNER_NOTIFICATION_EMAIL</code> in Railway</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>—</td>
+          <td>Add <code>node core/hardware-health-check.js</code> as Railway Cron (every 6 hours)</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>OB-25</td>
+          <td>Set <code>CORE_ENGINE_URL</code> env var on Admin Hub Railway service</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <span>AccessSync Knowledge Base · v1.0 · 2026-04-01</span>
+    <a href="../llms.txt">llms.txt</a>
+    <a href="what-is-accesssync.html">Product</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="data-model.html">Data Model</a>
+    <a href="decision-log.html">Decisions</a>
+    <a href="feature-map.html">Features</a>
+    <a href="operations.html">Operations</a>
+    <a href="endpoints.html">Endpoints</a>
+  </div>
+
+</div>
+</body>
+</html>

@@ -18,12 +18,15 @@ CREATE TABLE clients (
     site_name VARCHAR(255),                      -- Human-readable location name (e.g. "House of Gains - Main")
     hardware_platform VARCHAR(50),               -- 'kisi', 'seam' — which hardware provider this client uses
     tier VARCHAR(50),                            -- 'Base', 'Pro', 'Connect' — AccessSync billing tier
-    status VARCHAR(50) DEFAULT 'active',         -- active, cancelled
+    status VARCHAR(50) DEFAULT 'active',         -- active, cancelled, archived
     notification_email VARCHAR(255),             -- DR-020: operator alert destination (Resend); populated by setup wizard (OB-09)
     last_sync_at TIMESTAMP WITH TIME ZONE,       -- DR-018: single timestamp per client, updated on each member sync sweep
     site_url VARCHAR(255),                       -- OD-10: operator site URL (e.g. "houseofgains.com") — dashboard header chip
     last_wix_webhook_at TIMESTAMP WITH TIME ZONE, -- OD-10: last webhook received — drives Wix LIVE/WARN/ERROR health status
     kisi_api_key VARCHAR(500),                    -- DR-028: AES-256-GCM encrypted org-level Kisi API key (KISI_ENCRYPTION_KEY env var)
+    wix_api_key VARCHAR(500),                     -- AES-256-GCM encrypted Wix API key for outbound plan/bookings API calls
+    archived_at TIMESTAMP WITH TIME ZONE,         -- NULL when active; set on archive
+    first_grant_sent BOOLEAN DEFAULT false,        -- Sprint 5: tracks whether first grant email has been sent
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -59,6 +62,18 @@ CREATE TABLE plan_mappings (
     status VARCHAR(50) DEFAULT 'active',          -- OD-11: 'active', 'excluded' — for "Not managed" display
     access_type VARCHAR(50) DEFAULT 'group',      -- Hardware access object type: 'group' (Kisi), 'zone'/'door' (future Seam)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2b. Plan Mapping Groups (Multi-Group Junction Table)
+-- One row per hardware group per plan mapping. Allows one plan to grant access to multiple groups.
+-- Resolver JOINs this table to expand mappings. CASCADE from plan_mappings ensures cleanup.
+CREATE TABLE plan_mapping_groups (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    mapping_id UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
+    hardware_group_id VARCHAR(255) NOT NULL,
+    door_name VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (mapping_id, hardware_group_id)
 );
 
 -- 3. Processed Event IDs (Idempotency / Deduplication)
@@ -127,8 +142,9 @@ CREATE TABLE member_role_assignments (
     member_id          UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
     mapping_id         UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
     role_assignment_id VARCHAR(255) NOT NULL,
+    hardware_group_id  VARCHAR(255),            -- multi-group: which specific group this assignment is for
     created_at         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (member_id, mapping_id)              -- idempotency: one role assignment per member per mapping
+    UNIQUE (member_id, mapping_id, hardware_group_id)  -- one role assignment per member per mapping per group
 );
 
 -- 9. Member Access Log (Lifecycle Events)
@@ -154,6 +170,10 @@ CREATE TABLE adapter_admin_log (
     result VARCHAR(50), -- success, failed
     configured_by VARCHAR(255), -- DR-019: nullable — who set up the adapter (operator self-service, future)
     configured_at TIMESTAMP WITH TIME ZONE, -- DR-019: nullable — when adapter was configured
+    admin_action VARCHAR(100),    -- admin audit: client_archived, client_deleted, client_restored, client_edited, api_key_rotated
+    details JSONB,                -- admin audit: snapshot of what changed
+    target_entity VARCHAR(50),    -- admin audit: 'client', 'location', 'plan_mapping'
+    target_id UUID,               -- admin audit: ID of the entity acted on
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -270,3 +290,10 @@ CREATE TABLE webhook_log (
 --        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 --        UNIQUE (member_id, mapping_id)
 --      );
+--
+-- Multi-group + archive + audit (2026-04-02): plan_mapping_groups junction table, client archive, admin audit, Wix API key
+--   See migrations/multi-group-archive-audit.sql for full migration.
+--   1. CREATE TABLE plan_mapping_groups (mapping_id, hardware_group_id, door_name) — multi-group plan mapping
+--   2. ALTER TABLE member_role_assignments ADD COLUMN hardware_group_id; update UNIQUE constraint
+--   3. ALTER TABLE clients ADD COLUMN archived_at, wix_api_key
+--   4. ALTER TABLE adapter_admin_log ADD COLUMN admin_action, details, target_entity, target_id

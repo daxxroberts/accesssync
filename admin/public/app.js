@@ -67,6 +67,7 @@ function pill(text, type) {
     failed: 'danger', resolved: 'success', 'in-progress': 'warning',
     active: 'success', waiting: 'warning', delayed: 'info', completed: 'muted', paused: 'muted',
     granted: 'success', revoked: 'muted', unknown: 'muted',
+    archived: 'muted', cancelled: 'danger',
   };
   const cls = map[text] || 'muted';
   return `<span class="pill pill-${cls}">${text || '—'}</span>`;
@@ -876,26 +877,44 @@ document.querySelectorAll('.queue-tab').forEach(tab => {
 
 // ══ CLIENTS PANEL ═════════════════════════════════════════════════════
 
+let allClientsData = [];
+
 async function loadClients() {
   document.getElementById('clients-loading').classList.remove('hidden');
   document.getElementById('clients-table-wrap').classList.add('hidden');
   document.getElementById('clients-empty').classList.add('hidden');
 
   try {
-    const res  = await apiFetch('/admin/clients');
+    const statusFilter = document.getElementById('clients-status-filter')?.value || 'active';
+    const res  = await apiFetch(`/admin/clients?status=${statusFilter}`);
     const json = await res.json();
-    const data = json.data || [];
-
-    if (!data.length) {
-      document.getElementById('clients-empty').classList.remove('hidden');
-    } else {
-      renderClients(data);
-      document.getElementById('clients-table-wrap').classList.remove('hidden');
-    }
+    allClientsData = json.data || [];
+    filterClients();
   } catch (err) {
     if (err.message !== 'Unauthorized') toast('Failed to load clients', 'error');
   } finally {
     document.getElementById('clients-loading').classList.add('hidden');
+  }
+}
+
+function filterClients() {
+  const search = (document.getElementById('clients-search')?.value || '').toLowerCase().trim();
+  let filtered = allClientsData;
+  if (search) {
+    filtered = filtered.filter(c =>
+      (c.name || '').toLowerCase().includes(search) ||
+      (c.site_name || '').toLowerCase().includes(search) ||
+      (c.site_id || '').toLowerCase().includes(search) ||
+      (c.notification_email || '').toLowerCase().includes(search)
+    );
+  }
+  if (!filtered.length) {
+    document.getElementById('clients-empty').classList.remove('hidden');
+    document.getElementById('clients-table-wrap').classList.add('hidden');
+  } else {
+    document.getElementById('clients-empty').classList.add('hidden');
+    renderClients(filtered);
+    document.getElementById('clients-table-wrap').classList.remove('hidden');
   }
 }
 
@@ -927,23 +946,42 @@ function renderClients(data) {
 
 function openClientDetail(id) {
   Promise.all([
-    apiFetch('/admin/clients').then(r => r.json()),
+    apiFetch('/admin/clients?status=all').then(r => r.json()),
     apiFetch(`/admin/clients/${id}/api-key/status`).then(r => r.json()).catch(() => ({ hasKey: null })),
-  ]).then(([json, keyStatus]) => {
+    apiFetch(`/admin/clients/${id}/audit?limit=10`).then(r => r.json()).catch(() => ({ data: [] })),
+  ]).then(([json, keyStatus, auditData]) => {
     const c = (json.data || []).find(x => x.id === id);
     if (!c) return;
-    openDrawer(`Client: ${c.name}`, renderClientDetail(c, keyStatus.hasKey));
+    openDrawer(`Client: ${c.name}`, renderClientDetail(c, keyStatus.hasKey, auditData.data || []));
   }).catch(() => {});
 }
 
-function renderClientDetail(c, hasKey) {
+function renderClientDetail(c, hasKey, auditEntries) {
   const keyLabel = hasKey === true ? '••••••••' : (hasKey === false ? 'Not set' : '—');
   const keyLabelClass = hasKey === false ? 'style="opacity:0.5"' : '';
   const keyBtnLabel = hasKey ? 'Rotate Key' : 'Set Key';
+  const isArchived = c.status === 'archived';
+
+  let auditHTML = '';
+  if (auditEntries && auditEntries.length > 0) {
+    const rows = auditEntries.map(a => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--neutral-100);font-size:12px;">
+        <span style="color:var(--neutral-600)">${esc(a.admin_action || a.event_type)}</span>
+        <span style="color:var(--neutral-400)">${fmt(a.created_at)}</span>
+      </div>
+    `).join('');
+    auditHTML = `
+      <div class="detail-section" style="margin-top:16px;">
+        <div style="font-size:12px;font-weight:700;color:var(--neutral-400);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Audit History</div>
+        ${rows}
+      </div>
+    `;
+  }
+
   return `
     <div class="detail-section">
       <div class="detail-row"><span class="detail-label">Name</span><span>${esc(c.name)}</span></div>
-      <div class="detail-row"><span class="detail-label">Status</span>${pill(c.status || 'active')}</div>
+      <div class="detail-row"><span class="detail-label">Status</span>${pill(c.status || 'active')}${c.archived_at ? `<span style="font-size:11px;color:var(--neutral-400);margin-left:8px;">Archived ${fmt(c.archived_at)}</span>` : ''}</div>
       <div class="detail-row"><span class="detail-label">Platform</span><span>${esc(c.platform) || '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Hardware</span><span>${esc(c.hardware_platform) || '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Tier</span><span>${esc(c.tier) || '—'}</span></div>
@@ -962,9 +1000,15 @@ function renderClientDetail(c, hasKey) {
         </div>
       </div>
     </div>
+    ${auditHTML}
     <div class="drawer-footer-actions">
       <button class="btn btn-secondary" onclick="openClientEdit('${c.id}')">Edit Client</button>
       <button class="btn btn-accent" onclick="openOperatorDashboard('${c.id}', '${esc(c.name)}')">Open Dashboard</button>
+      ${isArchived
+        ? `<button class="btn btn-sm btn-secondary" onclick="restoreClient('${c.id}')">Restore</button>`
+        : `<button class="btn btn-sm btn-secondary" style="color:var(--amber-600)" onclick="archiveClient('${c.id}', '${esc(c.name)}')">Archive</button>`
+      }
+      <button class="btn btn-sm" style="background:var(--red-50);color:var(--red-600)" onclick="deleteClient('${c.id}', '${esc(c.name)}')">Delete</button>
     </div>
   `;
 }
@@ -1081,6 +1125,7 @@ function renderClientEditForm(c) {
         <select id="edit-status" class="form-input">
           <option value="active"    ${c.status === 'active'    ? 'selected' : ''}>Active</option>
           <option value="cancelled" ${c.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+          <option value="archived"  ${c.status === 'archived'  ? 'selected' : ''}>Archived</option>
         </select>
       </div>
     </div>
@@ -1118,11 +1163,82 @@ async function saveClientEdit(id) {
   }
 }
 
+async function archiveClient(id, name) {
+  if (!confirm(`Archive "${name}"? The client will be hidden from the default list but all data is preserved. You can restore it later.`)) return;
+  try {
+    const res = await apiFetch(`/admin/clients/${id}/archive`, { method: 'POST' });
+    if (res.ok) {
+      toast(`${name} archived`, 'success');
+      closeDrawer();
+      loadClients();
+    } else {
+      const j = await res.json().catch(() => ({}));
+      toast(`Archive failed: ${j.error || 'unknown error'}`, 'error');
+    }
+  } catch { toast('Archive failed', 'error'); }
+}
+
+async function restoreClient(id) {
+  try {
+    const res = await apiFetch(`/admin/clients/${id}/restore`, { method: 'POST' });
+    if (res.ok) {
+      toast('Client restored', 'success');
+      closeDrawer();
+      loadClients();
+    } else {
+      const j = await res.json().catch(() => ({}));
+      toast(`Restore failed: ${j.error || 'unknown error'}`, 'error');
+    }
+  } catch { toast('Restore failed', 'error'); }
+}
+
+async function deleteClient(id, name) {
+  // Step 1: Show dependency counts
+  try {
+    const depRes = await apiFetch(`/admin/clients/${id}/dependencies`);
+    const deps = await depRes.json();
+
+    const d = deps.dependencies || {};
+    const summary = [
+      d.locations && `${d.locations} location(s)`,
+      d.members && `${d.members} member(s)`,
+      d.plan_mappings && `${d.plan_mappings} plan mapping(s)`,
+      d.access_logs && `${d.access_logs} access log(s)`,
+      d.error_queue && `${d.error_queue} error(s)`,
+    ].filter(Boolean).join(', ');
+
+    const confirmStr = `DELETE ${name}`;
+    const input = prompt(
+      `PERMANENT DELETION\n\nThis will permanently delete "${name}" and all related data:\n${summary || 'No related records'}\n\nThis cannot be undone. Type "${confirmStr}" to confirm:`
+    );
+
+    if (!input || input !== confirmStr) {
+      if (input !== null) toast('Deletion cancelled — confirmation text did not match', 'error');
+      return;
+    }
+
+    const res = await apiFetch(`/admin/clients/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: confirmStr }),
+    });
+    if (res.ok) {
+      toast(`"${name}" permanently deleted`, 'success');
+      closeDrawer();
+      loadClients();
+    } else {
+      const j = await res.json().catch(() => ({}));
+      toast(`Delete failed: ${j.error || 'unknown error'}`, 'error');
+    }
+  } catch { toast('Delete failed', 'error'); }
+}
+
 function openOperatorDashboard(id, name) {
   window.open(`/dashboard?clientId=${encodeURIComponent(id)}`, '_blank');
 }
 
 document.getElementById('clients-refresh-btn').addEventListener('click', () => loadClients());
+document.getElementById('clients-status-filter').addEventListener('change', () => loadClients());
 
 // ══ Member Sync Panel ══════════════════════════════════════════════
 

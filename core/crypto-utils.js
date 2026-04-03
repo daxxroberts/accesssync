@@ -5,7 +5,8 @@
  * AES-256-GCM authenticated encryption for Kisi API keys stored in the DB.
  * Uses Node built-in crypto — zero npm dependencies.
  *
- * Env var required: KISI_ENCRYPTION_KEY (64 hex chars = 32 bytes)
+ * Env var required: API_KEY_ENCRYPTION_KEY (64 hex chars = 32 bytes)
+ *   Legacy fallback: KISI_ENCRYPTION_KEY (same format — honored if API_KEY_ENCRYPTION_KEY not set)
  * Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
  *
  * Storage format: "<iv_hex>:<authTag_hex>:<ciphertext_hex>"
@@ -16,9 +17,9 @@ const crypto = require('crypto');
 const ALGORITHM = 'aes-256-gcm';
 
 function _getKey() {
-  const hex = process.env.KISI_ENCRYPTION_KEY;
+  const hex = process.env.API_KEY_ENCRYPTION_KEY || process.env.KISI_ENCRYPTION_KEY;
   if (!hex || hex.length !== 64) {
-    throw new Error('[CryptoUtils] KISI_ENCRYPTION_KEY must be a 64-char hex string (32 bytes)');
+    throw new Error('[CryptoUtils] API_KEY_ENCRYPTION_KEY must be a 64-char hex string (32 bytes)');
   }
   return Buffer.from(hex, 'hex');
 }

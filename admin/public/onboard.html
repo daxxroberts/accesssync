@@ -738,6 +738,11 @@ html, body {
             <input type="email" id="c-email" placeholder="owner@yourgym.com" autocomplete="email" />
             <span class="hint">We'll email you if anything needs your attention.</span>
           </div>
+          <div class="field full">
+            <label>Wix API Key *</label>
+            <input type="password" id="c-wix-api-key" placeholder="Paste your Wix API key here…" autocomplete="off" />
+            <span class="hint">Used to pull your plans and services. <a href="https://dev.wix.com/api/rest/getting-started/api-keys" target="_blank" rel="noopener">Where do I find this? →</a></span>
+          </div>
         </div>
       </div>
 
@@ -749,46 +754,54 @@ html, body {
     <!-- ══ Step 2: Your Plan ══════════════════════════════════════ -->
     <div id="step-2" class="card hidden">
       <div class="card-eyebrow">Step 2 of 5</div>
-      <div class="card-title">Which plan fits your gym?</div>
-      <div class="card-sub">Your plan determines how AccessSync connects to your door system.</div>
+      <div class="card-title">Choose your door system and plan</div>
+      <div class="card-sub">First, select the door hardware you use, then pick the plan that fits.</div>
+
+      <!-- Platform selector -->
+      <div class="platform-selector" style="display:flex;gap:12px;margin-bottom:20px;">
+        <button class="platform-btn" id="plat-seam" onclick="selectPlatform('seam')" style="flex:1;padding:14px 16px;border:2px solid var(--border-300);border-radius:10px;background:var(--card);cursor:pointer;text-align:center;font-family:inherit;transition:border-color 0.15s;">
+          <div style="font-size:15px;font-weight:700;color:var(--text);">Seam Smart Locks</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Single-door and multi-lock setups</div>
+        </button>
+        <button class="platform-btn" id="plat-kisi" onclick="selectPlatform('kisi')" style="flex:1;padding:14px 16px;border:2px solid var(--border-300);border-radius:10px;background:var(--card);cursor:pointer;text-align:center;font-family:inherit;transition:border-color 0.15s;">
+          <div style="font-size:15px;font-weight:700;color:var(--text);">Kisi Access Control</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Enterprise access — unlimited doors, zones, schedules</div>
+        </button>
+      </div>
 
       <div class="tier-grid">
         <!-- Base -->
-        <div class="tier-card" data-tier="Base" onclick="selectTier(this)">
+        <div class="tier-card" data-tier="Base" data-platform="seam" onclick="selectTier(this)">
           <div class="tier-name">Base</div>
-          <div class="tier-price">$30<span>/mo per location</span></div>
           <ul class="tier-bullets">
             <li>1 entry door, auto-unlocks for members</li>
             <li>Members get access the moment they sign up</li>
             <li>Access revoked automatically when they cancel</li>
           </ul>
-          <div class="tier-system">Works with Seam smart locks</div>
+          <div class="tier-system">Smart lock integration</div>
         </div>
 
         <!-- Pro -->
-        <div class="tier-card" data-tier="Pro" onclick="selectTier(this)">
+        <div class="tier-card" data-tier="Pro" data-platform="seam" onclick="selectTier(this)">
           <div class="tier-name">Pro</div>
-          <div class="tier-price">$60<span>/mo per location</span></div>
           <ul class="tier-bullets">
             <li>High-traffic door, handles 100+ check-ins/day</li>
             <li>Access tied to class bookings</li>
             <li>Members can check their own access status</li>
           </ul>
-          <div class="tier-system">Works with Seam smart locks</div>
+          <div class="tier-system">High-traffic ready</div>
         </div>
 
         <!-- Connect -->
-        <div class="tier-card" data-tier="Connect" onclick="selectTier(this)">
+        <div class="tier-card" data-tier="Connect" data-platform="kisi" onclick="selectTier(this)">
           <div class="popular-tag">Most Popular</div>
           <div class="tier-name">Connect</div>
-          <div class="tier-price">$150<span>/mo per location</span></div>
           <ul class="tier-bullets">
             <li>Unlimited doors, zones &amp; schedules</li>
             <li>Full Kisi integration — enterprise-grade</li>
             <li>AccessSync automates everything Kisi manages</li>
           </ul>
-          <div class="tier-system">Works with Kisi ACS</div>
-          <div class="tier-pricing-note">Requires Kisi ($199/mo) — total $349/mo per location. <a href="https://www.getkisi.com/pricing/fitness" target="_blank" rel="noopener">Learn about Kisi →</a></div>
+          <div class="tier-system">Enterprise access control</div>
         </div>
       </div>
 
@@ -940,9 +953,16 @@ html, body {
         </div>
       </div>
 
+      <!-- Setup incomplete warning -->
+      <div id="setup-incomplete-banner" class="hidden" style="margin-top:20px;background:#fef3c7;border:1px solid #fbbf24;border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:20px;">&#9888;</span>
+        <div style="font-size:13px;color:#92400e;line-height:1.5;"><strong>Setup is not complete.</strong> Your members won't get door access until both tasks above are done.</div>
+      </div>
+
       <div class="btn-row" style="margin-top:28px">
-        <a href="#" id="btn-dashboard" class="btn btn-ghost">Go to Dashboard</a>
-        <a href="#" id="btn-map-first" class="btn btn-primary hidden">Map Plans Now →</a>
+        <a href="#" id="btn-dashboard" class="btn btn-ghost hidden">Go to Dashboard</a>
+        <a href="#" id="btn-map-first" class="btn btn-primary">Map Plans Now →</a>
+        <a href="#" id="btn-dashboard-incomplete" class="btn btn-ghost hidden" style="opacity:0.6">Go to Dashboard (setup incomplete)</a>
       </div>
     </div>
 
@@ -958,7 +978,9 @@ html, body {
 const state = {
   name:      null,   // business name
   email:     null,   // notification email
+  wixApiKey: null,   // Wix API key for outbound API calls (plans, bookings)
   tier:      null,   // 'Base' | 'Pro' | 'Connect'
+  hardwarePlatform: null, // 'kisi' | 'seam' — explicit selection from Step 2
   siteId:    null,   // Wix site ID (from URL param, hidden from operator)
   siteName:  null,   // Wix site name (from URL param)
   clientId:      null,   // set after _provisionClient() completes
@@ -1099,15 +1121,50 @@ function nextStep1() {
     state.name  = name;
     state.email = email;
   }
+  // Collect Wix API key
+  const wixKey = document.getElementById('c-wix-api-key')?.value.trim();
+  if (!wixKey) { toast('Please enter your Wix API key', 'error'); return; }
+  state.wixApiKey = wixKey;
   showStep(2);
 }
 
-// ── Step 2: Plan selection ─────────────────────────────────────────
+// ── Step 2: Platform + Plan selection ──────────────────────────────
+function selectPlatform(platform) {
+  state.hardwarePlatform = platform;
+  // Highlight selected platform button
+  document.querySelectorAll('.platform-btn').forEach(b => b.style.borderColor = 'var(--border-300)');
+  const btn = document.getElementById('plat-' + platform);
+  if (btn) btn.style.borderColor = 'var(--brand)';
+
+  // Show/hide tier cards based on platform
+  document.querySelectorAll('.tier-card').forEach(card => {
+    if (card.dataset.platform === platform) {
+      card.style.display = '';
+    } else {
+      card.style.display = 'none';
+      card.classList.remove('selected');
+    }
+  });
+
+  // Clear tier selection if it doesn't match the new platform
+  if (state.tier) {
+    const selected = document.querySelector(`.tier-card[data-tier="${state.tier}"]`);
+    if (selected && selected.dataset.platform !== platform) {
+      state.tier = null;
+      document.getElementById('btn-s2').disabled = true;
+    }
+  }
+}
+
 function selectTier(cardEl) {
   if (state.tier === cardEl.dataset.tier) return;
   document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
   cardEl.classList.add('selected');
   state.tier = cardEl.dataset.tier;
+  // Set hardware platform from the card's platform if not already set
+  if (!state.hardwarePlatform) {
+    state.hardwarePlatform = cardEl.dataset.platform || null;
+  }
   document.getElementById('btn-s2').disabled = false;
 }
 
@@ -1155,10 +1212,11 @@ async function _provisionClient() {
     body: JSON.stringify({
       name:               state.name,
       tier:               state.tier,
-      hardware_platform:  state.tier === 'Connect' ? 'kisi' : 'seam',
+      hardware_platform:  state.hardwarePlatform || (state.tier === 'Connect' ? 'kisi' : 'seam'),
       site_id:            state.siteId   || null,
       site_name:          state.siteName || null,
       notification_email: state.email    || null,
+      wix_api_key:        state.wixApiKey || null,
     }),
   });
   if (!clientRes.ok) {
@@ -1453,14 +1511,33 @@ async function runValidation() {
   if (locationActive) { setCheck('val-location', 'pass'); passes++; }
   else { setCheck('val-location', 'fail'); }
 
-  // Summary
+  // Summary + button visibility
   const summary = document.getElementById('val-summary');
-  if (passes === total) {
+  const setupComplete = passes === total;
+  if (setupComplete) {
     summary.innerHTML = '<span style="color:#16A34A;font-weight:600;">All checks passed</span> — your system is ready to go.';
   } else if (passes >= 2) {
     summary.innerHTML = `<span style="color:#D97706;font-weight:600;">${passes}/${total} checks passed</span> — complete the remaining steps from your dashboard to go fully live.`;
   } else {
     summary.innerHTML = `<span style="color:#DC2626;font-weight:600;">${passes}/${total} checks passed</span> — connect your API key and configure mappings to activate.`;
+  }
+
+  // Toggle buttons based on completion
+  const btnDashboard = document.getElementById('btn-dashboard');
+  const btnMapFirst = document.getElementById('btn-map-first');
+  const btnDashIncomplete = document.getElementById('btn-dashboard-incomplete');
+  const incompleteBanner = document.getElementById('setup-incomplete-banner');
+  if (setupComplete) {
+    btnDashboard.classList.remove('hidden');
+    btnMapFirst.classList.add('hidden');
+    if (btnDashIncomplete) btnDashIncomplete.classList.add('hidden');
+    incompleteBanner.classList.add('hidden');
+  } else {
+    btnDashboard.classList.add('hidden');
+    if (!hasMappings) btnMapFirst.classList.remove('hidden');
+    else btnMapFirst.classList.add('hidden');
+    if (btnDashIncomplete) btnDashIncomplete.classList.remove('hidden');
+    incompleteBanner.classList.remove('hidden');
   }
 }
 

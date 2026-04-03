@@ -40,7 +40,7 @@ class GrantRevokeLogic {
       const roleId = await hardwareAdapter.assignRole(
         mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId
       );
-      assignments.push({ mappingId: mapping.mappingId, roleAssignmentId: String(roleId) });
+      assignments.push({ mappingId: mapping.mappingId, roleAssignmentId: String(roleId), hardwareGroupId: mapping.hardwareGroupId });
     }
 
     await db.query(

@@ -1,0 +1,489 @@
+# AccessSync — Full Context Dump
+# Version: 1.0 | Built: 2026-04-01
+# Source: All docs/ concatenated in dependency order, presentation markup stripped.
+# Use for large-context LLM sessions where you need everything in one load.
+# For a lighter entry point, use llms.txt (~250 lines).
+
+---
+
+# SECTION 1: PRODUCT OVERVIEW
+# Source: docs/what-is-accesssync.html
+
+## What Is AccessSync?
+
+AccessSync is a Wix App Market SaaS that automates physical door access control
+for gym and fitness operators.
+
+**The problem it solves:**
+Gym operators using Kisi for door access had to manually provision every new member.
+When a member signs up on Wix, someone had to log into Kisi, find the member, add them
+to the right group, and send credentials. When they cancelled, someone had to remove them.
+This took 5–15 minutes per member and was constantly failing — members locked out,
+cancelled members still getting in.
+
+**What AccessSync does:**
+When a member purchases a Wix pricing plan, AccessSync automatically provisions their
+access credentials in Kisi. When they cancel or their payment fails, access is revoked.
+No manual operator action required for any event.
+
+**Pricing:**
+- Base: $30/month/location — up to 2 active plans, 1 door, up to 200 members
+- Pro: $60/month/location — unlimited plans, up to 5 doors, up to 500 members
+- Connect: $150/month/location — unlimited everything, multi-location, API access
+
+**Infrastructure cost:** $35/month fixed (Railway $15 + Wix Studio $20)
+**Unit economics:** ~99% margin at scale
+
+**First client:** House of Gains (Chad) — Kisi Pro tier, $199/mo/location
+**Platform:** Node.js on Railway. Database: Postgres. Queue: BullMQ + Redis.
+**Status:** V1 code-complete, pre-launch pending business gates.
+
+**The 4-step flow:**
+1. Member purchases a Wix pricing plan
+2. Wix fires a webhook → AccessSync receives and verifies (HMAC-SHA256)
+3. AccessSync looks up the plan → finds the matching Kisi group → grants role assignment
+4. Member receives Kisi app invite and has door access
+
+The same flow runs in reverse on cancellation, payment failure, or member deletion.
+
+---
+
+# SECTION 2: ARCHITECTURE
+# Source: docs/architecture.html + llms.txt
+
+## 7-Layer Architecture (DR-022)
+
+AccessSync is a platform-agnostic access provisioning engine. Wix and Kisi are the
+first adapters. Every new integration multiplies every existing one.
+
+```
+L1  adapters/wix/wix-connector.js       HTTP handler, HMAC-SHA256 verification
+L2  adapters/wix/wix-adapter.js         Wix payload parsing → standard event object
+L3  adapters/standard-adapter.js        Owns member_identity, member_access_state, in_flight lock
+L4  core/                               Core Engine — queue, grant/revoke logic, reconciliation
+L5  adapters/hardware-adapter.js        Platform router — delegates by hardwarePlatform string
+L6  adapters/kisi/kisi-adapter.js       Kisi business methods
+L7  adapters/kisi/kisi-connector.js     Kisi HTTP client, rate limiting
+```
+
+**Layer ownership rules (DR-023):**
+- Layer 3 (Standard Adapter) EXCLUSIVELY owns member_identity UPSERT and member_access_state writes
+- Core Engine (Layer 4) NEVER writes these tables directly
+- Hardware platform is resolved from DB — Core Engine never hardcodes 'kisi' (DR-035)
+
+**Backward-compat shims (DR-022):**
+- adapters/wix-adapter.js → Layer 1 shim
+- adapters/kisi-adapter.js → Layer 6 shim
+- adapters/seam-adapter.js → Layer 6 stub (post-V1)
+
+## Standard Event Contract (DR-021)
+
+All input adapters produce this normalized object:
+```
+{ eventType, platformMemberId, sourcePlatform, memberEmail, planId, tenantId }
+```
+Core Engine never references platform-specific IDs. Enables Squarespace, Brivo, etc.
+with zero changes to Layers 3–5.
+
+## Hardware Adapter Interface (Layer 5)
+
+8 methods all hardware adapters must implement:
+- findUserByEmail(platform, apiKey, email)
+- createUser(platform, apiKey, email, name)
+- assignRole(platform, apiKey, userId, groupId, options) — options.validUntil for time-bounded access (Gap 6)
+- removeRole(platform, apiKey, userId, roleAssignmentId)
+- suspendAccess(platform, apiKey, userId)
+- enableAccess(platform, apiKey, userId)
+- deleteUser(platform, apiKey, userId)
+- getLocks(platform, apiKey) — returns normalized: { id, name, locked: boolean }
+
+## Queue Layer
+
+BullMQ + Railway Redis. webhook-processor.js enqueues 'grant'/'revoke' jobs.
+queue-worker.js (concurrency: 20) coordinates:
+resolveAndLock → resolveIdentity → grantRevokeLogic → completeGrant/Revoke
+
+Dead-letter via worker.on('failed') → retry-engine → error_queue table.
+
+---
+
+# SECTION 3: DATA MODEL
+# Source: docs/data-model.html + schema.sql
+
+## Schema Note (DR-035)
+
+schema.sql baseline still shows kisi_api_key and wix_plan_id.
+After migrations/dr-035.sql runs on Railway, the live column names are:
+- clients.hardware_api_key (was kisi_api_key)
+- locations.hardware_api_key (was kisi_api_key)
+- plan_mappings.source_plan_id (was wix_plan_id)
+
+This document describes the LIVE state (post-migration).
+
+## Foundation Tables
+
+### clients (Tenants)
+Layer ownership: multi-layer (admin routes + onboarding write; all layers read)
+DR: DR-020, DR-025, DR-027, DR-028
+
+Key columns:
+- id (UUID PK)
+- name — company name e.g. "House of Gains"
+- platform — 'wix', 'squarespace'. DEFAULT 'wix'
+- site_id (UNIQUE) — platform site identifier, webhook routing, self-registered on first webhook
+- hardware_platform — 'kisi', 'seam' — which hardware provider
+- tier — 'Base', 'Pro', 'Connect'
+- status — DEFAULT 'active'
+- notification_email — per-tenant operator alert destination (DR-020). Set via UI. Distinct from ACCESSSYNC_OWNER_NOTIFICATION_EMAIL env var.
+- last_sync_at — DR-018: single timestamp, updated on each sync sweep
+- hardware_api_key — DR-028: AES-256-GCM encrypted org-level API key (schema.sql shows kisi_api_key — DR-035 renames)
+- first_grant_sent — BOOLEAN. Sprint 5.5: atomic flag for first grant welcome email.
+
+### locations (Physical Sites per Client)
+Layer ownership: foundation
+DR: DR-025, DR-027, DR-028
+
+Key columns:
+- id (UUID PK), client_id (FK → clients)
+- name, city, state
+- subscription_status — DEFAULT 'inactive'. Values: inactive, active, lapsed. Provisioning gated on 'active' (DR-027).
+- tier, subscribed_at, subscription_id — DR-027 billing fields
+- hardware_api_key — nullable per-location override. Null = use client.hardware_api_key. (DR-028)
+- hardware_key_last_verified, hardware_key_last_error — Sprint 5.2 health check fields
+
+### plan_mappings (The Translator)
+Layer ownership: Layer 4 (Core Engine reads)
+DR: DR-025, DR-026, DR-035
+
+Key columns:
+- id (UUID PK), client_id (FK)
+- source_plan_id — DR-035: was wix_plan_id. The Wix pricing plan ID.
+- hardware_group_id — the Kisi/Seam group ID
+- location_id (FK, nullable), plan_name, door_name, status
+- access_type — DEFAULT 'group'. Future: 'zone'/'door' for Seam.
+
+### processed_event_ids (Idempotency)
+Layer ownership: Layer 4
+DR: DR-010
+
+event_id (VARCHAR PK) — Wix Event ID.
+webhook-processor.js checks before enqueuing. Duplicates silently dropped.
+
+### error_queue (Dead Letter Queue)
+Layer ownership: Layer 4
+DR: DR-025
+
+Stores jobs that exhaust retry-engine backoff. Operator dismisses with note.
+Key columns: client_id, member_id, event_type, payload, error_reason, retry_count, status,
+dismiss_note, dismissed_by, location_id, plan_name, door_name.
+
+## Access Adapter Layer (Layer 3 owned — DR-023)
+
+### member_identity
+DR: DR-001, DR-003, DR-021, DR-023
+
+- id (UUID PK), client_id (FK)
+- platform_member_id — DR-021: was wix_member_id. Platform-agnostic member ID.
+- source_platform — DR-021: 'wix', 'squarespace'. DEFAULT 'wix'.
+- hardware_platform — 'kisi', 'seam'
+- hardware_user_id — generated ID in Kisi/Seam. NULL until resolveIdentity() runs.
+- source_tag — DR-003: DEFAULT 'accesssync'. Reconciliation scope boundary.
+- UNIQUE(client_id, source_platform, platform_member_id)
+- NO email/name stored — data minimization (DR-001). Fetched from Wix on-demand.
+
+### member_access_state
+DR: DR-011, DR-023
+
+- id (UUID PK), member_id (FK, UNIQUE), client_id (FK)
+- status — pending_sync | in_flight | active | disabled | revoked | failed | skipped_lockdown
+- in_flight = concurrency lock (DR-011). Concurrent operations rejected while set.
+- role_assignment_id — legacy single Kisi role ID. Fallback for pre-DR-026 rows.
+- provisioned_at — set by completeGrant()
+
+### member_role_assignments (Multi-Door)
+DR: DR-026
+
+One row per hardware role assignment per member per plan mapping.
+UNIQUE(member_id, mapping_id) — idempotent on retry.
+completeRevoke() deletes all rows atomically.
+
+- id (UUID PK), member_id (FK), mapping_id (FK), role_assignment_id, created_at
+
+### member_access_log
+DR: DR-004
+
+Lifecycle events table. Not operational noise. Events: provisioning_started, provisioned,
+provisioning_failed, disabled, restored, revoked.
+
+### adapter_admin_log
+DR: DR-019, DR-021
+
+Provisioning audit trail. configured_by + configured_at (nullable, DR-019).
+
+## Activity / Telemetry
+
+### client_activity_summary
+DR: DR-024. Layer 3 (Standard Adapter) owns writes.
+
+Daily aggregated counts. UPSERT pattern. Fault-tolerant.
+UNIQUE(client_id, summary_date).
+Columns: events_received, grants_completed, revokes_completed, errors_count.
+
+### config_alert_log
+
+Operator configuration issue tracking.
+alert_type: missing_door, missing_group, expired_credentials, location_mismatch.
+
+## Observability
+
+### webhook_log
+
+Every inbound Wix webhook. Written by wix-connector.js before processing.
+Key columns: event_id, client_id, received_at, hmac_status ('accepted'/'rejected'),
+dedup_status ('new'/'duplicate'), event_type, raw_payload, normalized_payload, error_detail.
+
+---
+
+# SECTION 4: DECISION LOG
+# Source: docs/decision-log.html + DECISION_LOG.md + CLAUDE.md
+
+## All 35 Locked Decisions — DO NOT REVISIT WITHOUT SAGE
+
+Data & Schema:
+DR-001  No PII storage — email/name never stored in DB. Re-fetched from Wix on-demand at reconciliation.
+DR-003  source_tag='accesssync' on all managed users — reconciliation scope boundary
+DR-004  member_access_log — lifecycle table only, not operational noise
+DR-013  member_identity A/B pattern — platform-agnostic. Column names superseded by DR-021.
+DR-018  last_sync_at as column on clients table (not separate sync_state table). V2 if needed.
+DR-019  adapter_admin_log — configured_by + configured_at (nullable columns)
+DR-021  Platform-agnostic member_identity. wix_member_id → platform_member_id. UNIQUE(client_id, source_platform, platform_member_id).
+DR-024  client_activity_summary — Layer 3 daily UPSERT. Fault-tolerant. Never blocks grant/revoke.
+DR-025  locations table + plan_mappings.location_id/plan_name/door_name/status + error_queue additions.
+DR-026  Multi-door: member_role_assignments table. UNIQUE(member_id, mapping_id). payment.recovered = enableAccess only. UnrecoverableError for 4xx.
+DR-027  Per-location subscription model. subscription_status gating. Location lapse flow required.
+DR-028  hardware_api_key AES-256-GCM encrypted. clients (org) + locations (nullable override). KISI_ENCRYPTION_KEY env var. NEVER store plaintext.
+DR-029  Sub-member ID format: {uuid}###as{NNN}. Deterministic, reversible, collision-free.
+DR-030  plan_holder_id column links sub-members to primary member.
+DR-034  member_access_sources — multi-source grant/revoke. Pre-grant check. Revoke only when zero sources.
+DR-035  kisi_api_key → hardware_api_key (clients + locations). wix_plan_id → source_plan_id (plan_mappings). Migration: dr-035.sql.
+
+Architecture:
+DR-002  Access Adapter Layer is bidirectional identity bridge between platform and hardware IDs.
+DR-010  Idempotency via processed_event_ids table. Duplicates silently dropped.
+DR-011  in_flight status = concurrency lock. Concurrent grant/revoke for same member rejected.
+DR-022  7-layer architecture. Do not collapse layers. Backward-compat shims.
+DR-023  Layer 3 (Standard Adapter) exclusively owns member_identity writes and member_access_state writes. Core Engine (Layer 4) never writes these tables.
+DR-031  Family plan: upstream explosion in Layer 2 (Wix Adapter). Core Engine unchanged.
+
+Infrastructure:
+DR-001  (hosting) Railway as hosting platform.
+DR-009  HMAC-SHA256 on all Wix webhooks. WIX_WEBHOOK_SECRET required.
+DR-012  BullMQ queue on Railway Redis. Crons: reconciliation (nightly) + health check (every 6h).
+
+Product:
+DR-005  Kisi lockdown override — skip (not fail) during lockdown.
+DR-006  Member sync screen — one-time post-purchase UI. Not a persistent dashboard.
+DR-007  Kisi managed users, send_emails: false. HOG exception: DR-017.
+DR-008  Pricing locked: $30/$60/$150. Tier names: Base/Pro/Connect.
+DR-011  (kisi) Kisi routes direct API, not through Seam.
+DR-016  Velo direct install for House of Gains Phase 1 (not App Market).
+DR-017  HOG exception: regular users (not managed). DR-007 still active for all other clients.
+DR-020  Operator email via Resend SDK. clients.notification_email per-tenant. ACCESSSYNC_OWNER_NOTIFICATION_EMAIL = platform fallback.
+DR-032  Family plan draft→submit workflow. No provisioning until submit.
+DR-033  Unified member widget — single screen with planType param: 'plan', 'event', 'family'.
+
+Legal:
+DR-009  (legal) Kisi API connector model, Section 2.3(ii) flag resolved. Attorney review pending.
+
+UI:
+DR-014  Color system: Indigo #4F6EF7 (--brand) / Sage #4ADE80 (--sage). Non-interchangeable.
+DR-015  Mobile-first: 320px baseline. FORGE + LENS enforce.
+
+---
+
+# SECTION 5: FEATURE MAP
+# Source: docs/feature-map.html + Feature_Map.md
+
+## Status Summary
+Live: 22 | Planned: 11 | Backlog: 3 | Total: 38
+
+## Core Features — Single Member Access
+
+F001  Plan-to-Group Grant           LIVE    Wix plan.purchased → Kisi group role assignment
+F002  Plan Revoke                   LIVE    Wix plan.cancelled → delete Kisi role assignment
+F003  Payment Suspension            LIVE    Wix payment.failed → Kisi access_enabled: false
+F004  Payment Recovery              LIVE    Wix payment.recovered → enableAccess only (no new roles, DR-026)
+F005  Member Deletion               LIVE    Wix member.deleted → DELETE Kisi user
+F006  Webhook Deduplication         LIVE    processed_event_ids — before BullMQ enqueue
+F007  Identity Resolution           LIVE    DB cache → findUserByEmail → createUser
+F008  Multi-Door Provisioning       LIVE    member_role_assignments — one row per door per member
+F009  Multi-Source Grant/Revoke     PLANNED member_access_sources table (DR-034). Not yet built.
+F010  Nightly Reconciliation        LIVE    AccessSync ↔ Kisi state sweep, drift correction
+
+## Family Plan Features (all PLANNED — zero code)
+
+F020  Sub-Member ID Generation      PLANNED {uuid}###as{NNN} format (DR-029)
+F021  Plan Holder Linkage           PLANNED plan_holder_id column (DR-030)
+F022  Upstream Explosion            PLANNED Layer 2 explodes family webhooks (DR-031)
+F023  Draft-Submit Workflow         PLANNED No provisioning until submit (DR-032)
+F024  Unified Member Widget         PLANNED planType param: plan/event/family (DR-033)
+F025  Family Suspension             PLANNED payment.failed suspends holder + sub-members
+F026  Family Revoke Cascade         PLANNED plan.cancelled → revoke all sub-members
+
+## Operator UI Features (all LIVE)
+
+F030  Overview Dashboard            LIVE    Client health, activity summary, Kisi status
+F031  Members Page                  LIVE    Search (email via Wix API), CSV export (Sprint 5.6)
+F032  Plan Mapping Setup            LIVE    Kisi group dropdown, duplicate warning (Sprint 5.4)
+F033  Access Dashboard              LIVE    30-day bar chart, CSV export (Sprint 5.6)
+F034  Platform Config               LIVE    API key, alert email, location suspend/reactivate
+F035  Onboarding Wizard             LIVE    5-step, invite token, system check in Step 5
+F036  Invite Token Auth             LIVE    OPERATOR_INVITE_TOKEN + rate limiter (OB-24)
+F037  Owner Bypass PIN              LIVE    Location activation without Kisi key
+F038  Same-Group Mapping Warning    LIVE    Sprint 5.4. Feature_Map.md says planned — it is live.
+
+## Integration Features
+
+I001  Kisi Direct API               LIVE    Direct REST, not Seam (DR-011)
+I002  Kisi API Key Storage          LIVE    AES-256-GCM encrypted (DR-028)
+I003  Kisi Group Fetching           LIVE    GET /groups for plan mapping dropdown
+I004  Kisi API Key Validation       LIVE    Test on store + 6-hourly health check (Sprint 5.2)
+I005  Wix Webhook Ingestion         LIVE    HMAC verified, HMAC spike alerting (Sprint 5.1)
+I006  Wix JWT Verification          LIVE    RS256 via Wix JWKS, 1hr cache (OB-08)
+I007  Seam Integration              BACKLOG Post-V1 stub
+
+## AI Features (both BACKLOG)
+A001  Access Denial Explanation     BACKLOG AI plain-language denial message
+A002  AI Debugging Assistant        BACKLOG AI error diagnosis in operator dashboard
+
+---
+
+# SECTION 6: OPERATIONS
+# Source: docs/operations.html + CLAUDE.md
+
+## Railway Services
+
+Core Engine:    node server.js             (always on)
+Admin Hub:      node admin/server.js       (always on)
+Cron 1:         node core/reconciliation.js          (nightly)
+Cron 2:         node core/hardware-health-check.js   (every 6 hours)
+Health checks:  GET /health on both services
+
+## Environment Variables — Core Engine
+
+DATABASE_URL                         PostgreSQL connection string (Railway)
+WIX_WEBHOOK_SECRET                   HMAC secret from Wix developer dashboard
+KISI_ENCRYPTION_KEY                  32-byte hex for AES-256-GCM (hardware_api_key encryption)
+RESEND_API_KEY                       Resend API key (resend.com) — DR-020, OB-51 open
+RESEND_FROM_EMAIL                    Sender address e.g. alerts@accesssync.io — OB-51 open
+ACCESSSYNC_OWNER_NOTIFICATION_EMAIL  Platform owner email (Daxx). HMAC alerts + reconciliation digests + client notification fallback. NOT per-tenant.
+PORT                                 Set by Railway automatically
+NODE_ENV                             development | production
+DEFAULT_TENANT_ID                    Temporary — remove when multi-tenant routing complete
+
+## Environment Variables — Admin Hub
+
+ADMIN_JWT_SECRET                     64-char random string — JWT signing
+GOOGLE_CLIENT_ID                     OAuth 2.0 Client ID (Google Cloud Console)
+ADMIN_ALLOWED_EMAIL                  daxxroberts@gmail.com — only this account can log in
+OWNER_PIN                            Bypass PIN for onboarding (skips Kisi key validation)
+OPERATOR_INVITE_TOKEN                Shared secret for onboarding signup endpoints (OB-24)
+CORE_ENGINE_URL                      Core Engine Railway URL — used by onboarding Step 5 (OB-25 open)
+
+## Pending Migrations (pre-Sprint 5 deploy)
+
+migrations/dr-035.sql    — renames kisi_api_key → hardware_api_key, wix_plan_id → source_plan_id
+migrations/sprint-5.sql  — adds hardware_key_last_verified, hardware_key_last_error, first_grant_sent
+
+Run dr-035.sql THEN sprint-5.sql on Railway Postgres BEFORE deploying Sprint 5 code.
+
+## Hard Gates — All OPEN
+
+G-01  Chad signed agreement — OPEN
+G-02  LLC formation — OPEN
+G-03  Kisi reseller agreement (attorney review) — OPEN
+G-04  Wix developer account confirmed — OPEN
+G-05  Business technology insurance — OPEN
+G-06  Failure runbook complete — OPEN
+G-07  Partnership decision — CLOSED (no partnership, Daxx building solo)
+G-08  Kisi API access confirmed from Joe — OPEN
+G-09  Chad confirmed on Kisi Pro tier ($199/mo/location) — OPEN
+G-10  NOVA reviews Kisi API docs, confirms schema assumptions — OPEN
+
+## Daxx Actions Pending (pre-deploy)
+
+- Run migrations/dr-035.sql on Railway Postgres
+- Run migrations/sprint-5.sql on Railway Postgres
+- Set RESEND_API_KEY in Railway Core Engine service (OB-51)
+- Set RESEND_FROM_EMAIL in Railway Core Engine service (OB-51)
+- Set ACCESSSYNC_OWNER_NOTIFICATION_EMAIL in Railway Core Engine service
+- Add Railway Cron: node core/hardware-health-check.js (every 6 hours)
+- Set CORE_ENGINE_URL on Admin Hub Railway service (OB-25)
+- Enter HOG site_id in Railway DB clients table
+- Enter HOG Kisi API key via onboarding wizard
+
+---
+
+# SECTION 7: KEY FILE REFERENCE
+# Source: llms.txt
+
+## Adapters
+
+adapters/wix/wix-connector.js        L1: HTTP + HMAC + hmac-monitor wiring
+adapters/wix/wix-adapter.js          L2: Wix payload parsing only
+adapters/standard-adapter.js         L3: identity/state/lock owner + first grant email
+adapters/hardware-adapter.js         L5: platform router + Gap 6 (validUntil)
+adapters/kisi/kisi-adapter.js        L6: Kisi methods + normalized getLocks()
+adapters/kisi/kisi-connector.js      L7: Kisi HTTP + rate limiting (5 req/sec)
+adapters/seam/seam-adapter.js        L6 stub — post-V1
+
+## Core
+
+core/webhook-processor.js            BullMQ enqueue + dedup
+core/queue-worker.js                 Layer coordinator (concurrency: 20)
+core/grant-revoke.js                 Pure grant/revoke logic
+core/plan-mapping-resolver.js        source_plan_id → hardware_group_id lookup
+core/retry-engine.js                 Exponential backoff + dead letter
+core/reconciliation.js              Nightly sweep + operator digest
+core/hmac-monitor.js                 Redis HMAC spike alerting (Sprint 5.1)
+core/hardware-health-check.js        6-hourly key validation (Sprint 5.2)
+core/member-sync-api.js              RS256 JWT-verified member status API
+core/tenant-resolver.js              site_id → client_id (5-min cache)
+core/crypto-utils.js                 AES-256-GCM encrypt/decrypt
+core/location-lapse.js               Suspend all members at location on lapse
+
+## Admin
+
+admin/server.js                      Crash-isolated Express app + 6 EJS page routes
+admin/routes/operator.js             Operator dashboard API (34+ endpoints)
+admin/routes/clients.js              Clients panel (Admin JWT required)
+admin/routes/errors.js               Error queue management
+admin/routes/members.js              Debug center with email search
+admin/public/onboard.html            5-step operator onboarding wizard
+
+## Schema + Migrations
+
+schema.sql                           14-table PostgreSQL schema (baseline — kisi_api_key names)
+migrations/dr-035.sql                DR-035: kisi_api_key → hardware_api_key rename
+migrations/sprint-5.sql              Sprint 5: health check + first grant columns
+
+---
+
+# SECTION 8: KNOWLEDGE BASE INDEX
+# Source: docs/index.html
+
+docs/index.html           Hub — all docs, project status, hard gates
+docs/what-is-accesssync.html  Product explainer — Wix/AccessSync/Kisi, pricing, before/after
+docs/architecture.html    7-layer architecture, event contract, hardware interface
+docs/endpoints.html       All 77 API endpoints with auth requirements
+docs/data-model.html      14-table schema with layer ownership and DR references
+docs/decision-log.html    All 35 locked DRs as cards — "do not revisit" protection
+docs/feature-map.html     Feature inventory — live/planned/backlog with DR references
+docs/operations.html      Deployment runbook — env vars, Railway crons, migration history, hard gates
+docs/project-plan.html    4-sprint visual roadmap to HOG launch
+llms.txt                  AI entry point — ~250 lines plain markdown
+llms-full.txt             This file — full context for large-context LLM sessions
+
+---
+# END OF ACCESSSYNC FULL CONTEXT DUMP
+# Version 1.0 | 2026-04-01

@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — Operations</title>
+<link rel="alternate" type="text/plain" href="../llms.txt">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --purple:     #8B5CF6;
+  --purple-dim: rgba(139,92,246,0.10);
+  --teal:       #0EA5E9;
+  --teal-dim:   rgba(14,165,233,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body {
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 48px 32px 80px; }
+
+.breadcrumb { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+.breadcrumb a { color: var(--brand); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+.header { margin-bottom: 40px; }
+.header-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--brand); margin-bottom: 10px;
+}
+.header h1 { font-size: 32px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
+.header-sub { font-size: 14px; color: var(--text2); max-width: 600px; line-height: 1.6; }
+
+.section { margin-bottom: 44px; }
+.section-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 16px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Service cards ───────────────────────────────────────────── */
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px; margin-bottom: 20px;
+}
+.service-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+}
+.service-name {
+  font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px;
+}
+.service-cmd {
+  font-family: 'Courier New', monospace;
+  font-size: 11px; color: var(--brand); background: var(--brand-dim);
+  padding: 3px 8px; border-radius: 4px; display: inline-block; margin: 6px 0;
+}
+.service-desc { font-size: 11px; color: var(--text2); line-height: 1.5; }
+.service-badge {
+  display: inline-block; font-size: 9px; font-weight: 700;
+  letter-spacing: 0.6px; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 99px; margin-top: 8px;
+}
+.badge-always   { background: var(--green-dim); color: var(--green); }
+.badge-cron     { background: var(--purple-dim); color: var(--purple); }
+
+/* ── Env var table ───────────────────────────────────────────── */
+.env-table {
+  width: 100%; border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+}
+.env-table th {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--muted);
+  background: var(--bg); padding: 9px 16px; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.env-table td {
+  font-size: 12px; color: var(--text2);
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.env-table tr:last-child td { border-bottom: none; }
+.env-table td:first-child {
+  font-family: 'Courier New', monospace;
+  font-size: 11px; color: var(--text); font-weight: 600;
+  white-space: nowrap; width: 260px;
+}
+.env-required {
+  display: inline-block; font-size: 8px; font-weight: 700;
+  text-transform: uppercase; padding: 1px 5px; border-radius: 3px;
+  margin-left: 6px;
+}
+.req-yes { background: var(--red-dim); color: var(--red); }
+.req-gen { background: var(--amber-dim); color: var(--amber); }
+
+/* ── Migration table ─────────────────────────────────────────── */
+.mig-table {
+  width: 100%; border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.mig-table th {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--muted);
+  background: var(--bg); padding: 9px 16px; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.mig-table td {
+  font-size: 12px; color: var(--text2);
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.mig-table tr:last-child td { border-bottom: none; }
+.mig-table td:first-child {
+  font-family: 'Courier New', monospace; font-size: 11px; color: var(--text);
+  font-weight: 600; width: 220px; white-space: nowrap;
+}
+.mig-status-applied { color: var(--green); font-size: 9px; font-weight: 700; }
+.mig-status-pending { color: var(--amber); font-size: 9px; font-weight: 700; }
+
+/* ── Gates table ─────────────────────────────────────────────── */
+.gates-table {
+  width: 100%; border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.gates-table th {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--muted);
+  background: var(--bg); padding: 9px 16px; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.gates-table td {
+  font-size: 12px; color: var(--text2);
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.gates-table tr:last-child td { border-bottom: none; }
+.gates-table td:first-child { font-weight: 600; color: var(--text); width: 60px; }
+.gate-open {
+  display: inline-flex; align-items: center;
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  color: var(--amber); background: var(--amber-dim);
+  padding: 2px 8px; border-radius: 99px;
+}
+.gate-closed {
+  display: inline-flex; align-items: center;
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  color: var(--green); background: var(--green-dim);
+  padding: 2px 8px; border-radius: 99px;
+}
+
+/* ── Pre-deploy checklist ────────────────────────────────────── */
+.checklist {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 22px 24px;
+  box-shadow: var(--shadow);
+}
+.checklist-item {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--text2);
+}
+.checklist-item:last-child { border-bottom: none; padding-bottom: 0; }
+.check-box {
+  width: 18px; height: 18px; border: 2px solid var(--border);
+  border-radius: 4px; flex-shrink: 0; margin-top: 1px;
+  background: var(--bg);
+}
+.checklist-item code {
+  font-family: 'Courier New', monospace; font-size: 11px;
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 1px 5px; border-radius: 3px; color: var(--text);
+}
+
+/* ── Footer ─────────────────────────────────────────────────── */
+.footer {
+  margin-top: 64px; padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+  display: flex; gap: 24px; flex-wrap: wrap;
+}
+.footer a { color: var(--muted); text-decoration: none; }
+.footer a:hover { color: var(--brand); }
+</style>
+</head>
+<body>
+
+<!-- AI_CONTEXT
+type: operations
+status: active
+last_updated: 2026-04-01
+key_facts:
+  - Platform: Railway (Node.js, PostgreSQL, Redis)
+  - 4 Railway services: Core Engine, Admin Hub, Cron 1 (nightly), Cron 2 (every 6 hours)
+  - 11 environment variables total (9 Core Engine, 6 Admin Hub — some overlap)
+  - 2 pending migrations before Sprint 5 deploy: dr-035.sql + sprint-5.sql
+  - Health checks: GET /health on both Core Engine and Admin Hub
+  - KISI_ENCRYPTION_KEY: 32-byte hex for AES-256-GCM (generate with node crypto.randomBytes)
+  - ADMIN_ALLOWED_EMAIL: daxxroberts@gmail.com — only this Google account can log in to Admin Hub
+  - DEFAULT_TENANT_ID: temporary — remove when multi-tenant routing complete
+  - ACCESSSYNC_OWNER_NOTIFICATION_EMAIL: platform-level fallback email (Daxx), not per-tenant
+  - clients.notification_email is the per-tenant operator email (set via UI)
+-->
+
+<div class="page">
+
+  <div class="breadcrumb">
+    <a href="index.html">Knowledge Base</a> / Operations
+  </div>
+
+  <div class="header">
+    <div class="header-eyebrow">AccessSync — Operations</div>
+    <h1>Deployment Runbook</h1>
+    <div class="header-sub">
+      Everything needed to deploy and verify a running AccessSync instance.
+      Railway services, environment variables, migration history, and pre-launch checklist.
+    </div>
+  </div>
+
+  <!-- RAILWAY SERVICES -->
+  <div class="section">
+    <div class="section-label">Railway Services</div>
+    <div class="service-grid">
+      <div class="service-card">
+        <div class="service-name">Core Engine</div>
+        <div class="service-cmd">node server.js</div>
+        <div class="service-desc">Main webhook receiver, BullMQ worker, REST API. Handles all Wix webhook processing and member sync API.</div>
+        <span class="service-badge badge-always">Always On</span>
+      </div>
+      <div class="service-card">
+        <div class="service-name">Admin Hub</div>
+        <div class="service-cmd">node admin/server.js</div>
+        <div class="service-desc">Operator dashboard Express app. EJS server-side rendering. Crash-isolated from Core Engine. Google OAuth login.</div>
+        <span class="service-badge badge-always">Always On</span>
+      </div>
+      <div class="service-card">
+        <div class="service-name">Cron 1 — Reconciliation</div>
+        <div class="service-cmd">node core/reconciliation.js</div>
+        <div class="service-desc">Nightly AccessSync ↔ Kisi state sweep. Stale lock cleanup, failed job re-queue, operator digest email.</div>
+        <span class="service-badge badge-cron">Nightly Cron</span>
+      </div>
+      <div class="service-card">
+        <div class="service-name">Cron 2 — Hardware Health Check</div>
+        <div class="service-cmd">node core/hardware-health-check.js</div>
+        <div class="service-desc">Sprint 5.2. Tests each active client's hardware_api_key via getLocks(). Sends diagnosis email on failure. Updates locations.hardware_key_last_verified.</div>
+        <span class="service-badge badge-cron">Every 6 Hours</span>
+      </div>
+    </div>
+
+    <table class="env-table" style="margin-top:16px;">
+      <thead>
+        <tr><th>Service</th><th>Health Check</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Core Engine</td>
+          <td>GET /health</td>
+          <td>Returns DB connection status + queue stats</td>
+        </tr>
+        <tr>
+          <td>Admin Hub</td>
+          <td>GET /health</td>
+          <td>Separate Express app — isolated crash boundary</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ENVIRONMENT VARIABLES — CORE ENGINE -->
+  <div class="section">
+    <div class="section-label">Environment Variables — Core Engine (node server.js)</div>
+    <table class="env-table">
+      <thead>
+        <tr><th>Variable</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>DATABASE_URL <span class="env-required req-yes">Required</span></td>
+          <td>PostgreSQL connection string (Railway). Set automatically by Railway Postgres plugin.</td>
+        </tr>
+        <tr>
+          <td>WIX_WEBHOOK_SECRET <span class="env-required req-yes">Required</span></td>
+          <td>HMAC secret from Wix developer dashboard. Used by wix-connector.js to verify all inbound webhooks (DR-009).</td>
+        </tr>
+        <tr>
+          <td>KISI_ENCRYPTION_KEY <span class="env-required req-gen">Generate</span></td>
+          <td>32-byte hex string for AES-256-GCM encryption of hardware API keys (DR-028). Generate: <code>node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"</code></td>
+        </tr>
+        <tr>
+          <td>RESEND_API_KEY <span class="env-required req-yes">Required</span></td>
+          <td>Resend API key from resend.com dashboard. Required for all operator email notifications (DR-020). OB-51 open.</td>
+        </tr>
+        <tr>
+          <td>RESEND_FROM_EMAIL <span class="env-required req-yes">Required</span></td>
+          <td>Sender address for all Resend emails — e.g. alerts@accesssync.io. Must be a verified Resend domain.</td>
+        </tr>
+        <tr>
+          <td>ACCESSSYNC_OWNER_NOTIFICATION_EMAIL <span class="env-required req-yes">Required</span></td>
+          <td>Platform owner email (Daxx). Receives HMAC spike alerts, reconciliation digests, and acts as client notification fallback when a client has no notification_email set. Set once per Railway deployment. This is NOT per-tenant — each gym operator sets their own via the Platform Config UI (clients.notification_email).</td>
+        </tr>
+        <tr>
+          <td>PORT</td>
+          <td>Set automatically by Railway. Do not set manually.</td>
+        </tr>
+        <tr>
+          <td>NODE_ENV</td>
+          <td>development | production. Set to production on Railway.</td>
+        </tr>
+        <tr>
+          <td>DEFAULT_TENANT_ID</td>
+          <td>Temporary single-tenant fallback. Remove when multi-tenant routing is complete (site_id self-registration via tenant-resolver.js).</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ENVIRONMENT VARIABLES — ADMIN HUB -->
+  <div class="section">
+    <div class="section-label">Environment Variables — Admin Hub (node admin/server.js)</div>
+    <table class="env-table">
+      <thead>
+        <tr><th>Variable</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ADMIN_JWT_SECRET <span class="env-required req-gen">Generate</span></td>
+          <td>Random 64-character string — JWT signing secret for admin sessions. Generate: <code>node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"</code></td>
+        </tr>
+        <tr>
+          <td>GOOGLE_CLIENT_ID <span class="env-required req-yes">Required</span></td>
+          <td>OAuth 2.0 Client ID from Google Cloud Console. Public value — safe to expose. Enable Google Identity Services for the Admin Hub domain.</td>
+        </tr>
+        <tr>
+          <td>ADMIN_ALLOWED_EMAIL <span class="env-required req-yes">Required</span></td>
+          <td>daxxroberts@gmail.com — only this Google account can log in to the Admin Hub. Hard allowlist — not a role, not a flag.</td>
+        </tr>
+        <tr>
+          <td>OWNER_PIN <span class="env-required req-gen">Generate</span></td>
+          <td>Owner bypass PIN for onboarding Step 4. Allows location activation without a Kisi key (demo/testing). Short numeric PIN stored in Railway Admin Hub service vars.</td>
+        </tr>
+        <tr>
+          <td>OPERATOR_INVITE_TOKEN <span class="env-required req-gen">Generate</span></td>
+          <td>Shared secret protecting onboarding signup endpoints (OB-24). Operator receives link with ?invite=TOKEN. Generate: <code>node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"</code></td>
+        </tr>
+        <tr>
+          <td>CORE_ENGINE_URL <span class="env-required req-yes">Required</span></td>
+          <td>Core Engine Railway URL — used by onboarding Step 5 validation. e.g. https://accesssync.up.railway.app. OB-25 open.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- MIGRATIONS -->
+  <div class="section">
+    <div class="section-label">Database Migrations (PostgreSQL on Railway)</div>
+    <table class="mig-table">
+      <thead>
+        <tr><th>File</th><th>What it does</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>schema.sql</td>
+          <td>14-table baseline schema. Run once on fresh DB. Note: shows kisi_api_key — DR-035 renames after this runs.</td>
+          <td><span class="mig-status-applied">✓ Baseline</span></td>
+        </tr>
+        <tr>
+          <td>migrations/dr-035.sql</td>
+          <td>DR-035: renames clients.kisi_api_key → hardware_api_key, locations.kisi_api_key → hardware_api_key, plan_mappings.wix_plan_id → source_plan_id. <strong>Required before Sprint 5 code deploy.</strong></td>
+          <td><span class="mig-status-pending">⚠ Pending (Daxx)</span></td>
+        </tr>
+        <tr>
+          <td>migrations/sprint-5.sql</td>
+          <td>Sprint 5 columns: locations.hardware_key_last_verified (TIMESTAMPTZ), locations.hardware_key_last_error (TEXT), clients.first_grant_sent (BOOLEAN DEFAULT false). <strong>Required before Sprint 5 code deploy.</strong></td>
+          <td><span class="mig-status-pending">⚠ Pending (Daxx)</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="background:var(--amber-dim); border:1px solid rgba(245,158,11,0.3); border-radius:var(--r-sm); padding:12px 16px; margin-top:14px; font-size:11px; color:var(--text2);">
+      <strong style="color:var(--amber);">Migration order matters:</strong>
+      Run <code>dr-035.sql</code> then <code>sprint-5.sql</code> on Railway Postgres before deploying Sprint 5 code to Railway.
+      Sprint 5 code references <code>hardware_api_key</code> — if dr-035.sql hasn't run, it will fail.
+    </div>
+  </div>
+
+  <!-- PRE-HOG DEPLOY CHECKLIST -->
+  <div class="section">
+    <div class="section-label">Pre-HOG Deploy Checklist</div>
+    <div class="checklist">
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Run <code>migrations/dr-035.sql</code> on Railway Postgres (rename kisi_api_key → hardware_api_key)</div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Run <code>migrations/sprint-5.sql</code> on Railway Postgres (hardware_key_last_verified + first_grant_sent columns)</div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Set <code>RESEND_API_KEY</code> in Railway Core Engine service (OB-51)</div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Set <code>RESEND_FROM_EMAIL</code> in Railway Core Engine service (OB-51)</div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Set <code>ACCESSSYNC_OWNER_NOTIFICATION_EMAIL</code> in Railway Core Engine service</div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Add Railway Cron service: <code>node core/hardware-health-check.js</code> — schedule every 6 hours</div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Set <code>CORE_ENGINE_URL</code> env var on Admin Hub Railway service (OB-25)</div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Enter HOG site_id in Railway DB clients table (Chad provides from Wix dashboard)</div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Enter HOG Kisi API key via onboarding wizard (encrypted and stored)</div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Verify health checks: GET /health on Core Engine + Admin Hub return 200</div>
+      </div>
+      <div class="checklist-item">
+        <div class="check-box"></div>
+        <div>Send test Wix webhook — confirm it appears in webhook_log with hmac_status='accepted'</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HARD GATES -->
+  <div class="section">
+    <div class="section-label">Hard Gates — Nothing Ships Without These</div>
+    <table class="gates-table">
+      <thead>
+        <tr><th>Gate</th><th>Description</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>G-01</td>
+          <td>Chad signed client agreement</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-02</td>
+          <td>LLC formation complete</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-03</td>
+          <td>Kisi reseller agreement — attorney review complete</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-04</td>
+          <td>Wix developer account confirmed</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-05</td>
+          <td>Business technology insurance in place</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-06</td>
+          <td>Failure runbook complete</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-07</td>
+          <td>Partnership decision (Michael)</td>
+          <td><span class="gate-closed">Closed — Solo</span></td>
+        </tr>
+        <tr>
+          <td>G-08</td>
+          <td>Kisi API access confirmed from Joe</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-09</td>
+          <td>Chad confirmed on Kisi Pro tier ($199/mo/location)</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+        <tr>
+          <td>G-10</td>
+          <td>NOVA reviews Kisi API docs, confirms schema assumptions</td>
+          <td><span class="gate-open">Open</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- KEY FILE REFERENCE -->
+  <div class="section">
+    <div class="section-label">Key File Reference</div>
+    <table class="env-table">
+      <thead>
+        <tr><th>File</th><th>Purpose</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>server.js</td><td>Core Engine entry point. Imports wix-connector (L1), boots BullMQ worker, DB health check, SIGTERM graceful shutdown.</td></tr>
+        <tr><td>admin/server.js</td><td>Admin Hub entry point. Express + EJS. 6 operator page routes. Google OAuth. Crash-isolated.</td></tr>
+        <tr><td>adapters/wix/wix-connector.js</td><td>Layer 1: HTTP handler + HMAC-SHA256 verification. Calls hmac-monitor on rejection.</td></tr>
+        <tr><td>adapters/standard-adapter.js</td><td>Layer 3: member_identity + member_access_state writes. in_flight lock. Daily activity UPSERT. First grant email.</td></tr>
+        <tr><td>adapters/hardware-adapter.js</td><td>Layer 5: hardware platform router. Delegates to kisi/seam by hardwarePlatform string.</td></tr>
+        <tr><td>adapters/kisi/kisi-adapter.js</td><td>Layer 6: Kisi business methods. getGroups, assignRole (validUntil), getLocks (normalized).</td></tr>
+        <tr><td>core/queue-worker.js</td><td>Layer coordinator. Concurrency 20. Orchestrates L3+L4+L5 per job.</td></tr>
+        <tr><td>core/grant-revoke.js</td><td>Pure grant/revoke logic. Loops all mappings[], returns assignments[].</td></tr>
+        <tr><td>core/reconciliation.js</td><td>Nightly sweep. Calls getLocks(). Stale lock cleanup, failed job re-queue, operator digest.</td></tr>
+        <tr><td>core/hardware-health-check.js</td><td>Sprint 5.2: 6-hourly key validation. Diagnosis email on failure.</td></tr>
+        <tr><td>core/hmac-monitor.js</td><td>Sprint 5.1: Redis sliding window HMAC failure counter. 3 failures/5min → alert email.</td></tr>
+        <tr><td>core/crypto-utils.js</td><td>AES-256-GCM encrypt/decrypt for hardware API keys.</td></tr>
+        <tr><td>schema.sql</td><td>14-table baseline schema. kisi_api_key columns (pre-DR-035).</td></tr>
+        <tr><td>migrations/dr-035.sql</td><td>DR-035: kisi_api_key → hardware_api_key, wix_plan_id → source_plan_id.</td></tr>
+        <tr><td>migrations/sprint-5.sql</td><td>Sprint 5 columns: hardware_key_last_verified, hardware_key_last_error, first_grant_sent.</td></tr>
+        <tr><td>admin/public/onboard.html</td><td>5-step operator onboarding wizard. Invite token auth. System check in Step 5.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <span>AccessSync Operations · v1.0 · 2026-04-01</span>
+    <a href="index.html">Hub</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="data-model.html">Data Model</a>
+    <a href="decision-log.html">Decisions</a>
+    <a href="../llms.txt">llms.txt</a>
+  </div>
+
+</div>
+</body>
+</html>

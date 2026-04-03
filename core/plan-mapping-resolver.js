@@ -29,20 +29,24 @@ class PlanMappingResolver {
    * @returns {Array|null} [{ mappingId, hardwareGroupId, hardwarePlatform, tierName, accessType, apiKey }] or null
    */
   async resolve(tenantId, planId) {
+    // Multi-group: JOIN plan_mapping_groups to expand one mapping into multiple entries (one per group).
+    // Falls back to plan_mappings.hardware_group_id for legacy rows without junction table entries.
     const result = await db.query(
       `SELECT pm.id,
-              pm.hardware_group_id,
+              COALESCE(pmg.hardware_group_id, pm.hardware_group_id) AS hardware_group_id,
               pm.tier_name,
               pm.access_type,
               c.hardware_platform,
               COALESCE(l.hardware_api_key, c.hardware_api_key) AS hardware_api_key_enc
        FROM plan_mappings pm
+       LEFT JOIN plan_mapping_groups pmg ON pmg.mapping_id = pm.id
        LEFT JOIN locations l ON pm.location_id = l.id
        JOIN  clients c ON pm.client_id = c.id
        WHERE pm.client_id = $1
          AND pm.source_plan_id = $2
          AND pm.status = 'active'
-         AND (l.id IS NULL OR l.subscription_status = 'active')`,
+         AND (l.id IS NULL OR l.subscription_status = 'active')
+         AND COALESCE(pmg.hardware_group_id, pm.hardware_group_id, '') != ''`,
       [tenantId, planId]
     );
 

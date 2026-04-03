@@ -12,7 +12,8 @@ const crypto  = require('crypto');
 const router = express.Router();
 const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
-const { encryptApiKey } = require('../../core/crypto-utils');
+const { encryptApiKey, decryptApiKey: decryptKey } = require('../../core/crypto-utils');
+const wixPlansApi = require('../../adapters/wix/wix-plans-api');
 
 // ── GET /operator/webhook-url ────────────────────────────────────
 // Returns the core engine webhook URL for this installation.
@@ -74,7 +75,7 @@ router.post('/clients', requireInviteToken, async (req, res) => {
   try {
     const {
       name, platform = 'wix', hardware_platform, tier,
-      site_id, site_name, site_url, notification_email,
+      site_id, site_name, site_url, notification_email, wix_api_key,
     } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
 
@@ -82,11 +83,14 @@ router.post('/clients', requireInviteToken, async (req, res) => {
     // Explicit hardware_platform override allowed.
     const derivedHardware = hardware_platform || (tier === 'Connect' ? 'kisi' : tier ? 'seam' : null);
 
+    // Encrypt Wix API key if provided (same AES-256-GCM pattern as hardware keys)
+    const encryptedWixKey = wix_api_key ? encryptApiKey(wix_api_key.trim()) : null;
+
     const result = await db.query(
-      `INSERT INTO clients (name, platform, hardware_platform, tier, site_id, site_name, site_url, notification_email, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), NOW())
+      `INSERT INTO clients (name, platform, hardware_platform, tier, site_id, site_name, site_url, notification_email, wix_api_key, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', NOW(), NOW())
        RETURNING id, name, platform, hardware_platform, tier, site_id, site_name, notification_email, status, created_at`,
-      [name.trim(), platform, derivedHardware, tier || null, site_id || null, site_name || null, site_url || null, notification_email || null]
+      [name.trim(), platform, derivedHardware, tier || null, site_id || null, site_name || null, site_url || null, notification_email || null, encryptedWixKey]
     );
     console.log(`[operator/setup] Created client: ${result.rows[0].name} (${result.rows[0].id})`);
     res.status(201).json({ ok: true, client: result.rows[0] });
@@ -625,23 +629,82 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
 });
 
 // ── PATCH /operator/:clientId/plan-mappings/:mappingId ───────────
+// Accepts `groups: [{ hardware_group_id, door_name }]` for multi-group mapping.
+// Also accepts legacy single-group fields for backward compat.
 router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
   const { clientId, mappingId } = req.params;
-  const { status, door_name, hardware_group_id } = req.body;
+  const { status, door_name, hardware_group_id, groups } = req.body;
   try {
+    // Update plan_mappings row (legacy fields + status)
     const fields = [], vals = [mappingId, clientId];
     if (status !== undefined)            { fields.push(`status = $${vals.length + 1}`);            vals.push(status); }
     if (door_name !== undefined)         { fields.push(`door_name = $${vals.length + 1}`);         vals.push(door_name); }
     if (hardware_group_id !== undefined) { fields.push(`hardware_group_id = $${vals.length + 1}`); vals.push(hardware_group_id); }
-    if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
-    const result = await db.query(
-      `UPDATE plan_mappings SET ${fields.join(', ')} WHERE id = $1 AND client_id = $2 RETURNING *`,
-      vals
-    );
-    if (!result.rows.length) return res.status(404).json({ error: 'Mapping not found' });
-    res.json(result.rows[0]);
+
+    // If groups array provided, use first group for backward compat on plan_mappings row
+    if (groups && Array.isArray(groups) && groups.length > 0) {
+      if (hardware_group_id === undefined) {
+        fields.push(`hardware_group_id = $${vals.length + 1}`); vals.push(groups[0].hardware_group_id);
+      }
+      if (door_name === undefined) {
+        fields.push(`door_name = $${vals.length + 1}`); vals.push(groups[0].door_name || null);
+      }
+    }
+
+    if (!fields.length && !groups) return res.status(400).json({ error: 'No fields to update' });
+
+    let mapping;
+    if (fields.length) {
+      const result = await db.query(
+        `UPDATE plan_mappings SET ${fields.join(', ')} WHERE id = $1 AND client_id = $2 RETURNING *`,
+        vals
+      );
+      if (!result.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+      mapping = result.rows[0];
+    } else {
+      const result = await db.query('SELECT * FROM plan_mappings WHERE id = $1 AND client_id = $2', [mappingId, clientId]);
+      if (!result.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+      mapping = result.rows[0];
+    }
+
+    // Write multi-group junction table
+    if (groups && Array.isArray(groups)) {
+      // Delete existing groups for this mapping, then insert new ones
+      await db.query('DELETE FROM plan_mapping_groups WHERE mapping_id = $1', [mappingId]);
+      for (const g of groups) {
+        if (g.hardware_group_id) {
+          await db.query(
+            `INSERT INTO plan_mapping_groups (mapping_id, hardware_group_id, door_name)
+             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+            [mappingId, g.hardware_group_id, g.door_name || null]
+          );
+        }
+      }
+    }
+
+    res.json(mapping);
   } catch (err) {
     console.error('[operator] PATCH plan-mappings/:mappingId error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /operator/:clientId/plan-mappings/:mappingId/groups ──────
+// Returns groups assigned to a specific plan mapping.
+router.get('/:clientId/plan-mappings/:mappingId/groups', async (req, res) => {
+  try {
+    const { clientId, mappingId } = req.params;
+    // Verify mapping belongs to client
+    const check = await db.query('SELECT id FROM plan_mappings WHERE id = $1 AND client_id = $2', [mappingId, clientId]);
+    if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+
+    const result = await db.query(
+      'SELECT id, hardware_group_id, door_name, created_at FROM plan_mapping_groups WHERE mapping_id = $1 ORDER BY created_at',
+      [mappingId]
+    );
+    res.json({ groups: result.rows });
+  } catch (err) {
+    console.error('[operator] GET plan-mappings/:mappingId/groups error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -867,6 +930,106 @@ router.get('/:clientId/access-stats', async (req, res) => {
   } catch (err) {
     console.error('[operator] GET /:clientId/access-stats error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ══ Wix Plans API (outbound) ═══════════════════════════════════════
+
+// ── GET /operator/:clientId/wix-plans ────────────────────────────
+// Fetches all pricing plans + booking services from Wix for the plan mapping page.
+// Auto-creates plan_mappings rows for new plans/services (auto-accept).
+router.get('/:clientId/wix-plans', async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const client = await db.query('SELECT id, wix_api_key, site_id FROM clients WHERE id = $1', [clientId]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+    if (!client.rows[0].wix_api_key) {
+      return res.status(400).json({ error: 'No Wix API key set for this client', plans: [] });
+    }
+    if (!client.rows[0].site_id) {
+      return res.status(400).json({ error: 'No Wix site ID set for this client', plans: [] });
+    }
+
+    const apiKey = decryptKey(client.rows[0].wix_api_key);
+    const allPlans = await wixPlansApi.listAllMappable(apiKey, client.rows[0].site_id);
+
+    // Auto-accept: create plan_mappings rows for plans not yet in DB
+    if (allPlans.length > 0) {
+      const existing = await db.query(
+        'SELECT source_plan_id FROM plan_mappings WHERE client_id = $1',
+        [clientId]
+      );
+      const existingIds = new Set(existing.rows.map(r => r.source_plan_id));
+
+      for (const plan of allPlans) {
+        if (!existingIds.has(plan.id)) {
+          await db.query(
+            `INSERT INTO plan_mappings (client_id, source_plan_id, hardware_group_id, plan_name, status, created_at)
+             VALUES ($1, $2, '', $3, 'inactive', NOW())
+             ON CONFLICT DO NOTHING`,
+            [clientId, plan.id, plan.name]
+          ).catch(e => console.warn('[wix-plans] Auto-insert failed for', plan.id, e.message));
+        }
+      }
+    }
+
+    res.json({ plans: allPlans });
+  } catch (err) {
+    console.error('[operator] GET /:clientId/wix-plans error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Wix API key management ──────────────────────────────────────
+
+// GET /operator/clients/:clientId/wix-api-key/status
+router.get('/clients/:clientId/wix-api-key/status', async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const result = await db.query('SELECT wix_api_key FROM clients WHERE id = $1', [clientId]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    res.json({ hasKey: !!result.rows[0].wix_api_key });
+  } catch (err) {
+    console.error('[operator] GET wix-api-key/status error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /operator/clients/:clientId/wix-api-key
+router.put('/clients/:clientId/wix-api-key', async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const { apiKey } = req.body;
+    if (!apiKey || !apiKey.trim()) return res.status(400).json({ error: 'apiKey is required' });
+
+    const encrypted = encryptApiKey(apiKey.trim());
+    const result = await db.query(
+      'UPDATE clients SET wix_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name',
+      [encrypted, clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    res.json({ ok: true, message: 'Wix API key saved' });
+  } catch (err) {
+    console.error('[operator] PUT wix-api-key error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /operator/clients/:clientId/wix-api-key/test
+router.get('/clients/:clientId/wix-api-key/test', async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const result = await db.query('SELECT wix_api_key, site_id FROM clients WHERE id = $1', [clientId]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    if (!result.rows[0].wix_api_key) return res.json({ valid: false, error: 'No Wix API key set' });
+    if (!result.rows[0].site_id) return res.json({ valid: false, error: 'No Wix site ID set for this client' });
+
+    const apiKey = decryptKey(result.rows[0].wix_api_key);
+    const testResult = await wixPlansApi.testApiKey(apiKey, result.rows[0].site_id);
+    res.json(testResult);
+  } catch (err) {
+    console.error('[operator] GET wix-api-key/test error:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

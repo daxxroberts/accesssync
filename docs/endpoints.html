@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AccessSync — API Endpoints</title>
+<link rel="alternate" type="text/plain" href="../llms.txt">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -142,7 +143,27 @@ html, body {
 </style>
 </head>
 <body>
+
+<!-- AI_CONTEXT
+type: api-endpoints
+status: active
+last_updated: 2026-04-01
+key_facts:
+  - 77 endpoints across 2 Railway services (Core Engine + Admin Hub)
+  - Core Engine (server.js): webhook receiver + member sync API. Auth: Wix JWT or none.
+  - Admin Hub (admin/server.js): operator dashboard + onboarding. Auth: Admin JWT (httpOnly cookie) or Invite Token.
+  - Operator dashboard endpoints: prefix /operator/:clientId/...
+  - Admin panel endpoints: prefix /admin/clients/...
+  - Member sync API: GET /member/access-status — RS256 JWT verified (Wix JWKS)
+  - Health checks: GET /health on both services
+  - Wix webhook receiver: POST /webhook/wix — HMAC-SHA256 verified, 200 OK immediately, async BullMQ
+-->
+
 <div class="page">
+
+  <div style="font-size:11px;color:#94A3B8;margin-bottom:14px;">
+    <a href="index.html" style="color:#4F6EF7;text-decoration:none;">Knowledge Base</a> / API Endpoints
+  </div>
 
   <div class="page-header">
     <div class="page-eyebrow">Reference</div>

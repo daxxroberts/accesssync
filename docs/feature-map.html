@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — Feature Map</title>
+<link rel="alternate" type="text/plain" href="../llms.txt">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --purple:     #8B5CF6;
+  --purple-dim: rgba(139,92,246,0.10);
+  --teal:       #0EA5E9;
+  --teal-dim:   rgba(14,165,233,0.10);
+  --slate:      #64748B;
+  --slate-dim:  rgba(100,116,139,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body {
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 48px 32px 80px; }
+
+.breadcrumb { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+.breadcrumb a { color: var(--brand); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+.header { margin-bottom: 40px; }
+.header-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--brand); margin-bottom: 10px;
+}
+.header h1 { font-size: 32px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
+.header-sub { font-size: 14px; color: var(--text2); max-width: 600px; line-height: 1.6; }
+
+/* ── Status legend ───────────────────────────────────────────── */
+.legend {
+  display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 36px;
+}
+.legend-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text2);
+}
+
+/* ── Section headings ───────────────────────────────────────── */
+.section { margin-bottom: 44px; }
+.section-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 16px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Feature table ───────────────────────────────────────────── */
+.feature-table {
+  width: 100%; border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.feature-table th {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--muted);
+  background: var(--bg); padding: 10px 16px; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.feature-table td {
+  font-size: 12px; color: var(--text2);
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.feature-table tr:last-child td { border-bottom: none; }
+.feature-table td:first-child {
+  font-family: 'Courier New', monospace;
+  font-size: 11px; color: var(--muted); width: 70px;
+  white-space: nowrap;
+}
+.feature-table td:nth-child(2) {
+  font-weight: 600; color: var(--text); width: 200px;
+}
+.feature-table td.desc { color: var(--text2); }
+.feature-table td.refs {
+  font-size: 10px; color: var(--muted); width: 150px;
+}
+
+/* ── Status badges ───────────────────────────────────────────── */
+.status {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; padding: 3px 9px; border-radius: 99px;
+  white-space: nowrap;
+}
+.status-live        { background: var(--green-dim); color: var(--green); }
+.status-planned     { background: var(--amber-dim); color: var(--amber); }
+.status-in_progress { background: var(--brand-dim); color: var(--brand); }
+.status-backlog     { background: var(--slate-dim); color: var(--slate); }
+.status-deprecated  { background: var(--red-dim); color: var(--red); }
+
+.note-chip {
+  display: inline-block; font-size: 8px; font-weight: 700;
+  letter-spacing: 0.4px; text-transform: uppercase;
+  background: var(--teal-dim); color: var(--teal);
+  padding: 1px 6px; border-radius: 4px; margin-left: 4px;
+}
+
+/* ── Stat row ────────────────────────────────────────────────── */
+.stats-row {
+  display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 32px;
+}
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 14px 20px;
+  box-shadow: var(--shadow);
+  flex: 1; min-width: 120px; text-align: center;
+}
+.stat-num { font-size: 24px; font-weight: 800; color: var(--text); }
+.stat-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+.stat-live .stat-num { color: var(--green); }
+.stat-planned .stat-num { color: var(--amber); }
+.stat-backlog .stat-num { color: var(--slate); }
+
+/* ── Footer ─────────────────────────────────────────────────── */
+.footer {
+  margin-top: 64px; padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+  display: flex; gap: 24px; flex-wrap: wrap;
+}
+.footer a { color: var(--muted); text-decoration: none; }
+.footer a:hover { color: var(--brand); }
+</style>
+</head>
+<body>
+
+<!-- AI_CONTEXT
+type: feature-map
+status: active
+last_updated: 2026-04-01
+key_facts:
+  - 38 features across 5 categories
+  - 22 live, 11 planned, 3 backlog
+  - F001–F010: Core single-member access — all live except F009 (multi-source, planned)
+  - F020–F026: Family/multi-member — all planned (zero code, blocked by FP-01 Kisi email issue)
+  - F030–F038: Operator UI — all live (F038 same-group warning built Sprint 5.4, Feature_Map.md says planned but it is live)
+  - I001–I007: Integrations — I001-I006 live, I007 (Seam) backlog
+  - A001–A002: AI features — both backlog
+  - F009 (multi-source grant/revoke) and F034 are planned — member_access_sources table not yet built
+-->
+
+<div class="page">
+
+  <div class="breadcrumb">
+    <a href="index.html">Knowledge Base</a> / Feature Map
+  </div>
+
+  <div class="header">
+    <div class="header-eyebrow">AccessSync — Feature Map</div>
+    <h1>Feature Inventory</h1>
+    <div class="header-sub">
+      Complete feature inventory — live, planned, and backlog. Updated 2026-04-01.
+      Source: <code>02_Product/Feature_Map.md</code> (vault, active).
+    </div>
+  </div>
+
+  <!-- Status legend -->
+  <div class="legend">
+    <div class="legend-item"><span class="status status-live">Live</span> Deployed, available to users</div>
+    <div class="legend-item"><span class="status status-in_progress">In Progress</span> Actively being built</div>
+    <div class="legend-item"><span class="status status-planned">Planned</span> Scoped, not started</div>
+    <div class="legend-item"><span class="status status-backlog">Backlog</span> Identified, not scoped</div>
+    <div class="legend-item"><span class="status status-deprecated">Deprecated</span> Removed</div>
+  </div>
+
+  <!-- Summary stats -->
+  <div class="stats-row">
+    <div class="stat-card stat-live">
+      <div class="stat-num">22</div>
+      <div class="stat-label">Live</div>
+    </div>
+    <div class="stat-card stat-planned">
+      <div class="stat-num">11</div>
+      <div class="stat-label">Planned</div>
+    </div>
+    <div class="stat-card stat-backlog">
+      <div class="stat-num">3</div>
+      <div class="stat-label">Backlog</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">38</div>
+      <div class="stat-label">Total Features</div>
+    </div>
+  </div>
+
+  <!-- CORE — SINGLE MEMBER -->
+  <div class="section">
+    <div class="section-label">Core Features — Single Member Access</div>
+    <table class="feature-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Feature</th>
+          <th>Description</th>
+          <th>Status</th>
+          <th>Related</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-feature="F001" data-status="live">
+          <td>F001</td>
+          <td>Plan-to-Group Grant</td>
+          <td class="desc">Wix plan.purchased → Kisi group role assignment via 7-layer pipeline</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">DR-022, SPEC_V1_Core_Flow</td>
+        </tr>
+        <tr data-feature="F002" data-status="live">
+          <td>F002</td>
+          <td>Plan Revoke</td>
+          <td class="desc">Wix plan.cancelled → delete Kisi role assignment</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">SPEC_V1_Core_Flow</td>
+        </tr>
+        <tr data-feature="F003" data-status="live">
+          <td>F003</td>
+          <td>Payment Suspension</td>
+          <td class="desc">Wix payment.failed → Kisi access_enabled: false (user-level, preserves role assignments)</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">SPEC_V1_Core_Flow</td>
+        </tr>
+        <tr data-feature="F004" data-status="live">
+          <td>F004</td>
+          <td>Payment Recovery</td>
+          <td class="desc">Wix payment.recovered → Kisi access_enabled: true. enableAccess only — no new role assignments (DR-026)</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">DR-026</td>
+        </tr>
+        <tr data-feature="F005" data-status="live">
+          <td>F005</td>
+          <td>Member Deletion</td>
+          <td class="desc">Wix member.deleted → DELETE Kisi user entirely</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">SPEC_V1_Core_Flow</td>
+        </tr>
+        <tr data-feature="F006" data-status="live">
+          <td>F006</td>
+          <td>Webhook Deduplication</td>
+          <td class="desc">processed_event_ids table prevents double-processing. Event ID checked before BullMQ enqueue.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">DR-010</td>
+        </tr>
+        <tr data-feature="F007" data-status="live">
+          <td>F007</td>
+          <td>Identity Resolution</td>
+          <td class="desc">Wix member → Kisi user lookup/create chain. Platform-agnostic (DR-021). DB cache → findUserByEmail → createUser.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">DR-021, DR-023</td>
+        </tr>
+        <tr data-feature="F008" data-status="live">
+          <td>F008</td>
+          <td>Multi-Door Provisioning</td>
+          <td class="desc">Single plan maps to multiple Kisi groups. member_role_assignments table stores one row per door per member.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">DR-026</td>
+        </tr>
+        <tr data-feature="F009" data-status="planned">
+          <td>F009</td>
+          <td>Multi-Source Grant/Revoke</td>
+          <td class="desc">member_access_sources table tracks all reasons a member is in a group. Pre-grant check. Revoke only when zero sources remain. Prevents time-limited booking from overwriting permanent plan access.</td>
+          <td><span class="status status-planned">Planned</span></td>
+          <td class="refs">DR-034</td>
+        </tr>
+        <tr data-feature="F010" data-status="live">
+          <td>F010</td>
+          <td>Nightly Reconciliation</td>
+          <td class="desc">Scheduled sync: AccessSync ↔ Kisi state comparison, drift correction. Stale lock cleanup, failed job re-queue, operator digest.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">SPEC_Nightly_Reconciliation</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- CORE — FAMILY PLAN -->
+  <div class="section">
+    <div class="section-label">Core Features — Multi-Member / Family Plan</div>
+    <table class="feature-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Feature</th>
+          <th>Description</th>
+          <th>Status</th>
+          <th>Related</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-feature="F020" data-status="planned">
+          <td>F020</td>
+          <td>Sub-Member ID Generation</td>
+          <td class="desc">Synthetic ID format: {uuid}###as{NNN}. Deterministic, reversible, collision-free. Exploded from Wix plan_members event in Layer 2.</td>
+          <td><span class="status status-planned">Planned</span></td>
+          <td class="refs">DR-029</td>
+        </tr>
+        <tr data-feature="F021" data-status="planned">
+          <td>F021</td>
+          <td>Plan Holder Linkage</td>
+          <td class="desc">plan_holder_id column links sub-members to primary Wix member. NULL for single-plan and event-booking members.</td>
+          <td><span class="status status-planned">Planned</span></td>
+          <td class="refs">DR-030</td>
+        </tr>
+        <tr data-feature="F022" data-status="planned">
+          <td>F022</td>
+          <td>Upstream Explosion</td>
+          <td class="desc">Family plan webhook exploded into synthetic single-member events in Wix Adapter (L2). Core Engine grant/revoke path unchanged.</td>
+          <td><span class="status status-planned">Planned</span></td>
+          <td class="refs">DR-031</td>
+        </tr>
+        <tr data-feature="F023" data-status="planned">
+          <td>F023</td>
+          <td>Draft-Submit Workflow</td>
+          <td class="desc">Operator/plan holder adds sub-members in draft state, reviews, then submits batch. No access provisioned until submit.</td>
+          <td><span class="status status-planned">Planned</span></td>
+          <td class="refs">DR-032</td>
+        </tr>
+        <tr data-feature="F024" data-status="planned">
+          <td>F024</td>
+          <td>Unified Member Widget</td>
+          <td class="desc">Single HTML screen handles single plan, event booking, and family plan modes. planType param controls visible sections.</td>
+          <td><span class="status status-planned">Planned</span></td>
+          <td class="refs">DR-033</td>
+        </tr>
+        <tr data-feature="F025" data-status="planned">
+          <td>F025</td>
+          <td>Family Suspension</td>
+          <td class="desc">payment.failed suspends plan holder + all linked sub-members atomically</td>
+          <td><span class="status status-planned">Planned</span></td>
+          <td class="refs">DR-030</td>
+        </tr>
+        <tr data-feature="F026" data-status="planned">
+          <td>F026</td>
+          <td>Family Revoke Cascade</td>
+          <td class="desc">plan.cancelled or holder deleted → revoke all sub-members for that plan</td>
+          <td><span class="status status-planned">Planned</span></td>
+          <td class="refs">DR-030</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- OPERATOR UI -->
+  <div class="section">
+    <div class="section-label">Operator UI Features</div>
+    <table class="feature-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Feature</th>
+          <th>Description</th>
+          <th>Status</th>
+          <th>Related</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-feature="F030" data-status="live">
+          <td>F030</td>
+          <td>Overview Dashboard</td>
+          <td class="desc">Client health, activity summary, Kisi connection status. "Connect your Kisi API key" amber banner when key missing.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">Sprint 3</td>
+        </tr>
+        <tr data-feature="F031" data-status="live">
+          <td>F031</td>
+          <td>Members Page</td>
+          <td class="desc">Member list, search by email (Wix Members API + ILIKE fallback), access state, debug timeline drawer. CSV export respects active filters.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">Sprint 3, Sprint 5.6</td>
+        </tr>
+        <tr data-feature="F032" data-status="live">
+          <td>F032</td>
+          <td>Plan Mapping Setup</td>
+          <td class="desc">Plan-to-group matrix, Kisi group dropdown (live from API), multi-member toggle. Same-group duplicate warning (Sprint 5.4).</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">Sprint 3</td>
+        </tr>
+        <tr data-feature="F033" data-status="live">
+          <td>F033</td>
+          <td>Access Dashboard</td>
+          <td class="desc">Access log with 30-day bar chart, event filters, location filter. CSV export respects active filters (Sprint 5.6).</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">Sprint 3, Sprint 5.6</td>
+        </tr>
+        <tr data-feature="F034" data-status="live">
+          <td>F034</td>
+          <td>Platform Config</td>
+          <td class="desc">Org-level API key card (set/rotate/test). Alert email card (per-tenant notification_email). Location cards with subscription status, suspend/reactivate button, per-location key override.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">Sprint 5.3, Sprint 5.7</td>
+        </tr>
+        <tr data-feature="F035" data-status="live">
+          <td>F035</td>
+          <td>Onboarding Wizard</td>
+          <td class="desc">5-step onboard: account → location → API key → plan mapping → go-live system check. Invite token auth. Owner bypass PIN. Location auto-activation.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">Sprint 4, OB-41–45</td>
+        </tr>
+        <tr data-feature="F036" data-status="live">
+          <td>F036</td>
+          <td>Invite Token Auth</td>
+          <td class="desc">Onboarding signup endpoints protected by OPERATOR_INVITE_TOKEN + 5 req/IP/min rate limiter</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">OB-24</td>
+        </tr>
+        <tr data-feature="F037" data-status="live">
+          <td>F037</td>
+          <td>Owner Bypass PIN</td>
+          <td class="desc">Location activation without Kisi key validation for demo/testing. OWNER_PIN env var. Subtle UI affordance in onboard Step 4.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">Sprint 4</td>
+        </tr>
+        <tr data-feature="F038" data-status="live">
+          <td>F038</td>
+          <td>Same-Group Mapping Warning <span class="note-chip">Updated</span></td>
+          <td class="desc">Amber warning when operator maps two plans to the same Kisi group. Appears in plan-mapping.ejs render loop. Feature_Map.md says planned — built in Sprint 5.4, now live.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">Sprint 5.4</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- INTEGRATION FEATURES -->
+  <div class="section">
+    <div class="section-label">Integration Features</div>
+    <table class="feature-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Feature</th>
+          <th>Description</th>
+          <th>Status</th>
+          <th>Related</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-feature="I001" data-status="live">
+          <td>I001</td>
+          <td>Kisi Direct API</td>
+          <td class="desc">All access control via Kisi REST API (not Seam). kisi-adapter.js (L6) + kisi-connector.js (L7). Rate limit: 5 req/sec (DR-008).</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">DR-011</td>
+        </tr>
+        <tr data-feature="I002" data-status="live">
+          <td>I002</td>
+          <td>Kisi API Key Storage</td>
+          <td class="desc">AES-256-GCM encrypted, stored in clients.hardware_api_key (org default) + locations.hardware_api_key (nullable override). KISI_ENCRYPTION_KEY env var.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">DR-028</td>
+        </tr>
+        <tr data-feature="I003" data-status="live">
+          <td>I003</td>
+          <td>Kisi Group Fetching</td>
+          <td class="desc">GET /groups endpoint provides live group list for plan mapping dropdown in operator UI</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">OB-42</td>
+        </tr>
+        <tr data-feature="I004" data-status="live">
+          <td>I004</td>
+          <td>Kisi API Key Validation</td>
+          <td class="desc">Key validated against Kisi GET /groups?limit=1 before storing. Test button in operator UI. Hardware health check cron runs every 6 hours (Sprint 5.2).</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">Sprint 5.2</td>
+        </tr>
+        <tr data-feature="I005" data-status="live">
+          <td>I005</td>
+          <td>Wix Webhook Ingestion</td>
+          <td class="desc">HMAC-SHA256 verified. 200 OK returned immediately. Async BullMQ processing. HMAC spike alerting via Redis sliding window (Sprint 5.1).</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">DR-009, Sprint 5.1</td>
+        </tr>
+        <tr data-feature="I006" data-status="live">
+          <td>I006</td>
+          <td>Wix JWT Verification</td>
+          <td class="desc">RS256 signature verification via Wix JWKS endpoint, 1hr cache. Member ID cross-check. Secures member-sync-api.js.</td>
+          <td><span class="status status-live">Live</span></td>
+          <td class="refs">OB-08</td>
+        </tr>
+        <tr data-feature="I007" data-status="backlog">
+          <td>I007</td>
+          <td>Seam Integration</td>
+          <td class="desc">Post-V1 stub. Same 8-method interface as Kisi pair. seam-adapter.js (L6) + seam-connector.js (L7). Will enable any Seam-connected hardware system.</td>
+          <td><span class="status status-backlog">Backlog</span></td>
+          <td class="refs">DR-002</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- AI FEATURES -->
+  <div class="section">
+    <div class="section-label">AI-Powered Features</div>
+    <table class="feature-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Feature</th>
+          <th>Description</th>
+          <th>Status</th>
+          <th>Related</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-feature="A001" data-status="backlog">
+          <td>A001</td>
+          <td>Access Denial Explanation</td>
+          <td class="desc">AI-generated plain-language explanation when member is denied at door. Shown in member sync screen or Wix widget.</td>
+          <td><span class="status status-backlog">Backlog</span></td>
+          <td class="refs">06_AI_Systems</td>
+        </tr>
+        <tr data-feature="A002" data-status="backlog">
+          <td>A002</td>
+          <td>AI Debugging Assistant</td>
+          <td class="desc">AI-powered error diagnosis in operator dashboard. Explains error patterns and suggests resolution steps.</td>
+          <td><span class="status status-backlog">Backlog</span></td>
+          <td class="refs">06_AI_Systems</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Changelog -->
+  <div class="section">
+    <div class="section-label">Feature Changelog</div>
+    <table class="feature-table">
+      <thead>
+        <tr>
+          <th style="width:120px;">Date</th>
+          <th style="width:160px;">Feature</th>
+          <th>Change</th>
+          <th style="width:100px;">Author</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>2026-04-01</td>
+          <td>F038</td>
+          <td class="desc">Same-group mapping warning built in Sprint 5.4. Status: planned → live. Feature_Map.md not yet updated in vault.</td>
+          <td>NOVA</td>
+        </tr>
+        <tr>
+          <td>2026-04-01</td>
+          <td>F009, F034</td>
+          <td class="desc">Multi-source grant/revoke locked (DR-034). member_access_sources table designed. Status: planned.</td>
+          <td>NOVA + ORION</td>
+        </tr>
+        <tr>
+          <td>2026-04-01</td>
+          <td>Full map</td>
+          <td class="desc">Feature Map vault stub replaced with complete inventory (KEEPER)</td>
+          <td>KEEPER</td>
+        </tr>
+        <tr>
+          <td>2026-03-29</td>
+          <td>F020–F026</td>
+          <td class="desc">MultiMember features specced (DR-029–033)</td>
+          <td>NOVA + IRIS</td>
+        </tr>
+        <tr>
+          <td>2026-03-27</td>
+          <td>F001–F010, F030–F035</td>
+          <td class="desc">V1 code-complete and deployed to Railway</td>
+          <td>NOVA</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <span>AccessSync Feature Map · 38 features · 2026-04-01</span>
+    <a href="index.html">Hub</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="data-model.html">Data Model</a>
+    <a href="decision-log.html">Decisions</a>
+    <a href="operations.html">Operations</a>
+    <a href="../llms.txt">llms.txt</a>
+  </div>
+
+</div>
+</body>
+</html>

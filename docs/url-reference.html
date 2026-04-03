@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — URL Reference</title>
+<link rel="alternate" type="text/plain" href="../llms.txt">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --purple:     #8B5CF6;
+  --purple-dim: rgba(139,92,246,0.10);
+  --teal:       #0EA5E9;
+  --teal-dim:   rgba(14,165,233,0.10);
+  --slate:      #64748B;
+  --slate-dim:  rgba(100,116,139,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body {
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1000px; margin: 0 auto; padding: 48px 24px 80px; }
+
+/* Header */
+.page-header { margin-bottom: 40px; }
+.page-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--brand); margin-bottom: 10px; }
+.page-title { font-size: 32px; font-weight: 800; letter-spacing: -0.8px; line-height: 1.15; margin-bottom: 12px; }
+.page-desc { font-size: 14px; color: var(--text2); max-width: 620px; line-height: 1.7; }
+.breadcrumb { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+.breadcrumb a { color: var(--brand); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+/* Stats strip */
+.stats-strip { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 40px; }
+.stat-pill {
+  background: var(--card); border: 1px solid var(--border); border-radius: 20px;
+  padding: 6px 16px; font-size: 12px; font-weight: 600; color: var(--text2);
+  display: flex; align-items: center; gap: 6px;
+}
+.stat-pill strong { color: var(--text); }
+
+/* Service section */
+.service-section { margin-bottom: 40px; }
+.service-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 16px;
+}
+.service-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0;
+}
+.service-title { font-size: 15px; font-weight: 700; }
+.service-subtitle { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+/* Section label */
+.section-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--muted);
+  margin: 20px 0 10px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* URL table */
+.url-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow);
+  margin-bottom: 8px;
+}
+.url-row {
+  display: grid; grid-template-columns: 120px 1fr 80px;
+  align-items: center; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background 0.1s;
+}
+.url-row:last-child { border-bottom: none; }
+.url-row:hover { background: var(--bg); }
+a.url-row { text-decoration: none; color: inherit; }
+a.url-row:hover { background: var(--brand-dim); border-left: 3px solid var(--brand); }
+a.url-row:hover .url-path { color: var(--brand); }
+
+/* Type badge — page vs api */
+.type-badge {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase;
+  border-radius: 5px; padding: 3px 8px; white-space: nowrap;
+}
+.type-page   { background: var(--teal-dim);   color: #0369a1; }
+.type-api    { background: var(--purple-dim);  color: #6d28d9; }
+.type-webhook { background: var(--amber-dim); color: #92400e; }
+
+/* Method badge */
+.method {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.5px;
+  border-radius: 5px; padding: 3px 7px; text-align: center;
+  display: inline-block; margin-right: 6px;
+}
+.method.GET    { background: var(--green-dim);  color: #15803d; }
+.method.POST   { background: var(--brand-dim);  color: var(--brand-dark); }
+.method.PUT    { background: var(--purple-dim); color: #6d28d9; }
+.method.PATCH  { background: var(--amber-dim);  color: #92400e; }
+.method.DELETE { background: var(--red-dim);    color: #b91c1c; }
+
+.url-path {
+  font-family: 'Courier New', monospace; font-size: 12px;
+  font-weight: 600; color: var(--text); word-break: break-all;
+}
+.url-path .param { color: var(--brand); }
+.url-desc { font-size: 12px; color: var(--text2); line-height: 1.4; }
+
+/* Auth badge */
+.auth-badge {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+  border-radius: 5px; padding: 2px 7px; white-space: nowrap; text-align: center;
+}
+.auth-none     { background: var(--green-dim);  color: #15803d; }
+.auth-jwt      { background: var(--brand-dim);  color: var(--brand-dark); }
+.auth-invite   { background: var(--amber-dim);  color: #92400e; }
+.auth-hmac     { background: var(--red-dim);    color: #b91c1c; }
+.auth-wixjwt   { background: var(--purple-dim); color: #6d28d9; }
+
+/* Info banner */
+.info-banner {
+  background: var(--brand-dim); border: 1px solid rgba(79,110,247,0.2);
+  border-radius: var(--r-sm); padding: 14px 18px; margin-bottom: 32px;
+  font-size: 12px; color: var(--brand-dark); line-height: 1.6;
+}
+.info-banner strong { color: var(--brand); }
+
+/* Port chips */
+.port-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 32px; }
+.port-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 14px 20px; flex: 1; min-width: 220px; box-shadow: var(--shadow);
+}
+.port-card-label { font-size: 10px; font-weight: 700; letter-spacing: 0.9px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.port-card-value { font-size: 13px; font-weight: 700; color: var(--text); font-family: 'Courier New', monospace; }
+.port-card-desc  { font-size: 11px; color: var(--text2); margin-top: 3px; }
+
+/* Footer */
+.footer {
+  margin-top: 64px; padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+  display: flex; gap: 24px; flex-wrap: wrap;
+}
+.footer a { color: var(--muted); text-decoration: none; }
+.footer a:hover { color: var(--brand); }
+</style>
+</head>
+<body>
+
+<!-- AI_CONTEXT
+type: url-reference
+status: active
+last_updated: 2026-04-02
+key_facts:
+  - Complete URL inventory for both AccessSync services (Core Engine + Admin Hub)
+  - Two Railway services: Core Engine (port 3000), Admin Hub (port 3001)
+  - Browser pages: Admin Hub SPA, Operator Console (6 tabs), member sync status page
+  - Onboarding flow: 4 invite-token-protected POST endpoints
+  - Core Engine: 3 routes (health, Wix webhook, member status)
+  - Admin Hub: 9 page routes + 57 API routes
+  - Operator dashboard pages use ?clientId= query param for client context
+-->
+
+<div class="page">
+
+  <div class="breadcrumb"><a href="index.html">Knowledge Base</a> › URL Reference</div>
+
+  <div class="page-header">
+    <div class="page-eyebrow">AccessSync — URL Reference</div>
+    <h1 class="page-title">All URLs</h1>
+    <p class="page-desc">Every browser page and API endpoint across both Railway services — what it is, what it's for, and what auth it requires.</p>
+  </div>
+
+  <div class="stats-strip">
+    <div class="stat-pill"><strong>2</strong> Railway services</div>
+    <div class="stat-pill"><strong>10</strong> browser pages</div>
+    <div class="stat-pill"><strong>3</strong> Core Engine routes</div>
+    <div class="stat-pill"><strong>57</strong> Admin Hub API routes</div>
+    <div class="stat-pill"><strong>70</strong> total routes</div>
+  </div>
+
+  <div class="port-row">
+    <div class="port-card">
+      <div class="port-card-label">Core Engine</div>
+      <div class="port-card-value">port 3000</div>
+      <div class="port-card-desc">Webhook processor — provisions Kisi access from Wix events</div>
+    </div>
+    <div class="port-card">
+      <div class="port-card-label">Admin Hub</div>
+      <div class="port-card-value">port 3001</div>
+      <div class="port-card-desc">Operator dashboard + your internal admin SPA</div>
+    </div>
+  </div>
+
+  <div class="info-banner">
+    <strong>Auth key:</strong>
+    &nbsp;<span class="auth-badge auth-none">None</span> public &nbsp;
+    <span class="auth-badge auth-jwt">Admin JWT</span> Google OAuth cookie (your internal admin panel) &nbsp;
+    <span class="auth-badge auth-invite">Invite Token</span> <code>OPERATOR_INVITE_TOKEN</code> env var + rate limited &nbsp;
+    <span class="auth-badge auth-hmac">HMAC</span> Wix webhook signature &nbsp;
+    <span class="auth-badge auth-wixjwt">Wix JWT</span> RS256 from Wix JWKS
+  </div>
+
+
+  <!-- ══ ONBOARDING ENTRY POINT ════════════════════════════════════ -->
+
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--green-dim);">🚀</div>
+      <div>
+        <div class="service-title">Client Onboarding</div>
+        <div class="service-subtitle">The URL every new gym client opens to set up AccessSync — send this link to get them started</div>
+      </div>
+    </div>
+
+    <div class="url-card">
+      <a href="https://accesssync-admin.up.railway.app/onboard.html?invite=2096" target="_blank" class="url-row" style="background: var(--green-dim); border-left: 3px solid var(--green);">
+        <span class="type-badge type-page">Page</span>
+        <div>
+          <div class="url-path">/onboard.html<span class="param">?invite=2096</span></div>
+          <div class="url-desc" style="font-weight:600;">5-step setup wizard — account creation → location → Kisi API key → plan mapping → go-live check. This is the main entry point for every new client. Share this exact URL.</div>
+        </div>
+        <span class="auth-badge auth-invite">Invite Token</span>
+      </a>
+    </div>
+  </div>
+
+
+  <!-- ══ BROWSER PAGES ══════════════════════════════════════════════ -->
+
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--teal-dim);">🖥️</div>
+      <div>
+        <div class="service-title">Browser Pages</div>
+        <div class="service-subtitle">URLs a human navigates to — Admin Hub SPA + Operator Console</div>
+      </div>
+    </div>
+
+    <div class="section-label">Your Internal Admin Hub</div>
+    <div class="url-card">
+      <a href="https://accesssync-admin.up.railway.app/OwnerDashboard" target="_blank" class="url-row">
+        <span class="type-badge type-page">Page</span>
+        <div>
+          <div class="url-path">/OwnerDashboard</div>
+          <div class="url-desc">Admin Hub home — Google login screen, then your 5-panel SPA (Error Queue, Debug Center, Webhook Inspector, Queue Monitor, Clients)</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </a>
+      <a href="https://accesssync-admin.up.railway.app/" target="_blank" class="url-row">
+        <span class="type-badge type-page">Page</span>
+        <div>
+          <div class="url-path">/</div>
+          <div class="url-desc">Redirects to /OwnerDashboard</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </a>
+    </div>
+
+    <div class="section-label">Operator Console — Gym Owner's Dashboard</div>
+    <div class="url-card">
+      <a href="https://accesssync-admin.up.railway.app/dashboard" target="_blank" class="url-row">
+        <span class="type-badge type-page">Page</span>
+        <div>
+          <div class="url-path">/dashboard<span class="param">?clientId={id}</span></div>
+          <div class="url-desc">Overview tab — location status, member counts, error count, last sync, Wix vs Kisi comparison chart</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </a>
+      <a href="https://accesssync-admin.up.railway.app/members" target="_blank" class="url-row">
+        <span class="type-badge type-page">Page</span>
+        <div>
+          <div class="url-path">/members<span class="param">?clientId={id}</span></div>
+          <div class="url-desc">Members tab — paginated list, status filters, search, retry failed provisioning, CSV export</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </a>
+      <a href="https://accesssync-admin.up.railway.app/plan-mapping" target="_blank" class="url-row">
+        <span class="type-badge type-page">Page</span>
+        <div>
+          <div class="url-path">/plan-mapping<span class="param">?clientId={id}</span></div>
+          <div class="url-desc">Plan Mapping tab — maps Wix membership plans to Kisi access groups, same-group warning</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </a>
+      <a href="https://accesssync-admin.up.railway.app/access" target="_blank" class="url-row">
+        <span class="type-badge type-page">Page</span>
+        <div>
+          <div class="url-path">/access<span class="param">?clientId={id}</span></div>
+          <div class="url-desc">Access tab — 30-day event log, hourly bar chart, grant/revoke/error filter tags</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </a>
+      <a href="https://accesssync-admin.up.railway.app/locations" target="_blank" class="url-row">
+        <span class="type-badge type-page">Page</span>
+        <div>
+          <div class="url-path">/locations<span class="param">?clientId={id}</span></div>
+          <div class="url-desc">Platform Config tab — org and location-level Kisi API key management, subscription status</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </a>
+      <a href="https://accesssync-admin.up.railway.app/admin-panel" target="_blank" class="url-row">
+        <span class="type-badge type-page">Page</span>
+        <div>
+          <div class="url-path">/admin-panel</div>
+          <div class="url-desc">Administration tab — Wix-synced admin users list with role badges (mock data)</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </a>
+    </div>
+
+    <div class="section-label">Member-Facing Page</div>
+    <div class="url-card">
+      <a href="https://accesssync-admin.up.railway.app/sync-status" target="_blank" class="url-row">
+        <span class="type-badge type-page">Page</span>
+        <div>
+          <div class="url-path">/sync-status<span class="param">?memberId={id}&clientId={id}</span></div>
+          <div class="url-desc">Post-purchase sync status — shown to gym member after buying a plan. 4 states: syncing / active / error / pending. Polls every 3s, 3-min max timeout. Stale data indicator.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </a>
+    </div>
+  </div>
+
+
+  <!-- ══ ONBOARDING FLOW ════════════════════════════════════════════ -->
+
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--amber-dim);">🧭</div>
+      <div>
+        <div class="service-title">Onboarding Flow</div>
+        <div class="service-subtitle">What the onboarding wizard calls when a new gym owner sets up — invite token required</div>
+      </div>
+    </div>
+
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/webhook-url</div>
+          <div class="url-desc">Step 5 — returns the Wix webhook URL the operator pastes into their Wix site</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/operator/verify-bypass</div>
+          <div class="url-desc">Owner PIN check — allows skipping Kisi API key step during demo/testing (activates location via bypass)</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/operator/clients</div>
+          <div class="url-desc">Step 1 — creates the client account record</div>
+        </div>
+        <span class="auth-badge auth-invite">Invite Token</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/operator/clients/<span class="param">{clientId}</span>/locations</div>
+          <div class="url-desc">Step 2 — creates the gym location</div>
+        </div>
+        <span class="auth-badge auth-invite">Invite Token</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/operator/clients/<span class="param">{clientId}</span>/api-key</div>
+          <div class="url-desc">Step 3 — stores encrypted Kisi API key (AES-256-GCM)</div>
+        </div>
+        <span class="auth-badge auth-invite">Invite Token</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/operator/clients/<span class="param">{clientId}</span>/locations/<span class="param">{locationId}</span>/activate</div>
+          <div class="url-desc">Step 4 — activates the location subscription so provisioning can fire</div>
+        </div>
+        <span class="auth-badge auth-invite">Invite Token</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══ CORE ENGINE ════════════════════════════════════════════════ -->
+
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--red-dim);">⚡</div>
+      <div>
+        <div class="service-title">Core Engine</div>
+        <div class="service-subtitle">port 3000 — webhook processor, member sync API, health check</div>
+      </div>
+    </div>
+
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-webhook"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/webhooks/wix</div>
+          <div class="url-desc">All inbound Wix events — plan.purchased, plan.cancelled, payment.failed, payment.recovered, member.deleted, booking.confirmed, booking.cancelled. HMAC-verified, queued to BullMQ immediately.</div>
+        </div>
+        <span class="auth-badge auth-hmac">HMAC</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/member/access-status<span class="param">?platformMemberId={id}&clientId={id}</span></div>
+          <div class="url-desc">Member sync status — queried by the Wix widget to show the member their access state. Returns provisioned/pending/failed/suspended.</div>
+        </div>
+        <span class="auth-badge auth-wixjwt">Wix JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/health</div>
+          <div class="url-desc">Railway health check — returns <code>{"status":"ok"}</code>. Required for Railway to detect the service is running.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══ OPERATOR DASHBOARD APIs ════════════════════════════════════ -->
+
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--brand-dim);">📊</div>
+      <div>
+        <div class="service-title">Operator Dashboard APIs</div>
+        <div class="service-subtitle">What the gym owner's 6 console pages call — no auth currently (Wix JWT planned)</div>
+      </div>
+    </div>
+
+    <div class="section-label">Overview & Stats</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span></div>
+          <div class="url-desc">Client overview — error count, active members, total members, location count. Feeds the Overview tab stats strip.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/locations</div>
+          <div class="url-desc">All locations with error count, door count, plan mapping count. Feeds location accordion on Overview.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/locations/<span class="param">{locationId}</span></div>
+          <div class="url-desc">Single location detail — errors, members, access log, plan mappings.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/alerts</div>
+          <div class="url-desc">Unresolved config alerts — missing plan mappings, expired credentials. Max 50. Feeds amber banner on Overview.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/sync</div>
+          <div class="url-desc">Trigger manual sync — updates last_sync_at timestamp.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+    </div>
+
+    <div class="section-label">Members</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/members<span class="param">?status=&location_id=&page=&limit=</span></div>
+          <div class="url-desc">Paginated member list with status filter (active/pending/failed/suspended). Feeds Members page table.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+    </div>
+
+    <div class="section-label">Plan Mapping</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/locations/<span class="param">{locationId}</span>/mappings</div>
+          <div class="url-desc">Current plan→Kisi group mapping matrix for a location. Feeds Plan Mapping page.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/clients/<span class="param">{clientId}</span>/kisi-groups</div>
+          <div class="url-desc">All Kisi access groups for this org — populates the group dropdown in Plan Mapping.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+    </div>
+
+    <div class="section-label">Access Log & Stats</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/access-log<span class="param">?location_id=&event_type=&page=&limit=</span></div>
+          <div class="url-desc">Paginated access events (last 30 days) — granted, revoked, provisioned, error. Feeds Access page event grid.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/access-stats<span class="param">?location_id=</span></div>
+          <div class="url-desc">Hourly event averages over last 30 days — 24 buckets by hour of day. Feeds the bar chart on Access page.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+    </div>
+
+    <div class="section-label">Errors</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/errors<span class="param">?limit=</span></div>
+          <div class="url-desc">Recent failed jobs — event type, error reason, retry count, timestamp. Feeds error list in Overview accordion.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/errors/<span class="param">{errorId}</span>/retry</div>
+          <div class="url-desc">Re-queue a single failed job back to BullMQ.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/errors/<span class="param">{errorId}</span>/dismiss</div>
+          <div class="url-desc">Mark an error as resolved without retrying.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+    </div>
+
+    <div class="section-label">Platform Config (API Keys)</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/clients/<span class="param">{clientId}</span>/api-key/status</div>
+          <div class="url-desc">Check if an org-level Kisi API key is configured — returns <code>{"hasKey": true/false}</code>. Feeds the key status chip.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/clients/<span class="param">{clientId}</span>/api-key/test</div>
+          <div class="url-desc">Validate the stored Kisi API key against the live Kisi API — returns <code>{"valid": true/false}</code>.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method PUT">PUT</span></span>
+        <div>
+          <div class="url-path">/operator/clients/<span class="param">{clientId}</span>/api-key</div>
+          <div class="url-desc">Rotate the org-level API key.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/locations/<span class="param">{locationId}</span>/api-key</div>
+          <div class="url-desc">Set a location-level API key override (overrides the org key for this location).</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/<span class="param">{clientId}</span>/locations/<span class="param">{locationId}</span>/api-key/test</div>
+          <div class="url-desc">Test a location-level key (falls back to org key if no location override set).</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/operator/clients/<span class="param">{clientId}</span>/notification-email</div>
+          <div class="url-desc">Fetch the operator's alert email address.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method PUT">PUT</span></span>
+        <div>
+          <div class="url-path">/operator/clients/<span class="param">{clientId}</span>/notification-email</div>
+          <div class="url-desc">Update the operator alert email.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══ YOUR ADMIN HUB APIs ════════════════════════════════════════ -->
+
+  <div class="service-section">
+    <div class="service-header">
+      <div class="service-icon" style="background:var(--purple-dim);">🔐</div>
+      <div>
+        <div class="service-title">Your Admin Hub APIs</div>
+        <div class="service-subtitle">Internal APIs — all require your Google OAuth JWT cookie</div>
+      </div>
+    </div>
+
+    <div class="section-label">Auth</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/auth/config</div>
+          <div class="url-desc">Returns Google Client ID for the login screen to initialize Google Identity Services.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/auth/google</div>
+          <div class="url-desc">Verifies Google ID token, issues httpOnly JWT cookie. This is the login endpoint.</div>
+        </div>
+        <span class="auth-badge auth-none">None</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/auth/logout</div>
+          <div class="url-desc">Clears the JWT cookie and ends the session.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/auth/check</div>
+          <div class="url-desc">Validates current session — used by the SPA on load to decide if re-login is needed.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+    </div>
+
+    <div class="section-label">Clients Panel</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/clients</div>
+          <div class="url-desc">List all gym clients with member counts and status. Feeds the Clients panel table.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/admin/clients</div>
+          <div class="url-desc">Create a new client account from the + New Client button.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method PATCH">PATCH</span></span>
+        <div>
+          <div class="url-path">/admin/clients/<span class="param">{id}</span></div>
+          <div class="url-desc">Edit a client — name, tier, hardware platform, notification email, status, site details.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/clients/<span class="param">{id}</span>/locations</div>
+          <div class="url-desc">List all locations for a client.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/admin/clients/<span class="param">{id}</span>/locations</div>
+          <div class="url-desc">Create a new location for a client.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method PATCH">PATCH</span></span>
+        <div>
+          <div class="url-path">/admin/clients/<span class="param">{id}</span>/locations/<span class="param">{locationId}</span></div>
+          <div class="url-desc">Edit a location — name, city, state, tier, subscription status.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/admin/clients/<span class="param">{id}</span>/locations/<span class="param">{locationId}</span>/suspend</div>
+          <div class="url-desc">Trigger a location lapse — suspends all provisioned members for that location.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/admin/clients/<span class="param">{id}</span>/locations/<span class="param">{locationId}</span>/activate</div>
+          <div class="url-desc">Re-activate a location subscription (does not re-provision members — requires new Wix events).</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/admin/clients/<span class="param">{id}</span>/api-key</div>
+          <div class="url-desc">Set or rotate the org-level Kisi API key (write-only, encrypted at rest).</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/clients/<span class="param">{id}</span>/api-key/status</div>
+          <div class="url-desc">Check if an API key is configured — never returns the key itself.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/clients/<span class="param">{id}</span>/api-key/test</div>
+          <div class="url-desc">Validate the stored key against the live Kisi API.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+    </div>
+
+    <div class="section-label">Error Queue Panel</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/errors<span class="param">?status=&client_id=&limit=&offset=</span></div>
+          <div class="url-desc">Paginated error queue — filter by status, client, limit.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/errors/<span class="param">{id}</span></div>
+          <div class="url-desc">Full error detail with member and client context.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/admin/errors/<span class="param">{id}</span>/retry</div>
+          <div class="url-desc">Re-enqueue a failed job to BullMQ.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/admin/errors/<span class="param">{id}</span>/dismiss</div>
+          <div class="url-desc">Mark error resolved with an operator note.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/admin/errors/bulk-retry</div>
+          <div class="url-desc">Batch re-enqueue multiple errors at once.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+    </div>
+
+    <div class="section-label">Debug Center Panel</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/members/search<span class="param">?q=&client_id=&limit=</span></div>
+          <div class="url-desc">Search members by email — resolves via Wix Members API. Used in Debug Center.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/members/<span class="param">{id}</span>/timeline</div>
+          <div class="url-desc">Unified event timeline for a member — access log + error queue + adapter log in one UNION query.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method POST">POST</span></span>
+        <div>
+          <div class="url-path">/admin/members/<span class="param">{id}</span>/retry</div>
+          <div class="url-desc">Re-queue the latest failed job for a specific member.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+    </div>
+
+    <div class="section-label">Webhook Inspector Panel</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/webhooks/recent<span class="param">?limit=&since=</span></div>
+          <div class="url-desc">Recent webhook log entries — supports incremental polling via <code>since=</code> timestamp.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/webhooks/<span class="param">{id}</span></div>
+          <div class="url-desc">Full webhook detail — payload, HMAC verification status, processing result.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+    </div>
+
+    <div class="section-label">Queue Monitor Panel</div>
+    <div class="url-card">
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/queue/counts</div>
+          <div class="url-desc">BullMQ job counts by state — waiting, active, completed, failed, delayed, paused.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+      <div class="url-row">
+        <span class="type-badge type-api"><span class="method GET">GET</span></span>
+        <div>
+          <div class="url-path">/admin/queue/jobs<span class="param">?state=&limit=</span></div>
+          <div class="url-desc">Paginated job list filtered by state — inspect individual queued jobs.</div>
+        </div>
+        <span class="auth-badge auth-jwt">Admin JWT</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>AccessSync URL Reference · 2026-04-02</span>
+    <a href="index.html">Knowledge Base</a>
+    <a href="endpoints.html">API Endpoints</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="operations.html">Operations</a>
+  </div>
+
+</div>
+</body>
+</html>

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AccessSync — Architecture</title>
+<link rel="alternate" type="text/plain" href="../llms.txt">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -262,7 +263,28 @@ html, body {
 </style>
 </head>
 <body>
+
+<!-- AI_CONTEXT
+type: architecture
+status: active
+last_updated: 2026-04-01
+key_facts:
+  - 7-layer architecture (DR-022): L1 Wix Connector → L2 Wix Adapter → L3 Standard Adapter → L4 Core Engine → L5 Hardware Standard Adapter → L6 Kisi Adapter → L7 Kisi Connector
+  - Layer 3 (Standard Adapter) exclusively owns member_identity and member_access_state writes (DR-023)
+  - Core Engine (Layer 4) never writes member_identity or member_access_state directly
+  - Hardware platform resolved from DB — Core Engine never hardcodes 'kisi' (DR-035)
+  - Standard event contract: { eventType, platformMemberId, sourcePlatform, memberEmail, planId, tenantId }
+  - Hardware adapter interface: 8 methods — findUserByEmail, createUser, assignRole, removeRole, suspendAccess, enableAccess, deleteUser, getLocks
+  - getLocks() returns normalized: { id, name, locked: boolean }
+  - assignRole() accepts options.validUntil for time-bounded access (Gap 6)
+  - Backward-compat shims: adapters/wix-adapter.js, kisi-adapter.js, seam-adapter.js
+-->
+
 <div class="page">
+
+  <div style="font-size:11px;color:#94A3B8;margin-bottom:14px;">
+    <a href="index.html" style="color:#4F6EF7;text-decoration:none;">Knowledge Base</a> / Architecture
+  </div>
 
   <!-- ── Header ─────────────────────────────────────────────── -->
   <div class="header">

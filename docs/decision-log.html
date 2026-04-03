@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — Decision Log</title>
+<link rel="alternate" type="text/plain" href="../llms.txt">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --purple:     #8B5CF6;
+  --purple-dim: rgba(139,92,246,0.10);
+  --teal:       #0EA5E9;
+  --teal-dim:   rgba(14,165,233,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body {
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 48px 32px 80px; }
+
+.breadcrumb { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+.breadcrumb a { color: var(--brand); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+.header { margin-bottom: 40px; }
+.header-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--brand); margin-bottom: 10px;
+}
+.header h1 { font-size: 32px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
+.header-sub { font-size: 14px; color: var(--text2); max-width: 640px; line-height: 1.6; }
+
+.locked-banner {
+  background: var(--red-dim);
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: var(--r-sm);
+  padding: 12px 18px;
+  margin-bottom: 36px;
+  font-size: 12px; color: var(--text2); line-height: 1.55;
+}
+.locked-banner strong { color: var(--red); }
+
+.section { margin-bottom: 44px; }
+.section-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 16px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── DR cards ────────────────────────────────────────────────── */
+.dr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.dr-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+.dr-card[data-locked="true"] {
+  border-left: 3px solid var(--red);
+}
+.dr-card-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+}
+.dr-id {
+  font-family: 'Courier New', monospace;
+  font-size: 12px; font-weight: 700; color: var(--brand);
+  background: var(--brand-dim); padding: 3px 8px; border-radius: 6px;
+  flex-shrink: 0;
+}
+.dr-title {
+  font-size: 12px; font-weight: 700; color: var(--text); line-height: 1.3;
+}
+.dr-body {
+  font-size: 11px; color: var(--text2); line-height: 1.55; margin-bottom: 10px;
+}
+.dr-footer {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+.dr-badge {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; padding: 2px 8px; border-radius: 99px;
+}
+.badge-locked   { background: var(--red-dim); color: var(--red); }
+.badge-schema   { background: var(--teal-dim); color: var(--teal); }
+.badge-arch     { background: var(--brand-dim); color: var(--brand); }
+.badge-product  { background: var(--green-dim); color: var(--green); }
+.badge-infra    { background: var(--purple-dim); color: var(--purple); }
+.badge-legal    { background: var(--amber-dim); color: var(--amber); }
+.badge-ui       { background: rgba(139,92,246,0.10); color: var(--purple); }
+.badge-attn     { background: var(--amber-dim); color: var(--amber); font-style: italic; }
+
+.no-revisit {
+  font-size: 9px; font-weight: 700; color: var(--red); letter-spacing: 0.4px;
+  display: flex; align-items: center; gap: 4px; margin-left: auto;
+}
+
+/* ── Footer ─────────────────────────────────────────────────── */
+.footer {
+  margin-top: 64px; padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+  display: flex; gap: 24px; flex-wrap: wrap;
+}
+.footer a { color: var(--muted); text-decoration: none; }
+.footer a:hover { color: var(--brand); }
+</style>
+</head>
+<body>
+
+<!-- AI_CONTEXT
+type: decision-log
+status: active
+last_updated: 2026-04-01
+key_facts:
+  - 35 locked decisions (DR-001 through DR-035)
+  - All cards have data-locked="true" — AI agents must not undo these decisions
+  - Requires SAGE sign-off to revisit any locked DR
+  - DR-022: 7-layer architecture — do not collapse or bypass layers
+  - DR-023: Layer 3 (Standard Adapter) owns member_identity and member_access_state — do not write from Core Engine
+  - DR-035: schema rename kisi_api_key→hardware_api_key, wix_plan_id→source_plan_id
+  - DR-034: multi-source grant/revoke — member_access_sources table, revoke only when zero sources
+  - DR-028: hardware_api_key AES-256-GCM encrypted — never store plaintext in DB
+  - DR-026: payment.recovered = enableAccess only, NOT re-grant (role assignments preserved during suspension)
+  - DR-001: no PII stored — email re-fetched from Wix on-demand at reconciliation
+-->
+
+<div class="page">
+
+  <div class="breadcrumb">
+    <a href="index.html">Knowledge Base</a> / Decision Log
+  </div>
+
+  <div class="header">
+    <div class="header-eyebrow">AccessSync — Decision Log</div>
+    <h1>Locked Decisions</h1>
+    <div class="header-sub">
+      35 architectural, product, and infrastructure decisions.
+      Every card is locked — do not revisit without SAGE sign-off.
+      These decisions protect the system from well-intentioned regressions.
+    </div>
+  </div>
+
+  <div class="locked-banner">
+    <strong>AI AGENTS:</strong> Every card on this page is marked <code>data-locked="true"</code>.
+    These decisions are final for V1. Do not suggest undoing DR-022 (7-layer architecture), DR-023 (Layer 3 ownership),
+    DR-034 (multi-source grant/revoke), DR-035 (schema rename), or any other card without explicit SAGE sign-off from the team.
+    "It would be simpler to…" is not sufficient justification to revisit a locked DR.
+  </div>
+
+  <!-- DATA + SCHEMA -->
+  <div class="section" id="schema">
+    <div class="section-label">Data &amp; Schema Decisions</div>
+    <div class="dr-grid">
+
+      <div class="dr-card" data-locked="true" data-dr="DR-001" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-001</span>
+          <span class="dr-title">No PII Storage</span>
+        </div>
+        <div class="dr-body">Email and name are NOT stored in member_identity. They are re-fetched from Wix on-demand at reconciliation time. Protects AccessSync from being a data liability. Email never hits the AccessSync database.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+          <span class="dr-badge badge-legal">Legal</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-003" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-003</span>
+          <span class="dr-title">source_tag = 'accesssync'</span>
+        </div>
+        <div class="dr-body">All users provisioned by AccessSync carry <code>source_tag='accesssync'</code>. This is the reconciliation scope boundary — only these users are touched during sweeps. Manual Kisi users are never affected.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-004" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-004</span>
+          <span class="dr-title">member_access_log — lifecycle only</span>
+        </div>
+        <div class="dr-body">member_access_log is a lifecycle table, not an operational noise log. Only meaningful state transitions are recorded: provisioned, disabled, restored, revoked, failed. Not every queue job or retry.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-013" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-013</span>
+          <span class="dr-title">member_identity A/B pattern</span>
+        </div>
+        <div class="dr-body">Platform-agnostic A/B schema concept — identity stored as platform_member_id + source_platform (not separate tables per platform). Column names updated by DR-021. A/B concept preserved.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+          <span class="dr-badge badge-attn">Superseded names → DR-021</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-018" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-018</span>
+          <span class="dr-title">last_sync_at on clients table</span>
+        </div>
+        <div class="dr-body">Single timestamp column on clients table. Not a separate sync_state table. V1 only needs one timestamp per client. Separate table deferred to V2 if sync history reporting is needed.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-019" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-019</span>
+          <span class="dr-title">adapter_admin_log — configured_by + configured_at</span>
+        </div>
+        <div class="dr-body">Two nullable columns added to adapter_admin_log: configured_by (VARCHAR 255) and configured_at (TIMESTAMPTZ). Nullable preserves existing rows. Populates when operator self-service UI is built.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-021" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-021</span>
+          <span class="dr-title">Platform-agnostic member_identity</span>
+        </div>
+        <div class="dr-body">wix_member_id → platform_member_id. New column: source_platform VARCHAR(50) DEFAULT 'wix'. UNIQUE: (client_id, source_platform, platform_member_id). Normalized event: platformMemberId + sourcePlatform. Enables Squarespace with zero schema changes.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-024" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-024</span>
+          <span class="dr-title">client_activity_summary — Layer 3 daily UPSERT</span>
+        </div>
+        <div class="dr-body">Standard Adapter Layer owns daily activity aggregation. UNIQUE(client_id, summary_date). Fault-tolerant — failures logged but never block grant/revoke path. Counters: events_received, grants_completed, revokes_completed, errors_count.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+          <span class="dr-badge badge-arch">Layer 3</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-025" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-025</span>
+          <span class="dr-title">locations table + schema additions</span>
+        </div>
+        <div class="dr-body">locations table (id, client_id, name, city, state). clients: +site_url, +last_wix_webhook_at. plan_mappings: +location_id, +plan_name, +door_name, +status. error_queue: +location_id, +plan_name, +door_name. kisi_org_id excluded (G-10 open).</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-026" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-026</span>
+          <span class="dr-title">Multi-door — member_role_assignments</span>
+        </div>
+        <div class="dr-body">One row per member per mapping. UNIQUE(member_id, mapping_id) — idempotent on retry. plan_mappings.access_type DEFAULT 'group'. Resolver returns Array. payment.recovered = enableAccess only (not re-grant). UnrecoverableError for 4xx hardware errors.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-027" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-027</span>
+          <span class="dr-title">Per-location subscription model</span>
+        </div>
+        <div class="dr-body">AccessSync charges one subscription per physical location (AccessSync pricing decision, not a Kisi constraint). locations gets: subscription_status (default 'inactive'), tier, subscribed_at, subscription_id. Provisioning gated on subscription_status='active'.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+          <span class="dr-badge badge-product">Product</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-028" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-028</span>
+          <span class="dr-title">hardware_api_key — AES-256-GCM encrypted</span>
+        </div>
+        <div class="dr-body">clients.hardware_api_key (org default) + locations.hardware_api_key (nullable override). Lookup: location key || client key. AES-256-GCM via crypto-utils.js + KISI_ENCRYPTION_KEY env var. Never store plaintext in DB.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+          <span class="dr-badge badge-infra">Security</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-029" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-029</span>
+          <span class="dr-title">Sub-member ID format</span>
+        </div>
+        <div class="dr-body">{wix_uuid}###as{NNN} (e.g. a1b2c3d4###as001). Deterministic, collision-free, reversible to plan holder. ###as delimiter chosen for zero natural occurrence in UUIDs. Counter NNN zero-padded, scoped per plan holder.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-030" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-030</span>
+          <span class="dr-title">plan_holder_id column</span>
+        </div>
+        <div class="dr-body">Added to member_identity and member_access_state. Links sub-members to the primary Wix member who owns the family plan. NULL for single-plan and event-booking members.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-034" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-034</span>
+          <span class="dr-title">member_access_sources — multi-source grant/revoke</span>
+        </div>
+        <div class="dr-body">Tracks why a member is in a Kisi group (plan, booking, family_plan). Pre-grant check prevents overwriting permanent access with time-limited bookings. Revoke only fires Kisi DELETE when all sources are gone.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-035" data-domain="schema">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-035</span>
+          <span class="dr-title">Platform-agnostic schema rename</span>
+        </div>
+        <div class="dr-body">kisi_api_key → hardware_api_key (clients + locations). wix_plan_id → source_plan_id (plan_mappings). All code updated. Migration: migrations/dr-035.sql. Run on Railway before deploying Sprint 5 code. schema.sql baseline still shows old names.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-schema">Schema</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ARCHITECTURE -->
+  <div class="section" id="architecture">
+    <div class="section-label">Architecture Decisions</div>
+    <div class="dr-grid">
+
+      <div class="dr-card" data-locked="true" data-dr="DR-002" data-domain="arch">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-002</span>
+          <span class="dr-title">Access Adapter Layer — bidirectional identity bridge</span>
+        </div>
+        <div class="dr-body">The Access Adapter Layer is the bidirectional identity bridge between platform member IDs (Wix) and hardware user IDs (Kisi). It is the only layer that maps between the two identity spaces.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-010" data-domain="arch">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-010</span>
+          <span class="dr-title">Idempotency via processed_event_ids</span>
+        </div>
+        <div class="dr-body">Every Wix event ID is stored in processed_event_ids before processing. webhook-processor.js checks before enqueuing. Duplicate events are silently dropped — no double-provisioning or double-revocation.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+          <span class="dr-badge badge-infra">Infrastructure</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-011" data-domain="arch">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-011</span>
+          <span class="dr-title">in_flight status lock</span>
+        </div>
+        <div class="dr-body">member_access_state.status = 'in_flight' is the concurrency lock. If set, concurrent grant/revoke for the same member is rejected with an error. Lock is acquired atomically in resolveAndLock() and released in completeGrant/Revoke/releaseLock().</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-022" data-domain="arch">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-022</span>
+          <span class="dr-title">7-layer architecture</span>
+        </div>
+        <div class="dr-body">L1 Wix Connector → L2 Wix Adapter → L3 Standard Adapter → L4 Core Engine → L5 Hardware Standard Adapter → L6 Kisi Adapter → L7 Kisi Connector. Backward-compat shims at adapters/wix-adapter.js, kisi-adapter.js, seam-adapter.js. Do not collapse layers.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-023" data-domain="arch">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-023</span>
+          <span class="dr-title">Layer 3 exclusively owns identity + state writes</span>
+        </div>
+        <div class="dr-body">Standard Adapter Layer (Layer 3) is the sole writer of member_identity, member_access_state, and the in_flight lock. Core Engine (Layer 4) never writes these tables directly. Enforces ownership boundary — critical for correctness.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-031" data-domain="arch">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-031</span>
+          <span class="dr-title">Family plan — upstream explosion in Layer 2</span>
+        </div>
+        <div class="dr-body">plan_members webhook events are exploded into synthetic single-member events before entering processEvent. Core Engine grant/revoke path is unchanged. Explosion happens in Wix Adapter (Layer 2) — Core Engine never sees family-plan-specific logic.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- INFRASTRUCTURE -->
+  <div class="section" id="infrastructure">
+    <div class="section-label">Infrastructure Decisions</div>
+    <div class="dr-grid">
+
+      <div class="dr-card" data-locked="true" data-dr="DR-001-hosting" data-domain="infra">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-001</span>
+          <span class="dr-title">Railway as hosting platform</span>
+        </div>
+        <div class="dr-body">Core Engine and Admin Hub both hosted on Railway. Entry: node server.js and node admin/server.js. Crons managed as Railway Cron services. Redis for BullMQ also on Railway.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-infra">Infrastructure</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-009" data-domain="infra">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-009</span>
+          <span class="dr-title">HMAC-SHA256 on all Wix webhooks</span>
+        </div>
+        <div class="dr-body">Every inbound Wix webhook is verified with HMAC-SHA256 before processing. wix-connector.js (Layer 1) rejects unverified requests. hmac-monitor.js (Sprint 5.1) alerts on spikes. WIX_WEBHOOK_SECRET env var required.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-infra">Security</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-012" data-domain="infra">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-012</span>
+          <span class="dr-title">BullMQ queue on Railway Redis</span>
+        </div>
+        <div class="dr-body">Core Engine uses BullMQ + Railway Redis for the job queue. webhook-processor.js enqueues. queue-worker.js coordinates with concurrency 20. Crons: reconciliation.js (nightly) + hardware-health-check.js (every 6 hours).</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-infra">Infrastructure</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- PRODUCT -->
+  <div class="section" id="product">
+    <div class="section-label">Product Decisions</div>
+    <div class="dr-grid">
+
+      <div class="dr-card" data-locked="true" data-dr="DR-005" data-domain="product">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-005</span>
+          <span class="dr-title">Kisi lockdown override — skip, not fail</span>
+        </div>
+        <div class="dr-body">During a Kisi lockdown event, access provisioning actions skip (not fail) processing. Events are not dead-lettered. Lockdown is a temporary state — skipping preserves queue health.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-product">Product</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-006" data-domain="product">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-006</span>
+          <span class="dr-title">Member sync screen — one-time post-purchase</span>
+        </div>
+        <div class="dr-body">The member-facing sync status screen is a one-time post-purchase UI. Shown after Wix checkout completes. Not a persistent dashboard. 4 states: syncing, active, error, pending. Polls every 3s up to 60 polls.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-product">Product</span>
+          <span class="dr-badge badge-ui">UI</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-007" data-domain="product">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-007</span>
+          <span class="dr-title">Kisi managed users — send_emails: false</span>
+        </div>
+        <div class="dr-body">All AccessSync-provisioned Kisi users are created as managed users with send_emails: false. HOG exception: DR-017 (regular users). DR-007 active for all other clients.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-product">Product</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-008" data-domain="product">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-008</span>
+          <span class="dr-title">Pricing — $30 / $60 / $150 per location</span>
+        </div>
+        <div class="dr-body">AccessSync pricing tiers: Base $30/mo/location, Pro $60/mo/location, Connect $150/mo/location. Tier names: Base, Pro, Connect. Infrastructure cost $35/mo fixed. ~99% margin at scale. Do not change without SAGE.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-product">Product</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-011-kisi" data-domain="product">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-011</span>
+          <span class="dr-title">Kisi routes direct API — not through Seam</span>
+        </div>
+        <div class="dr-body">Kisi integration uses Kisi's direct REST API. Not routed through Seam. Seam is a separate adapter stub for future use. kisi-adapter.js (L6) and kisi-connector.js (L7) handle all Kisi calls directly.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-product">Product</span>
+          <span class="dr-badge badge-arch">Architecture</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-016" data-domain="product">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-016</span>
+          <span class="dr-title">Velo direct install for House of Gains Phase 1</span>
+        </div>
+        <div class="dr-body">House of Gains Phase 1 uses Velo direct install (not Wix App Market packaging). Member sync screen and events.js installed directly into the HOG Wix site. App Market packaging deferred post-V1.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-product">Product</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-017" data-domain="product">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-017</span>
+          <span class="dr-title">HOG exception — regular users (not managed)</span>
+        </div>
+        <div class="dr-body">House of Gains uses regular Kisi users (Terminal Pro pattern), not managed users. DR-007 (managed users) remains active for all other clients. HOG exception is scoped to Phase 1 only.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-product">Product</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-020" data-domain="product">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-020</span>
+          <span class="dr-title">Operator email via Resend SDK</span>
+        </div>
+        <div class="dr-body">Operator notifications use Resend SDK from Core Engine (Railway). clients.notification_email is the per-tenant destination. ACCESSSYNC_OWNER_NOTIFICATION_EMAIL env var is the platform-level fallback (Daxx's email). No Wix dependency for email delivery.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-product">Product</span>
+          <span class="dr-badge badge-infra">Infrastructure</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-032" data-domain="product">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-032</span>
+          <span class="dr-title">Family plan — draft→submit workflow</span>
+        </div>
+        <div class="dr-body">Operator adds sub-members in draft state, reviews, then submits batch. No access provisioned until submit. Prevents partial-state errors from incremental adds. Draft state is local only — no DB writes until submit.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-product">Product</span>
+          <span class="dr-badge badge-ui">UI</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-033" data-domain="product">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-033</span>
+          <span class="dr-title">Unified member access widget — 3 modes</span>
+        </div>
+        <div class="dr-body">Single HTML screen handles three modes via planType param: 'plan' (single), 'event' (booking), 'family'. planType controls visibility of family-specific UI (member list, add section, submit bar, counter). One screen, not three.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-product">Product</span>
+          <span class="dr-badge badge-ui">UI</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- LEGAL / COMPLIANCE -->
+  <div class="section" id="legal">
+    <div class="section-label">Legal &amp; Compliance Decisions</div>
+    <div class="dr-grid">
+
+      <div class="dr-card" data-locked="true" data-dr="DR-009-legal" data-domain="legal">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-009</span>
+          <span class="dr-title">Kisi legal — API connector model</span>
+        </div>
+        <div class="dr-body">AccessSync operates as an API connector under Kisi's Section 2.3(ii) model. Flag resolved in principle. Attorney review recommended to fully confirm terms for reseller/Connect tier. Pending G-03.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked*</span>
+          <span class="dr-badge badge-legal">Legal</span>
+          <span class="dr-badge badge-attn">Attorney review pending</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- UI -->
+  <div class="section" id="ui">
+    <div class="section-label">UI &amp; Design Decisions</div>
+    <div class="dr-grid">
+
+      <div class="dr-card" data-locked="true" data-dr="DR-014" data-domain="ui">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-014</span>
+          <span class="dr-title">Color system — Indigo + Sage</span>
+        </div>
+        <div class="dr-body">Primary brand: Indigo #4F6EF7 (--brand). Accent: Sage #4ADE80 (--sage). Non-interchangeable. FORGE + LENS enforce. The operator console uses CSS variable system built on these two anchors.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-ui">UI</span>
+          <span class="no-revisit">⛔ Do not revisit</span>
+        </div>
+      </div>
+
+      <div class="dr-card" data-locked="true" data-dr="DR-015" data-domain="ui">
+        <div class="dr-card-header">
+          <span class="dr-id">DR-015</span>
+          <span class="dr-title">Mobile-first — 320px baseline</span>
+        </div>
+        <div class="dr-body">All UI built mobile-first with 320px as the minimum viewport. FORGE (server frontend) and LENS (visual verification) both enforce this standard. No desktop-only assumptions.</div>
+        <div class="dr-footer">
+          <span class="dr-badge badge-locked">Locked</span>
+          <span class="dr-badge badge-ui">UI</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>AccessSync Decision Log · 35 DRs · 2026-04-01</span>
+    <a href="index.html">Hub</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="data-model.html">Data Model</a>
+    <a href="operations.html">Operations</a>
+    <a href="../llms.txt">llms.txt</a>
+  </div>
+
+</div>
+</body>
+</html>

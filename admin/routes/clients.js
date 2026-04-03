@@ -2,8 +2,14 @@
  * admin/routes/clients.js
  * Admin Hub — Clients Panel
  *
- * GET   /admin/clients        List all clients
- * PATCH /admin/clients/:id    Update client fields
+ * GET    /admin/clients              List all clients (?status=active|archived|all)
+ * POST   /admin/clients              Create new client
+ * PATCH  /admin/clients/:id          Update client fields
+ * POST   /admin/clients/:id/archive  Archive (soft-deactivate) a client
+ * POST   /admin/clients/:id/restore  Restore an archived client
+ * GET    /admin/clients/:id/dependencies  Preview deletion cascade counts
+ * DELETE /admin/clients/:id          Permanently delete with cascade (requires confirmation)
+ * GET    /admin/clients/:id/audit    Admin action audit trail
  */
 
 const router = require('express').Router();
@@ -11,6 +17,7 @@ const db     = require('../../db');
 const { encryptApiKey, decryptApiKey } = require('../../core/crypto-utils');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { suspendLocationMembers } = require('../../core/location-lapse');
+const { logAdminAction } = require('../middleware/audit');
 
 const EDITABLE_FIELDS = ['name', 'hardware_platform', 'tier', 'notification_email', 'status', 'site_id', 'site_name', 'platform'];
 
@@ -40,8 +47,22 @@ router.post('/', async (req, res) => {
 });
 
 // ── GET /admin/clients ─────────────────────────────────────────────
+// ?status=active (default) | archived | all — filter by client status
 router.get('/', async (req, res) => {
   try {
+    const statusFilter = req.query.status || 'active';
+    let whereClause = '';
+    const params = [];
+    if (statusFilter === 'archived') {
+      whereClause = 'WHERE c.status = $1';
+      params.push('archived');
+    } else if (statusFilter === 'all') {
+      whereClause = '';
+    } else {
+      // Default: exclude archived
+      whereClause = "WHERE c.status != 'archived'";
+    }
+
     const result = await db.query(
       `SELECT c.id,
               c.name,
@@ -53,6 +74,7 @@ router.get('/', async (req, res) => {
               c.status,
               c.notification_email,
               c.last_sync_at,
+              c.archived_at,
               c.created_at,
               c.updated_at,
               COUNT(DISTINCT mi.id)::int  AS member_count,
@@ -60,8 +82,10 @@ router.get('/', async (req, res) => {
        FROM clients c
        LEFT JOIN member_identity    mi  ON mi.client_id  = c.id
        LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+       ${whereClause}
        GROUP BY c.id
-       ORDER BY c.created_at ASC`
+       ORDER BY c.created_at ASC`,
+      params
     );
     res.json({ data: result.rows });
   } catch (err) {
@@ -95,7 +119,8 @@ router.patch('/:id', async (req, res) => {
 
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     // S1: Strip encrypted API key — never return it in responses
-    const { hardware_api_key, ...safeClient } = result.rows[0];
+    const { hardware_api_key, wix_api_key, ...safeClient } = result.rows[0];
+    logAdminAction(id, 'client_edited', { fields: Object.keys(updates), values: updates });
     res.json({ ok: true, client: safeClient });
   } catch (err) {
     console.error('[Admin/clients] PATCH /:id error:', err.message);
@@ -123,6 +148,7 @@ router.post('/:id/api-key', async (req, res) => {
       [encrypted, id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    logAdminAction(id, 'api_key_rotated', { type: 'hardware', client_name: result.rows[0].name });
     console.log(`[Admin/clients] API key set for client ${id} (${result.rows[0].name})`);
     res.json({ ok: true, message: 'API key saved' });
   } catch (err) {
@@ -319,6 +345,185 @@ router.post('/:id/locations/:locationId/activate', async (req, res) => {
     res.json({ ok: true, location: result.rows[0] });
   } catch (err) {
     console.error('[Admin/clients] POST /:id/locations/:locationId/activate error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══ Archive / Restore / Delete ════════════════════════════════════
+
+// ── POST /admin/clients/:id/archive ──────────────────────────────
+router.post('/:id/archive', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await db.query(
+      `UPDATE clients SET status = 'archived', archived_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND status != 'archived'
+       RETURNING id, name, status, archived_at`,
+      [id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found or already archived' });
+    logAdminAction(id, 'client_archived', { name: result.rows[0].name });
+    console.log(`[Admin/clients] Archived client: ${result.rows[0].name} (${id})`);
+    res.json({ ok: true, client: result.rows[0] });
+  } catch (err) {
+    console.error('[Admin/clients] POST /:id/archive error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /admin/clients/:id/restore ──────────────────────────────
+router.post('/:id/restore', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await db.query(
+      `UPDATE clients SET status = 'active', archived_at = NULL, updated_at = NOW()
+       WHERE id = $1 AND status = 'archived'
+       RETURNING id, name, status`,
+      [id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found or not archived' });
+    logAdminAction(id, 'client_restored', { name: result.rows[0].name });
+    console.log(`[Admin/clients] Restored client: ${result.rows[0].name} (${id})`);
+    res.json({ ok: true, client: result.rows[0] });
+  } catch (err) {
+    console.error('[Admin/clients] POST /:id/restore error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /admin/clients/:id/dependencies ──────────────────────────
+// Returns counts of all related records — shown before deletion.
+router.get('/:id/dependencies', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const client = await db.query('SELECT id, name FROM clients WHERE id = $1', [id]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    const counts = await db.query(
+      `SELECT
+        (SELECT COUNT(*)::int FROM locations WHERE client_id = $1) AS locations,
+        (SELECT COUNT(*)::int FROM member_identity WHERE client_id = $1) AS members,
+        (SELECT COUNT(*)::int FROM plan_mappings WHERE client_id = $1) AS plan_mappings,
+        (SELECT COUNT(*)::int FROM plan_mapping_groups pmg
+         JOIN plan_mappings pm ON pmg.mapping_id = pm.id WHERE pm.client_id = $1) AS plan_mapping_groups,
+        (SELECT COUNT(*)::int FROM member_role_assignments mra
+         JOIN member_identity mi ON mra.member_id = mi.id WHERE mi.client_id = $1) AS role_assignments,
+        (SELECT COUNT(*)::int FROM member_access_state WHERE client_id = $1) AS access_states,
+        (SELECT COUNT(*)::int FROM member_access_log WHERE client_id = $1) AS access_logs,
+        (SELECT COUNT(*)::int FROM error_queue WHERE client_id = $1) AS error_queue,
+        (SELECT COUNT(*)::int FROM config_alert_log WHERE client_id = $1) AS config_alerts,
+        (SELECT COUNT(*)::int FROM client_activity_summary WHERE client_id = $1) AS activity_summaries,
+        (SELECT COUNT(*)::int FROM processed_event_ids WHERE client_id = $1) AS processed_events,
+        (SELECT COUNT(*)::int FROM adapter_admin_log WHERE client_id = $1) AS audit_logs,
+        (SELECT COUNT(*)::int FROM webhook_log WHERE client_id = $1) AS webhook_logs`,
+      [id]
+    );
+
+    res.json({
+      client: client.rows[0],
+      dependencies: {
+        locations: counts.rows[0].locations,
+        members: counts.rows[0].members,
+        plan_mappings: counts.rows[0].plan_mappings,
+        plan_mapping_groups: counts.rows[0].plan_mapping_groups,
+        role_assignments: counts.rows[0].role_assignments,
+        access_states: counts.rows[0].access_states,
+        access_logs: counts.rows[0].access_logs,
+        error_queue: counts.rows[0].error_queue,
+        config_alerts: counts.rows[0].config_alerts,
+        activity_summaries: counts.rows[0].activity_summaries,
+        processed_events: counts.rows[0].processed_events,
+      },
+      orphan_tables: {
+        audit_logs: counts.rows[0].audit_logs,
+        webhook_logs: counts.rows[0].webhook_logs,
+      },
+    });
+  } catch (err) {
+    console.error('[Admin/clients] GET /:id/dependencies error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── DELETE /admin/clients/:id ────────────────────────────────────
+// Permanent deletion with cascade. Requires confirmation body: { confirm: "DELETE <name>" }
+router.delete('/:id', async (req, res) => {
+  const pgClient = await db.getClient();
+  try {
+    const { id } = req.params;
+    const { confirm } = req.body || {};
+
+    // Fetch client name for confirmation check
+    const clientResult = await pgClient.query('SELECT id, name FROM clients WHERE id = $1', [id]);
+    if (!clientResult.rows.length) {
+      pgClient.release();
+      return res.status(404).json({ error: 'Client not found' });
+    }
+    const clientName = clientResult.rows[0].name;
+
+    // Require explicit confirmation string
+    if (!confirm || confirm !== `DELETE ${clientName}`) {
+      pgClient.release();
+      return res.status(400).json({
+        error: 'Confirmation required',
+        expected: `DELETE ${clientName}`,
+        message: `Send { "confirm": "DELETE ${clientName}" } to permanently delete this client and all related data.`,
+      });
+    }
+
+    await pgClient.query('BEGIN');
+
+    // Log deletion before cascade (adapter_admin_log has no CASCADE — survives)
+    await pgClient.query(
+      `INSERT INTO adapter_admin_log (client_id, event_type, admin_action, details, target_entity, target_id, result, configured_at)
+       VALUES ($1, 'client_deleted', 'client_deleted', $2, 'client', $1, 'success', NOW())`,
+      [id, JSON.stringify({ name: clientName, deleted_at: new Date().toISOString() })]
+    );
+
+    // Clean orphan-safe tables before cascade
+    await pgClient.query('DELETE FROM webhook_log WHERE client_id = $1', [id]);
+    await pgClient.query('DELETE FROM processed_event_ids WHERE client_id = $1', [id]);
+    await pgClient.query('DELETE FROM error_queue WHERE client_id = $1', [id]);
+    // Keep the deletion audit entry — delete all other audit entries for this client
+    await pgClient.query(
+      `DELETE FROM adapter_admin_log WHERE client_id = $1 AND admin_action IS DISTINCT FROM 'client_deleted'`,
+      [id]
+    );
+
+    // CASCADE handles: locations, plan_mappings (+ plan_mapping_groups), member_identity
+    // (+ member_access_state, member_role_assignments, member_access_log),
+    // config_alert_log, client_activity_summary
+    await pgClient.query('DELETE FROM clients WHERE id = $1', [id]);
+
+    await pgClient.query('COMMIT');
+    console.log(`[Admin/clients] Permanently deleted client: ${clientName} (${id})`);
+    res.json({ ok: true, message: `Client "${clientName}" and all related data permanently deleted` });
+  } catch (err) {
+    await pgClient.query('ROLLBACK').catch(() => {});
+    console.error('[Admin/clients] DELETE /:id error:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    pgClient.release();
+  }
+});
+
+// ── GET /admin/clients/:id/audit ─────────────────────────────────
+// Returns recent admin audit entries for a client.
+router.get('/:id/audit', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const result = await db.query(
+      `SELECT id, event_type, admin_action, details, target_entity, target_id, result, configured_at, created_at
+       FROM adapter_admin_log
+       WHERE client_id = $1 AND admin_action IS NOT NULL
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [id, limit]
+    );
+    res.json({ data: result.rows });
+  } catch (err) {
+    console.error('[Admin/clients] GET /:id/audit error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

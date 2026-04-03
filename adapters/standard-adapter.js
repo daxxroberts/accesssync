@@ -197,16 +197,16 @@ class StandardAdapter {
    *
    * @param {string} memberId
    * @param {string} tenantId
-   * @param {Array}  assignments  [{ mappingId, roleAssignmentId }] from processGrant()
+   * @param {Array}  assignments  [{ mappingId, roleAssignmentId, hardwareGroupId }] from processGrant()
    */
   async completeGrant(memberId, tenantId, assignments) {
-    for (const { mappingId, roleAssignmentId } of assignments) {
-      // ON CONFLICT DO NOTHING — idempotent on retry (UNIQUE constraint on member_id, mapping_id)
+    for (const { mappingId, roleAssignmentId, hardwareGroupId } of assignments) {
+      // ON CONFLICT DO NOTHING — idempotent on retry (UNIQUE constraint on member_id, mapping_id, hardware_group_id)
       await db.query(
-        `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (member_id, mapping_id) DO NOTHING`,
-        [memberId, mappingId, roleAssignmentId]
+        `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (member_id, mapping_id, hardware_group_id) DO NOTHING`,
+        [memberId, mappingId, roleAssignmentId, hardwareGroupId || null]
       );
     }
 

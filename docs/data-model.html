@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — Data Model</title>
+<link rel="alternate" type="text/plain" href="../llms.txt">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --purple:     #8B5CF6;
+  --purple-dim: rgba(139,92,246,0.10);
+  --teal:       #0EA5E9;
+  --teal-dim:   rgba(14,165,233,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body {
+  font-family: 'Sora', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 48px 32px 80px; }
+
+.breadcrumb { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+.breadcrumb a { color: var(--brand); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+.header { margin-bottom: 40px; }
+.header-eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--brand); margin-bottom: 10px;
+}
+.header h1 { font-size: 32px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
+.header-sub { font-size: 14px; color: var(--text2); max-width: 600px; line-height: 1.6; }
+
+.section { margin-bottom: 48px; }
+.section-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 16px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Table cards ─────────────────────────────────────────────── */
+.table-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+.table-card-header {
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 14px;
+}
+.table-card-title {
+  font-size: 15px; font-weight: 700; color: var(--text);
+  font-family: 'Courier New', monospace; letter-spacing: -0.3px;
+}
+.table-card-desc {
+  font-size: 12px; color: var(--text2); margin-top: 4px; line-height: 1.5;
+}
+.table-card-meta {
+  margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0;
+}
+.layer-badge {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 99px; white-space: nowrap;
+}
+.layer-L3 { background: var(--brand-dim); color: var(--brand); }
+.layer-L4 { background: var(--purple-dim); color: var(--purple); }
+.layer-foundation { background: var(--teal-dim); color: var(--teal); }
+.layer-activity { background: var(--green-dim); color: var(--green); }
+.layer-observability { background: var(--amber-dim); color: var(--amber); }
+
+.dr-chip {
+  font-size: 9px; font-weight: 600; letter-spacing: 0.5px;
+  color: var(--muted); background: var(--bg);
+  border: 1px solid var(--border); padding: 2px 7px; border-radius: 99px;
+  white-space: nowrap;
+}
+
+/* ── Column table ────────────────────────────────────────────── */
+.col-table {
+  width: 100%; border-collapse: collapse;
+}
+.col-table th {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--muted);
+  background: var(--bg); padding: 8px 16px; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.col-table td {
+  font-size: 11px; color: var(--text2);
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.col-table tr:last-child td { border-bottom: none; }
+.col-table td:first-child {
+  font-family: 'Courier New', monospace;
+  font-size: 11px; color: var(--text); font-weight: 600;
+  white-space: nowrap; width: 220px;
+}
+.col-table td:nth-child(2) {
+  color: var(--muted); font-size: 10px; white-space: nowrap; width: 140px;
+}
+.pk-badge {
+  display: inline-block; font-size: 8px; font-weight: 700;
+  text-transform: uppercase; color: var(--brand);
+  background: var(--brand-dim); padding: 1px 5px; border-radius: 4px;
+  margin-left: 4px; letter-spacing: 0.4px;
+}
+.fk-badge {
+  display: inline-block; font-size: 8px; font-weight: 700;
+  text-transform: uppercase; color: var(--purple);
+  background: var(--purple-dim); padding: 1px 5px; border-radius: 4px;
+  margin-left: 4px; letter-spacing: 0.4px;
+}
+.schema-note {
+  background: var(--amber-dim);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: var(--r-sm);
+  padding: 10px 14px;
+  font-size: 11px; color: var(--text2); line-height: 1.55;
+  margin: 12px 16px 16px;
+}
+.schema-note strong { color: var(--amber); }
+
+/* ── Footer ─────────────────────────────────────────────────── */
+.footer {
+  margin-top: 64px; padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+  display: flex; gap: 24px; flex-wrap: wrap;
+}
+.footer a { color: var(--muted); text-decoration: none; }
+.footer a:hover { color: var(--brand); }
+</style>
+</head>
+<body>
+
+<!-- AI_CONTEXT
+type: data-model
+status: active
+last_updated: 2026-04-01
+key_facts:
+  - 14 tables in PostgreSQL (Railway hosted)
+  - Layer 3 (Standard Adapter) exclusively owns member_identity and member_access_state writes (DR-023)
+  - schema.sql baseline still shows kisi_api_key — DR-035 migration renames to hardware_api_key on Railway
+  - Live Railway DB column is hardware_api_key (post dr-035.sql migration)
+  - plan_mappings.wix_plan_id → source_plan_id after DR-035 migration
+  - member_role_assignments replaces single role_assignment_id for multi-door support (DR-026)
+  - No PII stored — email/name fetched from Wix on-demand (DR-001)
+  - source_tag='accesssync' on all managed users — reconciliation scope boundary (DR-003)
+  - member_access_state statuses: pending_sync | in_flight | active | disabled | revoked | failed | skipped_lockdown
+  - clients.notification_email is per-tenant; ACCESSSYNC_OWNER_NOTIFICATION_EMAIL env var is platform fallback
+-->
+
+<div class="page">
+
+  <div class="breadcrumb">
+    <a href="index.html">Knowledge Base</a> / Data Model
+  </div>
+
+  <div class="header">
+    <div class="header-eyebrow">AccessSync — Data Model</div>
+    <h1>Database Schema</h1>
+    <div class="header-sub">
+      14 PostgreSQL tables. Column-level detail, layer ownership, and the DR that created each table.
+      Source of truth: <code>schema.sql</code> + <code>migrations/dr-035.sql</code> for live column names.
+    </div>
+  </div>
+
+  <div class="schema-note" style="margin: 0 0 32px; background:var(--amber-dim); border:1px solid rgba(245,158,11,0.3); border-radius:var(--r-sm); padding:12px 16px;">
+    <strong>Schema note (DR-035):</strong> <code>schema.sql</code> is the baseline and still shows <code>kisi_api_key</code> and <code>wix_plan_id</code>.
+    The Railway DB has <code>hardware_api_key</code> and <code>source_plan_id</code> after <code>migrations/dr-035.sql</code> runs.
+    This page documents the <strong>live state</strong> (post-migration). Run dr-035.sql before deploying Sprint 5 code.
+  </div>
+
+  <!-- FOUNDATION TABLES -->
+  <div class="section">
+    <div class="section-label">Foundation — Core Operational Tables</div>
+
+    <!-- clients -->
+    <div class="table-card" data-table="clients" data-layer="foundation" data-dr="DR-020,DR-025,DR-028,DR-035">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">clients</div>
+          <div class="table-card-desc">Tenants. One row per AccessSync customer (gym operator). Stores org-level hardware API key (encrypted), notification email, billing tier.</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-foundation">Foundation</span>
+          <span class="dr-chip">DR-020 DR-025 DR-028</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td>uuid_generate_v4()</td></tr>
+          <tr><td>name</td><td>VARCHAR(255)</td><td>Company name — e.g. "House of Gains"</td></tr>
+          <tr><td>platform</td><td>VARCHAR(50)</td><td>Source platform: 'wix', 'squarespace'. DEFAULT 'wix'</td></tr>
+          <tr><td>site_id</td><td>VARCHAR(255)</td><td>UNIQUE. Platform site identifier — webhook routing. Self-registered on first webhook via tenant-resolver.js</td></tr>
+          <tr><td>site_name</td><td>VARCHAR(255)</td><td>Human-readable site name for dashboard</td></tr>
+          <tr><td>hardware_platform</td><td>VARCHAR(50)</td><td>'kisi', 'seam' — resolved by queue-worker, never hardcoded in Core Engine (DR-035)</td></tr>
+          <tr><td>tier</td><td>VARCHAR(50)</td><td>AccessSync billing tier: 'Base', 'Pro', 'Connect'</td></tr>
+          <tr><td>status</td><td>VARCHAR(50)</td><td>DEFAULT 'active'. Values: active, cancelled</td></tr>
+          <tr><td>notification_email</td><td>VARCHAR(255)</td><td>DR-020: per-tenant operator alert destination. Set via operator UI (OB-09). Distinct from ACCESSSYNC_OWNER_NOTIFICATION_EMAIL env var.</td></tr>
+          <tr><td>last_sync_at</td><td>TIMESTAMPTZ</td><td>DR-018: single timestamp updated on each member sync sweep</td></tr>
+          <tr><td>site_url</td><td>VARCHAR(255)</td><td>Operator site URL (e.g. "houseofgains.com") — dashboard header chip</td></tr>
+          <tr><td>last_wix_webhook_at</td><td>TIMESTAMPTZ</td><td>Last webhook received — drives Wix LIVE/WARN/ERROR health status</td></tr>
+          <tr><td>hardware_api_key</td><td>VARCHAR(500)</td><td>DR-028: AES-256-GCM encrypted org-level API key. <em>schema.sql baseline shows kisi_api_key — DR-035 renames on Railway.</em></td></tr>
+          <tr><td>first_grant_sent</td><td>BOOLEAN</td><td>Sprint 5.5: atomic flag — first grant welcome email fires once when false → true</td></tr>
+          <tr><td>created_at / updated_at</td><td>TIMESTAMPTZ</td><td>DEFAULT CURRENT_TIMESTAMP</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- locations -->
+    <div class="table-card" data-table="locations" data-layer="foundation" data-dr="DR-025,DR-027,DR-028,DR-035">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">locations</div>
+          <div class="table-card-desc">Physical sites per client. House of Gains example: Fort Smith + Roland = 2 rows. One AccessSync subscription per location (DR-027). Per-location API key override optional (DR-028).</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-foundation">Foundation</span>
+          <span class="dr-chip">DR-025 DR-027 DR-028</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td>uuid_generate_v4()</td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id) ON DELETE CASCADE</td></tr>
+          <tr><td>name</td><td>VARCHAR(255)</td><td>Display name — e.g. "House of Gains - Fort Smith"</td></tr>
+          <tr><td>city / state</td><td>VARCHAR</td><td>Physical address fields</td></tr>
+          <tr><td>subscription_status</td><td>VARCHAR(50)</td><td>DR-027: DEFAULT 'inactive'. Values: inactive, active, lapsed. Provisioning gated on 'active'.</td></tr>
+          <tr><td>tier</td><td>VARCHAR(50)</td><td>DR-027: AccessSync billing tier for this location</td></tr>
+          <tr><td>subscribed_at</td><td>TIMESTAMPTZ</td><td>DR-027: when subscription was activated</td></tr>
+          <tr><td>subscription_id</td><td>VARCHAR(255)</td><td>DR-027: Wix/billing subscription reference ID</td></tr>
+          <tr><td>hardware_api_key</td><td>VARCHAR(500)</td><td>DR-028: nullable override. Null = use client.hardware_api_key. <em>schema.sql shows kisi_api_key — DR-035 renames.</em></td></tr>
+          <tr><td>hardware_key_last_verified</td><td>TIMESTAMPTZ</td><td>Sprint 5.2: updated by hardware-health-check.js after successful key test</td></tr>
+          <tr><td>hardware_key_last_error</td><td>TEXT</td><td>Sprint 5.2: last error message from health check (null if healthy)</td></tr>
+          <tr><td>created_at</td><td>TIMESTAMPTZ</td><td>DEFAULT CURRENT_TIMESTAMP</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- plan_mappings -->
+    <div class="table-card" data-table="plan_mappings" data-layer="foundation" data-dr="DR-025,DR-026,DR-035">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">plan_mappings</div>
+          <div class="table-card-desc">The translator. Maps a Wix pricing plan ID → hardware group ID. Plan-mapping-resolver.js reads this table. Returns all active mappings as an array (multi-door, DR-026).</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-L4">Layer 4</span>
+          <span class="dr-chip">DR-025 DR-026 DR-035</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td></td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id) ON DELETE CASCADE</td></tr>
+          <tr><td>source_plan_id</td><td>VARCHAR(255)</td><td>DR-035: was wix_plan_id. The Wix pricing plan ID from the webhook event.</td></tr>
+          <tr><td>hardware_group_id</td><td>VARCHAR(255)</td><td>The Kisi/Seam group ID assigned for this plan</td></tr>
+          <tr><td>tier_name</td><td>VARCHAR(50)</td><td>DEFAULT 'Base'. Base, Pro, Connect.</td></tr>
+          <tr><td>action</td><td>VARCHAR(50)</td><td>DEFAULT 'grant'. grant, revoke, temporary.</td></tr>
+          <tr><td>location_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ locations(id). Nullable — existing rows may lack location assignment.</td></tr>
+          <tr><td>plan_name</td><td>VARCHAR(255)</td><td>Display label for operator dashboard</td></tr>
+          <tr><td>door_name</td><td>VARCHAR(255)</td><td>Display label for the hardware group/door</td></tr>
+          <tr><td>status</td><td>VARCHAR(50)</td><td>DEFAULT 'active'. 'excluded' = "Not managed" in UI.</td></tr>
+          <tr><td>access_type</td><td>VARCHAR(50)</td><td>DR-026: DEFAULT 'group'. Future: 'zone'/'door' for Seam routing.</td></tr>
+          <tr><td>created_at</td><td>TIMESTAMPTZ</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- processed_event_ids -->
+    <div class="table-card" data-table="processed_event_ids" data-layer="foundation" data-dr="DR-010">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">processed_event_ids</div>
+          <div class="table-card-desc">Idempotency / deduplication table (DR-010). Stores every processed Wix event ID. webhook-processor.js checks this before enqueuing — duplicate events are silently dropped.</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-L4">Layer 4</span>
+          <span class="dr-chip">DR-010</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>event_id <span class="pk-badge">PK</span></td><td>VARCHAR(255)</td><td>Wix Event ID — primary key enforces uniqueness</td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id)</td></tr>
+          <tr><td>processed_at</td><td>TIMESTAMPTZ</td><td>DEFAULT CURRENT_TIMESTAMP</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- error_queue -->
+    <div class="table-card" data-table="error_queue" data-layer="foundation" data-dr="DR-025">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">error_queue</div>
+          <div class="table-card-desc">Dead letter queue. Jobs that exhaust retry-engine backoff land here. Operator dismisses with a note. Admin Hub Error Queue panel reads this table.</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-L4">Layer 4</span>
+          <span class="dr-chip">DR-025</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td></td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id)</td></tr>
+          <tr><td>member_id</td><td>UUID</td><td>References member_identity(id) — not FK-constrained</td></tr>
+          <tr><td>event_type</td><td>VARCHAR(100)</td><td>e.g. plan.purchased, payment.failed</td></tr>
+          <tr><td>payload</td><td>JSONB</td><td>Original event payload</td></tr>
+          <tr><td>error_reason</td><td>TEXT</td><td>Maps to plain_message in API responses (naming resolved at API layer — DR-025)</td></tr>
+          <tr><td>retry_count</td><td>INTEGER</td><td>DEFAULT 0</td></tr>
+          <tr><td>status</td><td>VARCHAR(50)</td><td>DEFAULT 'failed'. Values: failed, resolved.</td></tr>
+          <tr><td>dismiss_note</td><td>TEXT</td><td>Admin Hub: operator note when dismissing</td></tr>
+          <tr><td>dismissed_by</td><td>VARCHAR(255)</td><td>Admin Hub: who dismissed ('admin' for now)</td></tr>
+          <tr><td>location_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ locations(id). Nullable error scoping.</td></tr>
+          <tr><td>plan_name / door_name</td><td>VARCHAR(255)</td><td>Context for operator triage (DR-025)</td></tr>
+          <tr><td>created_at / resolved_at</td><td>TIMESTAMPTZ</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ACCESS ADAPTER LAYER -->
+  <div class="section">
+    <div class="section-label">Access Adapter Layer — Identity &amp; State (Layer 3 Owned)</div>
+
+    <!-- member_identity -->
+    <div class="table-card" data-table="member_identity" data-layer="L3" data-dr="DR-001,DR-003,DR-021,DR-023">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">member_identity</div>
+          <div class="table-card-desc">Platform-agnostic identity bridge (DR-021). Maps Wix member ID → hardware user ID. No email/name stored — data minimization (DR-001). source_tag='accesssync' distinguishes managed users (DR-003). Standard Adapter (Layer 3) exclusively owns writes (DR-023).</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-L3">Layer 3</span>
+          <span class="dr-chip">DR-001 DR-003 DR-021 DR-023</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td></td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id) ON DELETE CASCADE</td></tr>
+          <tr><td>platform_member_id</td><td>VARCHAR(255)</td><td>DR-021: was wix_member_id. Platform-agnostic member identifier from the source platform.</td></tr>
+          <tr><td>source_platform</td><td>VARCHAR(50)</td><td>DR-021: 'wix', 'squarespace', etc. DEFAULT 'wix'</td></tr>
+          <tr><td>hardware_platform</td><td>VARCHAR(50)</td><td>'kisi', 'seam' — which hardware system this member is provisioned in</td></tr>
+          <tr><td>hardware_user_id</td><td>VARCHAR(255)</td><td>The generated ID in Kisi/Seam. NULL until resolved by resolveIdentity().</td></tr>
+          <tr><td>source_tag</td><td>VARCHAR(50)</td><td>DR-003: DEFAULT 'accesssync'. Reconciliation scope boundary — only 'accesssync' rows are managed.</td></tr>
+          <tr><td>created_at / updated_at</td><td>TIMESTAMPTZ</td><td>UNIQUE(client_id, source_platform, platform_member_id)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- member_access_state -->
+    <div class="table-card" data-table="member_access_state" data-layer="L3" data-dr="DR-011,DR-023">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">member_access_state</div>
+          <div class="table-card-desc">Provisioning status per member. in_flight status is the concurrency lock (DR-011). Standard Adapter (Layer 3) exclusively owns all status writes (DR-023). UNIQUE on member_id — one state row per member.</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-L3">Layer 3</span>
+          <span class="dr-chip">DR-011 DR-023</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td></td></tr>
+          <tr><td>member_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ member_identity(id) ON DELETE CASCADE. UNIQUE — one state row per member.</td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id) ON DELETE CASCADE</td></tr>
+          <tr><td>status</td><td>VARCHAR(50)</td><td>pending_sync | <strong>in_flight</strong> (lock) | active | disabled | revoked | failed | skipped_lockdown</td></tr>
+          <tr><td>role_assignment_id</td><td>VARCHAR(255)</td><td>Legacy: single Kisi role assignment ID. Superseded by member_role_assignments for multi-door (DR-026). Retained as fallback.</td></tr>
+          <tr><td>provisioned_at</td><td>TIMESTAMPTZ</td><td>Set by completeGrant()</td></tr>
+          <tr><td>updated_at</td><td>TIMESTAMPTZ</td><td>DEFAULT CURRENT_TIMESTAMP</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- member_role_assignments -->
+    <div class="table-card" data-table="member_role_assignments" data-layer="L3" data-dr="DR-026">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">member_role_assignments</div>
+          <div class="table-card-desc">Multi-door grant storage (DR-026). One row per hardware role assignment per member per plan mapping. UNIQUE(member_id, mapping_id) enforces idempotency. completeRevoke() deletes all rows atomically. Standard Adapter (Layer 3) owns writes.</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-L3">Layer 3</span>
+          <span class="dr-chip">DR-026</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td></td></tr>
+          <tr><td>member_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ member_identity(id) ON DELETE CASCADE</td></tr>
+          <tr><td>mapping_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ plan_mappings(id) ON DELETE CASCADE</td></tr>
+          <tr><td>role_assignment_id</td><td>VARCHAR(255)</td><td>Kisi role assignment ID for this specific door/mapping combination</td></tr>
+          <tr><td>created_at</td><td>TIMESTAMPTZ</td><td>UNIQUE(member_id, mapping_id) — idempotent on retry</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- member_access_log -->
+    <div class="table-card" data-table="member_access_log" data-layer="L3" data-dr="DR-004">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">member_access_log</div>
+          <div class="table-card-desc">Lifecycle events table (DR-004). Records meaningful state transitions — not operational noise. provisioning_started, provisioned, provisioning_failed, disabled, restored, revoked.</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-L3">Layer 3</span>
+          <span class="dr-chip">DR-004</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td></td></tr>
+          <tr><td>member_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ member_identity(id) ON DELETE CASCADE</td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id) ON DELETE CASCADE</td></tr>
+          <tr><td>event_type</td><td>VARCHAR(100)</td><td>provisioning_started, provisioned, provisioning_failed, disabled, restored, revoked</td></tr>
+          <tr><td>credential_type</td><td>VARCHAR(50)</td><td>pin, qr, kisi_app</td></tr>
+          <tr><td>credential_value</td><td>TEXT</td><td>Encrypted PIN or QR payload</td></tr>
+          <tr><td>error_code</td><td>VARCHAR(50)</td><td>e.g. CRED_001</td></tr>
+          <tr><td>created_at</td><td>TIMESTAMPTZ</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- adapter_admin_log -->
+    <div class="table-card" data-table="adapter_admin_log" data-layer="L3" data-dr="DR-019,DR-021">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">adapter_admin_log</div>
+          <div class="table-card-desc">Provisioning audit trail. Every hardware operation logged here. configured_by + configured_at nullable columns (DR-019) for future operator self-service attribution.</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-L3">Layer 3</span>
+          <span class="dr-chip">DR-019 DR-021</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td></td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id)</td></tr>
+          <tr><td>event_type</td><td>VARCHAR(100)</td><td>Hardware operation type</td></tr>
+          <tr><td>platform_member_id</td><td>VARCHAR(255)</td><td>DR-021: was wix_member_id</td></tr>
+          <tr><td>hardware_user_id</td><td>VARCHAR(255)</td><td></td></tr>
+          <tr><td>role_assignment_id</td><td>VARCHAR(255)</td><td></td></tr>
+          <tr><td>result</td><td>VARCHAR(50)</td><td>success, failed</td></tr>
+          <tr><td>configured_by</td><td>VARCHAR(255)</td><td>DR-019: nullable — who set up the adapter</td></tr>
+          <tr><td>configured_at</td><td>TIMESTAMPTZ</td><td>DR-019: nullable — when adapter was configured</td></tr>
+          <tr><td>created_at</td><td>TIMESTAMPTZ</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ACTIVITY / TELEMETRY -->
+  <div class="section">
+    <div class="section-label">Activity / Telemetry</div>
+
+    <!-- client_activity_summary -->
+    <div class="table-card" data-table="client_activity_summary" data-layer="L3" data-dr="DR-024">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">client_activity_summary</div>
+          <div class="table-card-desc">Daily aggregated event counts per client (DR-024). UPSERT pattern — Standard Adapter (Layer 3) increments on every event. Fault-tolerant writes — failures logged but never block grant/revoke path. UNIQUE(client_id, summary_date).</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-L3">Layer 3</span>
+          <span class="dr-chip">DR-024</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td></td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id). UNIQUE with summary_date.</td></tr>
+          <tr><td>summary_date</td><td>DATE</td><td>CURRENT_DATE — one row per client per day</td></tr>
+          <tr><td>events_received</td><td>INTEGER</td><td>DEFAULT 0. Incremented on resolveAndLock().</td></tr>
+          <tr><td>grants_completed</td><td>INTEGER</td><td>DEFAULT 0. Incremented on completeGrant().</td></tr>
+          <tr><td>revokes_completed</td><td>INTEGER</td><td>DEFAULT 0. Incremented on completeRevoke().</td></tr>
+          <tr><td>errors_count</td><td>INTEGER</td><td>DEFAULT 0. Incremented on releaseLock() (error path).</td></tr>
+          <tr><td>updated_at</td><td>TIMESTAMPTZ</td><td>DEFAULT CURRENT_TIMESTAMP</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- config_alert_log -->
+    <div class="table-card" data-table="config_alert_log" data-layer="activity" data-dr="—">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">config_alert_log</div>
+          <div class="table-card-desc">Operator configuration issue tracking. Fires when plan mappings have problems: missing door, missing group, expired credentials, location mismatch. Deduplicates via last_seen_at.</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-activity">Activity</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td></td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id) ON DELETE CASCADE</td></tr>
+          <tr><td>alert_type</td><td>VARCHAR(100)</td><td>missing_door, missing_group, expired_credentials, location_mismatch</td></tr>
+          <tr><td>plan_mapping_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ plan_mappings(id). Nullable.</td></tr>
+          <tr><td>hardware_ref</td><td>VARCHAR(255)</td><td>Hardware system reference (group ID, door ID)</td></tr>
+          <tr><td>affected_member_count</td><td>INTEGER</td><td>DEFAULT 0</td></tr>
+          <tr><td>resolved_at</td><td>TIMESTAMPTZ</td><td>Null until operator resolves</td></tr>
+          <tr><td>created_at / last_seen_at</td><td>TIMESTAMPTZ</td><td>last_seen_at updates on repeat occurrence</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- OBSERVABILITY -->
+  <div class="section">
+    <div class="section-label">Observability</div>
+
+    <!-- webhook_log -->
+    <div class="table-card" data-table="webhook_log" data-layer="observability" data-dr="DR-009">
+      <div class="table-card-header">
+        <div>
+          <div class="table-card-title">webhook_log</div>
+          <div class="table-card-desc">Every inbound Wix webhook. Written by wix-connector.js (Layer 1) before processing. Admin Hub Webhook Inspector reads this table. hmac_status + dedup_status support HMAC spike alerting (Sprint 5.1).</div>
+        </div>
+        <div class="table-card-meta">
+          <span class="layer-badge layer-observability">Observability</span>
+          <span class="dr-chip">DR-009</span>
+        </div>
+      </div>
+      <table class="col-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>id <span class="pk-badge">PK</span></td><td>UUID</td><td></td></tr>
+          <tr><td>event_id</td><td>VARCHAR(255)</td><td>Wix event ID (not FK — may be null for rejected webhooks)</td></tr>
+          <tr><td>client_id <span class="fk-badge">FK</span></td><td>UUID</td><td>→ clients(id). Nullable — unknown client on routing error.</td></tr>
+          <tr><td>received_at</td><td>TIMESTAMPTZ</td><td>DEFAULT CURRENT_TIMESTAMP</td></tr>
+          <tr><td>hmac_status</td><td>VARCHAR(20)</td><td>'accepted', 'rejected'. hmac-monitor.js counts rejections for spike alerting.</td></tr>
+          <tr><td>dedup_status</td><td>VARCHAR(20)</td><td>'new', 'duplicate'. Null if rejected/errored before dedup check.</td></tr>
+          <tr><td>event_type</td><td>VARCHAR(100)</td><td>e.g. plan.purchased, payment.failed</td></tr>
+          <tr><td>raw_payload</td><td>JSONB</td><td>Full original webhook body</td></tr>
+          <tr><td>normalized_payload</td><td>JSONB</td><td>Standard event object after wix-adapter parsing</td></tr>
+          <tr><td>error_detail</td><td>TEXT</td><td>Parsing or routing error message if applicable</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Layer ownership summary -->
+  <div class="section">
+    <div class="section-label">Layer Ownership Summary</div>
+    <table style="width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--border); border-radius:var(--r); overflow:hidden; box-shadow:var(--shadow);">
+      <thead>
+        <tr>
+          <th style="font-size:9px;font-weight:700;letter-spacing:0.9px;text-transform:uppercase;color:var(--muted);background:var(--bg);padding:9px 16px;text-align:left;border-bottom:1px solid var(--border);">Layer</th>
+          <th style="font-size:9px;font-weight:700;letter-spacing:0.9px;text-transform:uppercase;color:var(--muted);background:var(--bg);padding:9px 16px;text-align:left;border-bottom:1px solid var(--border);">Tables Owned</th>
+          <th style="font-size:9px;font-weight:700;letter-spacing:0.9px;text-transform:uppercase;color:var(--muted);background:var(--bg);padding:9px 16px;text-align:left;border-bottom:1px solid var(--border);">DR</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;color:var(--brand);">Layer 3 — Standard Adapter</td>
+          <td style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text2);">member_identity, member_access_state, member_role_assignments, member_access_log, adapter_admin_log, client_activity_summary</td>
+          <td style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);">DR-023, DR-024</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;color:var(--purple);">Layer 4 — Core Engine</td>
+          <td style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text2);">processed_event_ids, error_queue, plan_mappings (read-only in production)</td>
+          <td style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);">DR-010, DR-026</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;color:var(--teal);">Foundation (multi-layer)</td>
+          <td style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text2);">clients, locations — read by all layers, written by admin routes and onboarding</td>
+          <td style="padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);">DR-025, DR-027, DR-028</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-size:12px;font-weight:600;color:var(--amber);">Observability</td>
+          <td style="padding:10px 16px;font-size:11px;color:var(--text2);">webhook_log, config_alert_log</td>
+          <td style="padding:10px 16px;font-size:11px;color:var(--muted);">DR-009</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <span>AccessSync Data Model · v1.0 · 2026-04-01</span>
+    <a href="index.html">Hub</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="decision-log.html">Decision Log</a>
+    <a href="operations.html">Operations</a>
+    <a href="../llms.txt">llms.txt</a>
+  </div>
+
+</div>
+</body>
+</html>

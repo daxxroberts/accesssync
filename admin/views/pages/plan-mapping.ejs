@@ -17,6 +17,30 @@
     .info-banner-text { font-size: 13px; color: var(--brand); line-height: 1.5; }
     .info-banner-text strong { font-weight: 700; }
 
+    /* ── Section headers ── */
+    .section-header {
+      display: flex; align-items: center; gap: 10px; margin: 24px 0 12px;
+    }
+    .section-title {
+      font-size: 13px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted);
+    }
+    .section-count {
+      font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px;
+    }
+    .section-count.unmapped { background: var(--red-dim, #FEE2E2); color: var(--red, #DC2626); }
+    .section-count.mapped   { background: var(--brand-dim); color: var(--brand); }
+    .section-count.service  { background: #F3E8FF; color: #7C3AED; }
+
+    /* ── Unmapped alert ── */
+    .unmapped-alert {
+      background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px;
+      padding: 14px 18px; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .unmapped-alert-icon { font-size: 18px; }
+    .unmapped-alert-text { font-size: 13px; color: #991B1B; line-height: 1.5; }
+
     /* ── Plan cards ── */
     .plan-grid { display: flex; flex-direction: column; gap: 16px; }
     .plan-card {
@@ -26,6 +50,7 @@
       box-shadow: var(--shadow);
     }
     .plan-card:hover { box-shadow: var(--shadow-md); }
+    .plan-card.unmapped { border-color: #FECACA; }
     .plan-card-header {
       display: flex; align-items: center; justify-content: space-between;
       padding: 18px 24px;
@@ -39,7 +64,8 @@
     }
     .plan-icon.single { background: var(--brand-dim); }
     .plan-icon.multi  { background: var(--sage-dim); }
-    .plan-icon.unlinked { background: var(--surface); }
+    .plan-icon.unlinked { background: #FEE2E2; }
+    .plan-icon.service { background: #F3E8FF; }
     .plan-name { font-size: 16px; font-weight: 700; color: var(--text); }
     .plan-wix-id { font-size: 11px; color: var(--muted); font-family: 'Courier New', monospace; margin-top: 2px; }
     .plan-card-right { display: flex; align-items: center; gap: 10px; }
@@ -47,10 +73,47 @@
       font-size: 10px; font-weight: 700; text-transform: uppercase;
       letter-spacing: 0.06em; padding: 4px 10px; border-radius: 6px;
     }
-    .plan-type-badge.single   { background: var(--brand-dim); color: var(--brand); }
-    .plan-type-badge.multi    { background: var(--sage-dim);  color: var(--sage-dark); }
-    .plan-type-badge.unlinked { background: var(--surface);   color: var(--muted); }
+    .plan-type-badge.pricing_plan   { background: var(--brand-dim); color: var(--brand); }
+    .plan-type-badge.booking_service { background: #F3E8FF; color: #7C3AED; }
+    .plan-type-badge.unlinked { background: #FEE2E2; color: #DC2626; }
     .plan-card-body { padding: 20px 24px; }
+
+    /* ── Group tags (multi-select) ── */
+    .group-tags-wrap { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .group-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      background: var(--brand-dim); color: var(--brand);
+    }
+    .group-tag-remove {
+      cursor: pointer; font-size: 14px; line-height: 1; opacity: 0.6;
+      border: none; background: none; color: inherit; padding: 0;
+    }
+    .group-tag-remove:hover { opacity: 1; }
+    .add-group-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      background: var(--surface); color: var(--brand); border: 1px dashed var(--brand);
+      cursor: pointer; transition: background 0.12s;
+    }
+    .add-group-btn:hover { background: var(--brand-dim); }
+
+    /* ── Group dropdown ── */
+    .group-dropdown {
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      box-shadow: var(--shadow-md); max-height: 240px; overflow-y: auto;
+      display: none; margin-top: 4px;
+    }
+    .group-dropdown.open { display: block; }
+    .group-dropdown-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; cursor: pointer; font-size: 13px; transition: background 0.1s;
+    }
+    .group-dropdown-item:hover { background: var(--surface); }
+    .group-dropdown-item.selected { background: var(--brand-dim); }
+    .group-dropdown-check { width: 18px; height: 18px; border: 2px solid var(--border); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+    .group-dropdown-item.selected .group-dropdown-check { background: var(--brand); border-color: var(--brand); color: #fff; }
 
     /* ── Config rows ── */
     .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -65,15 +128,6 @@
       font-size: 14px; color: var(--text); background: var(--surface);
       display: flex; align-items: center; gap: 8px;
     }
-    .config-select {
-      width: 100%; padding: 10px 14px; border: 1px solid var(--border);
-      border-radius: 8px; font-size: 14px; font-family: inherit;
-      color: var(--text); background: var(--card); outline: none;
-      cursor: pointer; transition: border-color 0.15s; appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%238896A8' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px;
-    }
-    .config-select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-dim); }
     .config-input {
       width: 100%; padding: 10px 14px; border: 1px solid var(--border);
       border-radius: 8px; font-size: 14px; font-family: inherit;
@@ -147,8 +201,8 @@
     }
     .row-view-btn:hover { background: var(--brand-dim); }
     .row-view-arrow { font-size: 13px; }
-    .empty-state { text-align: center; padding: 20px 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
-    .empty-state-icon { font-size: 24px; margin-bottom: 6px; opacity: 0.5; }
+    .empty-state { text-align: center; padding: 28px 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .empty-state-icon { font-size: 32px; margin-bottom: 8px; opacity: 0.4; }
 
     /* ── Save bar ── */
     .save-bar {
@@ -191,6 +245,13 @@
     .modal-btn.confirm { background: var(--brand); color: #fff; }
     .modal-btn.confirm:hover { background: var(--brand-dark); }
 
+    /* ── Mini group tags in header ── */
+    .header-group-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+    .header-group-tag {
+      font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 6px;
+      background: var(--brand-dim); color: var(--brand);
+    }
+
     @media (max-width: 640px) {
       .config-grid { grid-template-columns: 1fr; }
       .plan-card-header { flex-wrap: wrap; gap: 10px; }
@@ -204,7 +265,7 @@
 
   <div class="dash-content">
     <div class="page-header">
-      <div class="page-title">Plan Mapping & Setup</div>
+      <div class="page-title">Plan Mapping</div>
       <div class="page-subtitle" id="pageSubtitle"></div>
     </div>
 
@@ -213,7 +274,44 @@
       <div class="info-banner-text" id="infoBannerText"></div>
     </div>
 
-    <div class="plan-grid" id="planGrid"></div>
+    <!-- Unmapped alert (shown when plans have no group) -->
+    <div id="unmappedAlert" class="unmapped-alert" style="display:none;">
+      <span class="unmapped-alert-icon">&#9888;</span>
+      <div class="unmapped-alert-text" id="unmappedAlertText"></div>
+    </div>
+
+    <!-- Unmapped plans section -->
+    <div id="unmappedSection" style="display:none;">
+      <div class="section-header">
+        <span class="section-title">Needs Mapping</span>
+        <span class="section-count unmapped" id="unmappedCount">0</span>
+      </div>
+      <div class="plan-grid" id="unmappedGrid"></div>
+    </div>
+
+    <!-- Mapped pricing plans section -->
+    <div id="mappedPlansSection" style="display:none;">
+      <div class="section-header">
+        <span class="section-title">Pricing Plans</span>
+        <span class="section-count mapped" id="mappedPlansCount">0</span>
+      </div>
+      <div class="plan-grid" id="mappedPlansGrid"></div>
+    </div>
+
+    <!-- Mapped booking services section -->
+    <div id="mappedServicesSection" style="display:none;">
+      <div class="section-header">
+        <span class="section-title">Booking Services</span>
+        <span class="section-count service" id="mappedServicesCount">0</span>
+      </div>
+      <div class="plan-grid" id="mappedServicesGrid"></div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="emptyState" class="empty-state" style="display:none;">
+      <div class="empty-state-icon">&#128203;</div>
+      <div>Your Wix plans and services will appear here automatically.<br>Make sure your Wix API key is connected.</div>
+    </div>
   </div>
 
   <!-- Save bar -->
@@ -247,19 +345,17 @@
     // ═══════════════════════════════════════
 
     function getPageSubtitle() {
-      return 'Map your Wix pricing plans to ' + platformName() + ' ' + groupLabel().toLowerCase() + 's for automatic access provisioning. Configure multi-member settings for plans that allow additional members.';
+      return 'Map your Wix pricing plans and booking services to ' + platformName() + ' ' + groupLabel().toLowerCase() + 's. One plan can be assigned to multiple groups.';
     }
 
     function getInfoBannerHTML() {
-      return '<strong>How it works:</strong> When a plan is marked as multi-member, the plan holder sees a member management widget on your site where they can add people to their plan. Each person gets provisioned individually through ' + platformName() + ' using the same ' + groupLabel().toLowerCase() + '. Single-member plans work exactly as before — no changes needed.';
+      return '<strong>How it works:</strong> Each plan or service is mapped to one or more ' + platformName() + ' ' + groupLabel().toLowerCase() + 's. When a member purchases a plan or books a service, they automatically receive access to all assigned groups. Multi-member plans allow the plan holder to add additional people.';
     }
 
     function getToggleSublabel(plan) {
       if (plan.isMultiMember) {
         var h = plan.activeHolders || 0;
-        if (h > 0) {
-          return 'Currently active — ' + h + ' plan holder' + (h !== 1 ? 's' : '') + ' can add members up to the limit below.';
-        }
+        if (h > 0) return 'Currently active — ' + h + ' plan holder' + (h !== 1 ? 's' : '') + ' can add members up to the limit below.';
         return 'Enabled — plan holders can add additional members who each receive their own access credentials.';
       }
       return 'Enable this if the plan covers more than one person (couples, families, groups).';
@@ -269,102 +365,21 @@
       var max = plan.maxMembers - 1;
       var highest = getHighestUsage(plan);
       var text = 'Plan holder + up to ' + max + ' additional ' + (max === 1 ? 'person' : 'people') + '.';
-      if (highest > 0) {
-        text += ' Highest current usage: ' + highest + ' of ' + max + '.';
-      }
+      if (highest > 0) text += ' Highest current usage: ' + highest + ' of ' + max + '.';
       return text;
     }
 
     function getGroupHelper() {
-      return 'All members on this plan will receive access to the doors in this ' + groupLabel().toLowerCase() + '.';
-    }
-
-    function getUnlinkedWarning() {
-      return 'This plan is not linked to a ' + platformName() + ' ' + groupLabel().toLowerCase() + '. Members won\'t receive access until one is assigned.';
-    }
-
-    function getEmptyHoldersMessage(plan) {
-      return 'No active plan holders yet. Members will appear here once ' + plan.name + ' plans are purchased.';
-    }
-
-    function getDisableMultiWarning(plan) {
-      var h = plan.activeHolders || 0;
-      var totalSubs = (plan.activeMembers || []).reduce(function(sum, am) { return sum + am.subs; }, 0);
-      return 'This plan has ' + h + ' active plan holder' + (h !== 1 ? 's' : '') + ' with ' + totalSubs + ' total additional member' + (totalSubs !== 1 ? 's' : '') + '. Turning off multi-member will prevent new members from being added. Existing members will keep their current access.';
-    }
-
-    function getGroupChangeWarning(plan, oldGroupName, newGroupName) {
-      var totalMembers = plan.activeHolders + ((plan.activeMembers || []).reduce(function(sum, am) { return sum + am.subs; }, 0));
-      return totalMembers + ' member' + (totalMembers !== 1 ? 's' : '') + ' currently have access through "' + oldGroupName + '". Changing this will move all members on this plan to "' + newGroupName + '".';
-    }
-
-    function getMaxLowerWarning(plan, newMax) {
-      var highest = getHighestUsage(plan);
-      var allowed = newMax - 1;
-      return 'At least one plan holder currently has ' + highest + ' additional member' + (highest !== 1 ? 's' : '') + '. Setting the limit to ' + allowed + ' won\'t remove existing members, but those holders won\'t be able to add more until they\'re below the new limit.';
+      return 'Members on this plan will receive access to all assigned ' + groupLabel().toLowerCase() + 's.';
     }
 
     // ═══════════════════════════════════════
     // Data
     // ═══════════════════════════════════════
 
-    var PLATFORM_GROUPS = [
-      { id: 'kg-001', name: 'Main Floor Access' },
-      { id: 'kg-002', name: 'Full Building Access' },
-      { id: 'kg-003', name: '24/7 Premium Access' },
-      { id: 'kg-004', name: 'Studio Rooms Only' },
-    ];
-
-    var plans = [
-      {
-        id: 'plan-001',
-        name: 'Individual Monthly',
-        wixPlanId: 'wix_plan_a1b2c3',
-        isMultiMember: false,
-        maxMembers: 1,
-        kisiGroupId: 'kg-001',
-        activeHolders: 23,
-      },
-      {
-        id: 'plan-002',
-        name: 'Family Monthly Membership',
-        wixPlanId: 'wix_plan_d4e5f6',
-        isMultiMember: true,
-        maxMembers: 5,
-        kisiGroupId: 'kg-002',
-        activeHolders: 8,
-        activeMembers: [
-          { holder: 'Daxx Roberts', subs: 3, status: 'active' },
-          { holder: 'Maria Chen', subs: 2, status: 'active' },
-          { holder: 'James Wilson', subs: 4, status: 'active' },
-        ],
-      },
-      {
-        id: 'plan-003',
-        name: 'Couples Premium',
-        wixPlanId: 'wix_plan_g7h8i9',
-        isMultiMember: true,
-        maxMembers: 2,
-        kisiGroupId: 'kg-003',
-        activeHolders: 12,
-        activeMembers: [
-          { holder: 'Tony Park', subs: 1, status: 'active' },
-          { holder: 'Lisa Nguyen', subs: 1, status: 'active' },
-          { holder: 'Sam Rivera', subs: 0, status: 'active' },
-        ],
-      },
-      {
-        id: 'plan-004',
-        name: 'Studio Pass',
-        wixPlanId: 'wix_plan_j0k1l2',
-        isMultiMember: false,
-        maxMembers: 1,
-        kisiGroupId: null,
-        activeHolders: 0,
-      },
-    ];
-
-    var originalState = JSON.stringify(plans);
+    var PLATFORM_GROUPS = [];
+    var plans = [];
+    var originalState = '[]';
     var dirty = false;
     var pendingAction = null;
 
@@ -380,163 +395,228 @@
     function render() {
       document.getElementById('pageSubtitle').textContent = getPageSubtitle();
       document.getElementById('infoBannerText').innerHTML = getInfoBannerHTML();
-      renderPlans();
+
+      // Split plans into sections
+      var unmapped = plans.filter(function(p) { return !p.groupIds || p.groupIds.length === 0; });
+      var mappedPlans = plans.filter(function(p) { return p.groupIds && p.groupIds.length > 0 && p.planType === 'pricing_plan'; });
+      var mappedServices = plans.filter(function(p) { return p.groupIds && p.groupIds.length > 0 && p.planType === 'booking_service'; });
+
+      // Unmapped alert
+      var alertEl = document.getElementById('unmappedAlert');
+      if (unmapped.length > 0) {
+        alertEl.style.display = 'flex';
+        document.getElementById('unmappedAlertText').innerHTML = '<strong>' + unmapped.length + ' plan' + (unmapped.length !== 1 ? 's' : '') + ' need mapping</strong> — members won\'t get access until groups are assigned.';
+      } else { alertEl.style.display = 'none'; }
+
+      // Render sections
+      renderSection('unmapped', unmapped, document.getElementById('unmappedGrid'));
+      renderSection('mapped', mappedPlans, document.getElementById('mappedPlansGrid'));
+      renderSection('service', mappedServices, document.getElementById('mappedServicesGrid'));
+
+      // Section visibility + counts
+      toggleSection('unmappedSection', 'unmappedCount', unmapped);
+      toggleSection('mappedPlansSection', 'mappedPlansCount', mappedPlans);
+      toggleSection('mappedServicesSection', 'mappedServicesCount', mappedServices);
+
+      // Empty state
+      document.getElementById('emptyState').style.display = plans.length === 0 ? 'block' : 'none';
     }
 
-    function renderPlans() {
-      var grid = document.getElementById('planGrid');
+    function toggleSection(sectionId, countId, items) {
+      document.getElementById(sectionId).style.display = items.length > 0 ? 'block' : 'none';
+      document.getElementById(countId).textContent = items.length;
+    }
+
+    function renderSection(type, sectionPlans, grid) {
       grid.innerHTML = '';
-
-      plans.forEach(function(plan) {
-        var card = document.createElement('div');
-        card.className = 'plan-card';
-
-        var type = plan.kisiGroupId === null ? 'unlinked' : (plan.isMultiMember ? 'multi' : 'single');
-        var typeLabel = type === 'unlinked' ? 'Not Linked' : (type === 'multi' ? 'Multi-Member' : 'Single Member');
-        var icon = type === 'multi' ? '&#128101;' : (type === 'single' ? '&#128100;' : '&#128279;');
-        var group = PLATFORM_GROUPS.find(function(g) { return g.id === plan.kisiGroupId; });
-
-        var headerHTML =
-          '<div class="plan-card-header">' +
-            '<div class="plan-card-left">' +
-              '<div class="plan-icon ' + type + '">' + icon + '</div>' +
-              '<div>' +
-                '<div class="plan-name">' + plan.name + '</div>' +
-                '<div class="plan-wix-id">Wix ID: ' + plan.wixPlanId + '</div>' +
-              '</div>' +
-            '</div>' +
-            '<div class="plan-card-right">' +
-              '<span class="plan-type-badge ' + type + '">' + typeLabel + '</span>' +
-              '<span style="font-size:12px;color:#6b7a8d;">' + plan.activeHolders + ' active holder' + (plan.activeHolders !== 1 ? 's' : '') + '</span>' +
-            '</div>' +
-          '</div>';
-
-        var bodyHTML = '<div class="plan-card-body">';
-
-        bodyHTML +=
-          '<div class="toggle-row">' +
-            '<div>' +
-              '<div class="toggle-label">Multi-Member Plan</div>' +
-              '<div class="toggle-sublabel">' + getToggleSublabel(plan) + '</div>' +
-            '</div>' +
-            '<label class="toggle-switch">' +
-              '<input type="checkbox" ' + (plan.isMultiMember ? 'checked' : '') + ' onchange="handleMultiMemberToggle(\'' + plan.id + '\', this.checked, this)"/>' +
-              '<div class="toggle-track"></div>' +
-              '<div class="toggle-knob"></div>' +
-            '</label>' +
-          '</div>';
-
-        bodyHTML += '<div class="config-grid" style="margin-top:16px;">';
-
-        var groupOptions = '<option value="">— Select ' + groupLabel().toLowerCase() + ' —</option>';
-        PLATFORM_GROUPS.forEach(function(g) {
-          groupOptions += '<option value="' + g.id + '"' + (plan.kisiGroupId === g.id ? ' selected' : '') + '>' + g.name + '</option>';
-        });
-
-        bodyHTML +=
-          '<div class="config-item">' +
-            '<div class="config-label">' + platformName() + ' ' + groupLabel() + '</div>' +
-            '<select class="config-select" onchange="handleGroupChange(\'' + plan.id + '\', this.value, this)" data-prev="' + (plan.kisiGroupId || '') + '">' +
-              groupOptions +
-            '</select>' +
-            '<div class="config-helper">' + getGroupHelper() + '</div>' +
-          '</div>';
-
-        if (plan.isMultiMember) {
-          var additionalAllowed = plan.maxMembers - 1;
-          bodyHTML +=
-            '<div class="config-item">' +
-              '<div class="config-label">Additional members allowed</div>' +
-              '<input class="config-input" type="number" min="1" max="19" value="' + additionalAllowed + '"' +
-                ' onchange="handleMaxMembersChange(\'' + plan.id + '\', parseInt(this.value), this)"' +
-                ' data-prev="' + additionalAllowed + '"/>' +
-              '<div class="config-helper">' + getMaxMembersHelper(plan) + '</div>' +
-            '</div>';
-        } else {
-          bodyHTML +=
-            '<div class="config-item">' +
-              '<div class="config-label">Members</div>' +
-              '<div class="config-value">1 (single member plan)</div>' +
-            '</div>';
-        }
-
-        bodyHTML += '</div>'; // close config-grid
-
-        if (plan.isMultiMember) {
-          var holders = plan.activeMembers || [];
-          var totalSubs = holders.reduce(function(sum, am) { return sum + am.subs; }, 0);
-          var holderLabel = plan.activeHolders + ' active holder' + (plan.activeHolders !== 1 ? 's' : '');
-          var countLabel = totalSubs + ' additional member' + (totalSubs !== 1 ? 's' : '');
-
-          bodyHTML +=
-            '<div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">' +
-              '<button class="collapse-toggle" onclick="toggleCollapse(\'holders-' + plan.id + '\')">' +
-                '<span><span class="collapse-label">' + holderLabel + '</span><span class="collapse-count">' + countLabel + '</span></span>' +
-                '<span class="collapse-chevron" id="chevron-holders-' + plan.id + '">&#9660;</span>' +
-              '</button>' +
-              '<div class="collapse-body" id="holders-' + plan.id + '">';
-
-          if (holders.length > 0) {
-            var rows = '';
-            holders.forEach(function(am) {
-              rows +=
-                '<tr onclick="viewPlanHolder(\'' + plan.id + '\', \'' + am.holder + '\')" title="View ' + am.holder + '\'s members">' +
-                  '<td><strong>' + am.holder + '</strong></td>' +
-                  '<td>' + am.subs + ' of ' + (plan.maxMembers - 1) + '</td>' +
-                  '<td>' + (am.subs + 1) + ' / ' + plan.maxMembers + '</td>' +
-                  '<td><span class="member-status-dot ' + am.status + '"></span>' + am.status.charAt(0).toUpperCase() + am.status.slice(1) + '</td>' +
-                  '<td style="text-align:right;"><button class="row-view-btn" onclick="event.stopPropagation(); viewPlanHolder(\'' + plan.id + '\', \'' + am.holder + '\')">View<span class="row-view-arrow">&#8250;</span></button></td>' +
-                '</tr>';
-            });
-
-            bodyHTML +=
-              '<table class="members-table">' +
-                '<thead><tr>' +
-                  '<th>Plan Holder</th>' +
-                  '<th>Additional Members</th>' +
-                  '<th>Total</th>' +
-                  '<th>Status</th>' +
-                  '<th></th>' +
-                '</tr></thead>' +
-                '<tbody>' + rows + '</tbody>' +
-              '</table>';
-          } else {
-            bodyHTML +=
-              '<div class="empty-state">' +
-                '<div class="empty-state-icon">&#128101;</div>' +
-                '<div>' + getEmptyHoldersMessage(plan) + '</div>' +
-              '</div>';
-          }
-
-          bodyHTML += '</div></div>'; // close collapse-body + wrapper
-        }
-
-        if (!plan.kisiGroupId) {
-          bodyHTML +=
-            '<div style="margin-top:16px; background:#fef3c7; border:1px solid #fbbf24; border-radius:8px; padding:12px 16px; display:flex; align-items:center; gap:10px;">' +
-              '<span style="font-size:18px;">&#9888;</span>' +
-              '<div style="font-size:13px; color:#92400e;">' + getUnlinkedWarning() + '</div>' +
-            '</div>';
-        }
-
-        if (plan.kisiGroupId) {
-          var dupPlans = plans.filter(function(p) { return p.id !== plan.id && p.kisiGroupId === plan.kisiGroupId; });
-          if (dupPlans.length > 0) {
-            var dupNames = dupPlans.map(function(p) { return esc(p.name); }).join(', ');
-            bodyHTML +=
-              '<div style="margin-top:16px; background:#fef3c7; border:1px solid #fbbf24; border-radius:8px; padding:12px 16px; display:flex; align-items:center; gap:10px;">' +
-                '<span style="font-size:18px;">&#9888;</span>' +
-                '<div style="font-size:13px; color:#92400e;">This ' + groupLabel().toLowerCase() + ' is also assigned to: <strong>' + dupNames + '</strong>. Members on these plans will share the same door access.</div>' +
-              '</div>';
-          }
-        }
-
-        bodyHTML += '</div>'; // close plan-card-body
-
-        card.innerHTML = headerHTML + bodyHTML;
-        grid.appendChild(card);
-      });
+      sectionPlans.forEach(function(plan) { grid.appendChild(renderPlanCard(plan, type === 'unmapped')); });
     }
+
+    function renderPlanCard(plan, isUnmapped) {
+      var card = document.createElement('div');
+      card.className = 'plan-card' + (isUnmapped ? ' unmapped' : '');
+
+      var typeClass = plan.planType || 'pricing_plan';
+      var typeLabel = typeClass === 'booking_service' ? 'Booking Service' : 'Pricing Plan';
+      var icon = isUnmapped ? '&#128279;' : (typeClass === 'booking_service' ? '&#128197;' : (plan.isMultiMember ? '&#128101;' : '&#128100;'));
+      var iconClass = isUnmapped ? 'unlinked' : (typeClass === 'booking_service' ? 'service' : (plan.isMultiMember ? 'multi' : 'single'));
+
+      // Header group mini-tags
+      var headerTags = '';
+      if (plan.groupIds && plan.groupIds.length > 0) {
+        headerTags = '<div class="header-group-tags">';
+        plan.groupIds.forEach(function(gid) {
+          var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
+          headerTags += '<span class="header-group-tag">' + (g ? esc(g.name) : gid) + '</span>';
+        });
+        headerTags += '</div>';
+      }
+
+      var headerHTML =
+        '<div class="plan-card-header">' +
+          '<div class="plan-card-left">' +
+            '<div class="plan-icon ' + iconClass + '">' + icon + '</div>' +
+            '<div>' +
+              '<div class="plan-name">' + esc(plan.name) + '</div>' +
+              '<div class="plan-wix-id">ID: ' + esc(plan.wixPlanId) + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="plan-card-right">' +
+            '<span class="plan-type-badge ' + (isUnmapped ? 'unlinked' : typeClass) + '">' + (isUnmapped ? 'Not Mapped' : typeLabel) + '</span>' +
+            (plan.activeHolders > 0 ? '<span style="font-size:12px;color:#6b7a8d;">' + plan.activeHolders + ' active</span>' : '') +
+            headerTags +
+          '</div>' +
+        '</div>';
+
+      var bodyHTML = '<div class="plan-card-body">';
+
+      // ── Group tags (multi-select) ──
+      bodyHTML += '<div class="config-item full" style="margin-bottom:16px;">';
+      bodyHTML += '<div class="config-label">' + platformName() + ' ' + groupLabel() + 's</div>';
+      bodyHTML += '<div class="group-tags-wrap">';
+      if (plan.groupIds && plan.groupIds.length > 0) {
+        plan.groupIds.forEach(function(gid) {
+          var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
+          bodyHTML += '<span class="group-tag">' + (g ? esc(g.name) : gid) +
+            ' <button class="group-tag-remove" onclick="removeGroup(\'' + plan.id + '\', \'' + gid + '\', event)" title="Remove">&times;</button></span>';
+        });
+      }
+      bodyHTML += '<div style="position:relative;display:inline-block;">' +
+        '<button class="add-group-btn" onclick="toggleGroupDropdown(\'' + plan.id + '\', event)">+ Add ' + groupLabel() + '</button>' +
+        '<div class="group-dropdown" id="gdd-' + plan.id + '">';
+      PLATFORM_GROUPS.forEach(function(g) {
+        var isSelected = plan.groupIds && plan.groupIds.indexOf(g.id) >= 0;
+        bodyHTML += '<div class="group-dropdown-item' + (isSelected ? ' selected' : '') + '" onclick="toggleGroup(\'' + plan.id + '\', \'' + g.id + '\', \'' + esc(g.name) + '\')">' +
+          '<div class="group-dropdown-check">' + (isSelected ? '&#10003;' : '') + '</div>' +
+          '<span>' + esc(g.name) + '</span></div>';
+      });
+      bodyHTML += '</div></div>'; // close dropdown + relative wrapper
+      bodyHTML += '</div>'; // close group-tags-wrap
+      bodyHTML += '<div class="config-helper">' + getGroupHelper() + '</div>';
+      bodyHTML += '</div>'; // close config-item
+
+      // ── Multi-member toggle ──
+      bodyHTML +=
+        '<div class="toggle-row">' +
+          '<div>' +
+            '<div class="toggle-label">Multi-Member Plan</div>' +
+            '<div class="toggle-sublabel">' + getToggleSublabel(plan) + '</div>' +
+          '</div>' +
+          '<label class="toggle-switch">' +
+            '<input type="checkbox" ' + (plan.isMultiMember ? 'checked' : '') + ' onchange="handleMultiMemberToggle(\'' + plan.id + '\', this.checked, this)"/>' +
+            '<div class="toggle-track"></div>' +
+            '<div class="toggle-knob"></div>' +
+          '</label>' +
+        '</div>';
+
+      // ── Max members config ──
+      if (plan.isMultiMember) {
+        var additionalAllowed = plan.maxMembers - 1;
+        bodyHTML += '<div class="config-grid" style="margin-top:16px;">' +
+          '<div class="config-item">' +
+            '<div class="config-label">Additional members allowed</div>' +
+            '<input class="config-input" type="number" min="1" max="19" value="' + additionalAllowed + '"' +
+              ' onchange="handleMaxMembersChange(\'' + plan.id + '\', parseInt(this.value), this)"' +
+              ' data-prev="' + additionalAllowed + '"/>' +
+            '<div class="config-helper">' + getMaxMembersHelper(plan) + '</div>' +
+          '</div>' +
+        '</div>';
+      }
+
+      // ── Active holders table (collapsible) ──
+      if (plan.isMultiMember) {
+        var holders = plan.activeMembers || [];
+        var totalSubs = holders.reduce(function(sum, am) { return sum + am.subs; }, 0);
+        var holderLabel = (plan.activeHolders || 0) + ' active holder' + (plan.activeHolders !== 1 ? 's' : '');
+        var countLabel = totalSubs + ' additional member' + (totalSubs !== 1 ? 's' : '');
+
+        bodyHTML +=
+          '<div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">' +
+            '<button class="collapse-toggle" onclick="toggleCollapse(\'holders-' + plan.id + '\')">' +
+              '<span><span class="collapse-label">' + holderLabel + '</span><span class="collapse-count">' + countLabel + '</span></span>' +
+              '<span class="collapse-chevron" id="chevron-holders-' + plan.id + '">&#9660;</span>' +
+            '</button>' +
+            '<div class="collapse-body" id="holders-' + plan.id + '">';
+
+        if (holders.length > 0) {
+          var rows = '';
+          holders.forEach(function(am) {
+            rows +=
+              '<tr>' +
+                '<td><strong>' + esc(am.holder) + '</strong></td>' +
+                '<td>' + am.subs + ' of ' + (plan.maxMembers - 1) + '</td>' +
+                '<td><span class="member-status-dot ' + am.status + '"></span>' + am.status.charAt(0).toUpperCase() + am.status.slice(1) + '</td>' +
+              '</tr>';
+          });
+          bodyHTML +=
+            '<table class="members-table">' +
+              '<thead><tr><th>Plan Holder</th><th>Additional Members</th><th>Status</th></tr></thead>' +
+              '<tbody>' + rows + '</tbody>' +
+            '</table>';
+        } else {
+          bodyHTML += '<div class="empty-state"><div class="empty-state-icon">&#128101;</div><div>No active plan holders yet.</div></div>';
+        }
+        bodyHTML += '</div></div>'; // close collapse-body + wrapper
+      }
+
+      bodyHTML += '</div>'; // close plan-card-body
+
+      card.innerHTML = headerHTML + bodyHTML;
+      return card;
+    }
+
+    // ═══════════════════════════════════════
+    // Group multi-select actions
+    // ═══════════════════════════════════════
+
+    function toggleGroupDropdown(planId, evt) {
+      evt.stopPropagation();
+      var dd = document.getElementById('gdd-' + planId);
+      // Close all other dropdowns
+      document.querySelectorAll('.group-dropdown.open').forEach(function(el) { if (el !== dd) el.classList.remove('open'); });
+      dd.classList.toggle('open');
+    }
+
+    function toggleGroup(planId, groupId, groupName) {
+      var plan = plans.find(function(p) { return p.id === planId; });
+      if (!plan.groupIds) plan.groupIds = [];
+      var idx = plan.groupIds.indexOf(groupId);
+      if (idx >= 0) {
+        plan.groupIds.splice(idx, 1);
+      } else {
+        plan.groupIds.push(groupId);
+      }
+      // Set status based on groups
+      plan.status = plan.groupIds.length > 0 ? 'active' : 'inactive';
+      markDirty();
+      render();
+    }
+
+    function removeGroup(planId, groupId, evt) {
+      evt.stopPropagation();
+      var plan = plans.find(function(p) { return p.id === planId; });
+      if (!plan.groupIds) return;
+      if (plan.activeHolders > 0) {
+        var g = PLATFORM_GROUPS.find(function(x) { return x.id === groupId; });
+        pendingAction = function() {
+          plan.groupIds = plan.groupIds.filter(function(id) { return id !== groupId; });
+          plan.status = plan.groupIds.length > 0 ? 'active' : 'inactive';
+          markDirty();
+          render();
+        };
+        showModal('warning', 'Remove group?', 'Active members will lose access to "' + (g ? g.name : groupId) + '".', 'Remove', 'danger');
+        return;
+      }
+      plan.groupIds = plan.groupIds.filter(function(id) { return id !== groupId; });
+      plan.status = plan.groupIds.length > 0 ? 'active' : 'inactive';
+      markDirty();
+      render();
+    }
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', function() {
+      document.querySelectorAll('.group-dropdown.open').forEach(function(el) { el.classList.remove('open'); });
+    });
 
     // ═══════════════════════════════════════
     // Collapsible sections
@@ -548,7 +628,7 @@
     }
 
     // ═══════════════════════════════════════
-    // Actions with guardrails
+    // Multi-member actions with guardrails
     // ═══════════════════════════════════════
 
     function handleMultiMemberToggle(planId, checked, el) {
@@ -561,32 +641,16 @@
           markDirty();
           render();
         };
-        showModal('warning', 'Disable multi-member?', getDisableMultiWarning(plan), 'Disable', 'warning');
+        var h = plan.activeHolders || 0;
+        var totalSubs = (plan.activeMembers || []).reduce(function(sum, am) { return sum + am.subs; }, 0);
+        showModal('warning', 'Disable multi-member?',
+          'This plan has ' + h + ' active holder' + (h !== 1 ? 's' : '') + ' with ' + totalSubs + ' additional member' + (totalSubs !== 1 ? 's' : '') + '. Existing members keep access, but no new members can be added.',
+          'Disable', 'warning');
         return;
       }
       plan.isMultiMember = checked;
       if (checked && plan.maxMembers < 2) plan.maxMembers = 2;
       if (!checked) plan.maxMembers = 1;
-      markDirty();
-      render();
-    }
-
-    function handleGroupChange(planId, newGroupId, el) {
-      var plan = plans.find(function(p) { return p.id === planId; });
-      var prevId = el.getAttribute('data-prev');
-      var prevGroup = PLATFORM_GROUPS.find(function(g) { return g.id === prevId; });
-      var newGroup  = PLATFORM_GROUPS.find(function(g) { return g.id === newGroupId; });
-      if (prevId && prevGroup && newGroupId && plan.activeHolders > 0) {
-        el.value = prevId;
-        pendingAction = function() {
-          plan.kisiGroupId = newGroupId || null;
-          markDirty();
-          render();
-        };
-        showModal('warning', 'Change ' + groupLabel().toLowerCase() + '?', getGroupChangeWarning(plan, prevGroup.name, newGroup ? newGroup.name : 'None'), 'Change', 'confirm');
-        return;
-      }
-      plan.kisiGroupId = newGroupId || null;
       markDirty();
       render();
     }
@@ -603,7 +667,9 @@
           markDirty();
           render();
         };
-        showModal('warning', 'Lower member limit?', getMaxLowerWarning(plan, newMax), 'Lower Limit', 'warning');
+        showModal('warning', 'Lower member limit?',
+          'At least one holder currently has ' + highest + ' additional member' + (highest !== 1 ? 's' : '') + '. Setting to ' + (newMax - 1) + ' won\'t remove existing members.',
+          'Lower Limit', 'warning');
         return;
       }
       plan.maxMembers = newMax;
@@ -639,23 +705,6 @@
     }
 
     // ═══════════════════════════════════════
-    // Plan holder navigation
-    // ═══════════════════════════════════════
-
-    function viewPlanHolder(planId, holderName) {
-      var holderMap = {
-        'Daxx Roberts': 'm001',
-        'Maria Chen':   'm005',
-        'James Wilson': 'm008',
-        'Tony Park':    'm013',
-        'Lisa Nguyen':  'm015',
-        'Sam Rivera':   'm016',
-      };
-      var holderId = holderMap[holderName] || '';
-      window.location.href = '/members?plan=' + planId + '&holder=' + holderId;
-    }
-
-    // ═══════════════════════════════════════
     // Save / Discard
     // ═══════════════════════════════════════
 
@@ -679,16 +728,25 @@
     }
 
     // ═══════════════════════════════════════
+    // Utility
+    // ═══════════════════════════════════════
+
+    function esc(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ═══════════════════════════════════════
     render();
 
-    // ══ OB-29 + OB-42 part 2: Live data loading ══════════════════
-    (function loadLiveMappings() {
+    // ══ Live data loading ═════════════════════════════════════════════
+    (function loadLiveData() {
       var urlParams = new URLSearchParams(window.location.search);
       var clientId = urlParams.get('clientId');
       var locationId = urlParams.get('locationId');
-      if (!clientId || !locationId) return;
+      if (!clientId) return;
 
-      // Fetch live Kisi groups (OB-42 part 2)
+      // 1. Load Kisi/Seam groups
       fetch('/operator/clients/' + clientId + '/kisi-groups')
         .then(function(r) { return r.json(); })
         .then(function(d) {
@@ -696,44 +754,107 @@
             PLATFORM_GROUPS = d.groups.map(function(g) {
               return { id: String(g.id), name: g.name };
             });
-            render(); // re-render with real groups
           }
           if (d.count === 0) {
-            showToast('warn', 'No access groups found in Kisi. Create groups in your Kisi dashboard first.');
+            showToast('warn', 'No access groups found. Create groups in your ' + platformName() + ' dashboard first.');
           }
-        }).catch(function(e) { console.error('Kisi groups load error:', e); });
+        }).catch(function(e) { console.error('Groups load error:', e); });
 
-      // Fetch live mappings for this location
-      fetch('/operator/' + clientId + '/locations/' + locationId + '/mappings')
+      // 2. Load Wix plans + booking services (auto-accept creates missing plan_mappings rows)
+      fetch('/operator/' + clientId + '/wix-plans')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-          if (!d.mappings || !d.mappings.length) return;
-          plans = d.mappings.map(function(m) {
-            return {
-              id: m.id,
-              name: m.plan_name || 'Plan ' + m.wix_plan_id,
-              wixPlanId: m.wix_plan_id,
-              isMultiMember: false,
-              maxMembers: 1,
-              kisiGroupId: m.hardware_group_id ? String(m.hardware_group_id) : null,
-              activeHolders: 0,
-            };
-          });
-          originalState = JSON.stringify(plans);
-          render();
-        }).catch(function(e) { console.error('Mappings load error:', e); });
+          var wixPlans = d.plans || [];
+          // Store Wix plan type info for later use
+          window._wixPlanTypes = {};
+          wixPlans.forEach(function(p) { window._wixPlanTypes[p.id] = p.type; });
+        }).catch(function(e) { console.error('Wix plans load error:', e); });
+
+      // 3. Load existing mappings for this location (or all if no locationId)
+      var mappingsUrl = locationId
+        ? '/operator/' + clientId + '/locations/' + locationId + '/mappings'
+        : '/operator/' + clientId + '/locations/' + clientId + '/mappings'; // fallback
+
+      // Small delay to let wix-plans auto-accept run first
+      setTimeout(function() {
+        // Re-fetch all mappings (including newly auto-created ones)
+        var allMappingsUrl = locationId
+          ? '/operator/' + clientId + '/locations/' + locationId + '/mappings'
+          : null;
+
+        if (!allMappingsUrl) {
+          // No locationId — try to get first location
+          fetch('/operator/' + clientId + '/locations')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              var locs = d.locations || d.data || [];
+              if (locs.length > 0) {
+                loadMappingsForLocation(clientId, locs[0].id);
+              }
+            }).catch(function() {});
+          return;
+        }
+        loadMappingsForLocation(clientId, locationId);
+      }, 500);
+
+      function loadMappingsForLocation(cid, lid) {
+        fetch('/operator/' + cid + '/locations/' + lid + '/mappings')
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            if (!d.mappings) return;
+
+            // Load groups for each mapping in parallel
+            var groupPromises = d.mappings.map(function(m) {
+              return fetch('/operator/' + cid + '/plan-mappings/' + m.id + '/groups')
+                .then(function(r) { return r.json(); })
+                .then(function(gd) { return { mappingId: m.id, groups: gd.groups || [] }; })
+                .catch(function() { return { mappingId: m.id, groups: [] }; });
+            });
+
+            Promise.all(groupPromises).then(function(groupResults) {
+              var groupMap = {};
+              groupResults.forEach(function(gr) { groupMap[gr.mappingId] = gr.groups; });
+
+              plans = d.mappings.map(function(m) {
+                var mGroups = groupMap[m.id] || [];
+                var groupIds = mGroups.length > 0
+                  ? mGroups.map(function(g) { return String(g.hardware_group_id); })
+                  : (m.hardware_group_id ? [String(m.hardware_group_id)] : []);
+
+                var planType = (window._wixPlanTypes && window._wixPlanTypes[m.wix_plan_id]) || 'pricing_plan';
+
+                return {
+                  id: m.id,
+                  name: m.plan_name || 'Plan ' + m.wix_plan_id,
+                  wixPlanId: m.wix_plan_id,
+                  planType: planType,
+                  isMultiMember: false,
+                  maxMembers: 1,
+                  groupIds: groupIds,
+                  status: m.status || 'inactive',
+                  activeHolders: 0,
+                  activeMembers: [],
+                };
+              });
+              originalState = JSON.stringify(plans);
+              render();
+            });
+          }).catch(function(e) { console.error('Mappings load error:', e); });
+      }
 
       // Override saveChanges to POST to API
-      var origSave = saveChanges;
       saveChanges = function() {
         var promises = plans.map(function(plan) {
+          var groups = plan.groupIds.map(function(gid) {
+            var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
+            return { hardware_group_id: gid, door_name: g ? g.name : null };
+          });
           return fetch('/operator/' + clientId + '/plan-mappings/' + plan.id, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              hardware_group_id: plan.kisiGroupId || null,
-              door_name: PLATFORM_GROUPS.find(function(g) { return g.id === plan.kisiGroupId; })?.name || null,
-              status: plan.kisiGroupId ? 'active' : 'inactive',
+              groups: groups,
+              status: plan.groupIds.length > 0 ? 'active' : 'inactive',
             })
           });
         });

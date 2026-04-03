@@ -289,6 +289,15 @@
           </div>
         </div>
 
+        <div id="clients-toolbar" class="toolbar" style="display:flex;gap:10px;align-items:center;margin-bottom:12px;">
+          <input type="text" id="clients-search" class="form-input" placeholder="Search clients…" style="flex:1;max-width:320px;padding:8px 12px;font-size:13px;" oninput="filterClients()" />
+          <select id="clients-status-filter" class="form-input" style="width:auto;padding:8px 12px;font-size:13px;" onchange="filterClients()">
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+
         <div id="clients-loading" class="loading-state">Loading clients...</div>
         <div id="clients-empty" class="empty-state hidden">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
