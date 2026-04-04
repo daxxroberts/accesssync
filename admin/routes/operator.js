@@ -543,7 +543,7 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
         [clientId]
       ),
       db.query(
-        `SELECT id, wix_plan_id, plan_name, door_name, hardware_group_id, status, created_at
+        `SELECT id, wix_plan_id, plan_name, door_name, hardware_group_id, status, allow_multiple, max_members, created_at
          FROM plan_mappings WHERE location_id = $1 ORDER BY plan_name`,
         [locationId]
       ),
@@ -633,13 +633,15 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
 // Also accepts legacy single-group fields for backward compat.
 router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
   const { clientId, mappingId } = req.params;
-  const { status, door_name, hardware_group_id, groups } = req.body;
+  const { status, door_name, hardware_group_id, groups, allow_multiple, max_members } = req.body;
   try {
-    // Update plan_mappings row (legacy fields + status)
+    // Update plan_mappings row (legacy fields + status + multi-member config)
     const fields = [], vals = [mappingId, clientId];
     if (status !== undefined)            { fields.push(`status = $${vals.length + 1}`);            vals.push(status); }
     if (door_name !== undefined)         { fields.push(`door_name = $${vals.length + 1}`);         vals.push(door_name); }
     if (hardware_group_id !== undefined) { fields.push(`hardware_group_id = $${vals.length + 1}`); vals.push(hardware_group_id); }
+    if (allow_multiple !== undefined)    { fields.push(`allow_multiple = $${vals.length + 1}`);    vals.push(!!allow_multiple); }
+    if (max_members !== undefined)       { fields.push(`max_members = $${vals.length + 1}`);       vals.push(Math.max(1, Math.min(20, parseInt(max_members) || 1))); }
 
     // If groups array provided, use first group for backward compat on plan_mappings row
     if (groups && Array.isArray(groups) && groups.length > 0) {

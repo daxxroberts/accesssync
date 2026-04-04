@@ -18,7 +18,8 @@ const membersRoutes  = require('./routes/members');
 const webhooksRoutes = require('./routes/webhooks');
 const queueRoutes    = require('./routes/queue');
 const clientsRoutes  = require('./routes/clients');
-const operatorRoutes = require('./routes/operator');
+const operatorRoutes    = require('./routes/operator');
+const multiMemberRoutes = require('./routes/multi-member');
 const { requireAuth } = require('./middleware/auth');
 
 const app  = express();
@@ -43,6 +44,9 @@ app.use('/admin/clients',  requireAuth, clientsRoutes);
 // ── Operator dashboard API (no admin auth — OB-08 will add Wix JWT) ──
 app.use('/operator', operatorRoutes);
 
+// ── Multi-member API (member-facing — no admin auth) ──
+app.use('/', multiMemberRoutes);
+
 // ── Health check (Railway requires a reachable HTTP endpoint) ──
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'admin-hub' }));
 
@@ -56,7 +60,8 @@ app.get('/plan-mapping', (req, res) => res.render('pages/plan-mapping',   { acti
 app.get('/access',       (req, res) => res.render('pages/access',         { activeTab: 'access' }));
 app.get('/locations',    (req, res) => res.render('pages/locations',      { activeTab: 'config' }));
 app.get('/admin-panel',  (req, res) => res.render('pages/admin-panel',    { activeTab: 'admin' }));
-app.get('/sync-status',  (req, res) => res.render('pages/sync-status'));
+app.get('/sync-status',    (req, res) => res.render('pages/sync-status'));
+app.get('/multi-member',   (req, res) => res.render('pages/multi-member'));
 
 // ── Admin Hub ──────────────────────────────────────────────────
 app.get('/',               (req, res) => res.redirect('/OwnerDashboard'));

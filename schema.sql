@@ -61,6 +61,8 @@ CREATE TABLE plan_mappings (
     door_name VARCHAR(255),                       -- OD-11: display label for the hardware group/door
     status VARCHAR(50) DEFAULT 'active',          -- OD-11: 'active', 'excluded' — for "Not managed" display
     access_type VARCHAR(50) DEFAULT 'group',      -- Hardware access object type: 'group' (Kisi), 'zone'/'door' (future Seam)
+    allow_multiple BOOLEAN DEFAULT false,         -- Multi-member: plan allows additional members
+    max_members INTEGER DEFAULT 1,                -- Multi-member: max members per plan holder (1 = single member)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -115,7 +117,14 @@ CREATE TABLE member_identity (
     hardware_platform VARCHAR(50) NOT NULL, -- 'seam' or 'kisi'
     hardware_user_id VARCHAR(255), -- The generated ID in Kisi/Seam
     source_tag VARCHAR(50) DEFAULT 'accesssync', -- Rule: Distinguishes from manual users
-    -- NOTE: email/name not stored — fetched from Wix on-demand (data minimization)
+    -- NOTE: For primary members, email/name fetched from Wix on-demand (data minimization).
+    --       For sub-members, stored directly (entered by plan holder in widget form — FP-01).
+    plan_holder_id UUID REFERENCES member_identity(id) ON DELETE CASCADE, -- DR-029: links sub-members to primary
+    phone VARCHAR(50),                          -- Sub-member phone (required)
+    first_name VARCHAR(255),                    -- Sub-member first name (required)
+    last_name VARCHAR(255),                     -- Sub-member last name (required)
+    email VARCHAR(255),                         -- Sub-member email (required — FP-01 resolution)
+    sub_member_status VARCHAR(50),              -- DR-032: 'draft', 'submitted', NULL for primary members
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(client_id, source_platform, platform_member_id)
@@ -128,6 +137,7 @@ CREATE TABLE member_access_state (
     client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     status VARCHAR(50) NOT NULL, -- pending_sync, in_flight, active, disabled, revoked, failed, skipped_lockdown
     role_assignment_id VARCHAR(255), -- Kisi role assignment ID - required for clean revocation
+    plan_holder_id UUID REFERENCES member_identity(id) ON DELETE CASCADE, -- Multi-member: cascade operations
     provisioned_at TIMESTAMP WITH TIME ZONE,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(member_id)
