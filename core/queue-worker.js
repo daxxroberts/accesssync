@@ -75,30 +75,45 @@ async function processJob(job) {
         return;
       }
 
-      // Step 1: Resolve all active plan mappings for this plan (returns array)
+      // Step 1: Resolve all active plan mappings for this plan (returns array, null, or empty array)
       const mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
-      if (!mappings || mappings.length === 0) {
-        console.warn(`[Queue Worker] No active plan mapping for planId ${standardEvent.planId}. Dropping job.`);
+      if (mappings === null) {
+        console.warn(`[Queue Worker] Unknown plan ${standardEvent.planId}. Dropping job.`);
         return; // Already alerted in resolver via config_alert_log
+      }
+      if (mappings.length === 0) {
+        // Plan recognized but no hardware group mapped yet (Wix-first flow) — park member
+        console.log(`[Queue Worker] Plan ${standardEvent.planId} recognized but not hardware-mapped. Parking member as pending_hardware.`);
+        const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, 'kisi'); // default platform
+        memberId = lockResult.memberId;
+        await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
+        return;
       }
 
       // Step 2: Resolve identity + acquire lock (all mappings share same hardwarePlatform)
       const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, mappings[0].hardwarePlatform);
       memberId = lockResult.memberId;
 
-      // Step 3: Resolve hardware user identity (client-level key — user ops are org-scoped)
+      // Step 3: Check for hardware API key — if missing, park as pending_hardware (Wix-first flow)
       const apiKey = await getClientApiKey(tenantId);
+      if (!apiKey) {
+        console.log(`[Queue Worker] No hardware API key for tenant ${tenantId}. Parking member ${standardEvent.platformMemberId} as pending_hardware.`);
+        await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
+        return;
+      }
+
+      // Step 4: Resolve hardware user identity (client-level key — user ops are org-scoped)
       const hardwareUserId = await standardAdapter.resolveIdentity(
         memberId, standardEvent.email, standardEvent.name,
         mappings[0].hardwarePlatform, apiKey
       );
 
-      // Step 4: Execute hardware grant across all active mappings
+      // Step 5: Execute hardware grant across all active mappings
       const assignments = await grantRevokeLogic.processGrant(
         tenantId, memberId, hardwareUserId, mappings, standardEvent
       );
 
-      // Step 5: Record success — writes all assignments to member_role_assignments
+      // Step 6: Record success — writes all assignments to member_role_assignments
       await standardAdapter.completeGrant(memberId, tenantId, assignments);
 
     } else if (job.name === 'revoke') {

@@ -11,6 +11,36 @@ AccessSync is a Wix App Market SaaS product that automates physical space access
 
 ---
 
+## Deployment Environment
+
+**Railway only.** All services, databases, and cron jobs run on Railway. Never:
+- Start a local dev server
+- Create a `.env` file for local use
+- Suggest `localhost` testing
+- Run Railway CLI commands to proxy local connections
+
+All database migrations run via Railway's Postgres public URL. When running SQL, use `railway variables` to get `DATABASE_PUBLIC_URL`, then `psql` against that URL directly.
+
+---
+
+## Repository & Path Rules
+
+- **Repo root:** `C:\Users\daxxr\OneDrive\Documents - Personal OneDrive\Projects\WORK\Business Files\AccessSync\AccessSync GitHub\accesssync`
+- **Vault root:** `C:\Users\daxxr\OneDrive\Documents - Personal OneDrive\Projects\WORK\Business Files\AccessSync\AccessSync`
+- Always confirm `git rev-parse --git-dir` succeeds before any git command.
+- Never commit from a non-repo directory.
+
+---
+
+## UI Pages
+
+When asked about a UI page or to view/open one:
+1. Read the existing file first.
+2. Surface the file path and a `file://` link the user can click to open it in a browser.
+3. Do NOT recreate or rewrite the page unless explicitly asked to make changes.
+
+---
+
 ## Repository State
 
 **All 4 project-plan sprints complete. Business-risk-aware test framework live (Concept #6): 32 tests across P1/P2/P3 tiers, custom Jest reporter + sequencer. `npm run test:deploy` gives DEPLOY SAFE / DO NOT DEPLOY verdict. End-to-end provisioning pipeline working. Member-facing sync status page live. Operator console wired to live data. Onboarding hardened with invite token auth, end-to-end validation step, and location auto-activation. Pending: HOG site_id + Kisi key entry in Railway DB, business gates G-01/02/03/08/09.**
@@ -245,6 +275,7 @@ This project is managed by the Business Operating Team (BOT). The vault is the s
 - NOVA never designs against memory — always reads repo and vault first
 - Silence is not approval. Explicit confirmation required at every gate.
 - **Vault-First Question Rule (ALL agents — mandatory):** Before asking Daxx any question, the agent must first search the vault for the answer. If the vault has a clear answer, use it — do not ask. If the vault has a partial answer, state what was found and what specifically remains unresolved. Only ask Daxx questions the vault genuinely cannot answer.
+- **Agent idle exit rule:** Any automated/headless agent must exit after 3 consecutive idle polling cycles with no new tasks. Never loop indefinitely. Log a final status summary before exiting.
 
 **Agents with direct build authority:**
 - NOVA — Engineering lead. Architecture, build sequencing, all technical decisions.

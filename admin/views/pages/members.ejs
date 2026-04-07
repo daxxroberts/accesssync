@@ -67,15 +67,17 @@
 
     /* Status pill */
     .status-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; }
-    .status-pill.active    { background: var(--sage-dim);  color: var(--sage-dark); }
-    .status-pill.pending   { background: var(--amber-dim); color: var(--amber); }
-    .status-pill.failed    { background: var(--red-dim);   color: var(--red); }
-    .status-pill.suspended { background: var(--surface);   color: var(--muted); }
+    .status-pill.active           { background: var(--sage-dim);  color: var(--sage-dark); }
+    .status-pill.pending          { background: var(--amber-dim); color: var(--amber); }
+    .status-pill.pending_hardware { background: var(--amber-dim); color: var(--amber); }
+    .status-pill.failed           { background: var(--red-dim);   color: var(--red); }
+    .status-pill.suspended        { background: var(--surface);   color: var(--muted); }
     .status-dot { width: 6px; height: 6px; border-radius: 50%; }
-    .status-pill.active .status-dot    { background: var(--sage-dark); }
-    .status-pill.pending .status-dot   { background: var(--amber); animation: pulse 1.4s ease-in-out infinite; }
-    .status-pill.failed .status-dot    { background: var(--red); }
-    .status-pill.suspended .status-dot { background: var(--muted); }
+    .status-pill.active .status-dot           { background: var(--sage-dark); }
+    .status-pill.pending .status-dot          { background: var(--amber); animation: pulse 1.4s ease-in-out infinite; }
+    .status-pill.pending_hardware .status-dot { background: var(--amber); animation: pulse 1.4s ease-in-out infinite; }
+    .status-pill.failed .status-dot           { background: var(--red); }
+    .status-pill.suspended .status-dot        { background: var(--muted); }
 
     .plan-badge     { font-size: 11px; font-weight: 600; color: var(--text); }
     .plan-badge-sub { font-size: 11px; color: var(--muted); }
@@ -171,6 +173,7 @@
         <div class="page-title">Members</div>
         <div class="page-subtitle" id="pageSubtitle"></div>
       </div>
+      <button class="btn btn-sm btn-ghost" onclick="downloadMembersCSV()" style="margin-left:auto;">&#11015; Export CSV</button>
       <div class="stats-strip" id="statsStrip"></div>
     </div>
 
@@ -182,6 +185,7 @@
         <option value="">All Statuses</option>
         <option value="active">Active</option>
         <option value="pending">Pending</option>
+        <option value="pending_hardware">Awaiting Doors</option>
         <option value="failed">Failed</option>
         <option value="suspended">Suspended</option>
       </select>
@@ -190,10 +194,9 @@
         <option value="holder">Plan Holders</option>
         <option value="sub">Additional Members</option>
       </select>
-      <input class="filter-search" id="filterSearch" type="text" placeholder="Search by name or email..." oninput="applyFilters()"/>
+      <input class="filter-search" id="filterSearch" type="text" placeholder="Search by name or email..." oninput="clearTimeout(window._searchDebounce); window._searchDebounce = setTimeout(applyFilters, 300)"/>
       <button class="filter-clear" id="filterClear" onclick="clearFilters()">Clear filters</button>
       <div class="filter-count" id="filterCount"></div>
-      <button class="btn btn-sm btn-ghost" onclick="downloadMembersCSV()" style="margin-left:auto;">&#11015; CSV</button>
     </div>
 
     <div class="active-filter" id="activeFilterBanner">
@@ -269,15 +272,17 @@
     var prefilterHolder = urlParams.get('holder') || '';
 
     function renderStats() {
-      var total     = allMembers.length;
-      var active    = allMembers.filter(function(m) { return m.status === 'active'; }).length;
-      var pending   = allMembers.filter(function(m) { return m.status === 'pending'; }).length;
-      var failed    = allMembers.filter(function(m) { return m.status === 'failed'; }).length;
+      var total           = allMembers.length;
+      var active          = allMembers.filter(function(m) { return m.status === 'active'; }).length;
+      var pending         = allMembers.filter(function(m) { return m.status === 'pending'; }).length;
+      var pendingHardware = allMembers.filter(function(m) { return m.status === 'pending_hardware'; }).length;
+      var failed          = allMembers.filter(function(m) { return m.status === 'failed'; }).length;
       var strip = document.getElementById('statsStrip');
       strip.innerHTML =
         '<div class="stat-card" data-filter="" onclick="filterByStatus(this)"><div class="stat-value">' + total + '</div><div class="stat-label">Total Members</div></div>' +
         '<div class="stat-card" data-filter="active" onclick="filterByStatus(this)"><div class="stat-value">' + active + '</div><div class="stat-label">Active</div></div>' +
         '<div class="stat-card" data-filter="pending" onclick="filterByStatus(this)"><div class="stat-value">' + pending + '</div><div class="stat-label">Pending</div></div>' +
+        (pendingHardware > 0 ? '<div class="stat-card" data-filter="pending_hardware" onclick="filterByStatus(this)" style="border-left:3px solid var(--amber);"><div class="stat-value">' + pendingHardware + '</div><div class="stat-label">Awaiting Doors</div></div>' : '') +
         (failed > 0 ? '<div class="stat-card alert" data-filter="failed" onclick="filterByStatus(this)"><div class="stat-value">' + failed + '</div><div class="stat-label">Failed</div></div>' : '');
       syncStatCards();
     }
@@ -305,6 +310,19 @@
         sel.innerHTML += '<option value="' + p.id + '">' + p.name + ' (' + count + ')</option>';
       });
     }
+
+    var STATUS_TOOLTIPS = {
+      active: 'Member has been provisioned and has door access.',
+      pending: 'Provisioning is in progress.',
+      pending_hardware: 'Plan purchased but door system not configured yet. Add your API key to provision.',
+      failed: 'Provisioning failed. Check the error queue for details.',
+      suspended: 'Access has been suspended (plan cancelled or location lapsed).'
+    };
+    function statusLabel(s) {
+      if (s === 'pending_hardware') return 'Awaiting Doors';
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+    function statusTooltip(s) { return STATUS_TOOLTIPS[s] || ''; }
 
     function getFiltered() {
       var planVal   = document.getElementById('filterPlan').value;
@@ -444,7 +462,7 @@
             (isMulti ? '<div class="plan-badge-sub">' + subCount + ' of ' + (plan.maxMembers - 1) + ' members</div>' : '') : '') + '</td>';
 
         var roleCell   = '<td>' + (isHolder ? 'Plan Holder' : 'Additional Member') + '</td>';
-        var statusCell = '<td><span class="status-pill ' + m.status + '"><span class="status-dot"></span>' + m.status.charAt(0).toUpperCase() + m.status.slice(1) + '</span></td>';
+        var statusCell = '<td><span class="status-pill ' + m.status + '" title="' + esc(statusTooltip(m.status)) + '"><span class="status-dot"></span>' + statusLabel(m.status) + '</span></td>';
         var dateCell   = '<td style="font-size:12px;color:#9aa5b4;">' + m.addedDate + '</td>';
         var actionsCell = '<td style="text-align:right;">' +
           (isHolder && isMulti ? '<button class="tbl-action-btn" onclick="openDrawer(\'' + m.id + '\')" title="Edit members">&#9998;</button>' : '') +
@@ -476,7 +494,7 @@
       var body = '<div class="drawer-section-label">Plan Holder</div>' +
         '<div class="drawer-member-card"><div class="member-avatar holder">' + holder.firstName[0] + holder.lastName[0] + '</div>' +
         '<div class="drawer-member-info"><div class="drawer-member-name">' + holder.firstName + ' ' + holder.lastName + '</div><div class="drawer-member-email">' + holder.email + '</div></div>' +
-        '<span class="status-pill ' + holder.status + '"><span class="status-dot"></span>' + holder.status.charAt(0).toUpperCase() + holder.status.slice(1) + '</span></div>' +
+        '<span class="status-pill ' + holder.status + '"><span class="status-dot"></span>' + statusLabel(holder.status) + '</span></div>' +
         '<div class="drawer-section-label">Plan Details</div>' +
         '<div class="drawer-info-row"><span class="drawer-info-label">Plan</span><span class="drawer-info-value">' + (plan ? plan.name : '—') + '</span></div>' +
         '<div class="drawer-info-row"><span class="drawer-info-label">Members</span><span class="drawer-info-value">' + (subs.length + 1) + ' / ' + (plan ? plan.maxMembers : '—') + '</span></div>' +
@@ -489,7 +507,7 @@
         subs.forEach(function(s) {
           body += '<div class="drawer-member-card"><div class="member-avatar ' + s.status + '">' + s.firstName[0] + s.lastName[0] + '</div>' +
             '<div class="drawer-member-info"><div class="drawer-member-name">' + s.firstName + ' ' + s.lastName + '</div><div class="drawer-member-email">' + s.email + ' · ' + s.phone + '</div></div>' +
-            '<div class="drawer-member-actions"><span class="status-pill ' + s.status + '" style="margin-right:4px;"><span class="status-dot"></span>' + s.status.charAt(0).toUpperCase() + s.status.slice(1) + '</span>' +
+            '<div class="drawer-member-actions"><span class="status-pill ' + s.status + '" style="margin-right:4px;"><span class="status-dot"></span>' + statusLabel(s.status) + '</span>' +
             (s.status === 'failed' ? '<button class="drawer-action-btn retry" onclick="retryMember(\'' + s.id + '\')" title="Retry">&#8635;</button>' : '') + '</div></div>';
         });
       }
@@ -535,10 +553,21 @@
       var clientId = urlParams.get('clientId');
       if (!clientId) return;
 
-      fetch('/operator/' + clientId + '/members?limit=100')
+      apiFetch('/operator/' + clientId + '/members?limit=100')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-          if (!d.members || !d.members.length) return;
+          if (!d.members || !d.members.length) {
+            var tbody = document.getElementById('membersBody');
+            if (tbody) {
+              tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:48px 20px;">' +
+                '<div style="color:var(--muted);font-size:14px;">' +
+                  '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" style="margin-bottom:12px;opacity:.4"><circle cx="20" cy="16" r="6" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 34c0-6.6 5.4-12 12-12s12 5.4 12 12" stroke="currentColor" stroke-width="1.5" fill="none"/></svg><br>' +
+                  '<strong>No members yet</strong><br>' +
+                  '<span style="font-size:12px;">Members will appear here automatically when they purchase a plan on your Wix site.</span>' +
+                '</div></td></tr>';
+            }
+            return;
+          }
           allMembers = d.members.map(function(m) {
             var parts = (m.platform_member_id || '').split('_');
             return {

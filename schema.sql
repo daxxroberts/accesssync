@@ -53,7 +53,7 @@ CREATE TABLE plan_mappings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     wix_plan_id VARCHAR(255) NOT NULL,
-    hardware_group_id VARCHAR(255) NOT NULL, -- The Kisi/Seam group ID mapped to this plan
+    hardware_group_id VARCHAR(255), -- The Kisi/Seam group ID mapped to this plan (nullable for Wix-first flow)
     tier_name VARCHAR(50) DEFAULT 'Base', -- Base, Pro, Connect
     action VARCHAR(50) DEFAULT 'grant', -- grant, revoke, temporary
     location_id UUID REFERENCES locations(id),   -- OD-11: nullable — existing rows have no location assignment
@@ -135,9 +135,10 @@ CREATE TABLE member_access_state (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     member_id UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
     client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    status VARCHAR(50) NOT NULL, -- pending_sync, in_flight, active, disabled, revoked, failed, skipped_lockdown
+    status VARCHAR(50) NOT NULL, -- pending_sync, in_flight, active, disabled, revoked, failed, skipped_lockdown, pending_hardware
     role_assignment_id VARCHAR(255), -- Kisi role assignment ID - required for clean revocation
     plan_holder_id UUID REFERENCES member_identity(id) ON DELETE CASCADE, -- Multi-member: cascade operations
+    pending_plan_id VARCHAR(255),            -- Wix-first: source plan ID stored when parked as pending_hardware
     provisioned_at TIMESTAMP WITH TIME ZONE,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(member_id)

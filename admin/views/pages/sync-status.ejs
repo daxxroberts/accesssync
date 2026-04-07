@@ -205,7 +205,8 @@ async function poll() {
     if (res.status === 404) {
       // Member not in system yet — webhook hasn't been processed
       showState('pending');
-      if (++pollCount < MAX_POLLS) setTimeout(poll, POLL_INTERVAL);
+      if (++pollCount < MAX_POLLS) { setTimeout(poll, POLL_INTERVAL); }
+      else { showTimeoutState(); }
       return;
     }
 
@@ -239,11 +240,21 @@ async function poll() {
 
     // in_flight or other transitional state — keep polling
     showState('syncing');
-    if (++pollCount < MAX_POLLS) setTimeout(poll, POLL_INTERVAL);
+    if (++pollCount < MAX_POLLS) { setTimeout(poll, POLL_INTERVAL); }
+    else { showTimeoutState(); }
 
   } catch (err) {
     console.error('Poll error:', err);
-    if (++pollCount < MAX_POLLS) setTimeout(poll, POLL_INTERVAL);
+    if (++pollCount < MAX_POLLS) { setTimeout(poll, POLL_INTERVAL); }
+    else { showTimeoutState(); }
+  }
+}
+
+function showTimeoutState() {
+  showState('error');
+  var errEl = document.querySelector('#state-error p');
+  if (errEl) {
+    errEl.textContent = 'This is taking longer than expected. Your access is still being set up — please check back in a few minutes or contact your gym.';
   }
 }
 

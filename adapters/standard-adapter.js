@@ -326,27 +326,40 @@ class StandardAdapter {
   }
 
   /**
-   * Releases the in_flight lock on error.
+   * Releases the in_flight lock on error or pending_hardware park.
    * Sets member_access_state.status = lockStatus (default: 'failed').
-   * Increments errors_count in client_activity_summary.
+   * Increments errors_count in client_activity_summary (except for pending_hardware).
    *
    * Never throws — error handling in the error path must be bulletproof.
    *
    * @param {string} memberId
    * @param {string} tenantId
    * @param {string} lockStatus  default 'failed'
+   * @param {Object} [options]   optional: { planId } — stored for pending_hardware retry
    */
-  async releaseLock(memberId, tenantId, lockStatus = 'failed') {
-    await db.query(
-      `UPDATE member_access_state SET status = $1, updated_at = NOW() WHERE member_id = $2`,
-      [lockStatus, memberId]
-    ).catch(err =>
-      console.error('[Standard Adapter] Failed to release in_flight lock:', err.message)
-    );
+  async releaseLock(memberId, tenantId, lockStatus = 'failed', options = {}) {
+    if (lockStatus === 'pending_hardware' && options.planId) {
+      await db.query(
+        `UPDATE member_access_state SET status = $1, pending_plan_id = $2, updated_at = NOW() WHERE member_id = $3`,
+        [lockStatus, options.planId, memberId]
+      ).catch(err =>
+        console.error('[Standard Adapter] Failed to set pending_hardware:', err.message)
+      );
+    } else {
+      await db.query(
+        `UPDATE member_access_state SET status = $1, updated_at = NOW() WHERE member_id = $2`,
+        [lockStatus, memberId]
+      ).catch(err =>
+        console.error('[Standard Adapter] Failed to release in_flight lock:', err.message)
+      );
+    }
 
-    this._incrementActivity(tenantId, 'errors_count').catch(err =>
-      console.warn('[Standard Adapter] client_activity_summary update failed (errors_count):', err.message)
-    );
+    // Don't count pending_hardware as errors — it's an expected state, not a failure
+    if (lockStatus !== 'pending_hardware') {
+      this._incrementActivity(tenantId, 'errors_count').catch(err =>
+        console.warn('[Standard Adapter] client_activity_summary update failed (errors_count):', err.message)
+      );
+    }
   }
 
   /**

@@ -118,6 +118,11 @@
       .grid-table th, .grid-table td { padding: 8px 10px; font-size: 11px; }
       .page-title { font-size: 20px; }
     }
+    @media print {
+      .topbar, .sub-nav, .breadcrumb, .chart-card, .filter-row, .btn, #load-more-btn { display: none !important; }
+      .page-content { padding: 0 !important; }
+      .card { box-shadow: none !important; border: 1px solid #ddd !important; }
+    }
   </style>
 </head>
 <body>
@@ -160,9 +165,16 @@
       <div class="chart-labels" id="chart-labels"></div>
     </div>
 
-    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
       <div class="filter-strip" id="filter-strip" style="margin-bottom:0; flex:1;"></div>
+      <div style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);">
+        <label>From</label>
+        <input type="date" id="dateStart" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);" onchange="reloadAccessLog()"/>
+        <label>To</label>
+        <input type="date" id="dateEnd" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);" onchange="reloadAccessLog()"/>
+      </div>
       <button class="btn btn-sm btn-ghost" onclick="downloadAccessCSV()" style="flex-shrink:0;">&#11015; CSV</button>
+      <button class="btn btn-sm btn-ghost" onclick="window.print()" style="flex-shrink:0;">&#128438; PDF</button>
     </div>
 
     <div class="card">
@@ -356,7 +368,11 @@
 
       var html = '';
       page.forEach(function(act) {
-        html += '<tr>' +
+        var rowTitle = '';
+        if (act.event === 'error' || act.event === 'denied') {
+          rowTitle = ' title="Check the error queue for full details. Common causes: invalid API key, member not found in door system, or rate limit exceeded."';
+        }
+        html += '<tr' + rowTitle + '>' +
           '<td>' + act.date + ', ' + act.time + '</td>' +
           '<td>' + act.member + '</td>' +
           '<td><span class="event-tag ' + act.event + '">' + capitalize(act.event.replace(/_/g, ' ')) + '</span></td>' +
@@ -402,10 +418,21 @@
       if (!clientId) return;
 
       // Fetch access log (OB-31)
-      fetch('/operator/' + clientId + '/access-log?limit=50')
+      apiFetch('/operator/' + clientId + '/access-log?limit=50')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-          if (!d.events || !d.events.length) return;
+          if (!d.events || !d.events.length) {
+            var tbody = document.getElementById('activity-tbody');
+            if (tbody) {
+              tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:48px 20px;">' +
+                '<div style="color:var(--muted);font-size:14px;">' +
+                  '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" style="margin-bottom:12px;opacity:.4"><path d="M12 8h16a2 2 0 012 2v20a2 2 0 01-2 2H12a2 2 0 01-2-2V10a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M16 16h8M16 21h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><br>' +
+                  '<strong>No activity yet</strong><br>' +
+                  '<span style="font-size:12px;">Access events will appear here as members are granted and revoked.</span>' +
+                '</div></td></tr>';
+            }
+            return;
+          }
           allActivities = d.events.map(function(evt) {
             var dt = new Date(evt.created_at);
             var eventMap = { grant_success: 'granted', revoke_success: 'revoked', grant_failed: 'error', revoke_failed: 'error' };
@@ -426,7 +453,7 @@
         }).catch(function(e) { console.error('Access log load error:', e); });
 
       // Fetch hourly stats (OB-32) for chart
-      fetch('/operator/' + clientId + '/access-stats')
+      apiFetch('/operator/' + clientId + '/access-stats')
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (!d.hourly) return;
@@ -434,6 +461,40 @@
           initChart();
         }).catch(function(e) { console.error('Access stats load error:', e); });
     })();
+
+    function reloadAccessLog() {
+      var params = new URLSearchParams(window.location.search);
+      var clientId = params.get('clientId');
+      if (!clientId) return;
+      var start = document.getElementById('dateStart').value;
+      var end = document.getElementById('dateEnd').value;
+      var url = '/operator/' + clientId + '/access-log?limit=50';
+      if (start) url += '&start_date=' + start;
+      if (end) url += '&end_date=' + end;
+      apiFetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.events || !d.events.length) { allActivities = []; }
+          else {
+            allActivities = d.events.map(function(evt) {
+              var dt = new Date(evt.created_at);
+              var eventMap = { grant_success: 'granted', revoke_success: 'revoked', grant_failed: 'error', revoke_failed: 'error' };
+              return {
+                date: dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                time: dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+                member: evt.platform_member_id || 'Unknown',
+                event: eventMap[evt.event_type] || evt.event_type || 'unknown',
+                plan: evt.credential_type || 'Membership',
+                location: 'All Locations', locationId: 'all',
+                details: evt.error_code || evt.event_type || ''
+              };
+            });
+          }
+          currentPage = 1;
+          updateStats();
+          renderActivityGrid();
+        }).catch(function(e) { console.error('Access log reload error:', e); });
+    }
   </script>
 </body>
 </html>

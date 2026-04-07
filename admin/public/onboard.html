@@ -806,6 +806,13 @@ html, body {
       </div>
 
 
+      <!-- Wix-first: skip door setup -->
+      <div style="text-align:center;margin-top:12px;">
+        <button class="btn btn-ghost" style="font-size:12px;color:var(--muted);" onclick="skipDoorSetup()">
+          I'll set up doors later — just start tracking members
+        </button>
+      </div>
+
       <div class="btn-row">
         <button class="btn btn-ghost" onclick="showStep(1)">← Back</button>
         <button class="btn btn-primary" id="btn-s2" onclick="nextStep2()" disabled>
@@ -985,6 +992,7 @@ const state = {
   siteName:  null,   // Wix site name (from URL param)
   clientId:      null,   // set after _provisionClient() completes
   ownerBypass:   false,  // true if owner used bypass PIN on Step 4
+  skipDoors:     false,  // true if operator chose "set up doors later" (Wix-first flow)
   locations:     [],     // { id, name, city, state } — populated after _provisionClient()
   locName:       null,   // buffered from Step 3 form
   locCity:       null,
@@ -1048,7 +1056,8 @@ function toast(msg, type = 'success') {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = `show ${type}`;
-  setTimeout(() => { el.className = ''; }, 3500);
+  // Errors stay visible longer so the operator can read them
+  setTimeout(() => { el.className = ''; }, type === 'error' ? 6000 : 3500);
 }
 
 function setBusy(btnId, busy, idleHtml) {
@@ -1087,7 +1096,27 @@ function showStep(n) {
     ind.querySelector('.step-dot').textContent = i < n ? '✓' : String(i);
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Persist wizard progress
+  try { sessionStorage.setItem('accesssync-onboard', JSON.stringify({ step: n, state })); } catch(e) {}
 }
+
+// Restore wizard state on page load
+(function restoreWizard() {
+  try {
+    const saved = sessionStorage.getItem('accesssync-onboard');
+    if (!saved) return;
+    const { step, state: savedState } = JSON.parse(saved);
+    if (!savedState || !step || step >= 4) return; // don't restore past provisioning step
+    Object.assign(state, savedState);
+    // Pre-fill form fields from restored state
+    if (state.name) { const el = document.getElementById('biz-name'); if (el) el.value = state.name; }
+    if (state.email) { const el = document.getElementById('biz-email'); if (el) el.value = state.email; }
+    if (state.locName) { const el = document.getElementById('loc-name'); if (el) el.value = state.locName; }
+    if (state.locCity) { const el = document.getElementById('loc-city'); if (el) el.value = state.locCity; }
+    if (state.locState) { const el = document.getElementById('loc-state'); if (el) el.value = state.locState; }
+    showStep(step);
+  } catch(e) {}
+})();
 
 // ── Step 1: Site info ──────────────────────────────────────────────
 function toggleManualForm() {
@@ -1188,8 +1217,29 @@ function nextStep2() {
   showStep(3);
 }
 
+// ── Wix-first: skip door setup entirely ───────────────────────────
+function skipDoorSetup() {
+  // Set defaults — operator can configure hardware later from the dashboard
+  state.tier = state.tier || 'Connect';
+  state.hardwarePlatform = 'kisi'; // default; can be changed later
+  state.skipDoors = true;
+
+  // Pre-fill Step 3 from Wix params
+  const pf = state.prefill;
+  const defaultLocName = pf.siteName
+    ? `${pf.siteName}${pf.city ? ` — ${pf.city}` : ''}`
+    : '';
+  document.getElementById('loc-name').value  = defaultLocName;
+  document.getElementById('loc-city').value  = pf.city  || '';
+  document.getElementById('loc-state').value = pf.state || '';
+  document.getElementById('s3-sub').textContent =
+    "Add your gym location. You can connect your door system from the dashboard later.";
+
+  showStep(3);
+}
+
 // ── Step 3: Location ───────────────────────────────────────────────
-function nextStep3() {
+async function nextStep3() {
   const name   = document.getElementById('loc-name').value.trim();
   const city   = document.getElementById('loc-city').value.trim();
   const stateV = document.getElementById('loc-state').value.trim().toUpperCase();
@@ -1200,6 +1250,19 @@ function nextStep3() {
   state.locName  = name;
   state.locCity  = city   || null;
   state.locState = stateV || null;
+
+  // Wix-first flow: skip Step 4 (door setup) and go directly to Step 5
+  if (state.skipDoors) {
+    try {
+      await _provisionClient();
+      state.ownerBypass = true; // reuse bypass flow for validation display
+      goToDone();
+    } catch (err) {
+      toast(err.message || 'Setup failed — please try again', 'error');
+    }
+    return;
+  }
+
   showStep(4);
 }
 
@@ -1431,10 +1494,17 @@ async function goToDone() {
 
   if (state.ownerBypass) {
     document.getElementById('apikey-reminder').classList.remove('hidden');
-    document.getElementById('reminder-title').textContent =
-      `${hwLabel} not connected (owner bypass)`;
-    document.getElementById('reminder-body').textContent =
-      `You bypassed ${hwLabel} setup. Members won't get automatic door access until you add your API key from the dashboard.`;
+    if (state.skipDoors) {
+      document.getElementById('reminder-title').textContent =
+        'Door system setup deferred';
+      document.getElementById('reminder-body').textContent =
+        'Members who purchase plans will be tracked automatically. Once you connect your door system from the Locations page, all waiting members will be provisioned.';
+    } else {
+      document.getElementById('reminder-title').textContent =
+        `${hwLabel} not connected (owner bypass)`;
+      document.getElementById('reminder-body').textContent =
+        `You bypassed ${hwLabel} setup. Members won't get automatic door access until you add your API key from the dashboard.`;
+    }
     document.getElementById('reminder-link').href = dashUrl;
   }
 

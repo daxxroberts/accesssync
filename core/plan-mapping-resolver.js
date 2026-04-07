@@ -51,6 +51,18 @@ class PlanMappingResolver {
     );
 
     if (result.rows.length === 0) {
+      // Distinguish "plan not recognized" from "plan recognized but no group mapped yet" (Wix-first flow)
+      const planExists = await db.query(
+        `SELECT id FROM plan_mappings WHERE client_id = $1 AND source_plan_id = $2 AND status = 'active' LIMIT 1`,
+        [tenantId, planId]
+      );
+
+      if (planExists.rows.length > 0) {
+        // Plan is mapped but has no hardware group assigned yet — Wix-first scenario
+        console.warn(`[PlanMappingResolver] Plan ${planId} recognized but no hardware group mapped yet in tenant ${tenantId}`);
+        return []; // Empty array signals "recognized but not ready" (vs null = "unknown plan")
+      }
+
       console.warn(`[PlanMappingResolver] No active mapping for plan ${planId} in tenant ${tenantId}`);
       await db.query(
         `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)

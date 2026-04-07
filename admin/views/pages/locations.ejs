@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
 <head>
-  <%- include('../partials/head', { title: 'Operator Dashboard: Platform Config' }) %>
+  <%- include('../partials/head', { title: 'Operator Dashboard: System Config' }) %>
   <style>
     .page { max-width: 900px; margin: 0 auto; padding: 24px 16px 60px; }
 
@@ -143,8 +143,36 @@
   <main class="page">
     <div class="page-header">
       <div>
-        <div class="page-title">Platform Config</div>
-        <div class="page-sub">Manage locations and hardware API keys</div>
+        <div class="page-title">System Config</div>
+        <div class="page-sub">Manage your integrations, API keys, and locations</div>
+      </div>
+    </div>
+
+    <!-- Client profile -->
+    <div class="org-key-card" id="profile-card">
+      <div class="org-key-header">
+        <div class="org-key-icon">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect x="2" y="2" width="14" height="14" rx="3" stroke="var(--brand)" stroke-width="1.4" fill="none"/>
+            <circle cx="9" cy="7" r="2.5" stroke="var(--brand)" stroke-width="1.3" fill="none"/>
+            <path d="M4 15c0-3 2.2-5 5-5s5 2 5 5" stroke="var(--brand)" stroke-width="1.3" fill="none"/>
+          </svg>
+        </div>
+        <div style="flex:1;">
+          <div class="org-key-title" id="profile-name">Loading…</div>
+          <div class="org-key-desc" id="profile-meta"></div>
+        </div>
+        <button class="btn btn-sm btn-ghost" onclick="toggleProfileEdit()">Edit Name</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;" id="profile-pills"></div>
+      <div class="key-form" id="profile-form">
+        <div class="key-form-inner" style="margin-top:10px;">
+          <input type="text" class="key-input" id="profile-name-input" placeholder="Business name…"/>
+          <div class="key-form-actions">
+            <button class="btn btn-ghost btn-sm" onclick="toggleProfileEdit()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="saveProfileName()">Save</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -183,6 +211,38 @@
       </div>
     </div>
 
+    <!-- Wix API key -->
+    <div class="org-key-card" id="wix-key-card">
+      <div class="org-key-header">
+        <div class="org-key-icon">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M3 5l3 8 3-6 3 6 3-8" stroke="var(--brand)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </div>
+        <div>
+          <div class="org-key-title">Wix API Key</div>
+          <div class="org-key-desc">Used to fetch member plans and verify webhook events</div>
+        </div>
+      </div>
+      <div class="org-key-row">
+        <span class="org-key-status" id="wix-key-status">Checking…</span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-sm btn-ghost" id="wix-test-btn" onclick="testWixKey()" style="display:none;">Test</button>
+          <button class="btn btn-sm btn-secondary" id="wix-key-btn" onclick="toggleWixKeyForm()">Set Key</button>
+        </div>
+      </div>
+      <div class="key-form" id="wix-key-form">
+        <div class="key-form-inner" style="margin-top:10px;">
+          <div class="key-input-hint">Write-only — encrypted at rest (AES-256-GCM). Required for member plan lookups.</div>
+          <input type="password" class="key-input" id="wix-key-input" placeholder="Paste your Wix API key…" autocomplete="off"/>
+          <div class="key-form-actions">
+            <button class="btn btn-ghost btn-sm" onclick="toggleWixKeyForm()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="saveWixKey()">Save Key</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Notification email -->
     <div class="org-key-card" id="notif-card">
       <div class="org-key-header">
@@ -214,12 +274,40 @@
     </div>
 
     <!-- Locations -->
-    <div class="section-label">Locations</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div class="section-label" style="margin-bottom:0;">Locations</div>
+      <button class="btn btn-sm btn-secondary" onclick="toggleAddLocationForm()">+ Add Location</button>
+    </div>
+
+    <!-- Add location form -->
+    <div class="key-form" id="add-loc-form">
+      <div class="org-key-card" style="margin-bottom:16px;border:1px dashed var(--brand);">
+        <div class="org-key-title" style="margin-bottom:12px;">New Location</div>
+        <input type="text" class="key-input" id="add-loc-name" placeholder="Location name *" />
+        <div style="display:flex;gap:8px;">
+          <input type="text" class="key-input" id="add-loc-city" placeholder="City" style="flex:1;margin-bottom:0;" />
+          <input type="text" class="key-input" id="add-loc-state" placeholder="State" style="width:80px;margin-bottom:0;" />
+        </div>
+        <div style="margin-top:10px;">
+          <select class="key-input" id="add-loc-tier" style="margin-bottom:0;">
+            <option value="">Tier (optional)</option>
+            <option value="Base">Base</option>
+            <option value="Pro">Pro</option>
+            <option value="Connect">Connect</option>
+          </select>
+        </div>
+        <div class="key-form-actions" style="margin-top:12px;">
+          <button class="btn btn-ghost btn-sm" onclick="toggleAddLocationForm()">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="add-loc-submit" onclick="addLocation()">Create Location</button>
+        </div>
+      </div>
+    </div>
+
     <div id="loc-loading" class="loading"><div class="spinner"></div>Loading locations…</div>
     <div id="loc-empty" class="empty" style="display:none;">
       <div class="empty-icon">📍</div>
       <div class="empty-title">No locations yet</div>
-      <div>Locations are added during onboarding.</div>
+      <div>Use the button above to add your first location.</div>
     </div>
     <div id="loc-list"></div>
   </main>
@@ -236,6 +324,8 @@
     var state = {
       locations: [],
       orgHasKey: false,
+      wixHasKey: false,
+      client: null,
     };
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -243,23 +333,15 @@
         toast('No clientId in URL — add ?clientId=YOUR_ID', 'error');
         return;
       }
+      loadClientProfile();
       loadOrgKeyStatus();
+      loadWixKeyStatus();
       loadNotifEmail();
       loadLocations();
     });
 
     // ── API helpers ────────────────────────────────────────────────────
-    function apiFetch(url, options) {
-      options = Object.assign({ credentials: 'include' }, options || {});
-      return fetch(url, options).then(function(res) {
-        if (!res.ok && res.status !== 400) {
-          var err = new Error('API error');
-          err.status = res.status;
-          throw err;
-        }
-        return res;
-      });
-    }
+    // apiFetch is provided by operator-nav.js (handles 401 → session expired modal)
 
     // ── Org-level key ──────────────────────────────────────────────────
     function loadOrgKeyStatus() {
@@ -288,6 +370,22 @@
         statusEl.className    = 'org-key-status';
         testBtn.style.display = 'none';
         keyBtn.textContent    = 'Set Key';
+
+        // Wix-first flow: show pending_hardware count if members are waiting
+        apiFetch('/operator/' + clientId)
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            if (d.stats && d.stats.pending_hardware > 0) {
+              var hint = document.createElement('div');
+              hint.className = 'key-input-hint';
+              hint.style.color = 'var(--amber)';
+              hint.style.marginTop = '8px';
+              hint.textContent = d.stats.pending_hardware + ' member' +
+                (d.stats.pending_hardware !== 1 ? 's are' : ' is') +
+                ' waiting for door access. Add your API key to provision them.';
+              document.getElementById('org-key-card').appendChild(hint);
+            }
+          }).catch(function() {});
       }
     }
 
@@ -361,11 +459,17 @@
         .then(function(res) { return res.json(); })
         .then(function(data) {
           if (data.ok) {
-            toast('Organization API key saved', 'success');
+            var msg = 'Organization API key saved';
+            if (data.pendingRetried > 0) {
+              msg += '. Provisioning ' + data.pendingRetried + ' waiting member' + (data.pendingRetried !== 1 ? 's' : '') + '…';
+            }
+            toast(msg, 'success');
             state.orgHasKey = true;
             renderOrgKeyStatus();
             document.getElementById('org-key-form').classList.remove('open');
             document.getElementById('org-key-input').value = '';
+            // Auto-test the key after a brief delay
+            setTimeout(testOrgKey, 800);
           } else {
             toast(data.error || 'Save failed', 'error');
           }
@@ -389,6 +493,140 @@
         })
         .catch(function() { toast('Test failed', 'error'); })
         .finally(function() { btn.disabled = false; btn.textContent = 'Test'; });
+    }
+
+    // ── Wix API key ───────────────────────────────────────────────────
+    function loadWixKeyStatus() {
+      apiFetch('/operator/clients/' + clientId + '/wix-api-key/status')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          state.wixHasKey = !!data.hasKey;
+          renderWixKeyStatus();
+        })
+        .catch(function() {
+          document.getElementById('wix-key-status').textContent = 'Unable to check';
+        });
+    }
+
+    function renderWixKeyStatus() {
+      var statusEl = document.getElementById('wix-key-status');
+      var btnEl    = document.getElementById('wix-key-btn');
+      var testBtn  = document.getElementById('wix-test-btn');
+      if (state.wixHasKey) {
+        statusEl.textContent = '✓ Key configured';
+        statusEl.style.color = 'var(--sage-dark)';
+        btnEl.textContent    = 'Rotate Key';
+        testBtn.style.display = '';
+      } else {
+        statusEl.textContent = '✗ No key set';
+        statusEl.style.color = 'var(--red)';
+        btnEl.textContent    = 'Set Key';
+        testBtn.style.display = 'none';
+      }
+    }
+
+    function toggleWixKeyForm() {
+      var form = document.getElementById('wix-key-form');
+      form.classList.toggle('open');
+    }
+
+    function saveWixKey() {
+      var key = document.getElementById('wix-key-input').value.trim();
+      if (!key) { toast('Key cannot be empty', 'error'); return; }
+      apiFetch('/operator/clients/' + clientId + '/wix-api-key', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ apiKey: key }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            toast('Wix API key saved', 'success');
+            state.wixHasKey = true;
+            renderWixKeyStatus();
+            document.getElementById('wix-key-form').classList.remove('open');
+            document.getElementById('wix-key-input').value = '';
+            setTimeout(testWixKey, 800);
+          } else {
+            toast(data.error || 'Save failed', 'error');
+          }
+        })
+        .catch(function() { toast('Save failed', 'error'); });
+    }
+
+    function testWixKey() {
+      var btn = document.getElementById('wix-test-btn');
+      btn.disabled = true; btn.textContent = 'Testing…';
+      apiFetch('/operator/clients/' + clientId + '/wix-api-key/test')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.valid) {
+            toast('✓ Wix key valid — connected', 'success');
+          } else {
+            toast('✗ ' + (data.error || 'Key invalid'), 'error');
+          }
+        })
+        .catch(function() { toast('Test failed', 'error'); })
+        .finally(function() { btn.disabled = false; btn.textContent = 'Test'; });
+    }
+
+    // ── Client profile ────────────────────────────────────────────────
+    function loadClientProfile() {
+      apiFetch('/operator/' + clientId)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (!data.client) return;
+          state.client = data.client;
+          renderClientProfile();
+        })
+        .catch(function() {});
+    }
+
+    function renderClientProfile() {
+      var card = document.getElementById('profile-card');
+      if (!card || !state.client) return;
+      var c = state.client;
+      document.getElementById('profile-name').textContent = c.name || 'Unnamed';
+      var meta = [c.tier ? c.tier + ' tier' : '', c.hardware_platform || '', c.site_url ? c.site_url.replace(/^https?:\/\//, '') : ''].filter(Boolean).join(' · ');
+      document.getElementById('profile-meta').textContent = meta;
+      var pills = '';
+      if (c.tier) pills += '<span class="pill pill-info">' + esc(c.tier) + '</span>';
+      if (c.hardware_platform) pills += '<span class="pill" style="background:var(--surface-alt);color:var(--text);">' + esc(c.hardware_platform) + '</span>';
+      if (c.last_sync_at) {
+        var ago = new Date(c.last_sync_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+        pills += '<span class="pill" style="background:var(--sage-dim);color:var(--sage-dark);">Last sync: ' + ago + '</span>';
+      }
+      document.getElementById('profile-pills').innerHTML = pills;
+    }
+
+    function toggleProfileEdit() {
+      var form = document.getElementById('profile-form');
+      form.classList.toggle('open');
+      if (form.classList.contains('open') && state.client) {
+        document.getElementById('profile-name-input').value = state.client.name || '';
+      }
+    }
+
+    function saveProfileName() {
+      var name = document.getElementById('profile-name-input').value.trim();
+      if (!name) { toast('Name cannot be empty', 'error'); return; }
+      apiFetch('/operator/clients/' + clientId, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ name: name }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            state.client.name = data.client.name;
+            renderClientProfile();
+            document.getElementById('profile-form').classList.remove('open');
+            toast('Business name updated', 'success');
+          } else {
+            toast(data.error || 'Save failed', 'error');
+          }
+        })
+        .catch(function() { toast('Save failed', 'error'); });
     }
 
     // ── Locations ──────────────────────────────────────────────────────
@@ -438,6 +676,20 @@
             addressHTML +
           '</div>' +
           '<div class="loc-pills">' + subPill(loc.subscription_status) + tierHTML + '</div>' +
+          '<button class="btn btn-sm btn-ghost" onclick="toggleEditLocation(\'' + loc.id + '\')" title="Edit location details">Edit</button>' +
+        '</div>' +
+        '<div class="key-form" id="editform-' + loc.id + '">' +
+          '<div class="key-form-inner" style="margin:0 18px 8px;">' +
+            '<input type="text" class="key-input" id="editname-' + loc.id + '" placeholder="Location name *"/>' +
+            '<div style="display:flex;gap:8px;">' +
+              '<input type="text" class="key-input" id="editcity-' + loc.id + '" placeholder="City" style="flex:1;margin-bottom:0;"/>' +
+              '<input type="text" class="key-input" id="editstate-' + loc.id + '" placeholder="State" style="width:80px;margin-bottom:0;"/>' +
+            '</div>' +
+            '<div class="key-form-actions" style="margin-top:10px;">' +
+              '<button class="btn btn-ghost btn-sm" onclick="toggleEditLocation(\'' + loc.id + '\')">Cancel</button>' +
+              '<button class="btn btn-primary btn-sm" onclick="saveEditLocation(\'' + loc.id + '\')">Save</button>' +
+            '</div>' +
+          '</div>' +
         '</div>' +
         '<div class="loc-body">' +
           '<div class="loc-stats">' +
@@ -486,10 +738,106 @@
       '</div>';
     }
 
+    // ── Add location ────────────────────────────────────────────────
+    function toggleAddLocationForm() {
+      var form = document.getElementById('add-loc-form');
+      form.classList.toggle('open');
+      if (form.classList.contains('open')) {
+        setTimeout(function() { document.getElementById('add-loc-name').focus(); }, 50);
+      }
+    }
+
+    function addLocation() {
+      var name  = document.getElementById('add-loc-name').value.trim();
+      var city  = document.getElementById('add-loc-city').value.trim();
+      var st    = document.getElementById('add-loc-state').value.trim();
+      var tier  = document.getElementById('add-loc-tier').value;
+      if (!name) { toast('Location name is required', 'error'); return; }
+
+      var btn = document.getElementById('add-loc-submit');
+      btn.disabled = true; btn.textContent = 'Creating…';
+
+      apiFetch('/admin/clients/' + clientId + '/locations', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ name: name, city: city || null, state: st || null, tier: tier || null }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (!data.ok) { toast(data.error || 'Create failed', 'error'); return; }
+          var loc = data.location;
+          // Auto-activate the new location
+          return apiFetch('/admin/clients/' + clientId + '/locations/' + loc.id + '/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(actData) {
+              loc.subscription_status = actData.ok ? 'active' : loc.subscription_status;
+              loc.has_location_key = false;
+              loc.door_count  = 0;
+              loc.plan_count  = 0;
+              loc.error_count = 0;
+              state.locations.push(loc);
+              document.getElementById('loc-empty').style.display = 'none';
+              renderLocations();
+              document.getElementById('add-loc-form').classList.remove('open');
+              document.getElementById('add-loc-name').value  = '';
+              document.getElementById('add-loc-city').value  = '';
+              document.getElementById('add-loc-state').value = '';
+              document.getElementById('add-loc-tier').value  = '';
+              toast('Location "' + loc.name + '" created and activated', 'success');
+            });
+        })
+        .catch(function() { toast('Create failed — network error', 'error'); })
+        .finally(function() { btn.disabled = false; btn.textContent = 'Create Location'; });
+    }
+
+    // ── Edit location ─────────────────────────────────────────────────
+    function toggleEditLocation(locationId) {
+      var form = document.getElementById('editform-' + locationId);
+      form.classList.toggle('open');
+      if (form.classList.contains('open')) {
+        var loc = state.locations.find(function(l) { return l.id === locationId; });
+        if (loc) {
+          document.getElementById('editname-' + locationId).value  = loc.name || '';
+          document.getElementById('editcity-' + locationId).value  = loc.city || '';
+          document.getElementById('editstate-' + locationId).value = loc.state || '';
+        }
+        setTimeout(function() { document.getElementById('editname-' + locationId).focus(); }, 50);
+      }
+    }
+
+    function saveEditLocation(locationId) {
+      var name  = document.getElementById('editname-' + locationId).value.trim();
+      var city  = document.getElementById('editcity-' + locationId).value.trim();
+      var st    = document.getElementById('editstate-' + locationId).value.trim();
+      if (!name) { toast('Location name is required', 'error'); return; }
+
+      apiFetch('/admin/clients/' + clientId + '/locations/' + locationId, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ name: name, city: city || null, state: st || null }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (!data.ok) { toast(data.error || 'Save failed', 'error'); return; }
+          var loc = state.locations.find(function(l) { return l.id === locationId; });
+          if (loc) {
+            loc.name  = data.location.name;
+            loc.city  = data.location.city;
+            loc.state = data.location.state;
+          }
+          renderLocations();
+          toast('Location updated', 'success');
+        })
+        .catch(function() { toast('Save failed — network error', 'error'); });
+    }
+
     function subPill(status) {
-      if (status === 'active') return '<span class="pill pill-active">Active</span>';
-      if (status === 'lapsed') return '<span class="pill pill-lapsed">Lapsed</span>';
-      return '<span class="pill pill-inactive">Inactive</span>';
+      if (status === 'active') return '<span class="pill pill-active" title="This location is actively provisioning members.">Active</span>';
+      if (status === 'lapsed') return '<span class="pill pill-lapsed" title="Subscription lapsed. Members at this location have been suspended.">Lapsed</span>';
+      return '<span class="pill pill-inactive" title="Location not yet activated. Members won\'t be provisioned until active.">Inactive</span>';
     }
 
     function toggleLocKeyForm(locationId) {

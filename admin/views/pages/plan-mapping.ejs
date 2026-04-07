@@ -264,9 +264,12 @@
   <%- include('../partials/subnav', { activeTab: activeTab }) %>
 
   <div class="dash-content">
-    <div class="page-header">
-      <div class="page-title">Plan Mapping</div>
-      <div class="page-subtitle" id="pageSubtitle"></div>
+    <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div class="page-title">Plan Mapping</div>
+        <div class="page-subtitle" id="pageSubtitle"></div>
+      </div>
+      <button class="btn btn-sm btn-ghost" id="refreshPlansBtn" onclick="refreshPlans()" style="display:none;">&#8635; Refresh Plans</button>
     </div>
 
     <div class="info-banner">
@@ -293,6 +296,7 @@
     <div id="mappedPlansSection" style="display:none;">
       <div class="section-header">
         <span class="section-title">Pricing Plans</span>
+        <span class="tooltip-icon" title="Recurring membership plans from Wix Pricing Plans. Members get ongoing door access while their plan is active.">?</span>
         <span class="section-count mapped" id="mappedPlansCount">0</span>
       </div>
       <div class="plan-grid" id="mappedPlansGrid"></div>
@@ -302,6 +306,7 @@
     <div id="mappedServicesSection" style="display:none;">
       <div class="section-header">
         <span class="section-title">Booking Services</span>
+        <span class="tooltip-icon" title="One-time or session-based bookings from Wix Bookings. Access is granted for the booked time period.">?</span>
         <span class="section-count service" id="mappedServicesCount">0</span>
       </div>
       <div class="plan-grid" id="mappedServicesGrid"></div>
@@ -708,17 +713,43 @@
     // Save / Discard
     // ═══════════════════════════════════════
 
+    var _draftKey = 'accesssync-draft-' + (new URLSearchParams(window.location.search).get('clientId') || 'demo');
+
     function markDirty() {
       dirty = JSON.stringify(plans) !== originalState;
       document.getElementById('saveBar').classList.toggle('visible', dirty);
+      if (dirty) {
+        try { sessionStorage.setItem(_draftKey, JSON.stringify(plans)); } catch(e) {}
+      } else {
+        try { sessionStorage.removeItem(_draftKey); } catch(e) {}
+      }
     }
 
     function discardChanges() {
       plans = JSON.parse(originalState);
       dirty = false;
       document.getElementById('saveBar').classList.remove('visible');
+      try { sessionStorage.removeItem(_draftKey); } catch(e) {}
       render();
     }
+
+    // Restore unsaved draft on page load
+    (function restoreDraft() {
+      try {
+        var saved = sessionStorage.getItem(_draftKey);
+        if (saved) {
+          var draft = JSON.parse(saved);
+          if (draft && draft.length > 0 && confirm('You have unsaved plan mapping changes. Restore them?')) {
+            plans = draft;
+            dirty = true;
+            document.getElementById('saveBar').classList.add('visible');
+            render();
+          } else {
+            sessionStorage.removeItem(_draftKey);
+          }
+        }
+      } catch(e) {}
+    })();
 
     function saveChanges() {
       var urlParams = new URLSearchParams(window.location.search);
@@ -755,7 +786,7 @@
         if (statusChanged) body.status = plan.status;
         if (groupChanged && plan.groups) body.groups = plan.groups;
 
-        fetch('/operator/' + clientId + '/plan-mappings/' + plan.id, {
+        apiFetch('/operator/' + clientId + '/plan-mappings/' + plan.id, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
@@ -792,6 +823,12 @@
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    function refreshPlans() {
+      var btn = document.getElementById('refreshPlansBtn');
+      btn.disabled = true; btn.textContent = 'Refreshing…';
+      window.location.reload();
+    }
+
     // ═══════════════════════════════════════
     render();
 
@@ -801,23 +838,43 @@
       var clientId = urlParams.get('clientId');
       var locationId = urlParams.get('locationId');
       if (!clientId) return;
+      document.getElementById('refreshPlansBtn').style.display = '';
 
-      // 1. Load Kisi/Seam groups
-      fetch('/operator/clients/' + clientId + '/kisi-groups')
-        .then(function(r) { return r.json(); })
+      // 1. Load Kisi/Seam groups (may fail if no API key configured — Wix-first flow)
+      var noApiKey = false;
+      apiFetch('/operator/clients/' + clientId + '/kisi-groups')
+        .then(function(r) {
+          if (r.status === 400) {
+            noApiKey = true;
+            return { groups: [], count: 0 };
+          }
+          return r.json();
+        })
         .then(function(d) {
+          if (noApiKey) {
+            // Show banner explaining that groups aren't available yet
+            var header = document.querySelector('.page-header');
+            if (header) {
+              var banner = document.createElement('div');
+              banner.style.cssText = 'background:var(--amber-dim);border:1px solid var(--amber);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text);display:flex;align-items:center;gap:10px;';
+              banner.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="var(--amber)" stroke-width="1.3" fill="none"/><path d="M9 5.5v4M9 12v.5" stroke="var(--amber)" stroke-width="1.5" stroke-linecap="round"/></svg>' +
+                '<div><strong>No API key configured.</strong> Your Wix plans are listed below but door groups can\'t be assigned yet. <a href="/locations?clientId=' + clientId + '" style="color:var(--brand);font-weight:600;">Add your API key</a> to enable mapping.</div>';
+              header.parentNode.insertBefore(banner, header.nextSibling);
+            }
+            return;
+          }
           if (d.groups && d.groups.length > 0) {
             PLATFORM_GROUPS = d.groups.map(function(g) {
               return { id: String(g.id), name: g.name };
             });
           }
-          if (d.count === 0) {
+          if (d.count === 0 && !noApiKey) {
             showToast('warn', 'No access groups found. Create groups in your ' + platformName() + ' dashboard first.');
           }
         }).catch(function(e) { console.error('Groups load error:', e); });
 
       // 2. Load Wix plans + booking services (auto-accept creates missing plan_mappings rows)
-      fetch('/operator/' + clientId + '/wix-plans')
+      apiFetch('/operator/' + clientId + '/wix-plans')
         .then(function(r) { return r.json(); })
         .then(function(d) {
           var wixPlans = d.plans || [];
@@ -840,7 +897,7 @@
 
         if (!allMappingsUrl) {
           // No locationId — try to get first location
-          fetch('/operator/' + clientId + '/locations')
+          apiFetch('/operator/' + clientId + '/locations')
             .then(function(r) { return r.json(); })
             .then(function(d) {
               var locs = d.locations || d.data || [];
@@ -854,14 +911,14 @@
       }, 500);
 
       function loadMappingsForLocation(cid, lid) {
-        fetch('/operator/' + cid + '/locations/' + lid + '/mappings')
+        apiFetch('/operator/' + cid + '/locations/' + lid + '/mappings')
           .then(function(r) { return r.json(); })
           .then(function(d) {
             if (!d.mappings) return;
 
             // Load groups for each mapping in parallel
             var groupPromises = d.mappings.map(function(m) {
-              return fetch('/operator/' + cid + '/plan-mappings/' + m.id + '/groups')
+              return apiFetch('/operator/' + cid + '/plan-mappings/' + m.id + '/groups')
                 .then(function(r) { return r.json(); })
                 .then(function(gd) { return { mappingId: m.id, groups: gd.groups || [] }; })
                 .catch(function() { return { mappingId: m.id, groups: [] }; });
@@ -893,7 +950,19 @@
                 };
               });
               originalState = JSON.stringify(plans);
+              // Auto-detect family/couple plans
+              var familyPattern = /\b(family|couple|partner|duo|group|household)\b/i;
+              plans.forEach(function(p) {
+                if (!p.isMultiMember && familyPattern.test(p.name)) {
+                  p._familySuggestion = true;
+                }
+              });
               render();
+              // Show suggestion for detected family plans
+              var suggestions = plans.filter(function(p) { return p._familySuggestion; });
+              if (suggestions.length > 0) {
+                showToast('info', suggestions.length + ' plan' + (suggestions.length > 1 ? 's look' : ' looks') + ' like a family/group plan. Consider enabling multi-member access.');
+              }
             });
           }).catch(function(e) { console.error('Mappings load error:', e); });
       }
@@ -905,7 +974,7 @@
             var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
             return { hardware_group_id: gid, door_name: g ? g.name : null };
           });
-          return fetch('/operator/' + clientId + '/plan-mappings/' + plan.id, {
+          return apiFetch('/operator/' + clientId + '/plan-mappings/' + plan.id, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -914,6 +983,9 @@
               allow_multiple: plan.isMultiMember,
               max_members: plan.maxMembers,
             })
+          }).then(function(r) {
+            if (!r.ok) throw new Error('Failed to save ' + (plan.planName || 'plan'));
+            return r;
           });
         });
         Promise.all(promises)

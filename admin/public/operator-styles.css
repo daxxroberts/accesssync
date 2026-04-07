@@ -126,6 +126,31 @@ body {
 }
 .sub-nav-link:hover { color: var(--text2); }
 .sub-nav-link.active { color: var(--brand); border-bottom-color: var(--brand); }
+.breadcrumb {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.breadcrumb a { color: var(--muted); text-decoration: none; }
+.breadcrumb a:hover { color: var(--text); }
+.bc-sep { margin: 0 6px; opacity: .5; }
+
+/* ── Loading spinner ── */
+.page-loading { text-align: center; padding: 40px; color: var(--muted); font-size: 12px; }
+.page-spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--brand); border-radius: 50%; animation: page-spin 0.7s linear infinite; margin: 0 auto 10px; }
+@keyframes page-spin { to { transform: rotate(360deg); } }
+
+/* ── Tooltip icon ── */
+.tooltip-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--border); color: var(--muted);
+  font-size: 10px; font-weight: 700; cursor: help;
+  margin-left: 4px; vertical-align: middle;
+}
+
 .sub-nav-badge {
   position: absolute; top: 5px; right: 0;
   min-width: 14px; height: 14px; padding: 0 4px;

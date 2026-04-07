@@ -35,4 +35,21 @@ function signToken() {
   return jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
 }
 
-module.exports = { requireAuth, signToken };
+/**
+ * Express middleware for page routes — redirects to login on auth failure.
+ * Use on GET routes that render HTML pages (not API endpoints).
+ */
+function requireAuthPage(req, res, next) {
+  const token = req.cookies?.adminToken;
+  if (!token) {
+    return res.redirect('/OwnerDashboard');
+  }
+  try {
+    req.admin = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.redirect('/OwnerDashboard');
+  }
+}
+
+module.exports = { requireAuth, requireAuthPage, signToken };

@@ -2,18 +2,63 @@
  * admin/routes/operator.js
  * AccessSync Operator Dashboard API
  *
- * Operator-facing endpoints — no admin JWT required.
+ * Operator-facing endpoints — admin JWT required (via router-level middleware).
  * Client identified by UUID in URL path.
- * Auth: OB-24 invite token on signup endpoints. OPERATOR_INVITE_TOKEN env var.
+ * Auth: Admin JWT on all routes. Onboarding signup endpoints exempt (use invite token instead).
  */
 
 const express = require('express');
 const crypto  = require('crypto');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
 const { encryptApiKey, decryptApiKey: decryptKey } = require('../../core/crypto-utils');
 const wixPlansApi = require('../../adapters/wix/wix-plans-api');
+const { requireAuth } = require('../middleware/auth');
+
+// Global rate limiter on all operator read endpoints (100 req/min/IP)
+router.use(rateLimit({ windowMs: 60_000, max: 100, standardHeaders: true, legacyHeaders: false }));
+
+// Auth gate: require admin JWT on all operator routes EXCEPT onboarding signup
+// (signup endpoints use requireInviteToken instead — operator isn't logged in yet)
+router.use(function operatorAuth(req, res, next) {
+  // Skip auth for onboarding signup endpoints that use invite tokens
+  if (req.headers['x-invite-token']) return next();
+  if (req.method === 'POST' && req.path === '/verify-bypass') return next();
+  return requireAuth(req, res, next);
+});
+
+/**
+ * Wix-first flow: Re-enqueue all pending_hardware members for a client.
+ * Called after an API key is saved/rotated so parked members get provisioned.
+ * Returns the count of members re-queued.
+ */
+async function retryPendingHardwareMembers(clientId) {
+  const result = await db.query(
+    `SELECT mi.platform_member_id, mi.source_platform, mas.pending_plan_id
+     FROM member_access_state mas
+     JOIN member_identity mi ON mi.id = mas.member_id
+     WHERE mas.client_id = $1 AND mas.status = 'pending_hardware'`,
+    [clientId]
+  );
+  if (result.rows.length === 0) return 0;
+
+  for (const row of result.rows) {
+    await eventQueue.add('grant', {
+      tenantId: clientId,
+      standardEvent: {
+        platformMemberId: row.platform_member_id,
+        sourcePlatform: row.source_platform || 'wix',
+        eventType: 'retry.pending_hardware',
+        planId: row.pending_plan_id,
+      }
+    });
+  }
+
+  console.log(`[operator] Re-queued ${result.rows.length} pending_hardware members for client ${clientId}`);
+  return result.rows.length;
+}
 
 // ── GET /operator/webhook-url ────────────────────────────────────
 // Returns the core engine webhook URL for this installation.
@@ -143,7 +188,11 @@ router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) =
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     console.log(`[operator/setup] API key set for client ${clientId} (${result.rows[0].name})`);
-    res.json({ ok: true, message: 'API key saved' });
+
+    // Wix-first flow: auto-retry any members parked as pending_hardware
+    const retried = await retryPendingHardwareMembers(clientId);
+
+    res.json({ ok: true, message: 'API key saved', pendingRetried: retried });
   } catch (err) {
     console.error('[operator/setup] POST /clients/:clientId/api-key error:', err.message);
     res.status(500).json({ error: err.message });
@@ -190,7 +239,7 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
 
     const clientResult = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
     if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
-    if (!clientResult.rows[0].hardware_api_key) return res.status(400).json({ error: 'No API key configured' });
+    if (!clientResult.rows[0].hardware_api_key) return res.status(400).json({ error: 'No API key configured', noKey: true });
 
     const apiKey = decryptApiKey(clientResult.rows[0].hardware_api_key);
     const groups = await kisiAdapter.getGroups(apiKey);
@@ -262,7 +311,11 @@ router.put('/clients/:clientId/api-key', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     console.log(`[operator] API key rotated for client ${clientId}`);
-    res.json({ ok: true, message: 'API key updated' });
+
+    // Wix-first flow: auto-retry any members parked as pending_hardware
+    const retried = await retryPendingHardwareMembers(clientId);
+
+    res.json({ ok: true, message: 'API key updated', pendingRetried: retried });
   } catch (err) {
     console.error('[operator] PUT api-key error:', err.message);
     res.status(500).json({ error: err.message });
@@ -310,12 +363,31 @@ router.put('/clients/:clientId/notification-email', async (req, res) => {
   }
 });
 
+// ── PATCH /operator/clients/:clientId ──────────────────────────
+// Update editable client fields (operator-facing)
+router.patch('/clients/:clientId', async (req, res) => {
+  const { clientId } = req.params;
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
+  try {
+    const result = await db.query(
+      'UPDATE clients SET name = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name',
+      [name.trim(), clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    res.json({ ok: true, client: result.rows[0] });
+  } catch (err) {
+    console.error('[operator] PATCH /clients/:clientId error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── GET /operator/:clientId ─────────────────────────────────────
 // Client overview: name, platform status, all-location stats
 router.get('/:clientId', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const [clientResult, errorCount, activeMembers, totalMembers, locationCount] = await Promise.all([
+    const [clientResult, errorCount, activeMembers, totalMembers, locationCount, pendingHardware] = await Promise.all([
       db.query(
         `SELECT id, name, site_url, platform, hardware_platform, tier,
                 last_sync_at, last_wix_webhook_at
@@ -341,6 +413,11 @@ router.get('/:clientId', async (req, res) => {
         `SELECT COUNT(*)::int AS count FROM locations WHERE client_id = $1`,
         [clientId]
       ),
+      db.query(
+        `SELECT COUNT(*)::int AS count FROM member_access_state
+         WHERE client_id = $1 AND status = 'pending_hardware'`,
+        [clientId]
+      ),
     ]);
 
     if (!clientResult.rows.length) {
@@ -350,10 +427,11 @@ router.get('/:clientId', async (req, res) => {
     res.json({
       client: clientResult.rows[0],
       stats: {
-        error_count:    errorCount.rows[0].count,
-        active_members: activeMembers.rows[0].count,
-        total_members:  totalMembers.rows[0].count,
-        location_count: locationCount.rows[0].count,
+        error_count:      errorCount.rows[0].count,
+        active_members:   activeMembers.rows[0].count,
+        total_members:    totalMembers.rows[0].count,
+        location_count:   locationCount.rows[0].count,
+        pending_hardware: pendingHardware.rows[0].count,
       },
     });
   } catch (err) {
@@ -384,7 +462,11 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
     console.log(`[operator] Location API key set for ${locationId} (${result.rows[0].name})`);
-    res.json({ ok: true, message: 'Location API key saved' });
+
+    // Wix-first flow: auto-retry any members parked as pending_hardware
+    const retried = await retryPendingHardwareMembers(clientId);
+
+    res.json({ ok: true, message: 'Location API key saved', pendingRetried: retried });
   } catch (err) {
     console.error('[operator] POST /:clientId/locations/:locationId/api-key error:', err.message);
     res.status(500).json({ error: err.message });
@@ -780,6 +862,28 @@ router.get('/:clientId/members', async (req, res) => {
   }
 });
 
+// ── GET /operator/:clientId/recent-members ──────────────────────
+// Returns the 5 most recently provisioned members for dashboard display.
+router.get('/:clientId/recent-members', async (req, res) => {
+  const { clientId } = req.params;
+  const limit = Math.min(parseInt(req.query.limit) || 5, 10);
+  try {
+    const result = await db.query(
+      `SELECT mi.platform_member_id, mas.status, mas.updated_at
+       FROM member_access_state mas
+       JOIN member_identity mi ON mi.id = mas.member_id
+       WHERE mas.client_id = $1
+       ORDER BY mas.updated_at DESC
+       LIMIT $2`,
+      [clientId, limit]
+    );
+    res.json({ members: result.rows });
+  } catch (err) {
+    console.error('[operator] GET /:clientId/recent-members error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── GET /operator/:clientId/alerts ───────────────────────────────
 // Config alerts (missing doors, expired credentials, location mismatches).
 router.get('/:clientId/alerts', async (req, res) => {
@@ -837,12 +941,23 @@ router.get('/:clientId/errors', async (req, res) => {
 // Paginated access events for last 30 days with location + type filter.
 router.get('/:clientId/access-log', async (req, res) => {
   const { clientId } = req.params;
-  const { location_id, event_type, page = 1, limit = 25 } = req.query;
+  const { location_id, event_type, page = 1, limit = 25, start_date, end_date } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
   try {
     const params = [clientId];
-    const conditions = ['mal.client_id = $1', "mal.created_at > NOW() - INTERVAL '30 days'"];
+    const conditions = ['mal.client_id = $1'];
+
+    if (start_date) {
+      params.push(start_date);
+      conditions.push(`mal.created_at >= $${params.length}::date`);
+    } else {
+      conditions.push("mal.created_at > NOW() - INTERVAL '30 days'");
+    }
+    if (end_date) {
+      params.push(end_date);
+      conditions.push(`mal.created_at < ($${params.length}::date + INTERVAL '1 day')`);
+    }
 
     if (location_id) {
       params.push(location_id);
