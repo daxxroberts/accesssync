@@ -20,11 +20,17 @@ const { requireAuth } = require('../middleware/auth');
 // Global rate limiter on all operator read endpoints (100 req/min/IP)
 router.use(rateLimit({ windowMs: 60_000, max: 100, standardHeaders: true, legacyHeaders: false }));
 
-// Auth gate: require admin JWT on all operator routes EXCEPT onboarding signup
-// (signup endpoints use requireInviteToken instead — operator isn't logged in yet)
+// Auth gate: require admin JWT on all operator routes EXCEPT onboarding signup.
+// Onboarding endpoints use requireInviteToken middleware (validates token value).
+// Only specific POST paths are exempt — all other routes require JWT even if
+// x-invite-token header is present (H-1 security fix).
+const ONBOARDING_PATHS = new Set(['/verify-bypass']);
+const ONBOARDING_PREFIX = /^\/clients(\/[^/]+\/(locations(\/[^/]+\/activate)?|api-key))?$/;
 router.use(function operatorAuth(req, res, next) {
-  // Skip auth for onboarding signup endpoints that use invite tokens
-  if (req.headers['x-invite-token']) return next();
+  if (req.method === 'POST' && req.headers['x-invite-token'] &&
+      (ONBOARDING_PATHS.has(req.path) || ONBOARDING_PREFIX.test(req.path))) {
+    return next(); // Auth handled by requireInviteToken on these routes
+  }
   if (req.method === 'POST' && req.path === '/verify-bypass') return next();
   return requireAuth(req, res, next);
 });

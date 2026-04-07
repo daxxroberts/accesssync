@@ -149,7 +149,7 @@ const activeMappingsMultiDoor = [
   }
 ];
 
-// ─── DB row: encrypted API key (stored in clients.kisi_api_key) ─────────────
+// ─── DB row: encrypted API key (stored in clients.hardware_api_key, DR-035) ──
 // The actual encrypted format is iv:tag:ciphertext but in tests we mock decryptApiKey,
 // so this value just needs to be non-null to pass the "key exists" check.
 const ENCRYPTED_API_KEY_DB_VALUE = 'aabbcc:ddeeff:112233';

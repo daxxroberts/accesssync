@@ -51,8 +51,8 @@ const {
 // ─── Shared setup ───────────────────────────────────────────────────────────
 
 function mockClientApiKey() {
-  // The first db.query call in processRevoke is _getClientApiKey → SELECT kisi_api_key
-  db.query.mockResolvedValueOnce({ rows: [{ kisi_api_key: ENCRYPTED_API_KEY_DB_VALUE }] });
+  // The first db.query call in processRevoke is _getClientApiKey → SELECT hardware_api_key
+  db.query.mockResolvedValueOnce({ rows: [{ hardware_api_key: ENCRYPTED_API_KEY_DB_VALUE }] });
   // Subsequent calls (INSERT INTO member_access_log, etc.) succeed silently
   db.query.mockResolvedValue({ rows: [] });
 }

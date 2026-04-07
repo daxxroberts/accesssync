@@ -11,6 +11,7 @@ const router = require('express').Router();
 const db     = require('../../db');
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../../core/redis-utils');
+const { decryptApiKey } = require('../../core/crypto-utils');
 
 const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
 
@@ -28,9 +29,11 @@ router.get('/search', async (req, res) => {
     // OB-13: If searching by email, try to resolve via Wix API first
     if (isEmail && client_id) {
       try {
-        const clientResult = await db.query('SELECT site_id FROM clients WHERE id = $1', [client_id]);
+        const clientResult = await db.query('SELECT site_id, wix_api_key FROM clients WHERE id = $1', [client_id]);
         const siteId = clientResult.rows[0]?.site_id;
-        if (siteId) {
+        const encWixKey = clientResult.rows[0]?.wix_api_key;
+        if (siteId && encWixKey) {
+          const wixApiKey = decryptApiKey(encWixKey);
           // Call Wix Members API to search by email
           const wixRes = await fetch(
             `https://www.wixapis.com/members/v1/members/query`,
@@ -38,7 +41,8 @@ router.get('/search', async (req, res) => {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': siteId, // Site-level auth
+                'Authorization': wixApiKey,
+                'wix-site-id': siteId,
               },
               body: JSON.stringify({
                 query: { filter: { 'loginEmail': { '$eq': q.trim() } } }

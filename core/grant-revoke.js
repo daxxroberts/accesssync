@@ -80,13 +80,13 @@ class GrantRevokeLogic {
    * @returns {string} targetStatus   passed to standardAdapter.completeRevoke()
    */
   /**
-   * Looks up and decrypts the client-level Kisi API key for revoke operations.
+   * Looks up and decrypts the client-level hardware API key for revoke operations.
    * Revokes are org-level operations — client key is correct for all single-org operators.
    * Multi-org per-location revoke is a future enhancement (post V1).
    */
   async _getClientApiKey(tenantId) {
-    const result = await db.query('SELECT kisi_api_key FROM clients WHERE id = $1', [tenantId]);
-    const enc = result.rows[0]?.kisi_api_key;
+    const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [tenantId]);
+    const enc = result.rows[0]?.hardware_api_key;
     if (enc) return decryptApiKey(enc);
     return null; // DR-028: no API key in DB — hardware calls will fail with a clear error. Set key via Admin Hub.
   }
@@ -142,8 +142,7 @@ class GrantRevokeLogic {
       }
 
       default:
-        console.error(`[Revoke] Unknown event type: ${eventType}`);
-        return 'failed';
+        throw new Error(`[Revoke] Unknown event type: ${eventType}`);
     }
   }
 }

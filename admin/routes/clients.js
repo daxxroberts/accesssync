@@ -283,6 +283,7 @@ router.post('/:id/locations/:locationId/api-key', async (req, res) => {
     const { id, locationId } = req.params;
     const { apiKey } = req.body;
     if (!apiKey || !apiKey.trim()) return res.status(400).json({ error: 'apiKey is required' });
+    if (apiKey.trim().length < 20) return res.status(400).json({ error: 'API key must be at least 20 characters' });
 
     const encrypted = encryptApiKey(apiKey.trim());
     const result = await db.query(

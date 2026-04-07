@@ -33,7 +33,10 @@ async function recordFailure(clientHint = 'unknown') {
   let redis;
   try {
     redis = getRedisConnection();
-    const listKey = 'hmac:failures';
+    // Per-client tracking so one client's spike doesn't suppress another's alerts
+    const safeHint = String(clientHint).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const listKey = `hmac:failures:${safeHint}`;
+    const cooldownKey = `${ALERT_COOLDOWN_KEY}:${safeHint}`;
 
     // Push timestamp, trim to last 50 entries, check window count
     const now = Math.floor(Date.now() / 1000);
@@ -45,10 +48,10 @@ async function recordFailure(clientHint = 'unknown') {
     const recentCount = all.filter(t => now - parseInt(t) < WINDOW_SECONDS).length;
 
     if (recentCount >= FAILURE_THRESHOLD) {
-      // Check cooldown — only alert once per window
-      const alreadyAlerted = await redis.get(ALERT_COOLDOWN_KEY);
+      // Check cooldown — only alert once per window per client
+      const alreadyAlerted = await redis.get(cooldownKey);
       if (!alreadyAlerted) {
-        await redis.set(ALERT_COOLDOWN_KEY, '1', 'EX', ALERT_COOLDOWN_TTL);
+        await redis.set(cooldownKey, '1', 'EX', ALERT_COOLDOWN_TTL);
         await _sendAlert(recentCount, clientHint);
       }
     }

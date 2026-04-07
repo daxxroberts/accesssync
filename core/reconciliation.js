@@ -43,7 +43,7 @@ class NightlyReconciliation {
         `UPDATE member_access_state
          SET status = 'failed', updated_at = NOW()
          WHERE status = 'in_flight'
-           AND updated_at < NOW() - INTERVAL '10 minutes'`
+           AND updated_at < NOW() - INTERVAL '${this.staleThresholdMinutes} minutes'`
       );
       console.log('[Nightly Reconciliation] Stale in_flight records reset to failed.');
 

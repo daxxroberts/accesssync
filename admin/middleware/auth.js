@@ -9,7 +9,10 @@
 
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.ADMIN_JWT_SECRET || 'changeme-must-set-ADMIN_JWT_SECRET-in-env';
+if (!process.env.ADMIN_JWT_SECRET) {
+  throw new Error('[auth] ADMIN_JWT_SECRET env var is required — refusing to start with default secret');
+}
+const JWT_SECRET = process.env.ADMIN_JWT_SECRET;
 
 /**
  * Express middleware — validates adminToken cookie.
