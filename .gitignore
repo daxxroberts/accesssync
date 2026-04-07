@@ -16,3 +16,6 @@ Thumbs.db
 
 # Railway
 .railway/
+
+# Test artifacts
+.test-images/
