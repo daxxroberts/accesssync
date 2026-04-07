@@ -626,16 +626,28 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
          FROM member_access_log mal
          JOIN member_identity mi ON mi.id = mal.member_id
          WHERE mal.client_id = $1
+           AND mi.id IN (
+             SELECT mra2.member_id FROM member_role_assignments mra2
+             JOIN plan_mappings pm2 ON pm2.id = mra2.mapping_id
+             WHERE pm2.location_id = $2
+           )
          ORDER BY mal.created_at DESC LIMIT 10`,
-        [clientId]
+        [clientId, locationId]
       ),
       db.query(
-        `SELECT mi.id, mi.platform_member_id, mas.status, mas.provisioned_at
+        `SELECT DISTINCT mi.id, mi.platform_member_id, mas.status, mas.provisioned_at, mas.updated_at
          FROM member_identity mi
          JOIN member_access_state mas ON mas.member_id = mi.id
+         LEFT JOIN member_role_assignments mra ON mra.member_id = mi.id
+         LEFT JOIN plan_mappings pm ON pm.id = mra.mapping_id
          WHERE mi.client_id = $1
-         ORDER BY mas.provisioned_at DESC NULLS LAST`,
-        [clientId]
+           AND (pm.location_id = $2 OR EXISTS (
+             SELECT 1 FROM plan_mappings pm2
+             WHERE pm2.location_id = $2
+               AND pm2.source_plan_id = mas.pending_plan_id
+           ))
+         ORDER BY mas.updated_at DESC NULLS LAST`,
+        [clientId, locationId]
       ),
     ]);
 

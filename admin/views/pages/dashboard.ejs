@@ -435,282 +435,12 @@
     <!-- Location cards -->
     <div>
       <div class="locations-header">
-        <div class="locations-label">Locations <span class="count muted">2</span></div>
+        <div class="locations-label">Locations <span class="count muted">—</span></div>
         <span class="locations-hint">Tap to expand</span>
       </div>
 
       <div class="locations-stack" id="location-section">
-
-        <!-- Fort Smith — has error -->
-        <div class="loc-card err" id="loc-fs">
-          <div class="loc-trigger" id="trig-fs" onclick="toggleLoc('fs')">
-            <div class="loc-icon">
-              <svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 1.5C6.5 1.5 4.5 3.5 4.5 6c0 3.75 4.5 10.5 4.5 10.5S13.5 9.75 13.5 6c0-2.5-2-4.5-4.5-4.5z" stroke="var(--red)" stroke-width="1.3" fill="none"/><circle cx="9" cy="6" r="1.5" fill="var(--red)"/></svg>
-            </div>
-            <div class="loc-info">
-              <div class="loc-name">Fort Smith — Main</div>
-              <div class="loc-meta">
-                <span class="tip-wrap">
-                  1 door · 1 online · 0 offline
-                  <span class="tip-icon"><svg viewBox="0 0 8 8" fill="none" width="8" height="8"><circle cx="4" cy="4" r="3.2" stroke="currentColor" stroke-width="1"/><path d="M4 3.2v2" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><circle cx="4" cy="2.5" r="0.4" fill="currentColor"/></svg></span>
-                  <span class="tip-box">Offline means the Kisi controller lost its cloud connection. Members with cached credentials can still enter for up to 72 hours. Access events sync when the controller reconnects.</span>
-                </span>
-                <span class="loc-meta-sep">·</span>
-                <span>47 members</span>
-                <span class="loc-meta-sep">·</span>
-                <span>Kisi Pro · $199/mo</span>
-              </div>
-            </div>
-            <div class="loc-trigger-right">
-              <span class="pill red"><span class="pdot"></span>1 error</span>
-              <svg class="chevron" id="chev-fs" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </div>
-          </div>
-
-          <div class="loc-body" id="body-fs">
-
-            <!-- Active Members -->
-            <div class="loc-sub-header" onclick="toggleLocSub('fs', 'members')">
-              <div class="loc-sub-title">
-                <svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Active Members <span class="loc-sub-count">47</span>
-              </div>
-              <div class="loc-sub-right">
-                <button class="link-btn" onclick="event.stopPropagation(); window.location.href='/members'+window.location.search">Edit →</button>
-              </div>
-            </div>
-            <div class="loc-sub-body" id="sub-members-fs">
-              <div class="member-sync-container">
-                <div class="member-sync-header"><span>Member Sync</span><span>As of last sync · 4 min ago</span></div>
-                <div class="sync-bar-row"><div class="sync-bar-platform">Wix</div><div class="sync-bar-track"><div class="sync-bar-fill wix" style="width:100%;"></div></div><div class="sync-bar-count sage">47</div><div class="sync-bar-label">active plans</div></div>
-                <div class="sync-bar-row"><div class="sync-bar-platform">Kisi</div><div class="sync-bar-track"><div class="sync-bar-fill kisi" style="width:88%;"></div></div><div class="sync-bar-count brand">46</div><div class="sync-bar-label">AccessSync</div></div>
-                <div class="member-sync-gap">
-                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none" style="flex-shrink:0;margin-top:1px;"><circle cx="7" cy="7" r="5.5" stroke="var(--amber)" stroke-width="1.3"/><path d="M7 4v3" stroke="var(--amber)" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.7" fill="var(--amber)"/></svg>
-                  <span class="member-sync-gap-text"><strong>1 pending</strong> — Amber Knox provisioning incomplete · <span style="color:var(--muted);">6 Kisi users not managed (staff)</span></span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Plan Mapping -->
-            <div class="loc-sub-header" onclick="toggleLocSub('fs', 'mapping')">
-              <div class="loc-sub-title">
-                <svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Plan Mapping <span class="loc-sub-count">1</span>
-              </div>
-              <div class="loc-sub-right">
-                <button class="link-btn" onclick="event.stopPropagation(); window.location.href='/plan-mapping'+window.location.search">Edit →</button>
-              </div>
-            </div>
-            <div class="loc-sub-body" id="sub-mapping-fs">
-              <div class="map-row">
-                <div><div class="map-plan">Monthly Member</div><div class="map-detail">Ongoing · $49/mo</div></div>
-                <div class="map-right"><span class="map-arrow">→</span><span class="map-door">Front Door</span><span class="mbadge active">Active</span></div>
-              </div>
-              <div class="map-row" style="opacity:0.5;">
-                <div><div class="map-plan">Annual Member</div><div class="map-detail">Ongoing · $399/yr</div></div>
-                <div class="map-right"><span class="mbadge excl">Not managed</span></div>
-              </div>
-              <div class="map-row" style="opacity:0.5;">
-                <div><div class="map-plan">Day Pass</div><div class="map-detail">Single use · $15</div></div>
-                <div class="map-right"><span class="mbadge excl">Not managed</span></div>
-              </div>
-              <div class="nudge">
-                <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style="flex-shrink:0;margin-top:1px;"><circle cx="7" cy="7" r="5.5" stroke="var(--amber)" stroke-width="1.3"/><path d="M7 4v3" stroke="var(--amber)" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.7" fill="var(--amber)"/></svg>
-                <span class="nudge-text"><strong>Annual Member and Day Pass are excluded</strong> — members on these plans won't get automatic door access. Still correct?</span>
-                <button class="btn-nudge" onclick="window.location.href='/plan-mapping'+window.location.search">Review</button>
-              </div>
-              <div class="configured-by">
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M1 10c0-2 2.2-3.5 5-3.5s5 1.5 5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                Configured by <span>Daxx Roberts</span> · March 2026
-              </div>
-            </div>
-
-            <!-- Recent Access -->
-            <div class="loc-sub-header" onclick="toggleLocSub('fs', 'access')">
-              <div class="loc-sub-title">
-                <svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Recent Access
-              </div>
-              <div class="loc-sub-right">
-                <button class="link-btn" onclick="event.stopPropagation(); var _q=new URLSearchParams(window.location.search);_q.set('location','fort-smith');window.location.href='/access?'+_q.toString()">See Details →</button>
-              </div>
-            </div>
-            <div class="loc-sub-body" id="sub-access-fs">
-              <div class="access-today-bar"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M7 3v4l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Today: 42 events</span></div>
-              <div class="log-row"><div class="log-av grant">JM</div><div class="log-info"><div class="log-name">Jake Morrison</div><div class="log-detail">Monthly Member · QR scan · Terminal Pro</div></div><div class="log-right"><span class="log-badge grant">Granted</span><span class="log-time">2 min ago</span></div></div>
-              <div class="log-row"><div class="log-av grant">SR</div><div class="log-info"><div class="log-name">Sara Rhodes</div><div class="log-detail">Monthly Member · NFC tap · Terminal Pro</div></div><div class="log-right"><span class="log-badge grant">Granted</span><span class="log-time">11 min ago</span></div></div>
-              <div class="log-row"><div class="log-av revoke">AK</div><div class="log-info"><div class="log-name">Amber Knox</div><div class="log-detail">Payment failed · Plan cancelled</div></div><div class="log-right"><span class="log-badge revoke">Revoked</span><span class="log-time">1 hr ago</span></div></div>
-              <div class="log-row"><div class="log-av prov">DL</div><div class="log-info"><div class="log-name">Derek Lane</div><div class="log-detail">Monthly Member · New member provisioned</div></div><div class="log-right"><span class="log-badge prov">Provisioned</span><span class="log-time">2 hrs ago</span></div></div>
-              <div class="log-row"><div class="log-av grant">TC</div><div class="log-info"><div class="log-name">Taylor Chen</div><div class="log-detail">Monthly Member · QR scan · Front Door</div></div><div class="log-right"><span class="log-badge grant">Granted</span><span class="log-time">3 hrs ago</span></div></div>
-              <div class="log-row"><div class="log-av prov">MP</div><div class="log-info"><div class="log-name">Marcus Price</div><div class="log-detail">Annual Member · 2 doors provisioned</div></div><div class="log-right"><span class="log-badge prov">Provisioned</span><span class="log-time">4 hrs ago</span></div></div>
-              <div class="log-row"><div class="log-av grant">JW</div><div class="log-info"><div class="log-name">Jordan West</div><div class="log-detail">Monthly Member · NFC tap · Front Door</div></div><div class="log-right"><span class="log-badge grant">Granted</span><span class="log-time">5 hrs ago</span></div></div>
-              <div class="log-row"><div class="log-av revoke">KB</div><div class="log-info"><div class="log-name">Kylie Brooks</div><div class="log-detail">Membership expired · Auto-revoked</div></div><div class="log-right"><span class="log-badge revoke">Revoked</span><span class="log-time">6 hrs ago</span></div></div>
-            </div>
-
-            <!-- Errors -->
-            <div class="loc-sub-header" onclick="toggleLocSub('fs', 'errors')">
-              <div class="loc-sub-title">
-                <svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Errors <span class="count red" id="fs-err-count">1</span>
-              </div>
-            </div>
-            <div class="loc-sub-body" id="sub-errors-fs">
-              <div id="fs-err-list">
-                <div class="err-row" id="fs-err-row">
-                  <div class="err-dot"></div>
-                  <div class="err-info">
-                    <div class="err-title">Access not set up — Amber Knox</div>
-                    <div class="err-body" id="fs-err-plain">Amber purchased a Monthly Member plan but her door access couldn't be completed. Her membership is active — she just can't get in yet.</div>
-                    <div class="err-tech" id="fs-err-tech">422 on POST /role_assignments. User created (kisi_user_id stored), group assignment incomplete. Likely cause: group capacity or permission scope. 2 retries failed.</div>
-                    <div class="err-view-toggle">
-                      <button class="ev-btn active" id="ev-simple" onclick="setErrView('simple')">Simple</button>
-                      <button class="ev-btn" id="ev-tech" onclick="setErrView('tech')">Technical</button>
-                    </div>
-                    <div class="err-tags">
-                      <span class="err-tag">Monthly Member</span>
-                      <span class="err-tag">Front Door</span>
-                      <span class="err-tag">Terminal Pro</span>
-                      <span class="err-tag">2 retries</span>
-                    </div>
-                  </div>
-                  <div class="err-actions">
-                    <button class="btn-retry" onclick="retryErr()">Retry</button>
-                    <button class="btn-dismiss" onclick="dismissErr()">✕</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="loc-footer">
-              <div class="loc-footer-text">
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M10 6A4 4 0 112 6" stroke="var(--sage-dark)" stroke-width="1.2" stroke-linecap="round"/><path d="M10 3v3h-3" stroke="var(--sage-dark)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Synced 4 min ago · Auto-sync 3:00 AM
-              </div>
-              <button class="sync-btn" id="sync-fs" onclick="syncNow('sync-fs','sync-fs-label')">
-                <span id="sync-fs-label">Sync now</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Roland — all clear -->
-        <div class="loc-card" id="loc-ro">
-          <div class="loc-trigger" id="trig-ro" onclick="toggleLoc('ro')">
-            <div class="loc-icon">
-              <svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 1.5C6.5 1.5 4.5 3.5 4.5 6c0 3.75 4.5 10.5 4.5 10.5S13.5 9.75 13.5 6c0-2.5-2-4.5-4.5-4.5z" stroke="var(--sage-dark)" stroke-width="1.3" fill="none"/><circle cx="9" cy="6" r="1.5" fill="var(--sage-dark)"/></svg>
-            </div>
-            <div class="loc-info">
-              <div class="loc-name">Roland — Annex</div>
-              <div class="loc-meta">
-                3 doors · 3 online · 0 offline
-                <span class="loc-meta-sep">·</span><span>58 members</span>
-                <span class="loc-meta-sep">·</span><span>Kisi Pro · $199/mo</span>
-              </div>
-            </div>
-            <div class="loc-trigger-right">
-              <span class="pill sage"><span class="pdot pulse"></span>All clear</span>
-              <svg class="chevron" id="chev-ro" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </div>
-          </div>
-
-          <div class="loc-body" id="body-ro">
-
-            <!-- Active Members -->
-            <div class="loc-sub-header" onclick="toggleLocSub('ro', 'members')">
-              <div class="loc-sub-title">
-                <svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Active Members <span class="loc-sub-count">58</span>
-              </div>
-              <div class="loc-sub-right">
-                <button class="link-btn" onclick="event.stopPropagation(); window.location.href='/members'+window.location.search">Edit →</button>
-              </div>
-            </div>
-            <div class="loc-sub-body" id="sub-members-ro">
-              <div class="member-sync-container">
-                <div class="member-sync-header"><span>Member Sync</span><span>As of last sync · 6 min ago</span></div>
-                <div class="sync-bar-row"><div class="sync-bar-platform">Wix</div><div class="sync-bar-track"><div class="sync-bar-fill wix" style="width:100%;"></div></div><div class="sync-bar-count sage">58</div><div class="sync-bar-label">active plans</div></div>
-                <div class="sync-bar-row"><div class="sync-bar-platform">Kisi</div><div class="sync-bar-track"><div class="sync-bar-fill kisi" style="width:89%;"></div></div><div class="sync-bar-count brand">58</div><div class="sync-bar-label">AccessSync</div></div>
-                <div style="display:flex;align-items:center;gap:7px;padding:7px 10px;background:var(--sage-dim);border-radius:8px;border:1px solid var(--sage-border);">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  <span style="font-size:10px;color:var(--sage-dark);line-height:1.5;"><strong style="font-weight:600;">Fully synced</strong> — 58 Wix members = 58 Kisi AccessSync users · <span style="color:var(--muted);">7 Kisi users not managed (staff)</span></span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Plan Mapping -->
-            <div class="loc-sub-header" onclick="toggleLocSub('ro', 'mapping')">
-              <div class="loc-sub-title">
-                <svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Plan Mapping <span class="loc-sub-count">2</span>
-              </div>
-              <div class="loc-sub-right">
-                <button class="link-btn" onclick="event.stopPropagation(); window.location.href='/plan-mapping'+window.location.search">Edit →</button>
-              </div>
-            </div>
-            <div class="loc-sub-body" id="sub-mapping-ro">
-              <div class="map-row">
-                <div><div class="map-plan">Monthly Member</div><div class="map-detail">Ongoing · $49/mo</div></div>
-                <div class="map-right"><span class="map-arrow">→</span><span class="map-door">3 doors</span><span class="mbadge active">Active</span></div>
-              </div>
-              <div class="map-row">
-                <div><div class="map-plan">Annual Member</div><div class="map-detail">Ongoing · $399/yr</div></div>
-                <div class="map-right"><span class="map-arrow">→</span><span class="map-door">3 doors</span><span class="mbadge active">Active</span></div>
-              </div>
-              <div class="map-row" style="opacity:0.5;">
-                <div><div class="map-plan">Day Pass</div><div class="map-detail">Single use · $15</div></div>
-                <div class="map-right"><span class="mbadge excl">Not managed</span></div>
-              </div>
-              <div class="configured-by">
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M1 10c0-2 2.2-3.5 5-3.5s5 1.5 5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                Configured by <span>Daxx Roberts</span> · March 2026
-              </div>
-            </div>
-
-            <!-- Recent Access -->
-            <div class="loc-sub-header" onclick="toggleLocSub('ro', 'access')">
-              <div class="loc-sub-title">
-                <svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Recent Access
-              </div>
-              <div class="loc-sub-right">
-                <button class="link-btn" onclick="event.stopPropagation(); var _q=new URLSearchParams(window.location.search);_q.set('location','roland');window.location.href='/access?'+_q.toString()">See Details →</button>
-              </div>
-            </div>
-            <div class="loc-sub-body" id="sub-access-ro">
-              <div class="access-today-bar"><svg width="12" height="12" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M7 3v4l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Today: 68 events</span></div>
-              <div class="log-row"><div class="log-av grant">CM</div><div class="log-info"><div class="log-name">Chris Martin</div><div class="log-detail">Monthly Member · QR scan · Front Door</div></div><div class="log-right"><span class="log-badge grant">Granted</span><span class="log-time">8 min ago</span></div></div>
-              <div class="log-row"><div class="log-av grant">LT</div><div class="log-info"><div class="log-name">Lisa Torres</div><div class="log-detail">Annual Member · NFC tap · Weight Room</div></div><div class="log-right"><span class="log-badge grant">Granted</span><span class="log-time">22 min ago</span></div></div>
-              <div class="log-row"><div class="log-av prov">RN</div><div class="log-info"><div class="log-name">Ryan Nash</div><div class="log-detail">Annual Member · 3 doors provisioned</div></div><div class="log-right"><span class="log-badge prov">Provisioned</span><span class="log-time">1 hr ago</span></div></div>
-              <div class="log-row"><div class="log-av grant">EC</div><div class="log-info"><div class="log-name">Emily Chen</div><div class="log-detail">Monthly Member · QR scan · Weight Room</div></div><div class="log-right"><span class="log-badge grant">Granted</span><span class="log-time">1 hr ago</span></div></div>
-              <div class="log-row"><div class="log-av grant">MS</div><div class="log-info"><div class="log-name">Michael Simpson</div><div class="log-detail">Annual Member · NFC tap · Cardio Floor</div></div><div class="log-right"><span class="log-badge grant">Granted</span><span class="log-time">2 hrs ago</span></div></div>
-              <div class="log-row"><div class="log-av prov">NK</div><div class="log-info"><div class="log-name">Natasha Kim</div><div class="log-detail">Monthly Member · New member provisioned</div></div><div class="log-right"><span class="log-badge prov">Provisioned</span><span class="log-time">3 hrs ago</span></div></div>
-              <div class="log-row"><div class="log-av revoke">BP</div><div class="log-info"><div class="log-name">Brandon Pierce</div><div class="log-detail">Payment failed · Plan cancelled</div></div><div class="log-right"><span class="log-badge revoke">Revoked</span><span class="log-time">4 hrs ago</span></div></div>
-              <div class="log-row"><div class="log-av grant">SD</div><div class="log-info"><div class="log-name">Sophia Davis</div><div class="log-detail">Annual Member · NFC tap · Front Door</div></div><div class="log-right"><span class="log-badge grant">Granted</span><span class="log-time">5 hrs ago</span></div></div>
-            </div>
-
-            <!-- Errors -->
-            <div class="loc-sub-header" onclick="toggleLocSub('ro', 'errors')">
-              <div class="loc-sub-title">
-                <svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Errors <span class="count sage">0</span>
-              </div>
-            </div>
-            <div class="loc-sub-body" id="sub-errors-ro">
-              <div class="no-err"><span class="no-err-badge"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>No errors — all clear</span></div>
-            </div>
-
-            <div class="loc-footer">
-              <div class="loc-footer-text">
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M10 6A4 4 0 112 6" stroke="var(--sage-dark)" stroke-width="1.2" stroke-linecap="round"/><path d="M10 3v3h-3" stroke="var(--sage-dark)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Synced 6 min ago · Auto-sync 3:00 AM
-              </div>
-              <button class="sync-btn" id="sync-ro" onclick="syncNow('sync-ro','sync-ro-label')">
-                <span id="sync-ro-label">Sync now</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
+        <!-- Populated dynamically from API -->
       </div>
     </div>
 
@@ -718,87 +448,37 @@
 
   <script src="/operator-nav.js"></script>
   <script>
+    // ── Shared helpers ──
+    function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
     // ── Location accordion ──
+    var _locDetailLoaded = {}; // track which locations have loaded details
+
     function toggleLoc(id) {
       var body = document.getElementById('body-' + id);
       var chev = document.getElementById('chev-' + id);
       var trig = document.getElementById('trig-' + id);
+      if (!body) return;
       var isOpen = body.classList.contains('open');
       body.classList.toggle('open', !isOpen);
-      chev.classList.toggle('open', !isOpen);
-      trig.classList.toggle('open', !isOpen);
+      if (chev) chev.classList.toggle('open', !isOpen);
+      if (trig) trig.classList.toggle('open', !isOpen);
       try { localStorage.setItem('loc-' + id, !isOpen ? '1' : '0'); } catch(e) {}
+      // Load details on first expand
+      if (!isOpen && !_locDetailLoaded[id]) {
+        var locUuid = body.getAttribute('data-loc-uuid');
+        if (locUuid) loadLocDetails(id, locUuid);
+      }
     }
 
     // ── Location sub-section toggle ──
     function toggleLocSub(locId, section) {
       var body   = document.getElementById('sub-' + section + '-' + locId);
+      if (!body) return;
       var header = body.previousElementSibling;
       var isOpen = body.classList.contains('open');
       body.classList.toggle('open', !isOpen);
-      header.classList.toggle('open', !isOpen);
-    }
-
-    // Restore accordion state on load
-    document.addEventListener('DOMContentLoaded', function() {
-      ['fs','ro'].forEach(function(id) {
-        try {
-          if (localStorage.getItem('loc-' + id) === '1') {
-            document.getElementById('body-' + id).classList.add('open');
-            document.getElementById('chev-' + id).classList.add('open');
-            document.getElementById('trig-' + id).classList.add('open');
-          }
-        } catch(e) {}
-      });
-    });
-
-    // ── Error view toggle ──
-    function setErrView(view) {
-      var plain = document.getElementById('fs-err-plain');
-      var tech  = document.getElementById('fs-err-tech');
-      var sb    = document.getElementById('ev-simple');
-      var tb    = document.getElementById('ev-tech');
-      if (view === 'simple') {
-        plain.classList.remove('hide'); tech.classList.remove('show');
-        sb.classList.add('active');     tb.classList.remove('active');
-      } else {
-        plain.classList.add('hide');    tech.classList.add('show');
-        tb.classList.add('active');     sb.classList.remove('active');
-      }
-    }
-
-    // ── Retry / dismiss error ──
-    function retryErr() {
-      var btn = document.querySelector('#fs-err-row .btn-retry');
-      btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" style="animation:spin 0.8s linear infinite"><path d="M10 6A4 4 0 112 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10 3v3h-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Retrying…';
-      btn.disabled = true;
-      setTimeout(function() { clearErr(); }, 2000);
-    }
-    function dismissErr() { clearErr(); }
-
-    function clearErr() {
-      var row = document.getElementById('fs-err-row');
-      row.style.transition = 'opacity 0.3s, transform 0.3s';
-      row.style.opacity = '0'; row.style.transform = 'translateX(8px)';
-      setTimeout(function() {
-        document.getElementById('fs-err-list').innerHTML = '<div class="no-err"><span class="no-err-badge"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>No errors — all clear</span></div>';
-        document.getElementById('fs-err-count').textContent = '0';
-        document.getElementById('fs-err-count').className = 'count sage';
-        var card = document.getElementById('loc-fs');
-        card.classList.remove('err');
-        var pill = document.querySelector('#trig-fs .pill.red');
-        if (pill) { pill.className = 'pill sage'; pill.innerHTML = '<span class="pdot pulse"></span>All clear'; }
-        var icon = document.querySelector('#trig-fs .loc-icon');
-        if (icon) {
-          icon.style.background = 'var(--sage-dim)';
-          icon.style.borderColor = 'var(--sage-border)';
-          icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 1.5C6.5 1.5 4.5 3.5 4.5 6c0 3.75 4.5 10.5 4.5 10.5S13.5 9.75 13.5 6c0-2.5-2-4.5-4.5-4.5z" stroke="var(--sage-dark)" stroke-width="1.3" fill="none"/><circle cx="9" cy="6" r="1.5" fill="var(--sage-dark)"/></svg>';
-          card.style.borderLeftColor = 'var(--sage-dark)';
-        }
-        var topErr = document.getElementById('top-err-n');
-        topErr.textContent = '0';
-        topErr.className = 'stat-n sage';
-      }, 300);
+      if (header) header.classList.toggle('open', !isOpen);
     }
 
     // ── Sync now ──
@@ -810,9 +490,8 @@
       var spinSvg = '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" style="animation:spin 0.8s linear infinite"><path d="M10 6A4 4 0 112 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10 3v3h-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       if (btnId === 'sync-all') {
         lbl.innerHTML = spinSvg + ' Syncing all…';
-        ['sync-wix','sync-kisi','sync-fs','sync-ro'].forEach(function(id) {
-          var b = document.getElementById(id);
-          if (b && !b.disabled) syncNow(id, id + '-label');
+        document.querySelectorAll('.sync-btn[id^="sync-loc-"]').forEach(function(b) {
+          if (!b.disabled) syncNow(b.id, b.id + '-label');
         });
       } else {
         lbl.innerHTML = '<span style="display:flex;align-items:center;gap:5px;">' + spinSvg + ' Syncing…</span>';
@@ -825,15 +504,178 @@
           var isShort = btnId === 'sync-wix' || btnId === 'sync-kisi';
           lbl.textContent = isShort ? 'Sync' : 'Sync now';
         }
-        document.getElementById('sync-label').textContent = 'Just now';
+        var syncLabel = document.getElementById('sync-label');
+        if (syncLabel) syncLabel.textContent = 'Just now';
       }, 2500);
     }
+
+    // ── Load location detail sub-sections ──
+    function loadLocDetails(locId, locationUuid) {
+      var clientId = new URLSearchParams(window.location.search).get('clientId');
+      if (!clientId) return;
+      _locDetailLoaded[locId] = true;
+      var body = document.getElementById('body-' + locId);
+      if (!body) return;
+
+      apiFetch('/operator/' + clientId + '/locations/' + locationUuid)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          var statusMap = { active: 'sage', pending: 'amber', pending_hardware: 'amber', failed: 'red', suspended: 'muted' };
+          var labelMap = { active: 'Active', pending: 'Pending', pending_hardware: 'Awaiting Doors', failed: 'Failed', suspended: 'Suspended' };
+          var html = '';
+
+          // ── Active Members sub-section ──
+          var members = d.active_members || [];
+          html += '<div class="loc-sub-header" onclick="toggleLocSub(\'' + locId + '\', \'members\')">' +
+            '<div class="loc-sub-title">' +
+              '<svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              'Active Members <span class="loc-sub-count">' + members.length + '</span>' +
+            '</div>' +
+            '<div class="loc-sub-right">' +
+              '<button class="link-btn" onclick="event.stopPropagation(); window.location.href=\'/members\'+window.location.search">View all &rarr;</button>' +
+            '</div>' +
+          '</div>';
+          html += '<div class="loc-sub-body" id="sub-members-' + locId + '">';
+          if (members.length) {
+            html += members.map(function(m) {
+              var dt = m.updated_at ? new Date(m.updated_at).toLocaleDateString('en-US', {month:'short',day:'numeric'}) : '';
+              var color = statusMap[m.status] || 'muted';
+              return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid var(--border);">' +
+                '<span style="font-size:12px;font-weight:500;color:var(--text);">' + esc(m.platform_member_id) + '</span>' +
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                  '<span style="font-size:11px;color:var(--' + color + ');">' + (labelMap[m.status] || m.status) + '</span>' +
+                  '<span style="font-size:11px;color:var(--muted);">' + dt + '</span>' +
+                '</div></div>';
+            }).join('');
+          } else {
+            html += '<div style="padding:14px 16px;font-size:12px;color:var(--muted);">No members at this location yet.</div>';
+          }
+          html += '</div>';
+
+          // ── Plan Mapping sub-section ──
+          var mappings = d.plan_mappings || [];
+          var activeMappings = mappings.filter(function(m) { return m.status === 'active'; });
+          html += '<div class="loc-sub-header" onclick="toggleLocSub(\'' + locId + '\', \'mapping\')">' +
+            '<div class="loc-sub-title">' +
+              '<svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              'Plan Mapping <span class="loc-sub-count">' + activeMappings.length + '</span>' +
+            '</div>' +
+            '<div class="loc-sub-right">' +
+              '<button class="link-btn" onclick="event.stopPropagation(); window.location.href=\'/plan-mapping\'+window.location.search">Edit &rarr;</button>' +
+            '</div>' +
+          '</div>';
+          html += '<div class="loc-sub-body" id="sub-mapping-' + locId + '">';
+          if (mappings.length) {
+            html += mappings.map(function(pm) {
+              var isExcluded = pm.status === 'excluded';
+              return '<div class="map-row"' + (isExcluded ? ' style="opacity:0.5;"' : '') + '>' +
+                '<div><div class="map-plan">' + esc(pm.plan_name || pm.source_plan_id) + '</div></div>' +
+                '<div class="map-right">' +
+                  (isExcluded
+                    ? '<span class="mbadge excl">Not managed</span>'
+                    : '<span class="map-arrow">&rarr;</span><span class="map-door">' + esc(pm.door_name || pm.hardware_group_id || 'Unassigned') + '</span><span class="mbadge active">Active</span>') +
+                '</div></div>';
+            }).join('');
+          } else {
+            html += '<div style="padding:14px 16px;font-size:12px;color:var(--muted);">No plan mappings configured.</div>';
+          }
+          html += '</div>';
+
+          // ── Recent Access sub-section ──
+          var logs = d.access_log || [];
+          html += '<div class="loc-sub-header" onclick="toggleLocSub(\'' + locId + '\', \'access\')">' +
+            '<div class="loc-sub-title">' +
+              '<svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              'Recent Access' +
+            '</div>' +
+            '<div class="loc-sub-right">' +
+              '<button class="link-btn" onclick="event.stopPropagation(); window.location.href=\'/access\'+window.location.search">See Details &rarr;</button>' +
+            '</div>' +
+          '</div>';
+          html += '<div class="loc-sub-body" id="sub-access-' + locId + '">';
+          if (logs.length) {
+            var evtClass = { provisioned: 'prov', provisioning_started: 'prov', provisioning_failed: 'revoke', revoked: 'revoke', disabled: 'revoke', restored: 'grant' };
+            var evtLabel = { provisioned: 'Provisioned', provisioning_started: 'Started', provisioning_failed: 'Failed', revoked: 'Revoked', disabled: 'Disabled', restored: 'Restored' };
+            html += logs.map(function(l) {
+              var cls = evtClass[l.event_type] || 'grant';
+              var label = evtLabel[l.event_type] || l.event_type;
+              var initials = (l.platform_member_id || '??').split('-').map(function(w) { return w.charAt(0).toUpperCase(); }).slice(0,2).join('');
+              var ago = l.created_at ? timeAgo(new Date(l.created_at)) : '';
+              return '<div class="log-row">' +
+                '<div class="log-av ' + cls + '">' + initials + '</div>' +
+                '<div class="log-info"><div class="log-name">' + esc(l.platform_member_id) + '</div>' +
+                  '<div class="log-detail">' + esc(l.event_type) + (l.credential_type ? ' · ' + esc(l.credential_type) : '') + '</div></div>' +
+                '<div class="log-right"><span class="log-badge ' + cls + '">' + label + '</span><span class="log-time">' + ago + '</span></div>' +
+              '</div>';
+            }).join('');
+          } else {
+            html += '<div style="padding:14px 16px;font-size:12px;color:var(--muted);">No access events yet.</div>';
+          }
+          html += '</div>';
+
+          // ── Errors sub-section ──
+          var errors = d.errors || [];
+          html += '<div class="loc-sub-header" onclick="toggleLocSub(\'' + locId + '\', \'errors\')">' +
+            '<div class="loc-sub-title">' +
+              '<svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              'Errors <span class="count ' + (errors.length > 0 ? 'red' : 'sage') + '">' + errors.length + '</span>' +
+            '</div>' +
+          '</div>';
+          html += '<div class="loc-sub-body" id="sub-errors-' + locId + '">';
+          if (errors.length) {
+            html += errors.map(function(e) {
+              return '<div class="err-row">' +
+                '<div class="err-dot"></div>' +
+                '<div class="err-info">' +
+                  '<div class="err-title">' + esc(e.plan_name || e.event_type || 'Error') + '</div>' +
+                  '<div class="err-body">' + esc(e.plain_message || e.error_reason || 'Unknown error') + '</div>' +
+                  '<div class="err-tags">' +
+                    (e.plan_name ? '<span class="err-tag">' + esc(e.plan_name) + '</span>' : '') +
+                    (e.door_name ? '<span class="err-tag">' + esc(e.door_name) + '</span>' : '') +
+                    '<span class="err-tag">' + (e.retry_count || 0) + ' retries</span>' +
+                  '</div>' +
+                '</div>' +
+              '</div>';
+            }).join('');
+          } else {
+            html += '<div class="no-err"><span class="no-err-badge"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>No errors — all clear</span></div>';
+          }
+          html += '</div>';
+
+          // ── Footer ──
+          html += '<div class="loc-footer">' +
+            '<div class="loc-footer-text">' +
+              '<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M10 6A4 4 0 112 6" stroke="var(--sage-dark)" stroke-width="1.2" stroke-linecap="round"/><path d="M10 3v3h-3" stroke="var(--sage-dark)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              'Auto-sync 3:00 AM' +
+            '</div>' +
+            '<button class="sync-btn" id="sync-loc-' + locId + '" onclick="syncNow(\'sync-loc-' + locId + '\',\'sync-loc-' + locId + '-label\')">' +
+              '<span id="sync-loc-' + locId + '-label">Sync now</span>' +
+            '</button>' +
+          '</div>';
+
+          body.innerHTML = html;
+        }).catch(function(e) {
+          console.error('Location detail load error:', e);
+          body.innerHTML = '<div style="padding:16px;color:var(--red);font-size:12px;">Failed to load details.</div>';
+        });
+    }
+
+    // ── Time ago helper ──
+    function timeAgo(date) {
+      var secs = Math.floor((Date.now() - date.getTime()) / 1000);
+      if (secs < 60) return 'just now';
+      var mins = Math.floor(secs / 60);
+      if (mins < 60) return mins + ' min ago';
+      var hrs = Math.floor(mins / 60);
+      if (hrs < 24) return hrs + ' hr' + (hrs > 1 ? 's' : '') + ' ago';
+      var days = Math.floor(hrs / 24);
+      return days + ' day' + (days > 1 ? 's' : '') + ' ago';
+    }
+
     // ══ OB-29: Live data loading ══════════════════════════════════
     (function loadLiveData() {
       var clientId = new URLSearchParams(window.location.search).get('clientId');
-      if (!clientId) return; // keep mock data for demo
-
-      function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+      if (!clientId) return;
 
       // Fetch client overview
       apiFetch('/operator/' + clientId)
@@ -902,7 +744,7 @@
       apiFetch('/operator/clients/' + clientId + '/api-key/status')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-          if (d.hasKey) return; // key exists, no CTA needed
+          if (d.hasKey) return;
           var platformRow = document.querySelector('.platform-row');
           if (!platformRow) return;
           var cta = document.createElement('div');
@@ -912,7 +754,6 @@
             '<div class="key-cta-text"><strong>Connect your Kisi API key</strong> to start syncing members. Without it, AccessSync cannot provision door access.</div>' +
             '<a class="key-cta-link" href="/locations?clientId=' + clientId + '">Add Key</a>';
           platformRow.parentNode.insertBefore(cta, platformRow.nextSibling);
-          // Update Kisi platform chip to show disconnected state
           var kisiPill = document.querySelectorAll('.platform-chip')[1];
           if (kisiPill) {
             var pill = kisiPill.querySelector('.pill');
@@ -920,79 +761,66 @@
           }
         }).catch(function() {});
 
-      // Fetch locations and build accordion
+      // Fetch locations and build accordion cards
       apiFetch('/operator/' + clientId + '/locations')
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (!d.locations || !d.locations.length) return;
           var container = document.getElementById('location-section');
           if (!container) return;
+
+          // Update locations header count
+          var countBadge = document.querySelector('.locations-label .count');
+          if (countBadge) countBadge.textContent = d.locations.length;
+
           container.innerHTML = d.locations.map(function(loc, i) {
             var locId = 'loc-' + i;
             var hasErr = loc.error_count > 0;
-            var statusPill = loc.subscription_status === 'active'
-              ? '<span class="pill sage"><span class="pdot pulse"></span>Active</span>'
-              : '<span class="pill amber"><span class="pdot"></span>' + esc(loc.subscription_status) + '</span>';
-            return '<div class="card loc-card' + (hasErr ? ' err' : '') + '" id="card-' + locId + '">' +
+            var isLapsed = loc.subscription_status === 'lapsed';
+            var iconColor = hasErr ? 'var(--red)' : (isLapsed ? 'var(--amber)' : 'var(--sage-dark)');
+            var borderColor = hasErr ? 'var(--red)' : (isLapsed ? 'var(--amber)' : 'var(--sage-dark)');
+            var statusPill;
+            if (hasErr) {
+              statusPill = '<span class="pill red"><span class="pdot"></span>' + loc.error_count + ' error' + (loc.error_count > 1 ? 's' : '') + '</span>';
+            } else if (loc.subscription_status === 'active') {
+              statusPill = '<span class="pill sage"><span class="pdot pulse"></span>Active</span>';
+            } else {
+              statusPill = '<span class="pill amber"><span class="pdot"></span>' + esc(loc.subscription_status) + '</span>';
+            }
+            var meta = [esc(loc.city), esc(loc.state)].filter(Boolean).join(', ');
+            if (loc.door_count) meta += (meta ? ' · ' : '') + loc.door_count + ' door' + (loc.door_count > 1 ? 's' : '');
+            if (loc.tier && loc.hardware_platform) meta += (meta ? ' · ' : '') + esc(loc.hardware_platform) + ' ' + esc(loc.tier);
+
+            return '<div class="loc-card' + (hasErr ? ' err' : '') + '" id="card-' + locId + '" style="border-left-color:' + borderColor + ';">' +
               '<div class="loc-trigger" id="trig-' + locId + '" onclick="toggleLoc(\'' + locId + '\')">' +
-                '<div class="loc-icon" style="background:' + (hasErr ? 'var(--red-dim)' : 'var(--sage-dim)') + '">' +
-                  '<svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 1.5C6.5 1.5 4.5 3.5 4.5 6c0 3.75 4.5 10.5 4.5 10.5S13.5 9.75 13.5 6c0-2.5-2-4.5-4.5-4.5z" stroke="currentColor" stroke-width="1.3" fill="none"/><circle cx="9" cy="6" r="1.5" fill="currentColor"/></svg>' +
+                '<div class="loc-icon" style="background:' + (hasErr ? 'var(--red-dim)' : (isLapsed ? 'var(--amber-dim)' : 'var(--sage-dim)')) + ';border-color:' + (hasErr ? 'rgba(255,77,106,0.2)' : (isLapsed ? 'rgba(245,166,35,0.2)' : 'var(--sage-border)')) + ';">' +
+                  '<svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 1.5C6.5 1.5 4.5 3.5 4.5 6c0 3.75 4.5 10.5 4.5 10.5S13.5 9.75 13.5 6c0-2.5-2-4.5-4.5-4.5z" stroke="' + iconColor + '" stroke-width="1.3" fill="none"/><circle cx="9" cy="6" r="1.5" fill="' + iconColor + '"/></svg>' +
                 '</div>' +
-                '<div class="loc-info"><div class="loc-name">' + esc(loc.name) + '</div>' +
-                  '<div class="loc-sub">' + [esc(loc.city), esc(loc.state)].filter(Boolean).join(', ') + '</div></div>' +
-                statusPill +
-                (hasErr ? '<span class="count red">' + loc.error_count + '</span>' : '') +
-                '<svg class="loc-chev" id="chev-' + locId + '" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+                '<div class="loc-info">' +
+                  '<div class="loc-name">' + esc(loc.name) + '</div>' +
+                  '<div class="loc-meta">' + meta + '</div>' +
+                '</div>' +
+                '<div class="loc-trigger-right">' +
+                  statusPill +
+                  '<svg class="chevron" id="chev-' + locId + '" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+                '</div>' +
               '</div>' +
-              '<div class="loc-body" id="body-' + locId + '">' +
-                '<div style="padding:16px;color:var(--muted);font-size:12px;">Loading details...</div>' +
+              '<div class="loc-body" id="body-' + locId + '" data-loc-uuid="' + loc.id + '">' +
+                '<div style="padding:16px;color:var(--muted);font-size:12px;">Expand to load details...</div>' +
               '</div>' +
             '</div>';
           }).join('');
+
+          // Restore saved accordion state
+          d.locations.forEach(function(loc, i) {
+            var locId = 'loc-' + i;
+            try {
+              if (localStorage.getItem('loc-' + locId) === '1') {
+                toggleLoc(locId);
+              }
+            } catch(e) {}
+          });
         }).catch(function(e) { console.error('Locations load error:', e); });
-
-      // Fetch errors
-      apiFetch('/operator/' + clientId + '/errors')
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-          var errSection = document.getElementById('error-summary');
-          if (errSection && d.errors) {
-            var statCards = document.querySelectorAll('.stat-card');
-            if (statCards[2]) {
-              var n = statCards[2].querySelector('.stat-n');
-              if (n) { n.textContent = d.total; n.className = d.total > 0 ? 'stat-n red' : 'stat-n sage'; }
-            }
-          }
-        }).catch(function() {});
-
-      // Recent members card
-      apiFetch('/operator/' + clientId + '/recent-members?limit=5')
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-          if (!d.members || !d.members.length) return;
-          var locationSection = document.getElementById('location-section');
-          if (!locationSection) return;
-          var card = document.createElement('div');
-          card.className = 'card';
-          card.style.cssText = 'margin-top:16px;padding:16px 20px;';
-          var statusMap = { active: 'sage', pending: 'amber', pending_hardware: 'amber', failed: 'red', suspended: 'muted' };
-          var labelMap = { active: 'Active', pending: 'Pending', pending_hardware: 'Awaiting Doors', failed: 'Failed', suspended: 'Suspended' };
-          var rows = d.members.map(function(m) {
-            var dt = m.updated_at ? new Date(m.updated_at).toLocaleDateString('en-US', {month:'short',day:'numeric'}) : '';
-            var color = statusMap[m.status] || 'muted';
-            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">' +
-              '<span style="font-size:13px;">' + esc(m.platform_member_id) + '</span>' +
-              '<div style="display:flex;align-items:center;gap:8px;">' +
-                '<span style="font-size:11px;color:var(--' + color + ');">' + (labelMap[m.status] || m.status) + '</span>' +
-                '<span style="font-size:11px;color:var(--muted);">' + dt + '</span>' +
-              '</div></div>';
-          }).join('');
-          card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
-            '<h3 style="margin:0;font-size:14px;font-weight:600;">Recent Members</h3>' +
-            '<a href="/members?clientId=' + clientId + '" style="font-size:12px;color:var(--brand);text-decoration:none;">View all</a>' +
-            '</div>' + rows;
-          locationSection.parentNode.insertBefore(card, locationSection);
-        }).catch(function() {});
     })();
   </script>
 </body>
