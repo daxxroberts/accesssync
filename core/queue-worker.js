@@ -1,4 +1,12 @@
 /**
+ * @file queue-worker.js
+ * @layer core/layer4
+ * @role queue-coordinator
+ * @reads BullMQ:grant,revoke jobs
+ * @calls standard-adapter, grant-revoke, retry-engine
+ * @exports worker
+ * @dr DR-022, DR-023, DR-026
+ *
  * queue-worker.js
  * BullMQ Worker — Core Engine (Layer 4) — Layer Coordinator
  *

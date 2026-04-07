@@ -13,7 +13,7 @@
 const crypto = require('crypto');
 
 // Set up a valid 32-byte encryption key in the env before loading the module
-process.env.KISI_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
+process.env.API_KEY_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
 
 const { encryptApiKey, decryptApiKey } = require('../../core/crypto-utils');
 
@@ -70,31 +70,29 @@ describe('[P2] Tampered or corrupted keys are rejected — protects against DB m
 
 describe('[P2] Encryption key misconfiguration fails loudly — prevents silent fallback to plaintext', () => {
 
-  it('throws when KISI_ENCRYPTION_KEY env var is missing', () => {
-    const savedKey = process.env.KISI_ENCRYPTION_KEY;
-    delete process.env.KISI_ENCRYPTION_KEY;
+  it('throws when encryption key env var is missing', () => {
+    const saved = process.env.API_KEY_ENCRYPTION_KEY;
+    delete process.env.API_KEY_ENCRYPTION_KEY;
 
-    // Need fresh require since the module caches the key check
     jest.resetModules();
     const freshCrypto = require('../../core/crypto-utils');
 
-    expect(() => freshCrypto.encryptApiKey('any-key')).toThrow('KISI_ENCRYPTION_KEY');
+    expect(() => freshCrypto.encryptApiKey('any-key')).toThrow('API_KEY_ENCRYPTION_KEY');
 
-    // Restore
-    process.env.KISI_ENCRYPTION_KEY = savedKey;
+    process.env.API_KEY_ENCRYPTION_KEY = saved;
     jest.resetModules();
   });
 
-  it('throws when KISI_ENCRYPTION_KEY is too short (not 64 hex chars)', () => {
-    const savedKey = process.env.KISI_ENCRYPTION_KEY;
-    process.env.KISI_ENCRYPTION_KEY = 'tooshort';
+  it('throws when encryption key is too short (not 64 hex chars)', () => {
+    const saved = process.env.API_KEY_ENCRYPTION_KEY;
+    process.env.API_KEY_ENCRYPTION_KEY = 'tooshort';
 
     jest.resetModules();
     const freshCrypto = require('../../core/crypto-utils');
 
-    expect(() => freshCrypto.encryptApiKey('any-key')).toThrow('KISI_ENCRYPTION_KEY');
+    expect(() => freshCrypto.encryptApiKey('any-key')).toThrow('API_KEY_ENCRYPTION_KEY');
 
-    process.env.KISI_ENCRYPTION_KEY = savedKey;
+    process.env.API_KEY_ENCRYPTION_KEY = saved;
     jest.resetModules();
   });
 

@@ -1,4 +1,13 @@
 /**
+ * @file location-lapse.js
+ * @layer core/layer4
+ * @role subscription-lapse
+ * @reads locations, clients, member_role_assignments, plan_mappings, member_identity, member_access_state
+ * @writes member_access_state, member_access_log, locations.subscription_status
+ * @calls hardware-adapter (suspendAccess)
+ * @exports suspendLocationMembers(locationId, clientId, targetStatus)
+ * @dr DR-027, DR-028
+ *
  * core/location-lapse.js
  * AccessSync Core Engine — Location Subscription Lapse Handler
  *
@@ -39,7 +48,7 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
 
   // 1. Resolve client + location context
   const ctxResult = await db.query(
-    `SELECT c.hardware_platform,
+    `SELECT COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform,
             c.hardware_api_key   AS client_key,
             l.hardware_api_key   AS location_key,
             l.name               AS location_name,

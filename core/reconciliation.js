@@ -1,4 +1,14 @@
 /**
+ * @file reconciliation.js
+ * @layer core/layer4
+ * @role cron-nightly
+ * @schedule nightly via Railway Cron
+ * @reads member_access_state, error_queue, locations, clients
+ * @writes member_access_state, config_alert_log
+ * @calls hardware-adapter (getLocks), BullMQ (re-queue), resend (digest)
+ * @exports instance (NightlyReconciliation)
+ * @dr DR-003, DR-008, DR-020
+ *
  * reconciliation.js
  * Core Engine (Layer 4) - Standalone script triggered by cron
  *
@@ -60,20 +70,24 @@ class NightlyReconciliation {
   }
 
   async _syncDoorLockdownStates() {
-    const clientsResult = await db.query(
-      `SELECT id, hardware_platform, hardware_api_key FROM clients WHERE status = 'active'`
+    // Per-location iteration: each active location has its own platform + key
+    const locationsResult = await db.query(
+      `SELECT l.id AS location_id, l.client_id,
+              COALESCE(l.hardware_platform, c.hardware_platform, 'kisi') AS hardware_platform,
+              COALESCE(l.hardware_api_key, c.hardware_api_key) AS hardware_api_key
+       FROM locations l
+       JOIN clients c ON l.client_id = c.id
+       WHERE c.status = 'active' AND l.subscription_status = 'active'`
     );
 
-    for (const client of clientsResult.rows) {
-      const enc = client.hardware_api_key;
-      const apiKey = enc ? decryptApiKey(enc) : null; // DR-028: KISI_API_KEY_MOCK removed — set key via Admin Hub
+    for (const loc of locationsResult.rows) {
+      const apiKey = loc.hardware_api_key ? decryptApiKey(loc.hardware_api_key) : null;
       if (!apiKey) {
-        console.warn(`[Nightly Reconciliation] No API key for client ${client.id} — skipping lockdown sync.`);
+        console.warn(`[Nightly Reconciliation] No API key for location ${loc.location_id} — skipping lockdown sync.`);
         continue;
       }
 
-      const platform = client.hardware_platform || 'kisi';
-      const locks = await hardwareAdapter.getLocks(platform, apiKey);
+      const locks = await hardwareAdapter.getLocks(loc.hardware_platform, apiKey);
       // DR-035: getLocks() normalized return shape — each adapter returns { id, name, locked: boolean }.
       // 'locked' is the canonical field. Adapters are responsible for mapping platform-specific fields.
       const lockedDoors = locks.filter(l => l.locked === true);
@@ -81,7 +95,7 @@ class NightlyReconciliation {
         await db.query(
           `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, last_seen_at)
            VALUES ($1, 'lockdown_detected', $2, NOW())`,
-          [client.id, String(door.id || door.name || 'unknown')]
+          [loc.client_id, String(door.id || door.name || 'unknown')]
         ).catch(e => console.error('[Nightly Reconciliation] Failed to log lockdown alert:', e.message));
       }
     }

@@ -440,6 +440,49 @@ router.get('/:clientId', async (req, res) => {
   }
 });
 
+// ── GET /operator/:clientId/locations/:locationId/notification-email ──
+// Returns per-location notification email (falls back to client email)
+router.get('/:clientId/locations/:locationId/notification-email', async (req, res) => {
+  const { clientId, locationId } = req.params;
+  try {
+    const result = await db.query(
+      `SELECT l.notification_email AS location_email, c.notification_email AS client_email
+       FROM locations l JOIN clients c ON c.id = l.client_id
+       WHERE l.id = $1 AND l.client_id = $2`,
+      [locationId, clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    const row = result.rows[0];
+    res.json({
+      email:     row.location_email || row.client_email || null,
+      source:    row.location_email ? 'location' : 'client',
+      isOverride: !!row.location_email,
+    });
+  } catch (err) {
+    console.error('[operator] GET location notification-email error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── PUT /operator/:clientId/locations/:locationId/notification-email ──
+// Set per-location notification email
+router.put('/:clientId/locations/:locationId/notification-email', async (req, res) => {
+  const { clientId, locationId } = req.params;
+  const { email } = req.body;
+  if (!email || !email.trim()) return res.status(400).json({ error: 'email is required' });
+  try {
+    const result = await db.query(
+      `UPDATE locations SET notification_email = $1 WHERE id = $2 AND client_id = $3 RETURNING id, name, notification_email`,
+      [email.trim(), locationId, clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    res.json({ ok: true, email: result.rows[0].notification_email });
+  } catch (err) {
+    console.error('[operator] PUT location notification-email error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /operator/:clientId/locations/:locationId/api-key ──────
 // Store encrypted per-location Kisi API key override (DR-028).
 // Write-only. Null out by sending empty string.
@@ -512,7 +555,8 @@ router.get('/:clientId/locations', async (req, res) => {
     const [locations, errorCounts, doorCounts, planCounts] = await Promise.all([
       db.query(
         `SELECT id, name, city, state, subscription_status, tier,
-                subscribed_at, hardware_api_key IS NOT NULL AS has_location_key
+                subscribed_at, hardware_api_key IS NOT NULL AS has_location_key,
+                hardware_platform, notification_email
          FROM locations
          WHERE client_id = $1 ORDER BY created_at ASC`,
         [clientId]
@@ -570,7 +614,7 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
         [locationId]
       ),
       db.query(
-        `SELECT id, wix_plan_id, hardware_group_id, plan_name, door_name, status, created_at
+        `SELECT id, source_plan_id, hardware_group_id, plan_name, door_name, status, created_at
          FROM plan_mappings
          WHERE location_id = $1
          ORDER BY plan_name`,
@@ -625,7 +669,7 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
         [clientId]
       ),
       db.query(
-        `SELECT id, wix_plan_id, plan_name, door_name, hardware_group_id, status, allow_multiple, max_members, created_at
+        `SELECT id, source_plan_id, plan_name, door_name, hardware_group_id, status, allow_multiple, max_members, created_at
          FROM plan_mappings WHERE location_id = $1 ORDER BY plan_name`,
         [locationId]
       ),

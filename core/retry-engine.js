@@ -1,4 +1,12 @@
 /**
+ * @file retry-engine.js
+ * @layer core/layer4
+ * @role error-handling, dead-letter
+ * @writes error_queue
+ * @calls resend (email alerts)
+ * @exports handleFailedJob
+ * @dr DR-020
+ *
  * retry-engine.js
  * Core Engine (Layer 4)
  *

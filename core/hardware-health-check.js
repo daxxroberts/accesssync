@@ -1,4 +1,14 @@
 /**
+ * @file hardware-health-check.js
+ * @layer core/layer4
+ * @role cron-6hr
+ * @schedule every 6 hours via Railway Cron
+ * @reads locations, clients
+ * @writes locations.hardware_key_last_verified, locations.hardware_key_last_error
+ * @calls hardware-adapter (getLocks), resend (alerts)
+ * @exports runHealthCheck
+ * @dr DR-028
+ *
  * hardware-health-check.js
  * Core Engine (Layer 4) — Sprint 5 ticket 5.2
  *
@@ -26,39 +36,34 @@ const { decryptApiKey } = require('./crypto-utils');
 async function runHealthCheck() {
   console.log('[Hardware Health Check] Starting at', new Date().toISOString());
 
-  const clientsResult = await db.query(
-    `SELECT c.id, c.name, c.hardware_platform, c.hardware_api_key,
-            c.notification_email
-     FROM clients c
-     WHERE c.status = 'active'`
+  // Per-location iteration: each active location gets its own key + platform check
+  const locationsResult = await db.query(
+    `SELECT l.id AS location_id, l.name AS location_name,
+            COALESCE(l.hardware_platform, c.hardware_platform, 'kisi') AS hardware_platform,
+            COALESCE(l.hardware_api_key, c.hardware_api_key) AS hardware_api_key,
+            COALESCE(l.notification_email, c.notification_email) AS notification_email,
+            c.name AS client_name, c.id AS client_id
+     FROM locations l
+     JOIN clients c ON l.client_id = c.id
+     WHERE c.status = 'active' AND l.subscription_status = 'active'`
   );
 
-  for (const client of clientsResult.rows) {
-    await _checkClient(client);
+  for (const loc of locationsResult.rows) {
+    await _checkLocation(loc);
   }
 
   console.log('[Hardware Health Check] Complete.');
 }
 
-async function _checkClient(client) {
-  const platform = client.hardware_platform || 'kisi';
+async function _checkLocation(loc) {
+  const platform = loc.hardware_platform;
 
-  // Fetch all locations for this client to update verification timestamps
-  const locationsResult = await db.query(
-    `SELECT id, name, hardware_api_key FROM locations WHERE client_id = $1`,
-    [client.id]
-  );
-
-  // Determine the effective API key (client-level check only — covers all locations)
-  const encKey = client.hardware_api_key;
+  const encKey = loc.hardware_api_key;
   if (!encKey) {
-    const msg = 'No hardware API key configured. Set your API key in the AccessSync dashboard.';
-    console.warn(`[Hardware Health Check] Client ${client.name}: no key set.`);
-    await _notifyFailure(client, null, 'no_key', msg);
-    // Mark all locations as unverified with this error
-    for (const loc of locationsResult.rows) {
-      await _updateLocationVerification(loc.id, null, msg);
-    }
+    const msg = 'No hardware API key configured. Set your API key in the AccessSync dashboard under this location.';
+    console.warn(`[Hardware Health Check] ${loc.client_name} / ${loc.location_name}: no key set.`);
+    await _notifyFailure(loc, null, 'no_key', msg);
+    await _updateLocationVerification(loc.location_id, null, msg);
     return;
   }
 
@@ -66,7 +71,7 @@ async function _checkClient(client) {
   try {
     apiKey = decryptApiKey(encKey);
   } catch (err) {
-    console.error(`[Hardware Health Check] Client ${client.name}: key decryption failed.`);
+    console.error(`[Hardware Health Check] ${loc.client_name} / ${loc.location_name}: key decryption failed.`);
     return;
   }
 
@@ -75,7 +80,7 @@ async function _checkClient(client) {
   let errorType = null;
   try {
     await hardwareAdapter.getLocks(platform, apiKey);
-    console.log(`[Hardware Health Check] Client ${client.name}: key valid ✓`);
+    console.log(`[Hardware Health Check] ${loc.client_name} / ${loc.location_name}: key valid ✓`);
   } catch (err) {
     error = err;
     if (err.statusCode === 401) {
@@ -85,19 +90,15 @@ async function _checkClient(client) {
     } else {
       errorType = 'network_error';
     }
-    console.warn(`[Hardware Health Check] Client ${client.name}: ${errorType} — ${err.message}`);
+    console.warn(`[Hardware Health Check] ${loc.client_name} / ${loc.location_name}: ${errorType} — ${err.message}`);
   }
 
   const errorMsg = error ? _diagnose(errorType, platform) : null;
-
-  // Update all locations with result
-  for (const loc of locationsResult.rows) {
-    await _updateLocationVerification(loc.id, error ? null : new Date(), errorMsg);
-  }
+  await _updateLocationVerification(loc.location_id, error ? null : new Date(), errorMsg);
 
   // Notify only on actionable errors (skip transient network issues)
   if (errorType && errorType !== 'network_error') {
-    await _notifyFailure(client, errorType, errorType, errorMsg);
+    await _notifyFailure(loc, errorType, errorType, errorMsg);
   }
 }
 
@@ -124,10 +125,10 @@ async function _updateLocationVerification(locationId, verifiedAt, errorMsg) {
   ).catch(e => console.error('[Hardware Health Check] Failed to update location:', e.message));
 }
 
-async function _notifyFailure(client, locName, errorType, message) {
-  const toEmail = client.notification_email || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
+async function _notifyFailure(loc, locName, errorType, message) {
+  const toEmail = loc.notification_email || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
   if (!toEmail) {
-    console.warn(`[Hardware Health Check] No notification email for client ${client.name} — logged only.`);
+    console.warn(`[Hardware Health Check] No notification email for ${loc.client_name} / ${loc.location_name} — logged only.`);
     return;
   }
 
@@ -147,16 +148,17 @@ async function _notifyFailure(client, locName, errorType, message) {
       text: [
         `AccessSync Hardware Key Alert — ${new Date().toISOString()}`,
         '',
-        `Client: ${client.name}`,
+        `Client: ${loc.client_name}`,
+        `Location: ${loc.location_name}`,
         '',
         message,
         '',
-        'To fix this: log in to the AccessSync dashboard → Locations → Update API Key.',
+        'To fix this: log in to the AccessSync dashboard → System Config → Update the API key for this location.',
         '',
         'Members will not lose existing access, but new signups will not provision until the key is corrected.',
       ].join('\n'),
     });
-    console.log(`[Hardware Health Check] Alert sent to ${toEmail}`);
+    console.log(`[Hardware Health Check] Alert sent to ${toEmail} for ${loc.location_name}`);
   } catch (err) {
     console.error('[Hardware Health Check] Failed to send alert:', err.message);
   }

@@ -1,3 +1,13 @@
+<%#
+  @file locations.ejs
+  @layer admin/pages
+  @route /locations
+  @role system-config
+  @data GET /operator/:clientId, /operator/:clientId/locations, /operator/clients/:clientId/wix-api-key/status, /operator/clients/:clientId/notification-email
+  @writes PATCH /admin/clients/:id/locations/:locationId (tier, platform, notification_email), POST /operator/:clientId/locations/:locationId/api-key, PUT /operator/:clientId/locations/:locationId/notification-email
+  @tab System Config
+  @features per-location tier/platform/key/email, profile card (Wix key + rollup email), suspend/reactivate
+%>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
 <head>
@@ -96,16 +106,18 @@
     .key-input-hint { font-size: 10px; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
     .key-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-    /* ── Buttons ── */
-    .btn { padding: 7px 14px; border-radius: 7px; font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
-    .btn-primary            { background: var(--brand); color: #fff; }
-    .btn-primary:hover      { background: var(--brand-dark); }
-    .btn-secondary          { background: transparent; color: var(--text2); border: 1px solid var(--border2); }
-    .btn-secondary:hover    { background: var(--bg); }
-    .btn-ghost              { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-    .btn-ghost:hover        { color: var(--text2); }
-    .btn-sm                 { padding: 5px 10px; font-size: 10px; }
-    .btn:disabled           { opacity: 0.5; cursor: not-allowed; }
+    /* Buttons provided by operator-styles.css */
+
+    /* ── Config rows (inside profile + location cards) ── */
+    .config-section { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 4px; }
+    .config-row { padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .config-row:last-child { border-bottom: none; }
+    .config-row-header { display: flex; align-items: center; gap: 10px; }
+    .config-row-label { font-size: 12px; font-weight: 600; color: var(--text2); min-width: 120px; flex-shrink: 0; }
+    .config-row-status { font-size: 12px; color: var(--muted); flex: 1; }
+    .config-row-status.set { color: var(--sage-dark); font-weight: 600; }
+    .config-row-status.warn { color: var(--red); font-weight: 600; }
+    .config-select { padding: 5px 10px; font-family: inherit; font-size: 11px; background: var(--card); border: 1px solid var(--border2); border-radius: 6px; color: var(--text); cursor: pointer; }
 
     /* ── Test result ── */
     .test-result {
@@ -148,7 +160,7 @@
       </div>
     </div>
 
-    <!-- Client profile -->
+    <!-- Client profile (consolidated) -->
     <div class="org-key-card" id="profile-card">
       <div class="org-key-header">
         <div class="org-key-icon">
@@ -174,100 +186,47 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Org-level API key -->
-    <div class="org-key-card" id="org-key-card">
-      <div class="org-key-header">
-        <div class="org-key-icon">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M11.5 2.5a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm0 0" stroke="var(--brand)" stroke-width="1.4" fill="none"/>
-            <circle cx="11.5" cy="6.5" r="1" fill="var(--brand)"/>
-            <path d="M7.5 10.5L2 16" stroke="var(--brand)" stroke-width="1.4" stroke-linecap="round"/>
-            <path d="M4 13.5H5.5V15" stroke="var(--brand)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        <div>
-          <div class="org-key-title">Organization API Key</div>
-          <div class="org-key-desc">Default key used for all locations unless overridden below</div>
-        </div>
-      </div>
-      <div class="org-key-row">
-        <span class="org-key-status" id="org-key-status">Checking…</span>
-        <div style="display:flex;gap:6px;">
-          <button class="btn btn-sm btn-ghost" id="org-test-btn" onclick="testOrgKey()" style="display:none;">Test</button>
-          <button class="btn btn-sm btn-secondary" id="org-key-btn" onclick="toggleOrgKeyForm()">Set Key</button>
-        </div>
-      </div>
-      <div class="key-form" id="org-key-form">
-        <div class="key-form-inner" style="margin-top:10px;">
-          <div class="key-input-hint">Write-only — once saved the key cannot be viewed, only rotated. Encrypted at rest (AES-256-GCM).</div>
-          <input type="password" class="key-input" id="org-key-input" placeholder="Paste your Kisi API key…" autocomplete="off"/>
-          <div class="key-form-actions">
-            <button class="btn btn-ghost btn-sm" onclick="toggleOrgKeyForm()">Cancel</button>
-            <button class="btn btn-primary btn-sm" onclick="saveOrgKey()">Save Key</button>
+      <!-- Config rows inside profile card -->
+      <div class="config-section">
+        <!-- Wix API Key -->
+        <div class="config-row">
+          <div class="config-row-header">
+            <span class="config-row-label">Wix API Key</span>
+            <span class="config-row-status" id="wix-key-status">Checking…</span>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-sm btn-ghost" id="wix-test-btn" onclick="testWixKey()" style="display:none;">Test</button>
+              <button class="btn btn-sm btn-secondary" id="wix-key-btn" onclick="toggleWixKeyForm()">Set Key</button>
+            </div>
+          </div>
+          <div class="key-form" id="wix-key-form">
+            <div class="key-form-inner" style="margin-top:10px;">
+              <div class="key-input-hint">Write-only — encrypted at rest (AES-256-GCM). Required for member plan lookups.</div>
+              <input type="password" class="key-input" id="wix-key-input" placeholder="Paste your Wix API key…" autocomplete="off"/>
+              <div class="key-form-actions">
+                <button class="btn btn-ghost btn-sm" onclick="toggleWixKeyForm()">Cancel</button>
+                <button class="btn btn-primary btn-sm" onclick="saveWixKey()">Save Key</button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Wix API key -->
-    <div class="org-key-card" id="wix-key-card">
-      <div class="org-key-header">
-        <div class="org-key-icon">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M3 5l3 8 3-6 3 6 3-8" stroke="var(--brand)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          </svg>
-        </div>
-        <div>
-          <div class="org-key-title">Wix API Key</div>
-          <div class="org-key-desc">Used to fetch member plans and verify webhook events</div>
-        </div>
-      </div>
-      <div class="org-key-row">
-        <span class="org-key-status" id="wix-key-status">Checking…</span>
-        <div style="display:flex;gap:6px;">
-          <button class="btn btn-sm btn-ghost" id="wix-test-btn" onclick="testWixKey()" style="display:none;">Test</button>
-          <button class="btn btn-sm btn-secondary" id="wix-key-btn" onclick="toggleWixKeyForm()">Set Key</button>
-        </div>
-      </div>
-      <div class="key-form" id="wix-key-form">
-        <div class="key-form-inner" style="margin-top:10px;">
-          <div class="key-input-hint">Write-only — encrypted at rest (AES-256-GCM). Required for member plan lookups.</div>
-          <input type="password" class="key-input" id="wix-key-input" placeholder="Paste your Wix API key…" autocomplete="off"/>
-          <div class="key-form-actions">
-            <button class="btn btn-ghost btn-sm" onclick="toggleWixKeyForm()">Cancel</button>
-            <button class="btn btn-primary btn-sm" onclick="saveWixKey()">Save Key</button>
+        <!-- Rollup Alert Email -->
+        <div class="config-row">
+          <div class="config-row-header">
+            <span class="config-row-label">Rollup Email</span>
+            <span class="config-row-status" id="notif-email-display">Loading…</span>
+            <button class="btn btn-sm btn-secondary" id="notif-edit-btn" onclick="toggleNotifForm()">Edit</button>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Notification email -->
-    <div class="org-key-card" id="notif-card">
-      <div class="org-key-header">
-        <div class="org-key-icon">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <rect x="2" y="4" width="14" height="10" rx="2" stroke="var(--brand)" stroke-width="1.4" fill="none"/>
-            <path d="M2 6.5l7 4.5 7-4.5" stroke="var(--brand)" stroke-width="1.4" stroke-linecap="round"/>
-          </svg>
-        </div>
-        <div>
-          <div class="org-key-title">Alert Email</div>
-          <div class="org-key-desc">Receive provisioning errors, key failures, and grant confirmations</div>
-        </div>
-      </div>
-      <div class="org-key-row">
-        <span class="org-key-status" id="notif-email-display">Loading…</span>
-        <button class="btn btn-sm btn-secondary" id="notif-edit-btn" onclick="toggleNotifForm()">Edit</button>
-      </div>
-      <div class="key-form" id="notif-form">
-        <div class="key-form-inner" style="margin-top:10px;">
-          <div class="key-input-hint">Email address for system alerts — errors, API key failures, and first-grant confirmation.</div>
-          <input type="email" class="key-input" id="notif-email-input" placeholder="alerts@yourgym.com" autocomplete="off"/>
-          <div class="key-form-actions">
-            <button class="btn btn-ghost btn-sm" onclick="toggleNotifForm()">Cancel</button>
-            <button class="btn btn-primary btn-sm" onclick="saveNotifEmail()">Save</button>
+          <div class="key-form" id="notif-form">
+            <div class="key-form-inner" style="margin-top:10px;">
+              <div class="key-input-hint">Receives alerts from all locations — errors, key failures, and grant confirmations. Locations can override with their own email.</div>
+              <input type="email" class="key-input" id="notif-email-input" placeholder="alerts@yourgym.com" autocomplete="off"/>
+              <div class="key-form-actions">
+                <button class="btn btn-ghost btn-sm" onclick="toggleNotifForm()">Cancel</button>
+                <button class="btn btn-primary btn-sm" onclick="saveNotifEmail()">Save</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -323,7 +282,6 @@
 
     var state = {
       locations: [],
-      orgHasKey: false,
       wixHasKey: false,
       client: null,
     };
@@ -334,7 +292,6 @@
         return;
       }
       loadClientProfile();
-      loadOrgKeyStatus();
       loadWixKeyStatus();
       loadNotifEmail();
       loadLocations();
@@ -343,53 +300,7 @@
     // ── API helpers ────────────────────────────────────────────────────
     // apiFetch is provided by operator-nav.js (handles 401 → session expired modal)
 
-    // ── Org-level key ──────────────────────────────────────────────────
-    function loadOrgKeyStatus() {
-      return apiFetch('/operator/' + clientId + '/api-key/status')
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-          state.orgHasKey = !!data.hasKey;
-          renderOrgKeyStatus();
-        })
-        .catch(function() {
-          document.getElementById('org-key-status').textContent = 'Unable to check';
-        });
-    }
-
-    function renderOrgKeyStatus() {
-      var statusEl = document.getElementById('org-key-status');
-      var testBtn  = document.getElementById('org-test-btn');
-      var keyBtn   = document.getElementById('org-key-btn');
-      if (state.orgHasKey) {
-        statusEl.textContent  = '•••••••••••••••• (set)';
-        statusEl.className    = 'org-key-status set';
-        testBtn.style.display = '';
-        keyBtn.textContent    = 'Rotate Key';
-      } else {
-        statusEl.textContent  = 'Not set — provisioning will fail without a key';
-        statusEl.className    = 'org-key-status';
-        testBtn.style.display = 'none';
-        keyBtn.textContent    = 'Set Key';
-
-        // Wix-first flow: show pending_hardware count if members are waiting
-        apiFetch('/operator/' + clientId)
-          .then(function(r) { return r.json(); })
-          .then(function(d) {
-            if (d.stats && d.stats.pending_hardware > 0) {
-              var hint = document.createElement('div');
-              hint.className = 'key-input-hint';
-              hint.style.color = 'var(--amber)';
-              hint.style.marginTop = '8px';
-              hint.textContent = d.stats.pending_hardware + ' member' +
-                (d.stats.pending_hardware !== 1 ? 's are' : ' is') +
-                ' waiting for door access. Add your API key to provision them.';
-              document.getElementById('org-key-card').appendChild(hint);
-            }
-          }).catch(function() {});
-      }
-    }
-
-    // ── Notification email ─────────────────────────────────────────────
+    // ── Notification email (rollup — client-level) ──────────────────────
     function loadNotifEmail() {
       apiFetch('/operator/clients/' + clientId + '/notification-email')
         .then(function(res) { return res.json(); })
@@ -397,10 +308,10 @@
           var el = document.getElementById('notif-email-display');
           if (data.email) {
             el.textContent = data.email;
-            el.className   = 'org-key-status set';
+            el.className   = 'config-row-status set';
           } else {
             el.textContent = 'Not set — alerts will use the system default';
-            el.className   = 'org-key-status';
+            el.className   = 'config-row-status';
           }
         })
         .catch(function() {
@@ -430,7 +341,7 @@
             toast('Alert email updated', 'success');
             var el = document.getElementById('notif-email-display');
             el.textContent = email;
-            el.className   = 'org-key-status set';
+            el.className   = 'config-row-status set';
             document.getElementById('notif-form').classList.remove('open');
             document.getElementById('notif-email-input').value = '';
           } else {
@@ -438,61 +349,6 @@
           }
         })
         .catch(function() { toast('Save failed — network error', 'error'); });
-    }
-
-    function toggleOrgKeyForm() {
-      var form = document.getElementById('org-key-form');
-      form.classList.toggle('open');
-      if (form.classList.contains('open')) {
-        setTimeout(function() { document.getElementById('org-key-input').focus(); }, 50);
-      }
-    }
-
-    function saveOrgKey() {
-      var key = document.getElementById('org-key-input').value.trim();
-      if (!key) { toast('Key cannot be empty', 'error'); return; }
-      apiFetch('/operator/clients/' + clientId + '/api-key', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ apiKey: key }),
-      })
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-          if (data.ok) {
-            var msg = 'Organization API key saved';
-            if (data.pendingRetried > 0) {
-              msg += '. Provisioning ' + data.pendingRetried + ' waiting member' + (data.pendingRetried !== 1 ? 's' : '') + '…';
-            }
-            toast(msg, 'success');
-            state.orgHasKey = true;
-            renderOrgKeyStatus();
-            document.getElementById('org-key-form').classList.remove('open');
-            document.getElementById('org-key-input').value = '';
-            // Auto-test the key after a brief delay
-            setTimeout(testOrgKey, 800);
-          } else {
-            toast(data.error || 'Save failed', 'error');
-          }
-        })
-        .catch(function() { toast('Save failed', 'error'); });
-    }
-
-    function testOrgKey() {
-      var btn = document.getElementById('org-test-btn');
-      btn.disabled = true; btn.textContent = 'Testing…';
-      var loc = state.locations[0];
-      if (!loc) { toast('No locations to test with', 'error'); btn.disabled = false; btn.textContent = 'Test'; return; }
-      apiFetch('/operator/' + clientId + '/locations/' + loc.id + '/api-key/test')
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-          if (data.valid) {
-            toast('✓ Key valid — Kisi connected', 'success');
-          } else {
-            toast('✗ ' + (data.error || 'Key invalid'), 'error');
-          }
-        })
-        .catch(function() { toast('Test failed', 'error'); })
-        .finally(function() { btn.disabled = false; btn.textContent = 'Test'; });
     }
 
     // ── Wix API key ───────────────────────────────────────────────────
@@ -587,11 +443,9 @@
       if (!card || !state.client) return;
       var c = state.client;
       document.getElementById('profile-name').textContent = c.name || 'Unnamed';
-      var meta = [c.tier ? c.tier + ' tier' : '', c.hardware_platform || '', c.site_url ? c.site_url.replace(/^https?:\/\//, '') : ''].filter(Boolean).join(' · ');
+      var meta = [c.site_url ? c.site_url.replace(/^https?:\/\//, '') : ''].filter(Boolean).join(' · ');
       document.getElementById('profile-meta').textContent = meta;
       var pills = '';
-      if (c.tier) pills += '<span class="pill pill-info">' + esc(c.tier) + '</span>';
-      if (c.hardware_platform) pills += '<span class="pill" style="background:var(--surface-alt);color:var(--text);">' + esc(c.hardware_platform) + '</span>';
       if (c.last_sync_at) {
         var ago = new Date(c.last_sync_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
         pills += '<span class="pill" style="background:var(--sage-dim);color:var(--sage-dark);">Last sync: ' + ago + '</span>';
@@ -654,30 +508,33 @@
     }
 
     function locCard(loc) {
-      var keyLabel = loc.has_location_key
-        ? '<span class="key-label has-override">Location override set</span><span class="key-source-badge">Override</span>'
-        : '<span class="key-label">Using organization key</span><span class="key-source-badge inherited">Inherited</span>';
-
       var addressHTML = loc.city
         ? '<div class="loc-address">' + esc(loc.city) + (loc.state ? ', ' + esc(loc.state) : '') + '</div>'
         : '';
 
-      var tierHTML = loc.tier
-        ? '<span class="pill pill-info">' + esc(loc.tier) + '</span>'
-        : '';
+      var platform = loc.hardware_platform || 'kisi';
+      var keyStatusLabel = loc.has_location_key
+        ? '<span class="config-row-status set">✓ Key set</span>'
+        : '<span class="config-row-status warn">✗ Not set</span>';
+      var locEmail = loc.notification_email;
+      var emailStatusLabel = locEmail
+        ? '<span class="config-row-status set">' + esc(locEmail) + '</span>'
+        : '<span class="config-row-status">(using rollup)</span>';
 
       var errorColor = loc.error_count > 0 ? 'var(--red)' : 'inherit';
 
       return '<div class="loc-card" id="loc-' + loc.id + '">' +
+        // ── Header
         '<div class="loc-header">' +
           '<div class="loc-icon">📍</div>' +
           '<div class="loc-meta">' +
             '<div class="loc-name">' + esc(loc.name) + '</div>' +
             addressHTML +
           '</div>' +
-          '<div class="loc-pills">' + subPill(loc.subscription_status) + tierHTML + '</div>' +
-          '<button class="btn btn-sm btn-ghost" onclick="toggleEditLocation(\'' + loc.id + '\')" title="Edit location details">Edit</button>' +
+          '<div class="loc-pills">' + subPill(loc.subscription_status) + '</div>' +
+          '<button class="btn btn-sm btn-ghost" onclick="toggleEditLocation(\'' + loc.id + '\')" title="Edit name/address">Edit</button>' +
         '</div>' +
+        // ── Edit name/address form
         '<div class="key-form" id="editform-' + loc.id + '">' +
           '<div class="key-form-inner" style="margin:0 18px 8px;">' +
             '<input type="text" class="key-input" id="editname-' + loc.id + '" placeholder="Location name *"/>' +
@@ -691,8 +548,77 @@
             '</div>' +
           '</div>' +
         '</div>' +
+        // ── Config rows
         '<div class="loc-body">' +
-          '<div class="loc-stats">' +
+          '<div class="config-section" style="margin-top:0;border-top:1px solid var(--border);padding-top:0;">' +
+            // Row: Tier
+            '<div class="config-row">' +
+              '<div class="config-row-header">' +
+                '<span class="config-row-label">Tier</span>' +
+                '<select class="config-select" id="tier-' + loc.id + '" onchange="saveLocTier(\'' + loc.id + '\')">' +
+                  '<option value=""' + (!loc.tier ? ' selected' : '') + '>Not set</option>' +
+                  '<option value="Base"' + (loc.tier === 'Base' ? ' selected' : '') + '>Base</option>' +
+                  '<option value="Pro"' + (loc.tier === 'Pro' ? ' selected' : '') + '>Pro</option>' +
+                  '<option value="Connect"' + (loc.tier === 'Connect' ? ' selected' : '') + '>Connect</option>' +
+                '</select>' +
+              '</div>' +
+            '</div>' +
+            // Row: Platform
+            '<div class="config-row">' +
+              '<div class="config-row-header">' +
+                '<span class="config-row-label">Platform</span>' +
+                '<select class="config-select" id="platform-' + loc.id + '" onchange="saveLocPlatform(\'' + loc.id + '\')">' +
+                  '<option value="kisi"' + (platform === 'kisi' ? ' selected' : '') + '>Kisi</option>' +
+                '</select>' +
+              '</div>' +
+            '</div>' +
+            // Row: Hardware API Key
+            '<div class="config-row">' +
+              '<div class="config-row-header">' +
+                '<span class="config-row-label">Hardware Key</span>' +
+                keyStatusLabel +
+                '<div style="display:flex;gap:6px;">' +
+                  '<button class="btn btn-sm btn-ghost" id="test-' + loc.id + '" onclick="testLocKey(\'' + loc.id + '\')">Test</button>' +
+                  '<button class="btn btn-sm btn-secondary" onclick="toggleLocKeyForm(\'' + loc.id + '\')">' +
+                    (loc.has_location_key ? 'Rotate' : 'Set Key') +
+                  '</button>' +
+                '</div>' +
+              '</div>' +
+              '<div class="test-result" id="testres-' + loc.id + '"></div>' +
+              '<div class="key-form" id="keyform-' + loc.id + '">' +
+                '<div class="key-form-inner">' +
+                  '<div class="key-input-hint">Write-only — encrypted at rest (AES-256-GCM).</div>' +
+                  '<input type="password" class="key-input" id="keyinput-' + loc.id + '" placeholder="Paste your hardware API key…" autocomplete="off"/>' +
+                  '<div class="key-form-actions">' +
+                    '<button class="btn btn-ghost btn-sm" onclick="toggleLocKeyForm(\'' + loc.id + '\')">Cancel</button>' +
+                    '<button class="btn btn-primary btn-sm" onclick="saveLocKey(\'' + loc.id + '\')">Save Key</button>' +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+            // Row: Alert Email
+            '<div class="config-row">' +
+              '<div class="config-row-header">' +
+                '<span class="config-row-label">Alert Email</span>' +
+                emailStatusLabel +
+                '<button class="btn btn-sm btn-secondary" onclick="toggleLocEmailForm(\'' + loc.id + '\')">' +
+                  (locEmail ? 'Edit' : 'Set') +
+                '</button>' +
+              '</div>' +
+              '<div class="key-form" id="emailform-' + loc.id + '">' +
+                '<div class="key-form-inner">' +
+                  '<div class="key-input-hint">Override the rollup email for this location. Leave blank to use the rollup.</div>' +
+                  '<input type="email" class="key-input" id="emailinput-' + loc.id + '" placeholder="alerts@yourlocation.com" autocomplete="off" value="' + esc(locEmail || '') + '"/>' +
+                  '<div class="key-form-actions">' +
+                    '<button class="btn btn-ghost btn-sm" onclick="toggleLocEmailForm(\'' + loc.id + '\')">Cancel</button>' +
+                    '<button class="btn btn-primary btn-sm" onclick="saveLocEmail(\'' + loc.id + '\')">Save</button>' +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          // ── Stats
+          '<div class="loc-stats" style="margin-top:14px;">' +
             '<div class="loc-stat"><div class="loc-stat-val">' + loc.door_count + '</div><div class="loc-stat-lbl">Doors</div></div>' +
             '<div class="loc-stat"><div class="loc-stat-val">' + loc.plan_count + '</div><div class="loc-stat-lbl">Plan Mappings</div></div>' +
             '<div class="loc-stat"><div class="loc-stat-val" style="color:' + errorColor + '">' + loc.error_count + '</div><div class="loc-stat-lbl">Errors</div></div>' +
@@ -702,37 +628,6 @@
               ? '<button class="btn btn-sm btn-danger" onclick="suspendLocation(\'' + loc.id + '\')">Suspend Location</button>'
               : '<button class="btn btn-sm btn-secondary" onclick="reactivateLocation(\'' + loc.id + '\')">Reactivate Location</button>'
             ) +
-          '</div>' +
-          '<div class="key-section">' +
-            '<div class="key-section-title">' +
-              '<svg width="12" height="12" viewBox="0 0 14 14" fill="none">' +
-                '<path d="M9 1.5a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm0 0" stroke="currentColor" stroke-width="1.3" fill="none"/>' +
-                '<circle cx="9" cy="4.5" r=".8" fill="currentColor"/>' +
-                '<path d="M5.5 7.5L1 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-                '<path d="M3 10H4.2V11.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
-              '</svg>' +
-              'Hardware API Key' +
-            '</div>' +
-            '<div class="key-row">' +
-              keyLabel +
-              '<div style="display:flex;gap:6px;">' +
-                '<button class="btn btn-sm btn-ghost" id="test-' + loc.id + '" onclick="testLocKey(\'' + loc.id + '\')">Test</button>' +
-                '<button class="btn btn-sm btn-secondary" onclick="toggleLocKeyForm(\'' + loc.id + '\')">' +
-                  (loc.has_location_key ? 'Rotate Override' : 'Set Override') +
-                '</button>' +
-              '</div>' +
-            '</div>' +
-            '<div class="test-result" id="testres-' + loc.id + '"></div>' +
-            '<div class="key-form" id="keyform-' + loc.id + '">' +
-              '<div class="key-form-inner">' +
-                '<div class="key-input-hint">Set a per-location key override (DR-028). Leave blank to use the organization key. Only needed if this location is in a <strong>different Kisi organization</strong>.</div>' +
-                '<input type="password" class="key-input" id="keyinput-' + loc.id + '" placeholder="Paste location-specific Kisi API key…" autocomplete="off"/>' +
-                '<div class="key-form-actions">' +
-                  '<button class="btn btn-ghost btn-sm" onclick="toggleLocKeyForm(\'' + loc.id + '\')">Cancel</button>' +
-                  '<button class="btn btn-primary btn-sm" onclick="saveLocKey(\'' + loc.id + '\')">Save Override</button>' +
-                '</div>' +
-              '</div>' +
-            '</div>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -775,6 +670,8 @@
             .then(function(actData) {
               loc.subscription_status = actData.ok ? 'active' : loc.subscription_status;
               loc.has_location_key = false;
+              loc.hardware_platform = null;
+              loc.notification_email = null;
               loc.door_count  = 0;
               loc.plan_count  = 0;
               loc.error_count = 0;
@@ -834,6 +731,70 @@
         .catch(function() { toast('Save failed — network error', 'error'); });
     }
 
+    // ── Per-location tier ───────────────────────────────────────────
+    function saveLocTier(locationId) {
+      var tier = document.getElementById('tier-' + locationId).value || null;
+      apiFetch('/admin/clients/' + clientId + '/locations/' + locationId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier: tier }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (!data.ok) { toast(data.error || 'Save failed', 'error'); return; }
+          var loc = state.locations.find(function(l) { return l.id === locationId; });
+          if (loc) loc.tier = data.location.tier;
+          toast('Tier updated', 'success');
+        })
+        .catch(function() { toast('Save failed', 'error'); });
+    }
+
+    // ── Per-location platform ─────────────────────────────────────
+    function saveLocPlatform(locationId) {
+      var platform = document.getElementById('platform-' + locationId).value;
+      apiFetch('/admin/clients/' + clientId + '/locations/' + locationId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hardware_platform: platform }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (!data.ok) { toast(data.error || 'Save failed', 'error'); return; }
+          var loc = state.locations.find(function(l) { return l.id === locationId; });
+          if (loc) loc.hardware_platform = data.location.hardware_platform;
+          toast('Platform updated', 'success');
+        })
+        .catch(function() { toast('Save failed', 'error'); });
+    }
+
+    // ── Per-location alert email ──────────────────────────────────
+    function toggleLocEmailForm(locationId) {
+      var form = document.getElementById('emailform-' + locationId);
+      form.classList.toggle('open');
+      if (form.classList.contains('open')) {
+        setTimeout(function() { document.getElementById('emailinput-' + locationId).focus(); }, 50);
+      }
+    }
+
+    function saveLocEmail(locationId) {
+      var email = document.getElementById('emailinput-' + locationId).value.trim();
+      if (!email) { toast('Email cannot be empty', 'error'); return; }
+      apiFetch('/operator/' + clientId + '/locations/' + locationId + '/notification-email', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (!data.ok) { toast(data.error || 'Save failed', 'error'); return; }
+          var loc = state.locations.find(function(l) { return l.id === locationId; });
+          if (loc) loc.notification_email = data.email;
+          renderLocations();
+          toast('Location alert email updated', 'success');
+        })
+        .catch(function() { toast('Save failed', 'error'); });
+    }
+
     function subPill(status) {
       if (status === 'active') return '<span class="pill pill-active" title="This location is actively provisioning members.">Active</span>';
       if (status === 'lapsed') return '<span class="pill pill-lapsed" title="Subscription lapsed. Members at this location have been suspended.">Lapsed</span>';
@@ -882,7 +843,7 @@
           resEl.style.display = '';
           if (data.valid) {
             resEl.className   = 'test-result pass';
-            resEl.textContent = '✓ Connected — using ' + (data.source === 'location' ? 'location override key' : 'organization key');
+            resEl.textContent = '✓ Connected — using ' + (data.source === 'location' ? 'location key' : 'client key');
           } else {
             resEl.className   = 'test-result fail';
             resEl.textContent = '✗ ' + (data.error || 'Key invalid');

@@ -1,3 +1,12 @@
+<%#
+  @file sync-status.ejs
+  @layer admin/pages
+  @route /sync-status?memberId=X&clientId=Y
+  @role member-facing
+  @audience gym members (post-purchase)
+  @data GET /member/access-status (polls every 3s, max 60 polls)
+  @features 4 states: syncing/active/error/pending, stale indicator after 30s
+%>
 <!DOCTYPE html>
 <html lang="en">
 <head>

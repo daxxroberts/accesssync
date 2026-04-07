@@ -1,4 +1,12 @@
 /**
+ * @file grant-revoke.js
+ * @layer core/layer4
+ * @role provisioning
+ * @reads plan_mappings, member_identity, member_access_log, member_role_assignments
+ * @calls hardware-adapter
+ * @exports processGrant, processRevoke
+ * @dr DR-022, DR-026
+ *
  * grant-revoke.js
  * Core Engine (Layer 4)
  *

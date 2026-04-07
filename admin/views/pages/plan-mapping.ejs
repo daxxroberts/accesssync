@@ -1,3 +1,13 @@
+<%#
+  @file plan-mapping.ejs
+  @layer admin/pages
+  @route /plan-mapping
+  @role plan-to-door-mapping
+  @data GET /operator/:clientId/locations/:locationId/mappings, GET /operator/:clientId/kisi-groups
+  @writes PATCH /operator/:clientId/plan-mappings/:mappingId
+  @tab Plan Mapping
+  @features multi-group, multi-member toggle, duplicate-group warning
+%>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
 <head>
@@ -934,12 +944,12 @@
                   ? mGroups.map(function(g) { return String(g.hardware_group_id); })
                   : (m.hardware_group_id ? [String(m.hardware_group_id)] : []);
 
-                var planType = (window._wixPlanTypes && window._wixPlanTypes[m.wix_plan_id]) || 'pricing_plan';
+                var planType = (window._wixPlanTypes && window._wixPlanTypes[m.source_plan_id]) || 'pricing_plan';
 
                 return {
                   id: m.id,
-                  name: m.plan_name || 'Plan ' + m.wix_plan_id,
-                  wixPlanId: m.wix_plan_id,
+                  name: m.plan_name || 'Plan ' + m.source_plan_id,
+                  wixPlanId: m.source_plan_id,
                   planType: planType,
                   isMultiMember: !!m.allow_multiple,
                   maxMembers: m.max_members || 1,

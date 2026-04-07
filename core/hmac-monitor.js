@@ -1,4 +1,13 @@
 /**
+ * @file hmac-monitor.js
+ * @layer core/layer4
+ * @role security-monitoring
+ * @reads Redis (sliding window counter)
+ * @writes Redis (failure count, cooldown key)
+ * @calls resend (spike alerts)
+ * @exports recordFailure(clientId)
+ * @dr DR-009
+ *
  * hmac-monitor.js
  * Core Engine (Layer 4) — Sprint 5 ticket 5.1
  *

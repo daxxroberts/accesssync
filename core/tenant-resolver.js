@@ -1,4 +1,12 @@
 /**
+ * @file tenant-resolver.js
+ * @layer core/layer4
+ * @role tenant-resolution
+ * @reads clients (site_id lookup, 5-min cache)
+ * @writes clients.site_id (registerSiteId — idempotent)
+ * @exports resolve(siteId), registerSiteId(clientId, siteId)
+ * @dr DR-016
+ *
  * tenant-resolver.js
  * Core Engine (Layer 4)
  *

@@ -1,3 +1,12 @@
+<%#
+  @file access.ejs
+  @layer admin/pages
+  @route /access
+  @role access-log-viewer
+  @data GET /operator/:clientId/access-log (paginated), GET /operator/:clientId/access-stats (hourly)
+  @tab Access
+  @features 30-day bar chart, event filter, location filter, CSV export
+%>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
 <head>

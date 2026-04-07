@@ -1,4 +1,12 @@
 /**
+ * @file plan-mapping-resolver.js
+ * @layer core/layer4
+ * @role plan-resolution
+ * @reads plan_mappings, plan_mapping_groups, locations, clients
+ * @writes config_alert_log (on missing group)
+ * @exports resolve(tenantId, planId) → Array
+ * @dr DR-027, DR-028, DR-035
+ *
  * plan-mapping-resolver.js
  * Core Engine (Layer 4)
  *
@@ -36,7 +44,7 @@ class PlanMappingResolver {
               COALESCE(pmg.hardware_group_id, pm.hardware_group_id) AS hardware_group_id,
               pm.tier_name,
               pm.access_type,
-              c.hardware_platform,
+              COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform,
               COALESCE(l.hardware_api_key, c.hardware_api_key) AS hardware_api_key_enc
        FROM plan_mappings pm
        LEFT JOIN plan_mapping_groups pmg ON pmg.mapping_id = pm.id

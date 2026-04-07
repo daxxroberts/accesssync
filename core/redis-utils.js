@@ -1,4 +1,10 @@
 /**
+ * @file redis-utils.js
+ * @layer core/shared
+ * @role redis-connection
+ * @reads env:REDIS_URL
+ * @exports parseRedisUrl(url) → { host, port, password }
+ *
  * redis-utils.js
  * Shared BullMQ Redis connection helper.
  *

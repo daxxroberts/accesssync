@@ -1,3 +1,12 @@
+<%#
+  @file multi-member.ejs
+  @layer admin/pages
+  @route /plan-mapping (drawer/modal within plan-mapping flow)
+  @role multi-member-config
+  @data GET /operator/:clientId/plan-mappings/:mappingId/groups
+  @writes PATCH /operator/:clientId/plan-mappings/:mappingId (allow_multiple, max_members)
+  @status DEFERRED — code complete but hard-stopped until Chad confirms family plans
+%>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -92,26 +101,7 @@ html, body {
   margin-top: 6px;
 }
 
-/* Buttons */
-.btn {
-  border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-family: 'Sora', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-.btn:hover { opacity: 0.85; }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-primary { background: var(--brand); color: #fff; }
-.btn-danger { background: var(--red); color: #fff; }
-.btn-outline {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text2);
-}
+/* Base .btn provided by operator-styles.css — page-specific variants below */
 .btn-submit {
   background: var(--green);
   color: #fff;

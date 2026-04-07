@@ -1,4 +1,13 @@
 /**
+ * @file member-sync-api.js
+ * @layer core/layer4
+ * @role member-facing-api
+ * @route GET /member/access-status
+ * @auth Wix RS256 JWT (JWKS cached 1hr)
+ * @reads member_identity, member_access_state, member_role_assignments, plan_mappings, locations
+ * @exports router
+ * @dr DR-021, OB-06, OB-08
+ *
  * member-sync-api.js
  * Core Engine (Layer 4)
  *

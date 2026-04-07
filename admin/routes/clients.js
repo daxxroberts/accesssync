@@ -249,7 +249,7 @@ router.post('/:id/locations', async (req, res) => {
 router.patch('/:id/locations/:locationId', async (req, res) => {
   try {
     const { id, locationId } = req.params;
-    const LOCATION_FIELDS = ['name', 'city', 'state', 'tier', 'subscription_status', 'subscription_id', 'subscribed_at'];
+    const LOCATION_FIELDS = ['name', 'city', 'state', 'tier', 'subscription_status', 'subscription_id', 'subscribed_at', 'hardware_platform', 'notification_email'];
     const updates = {};
     for (const f of LOCATION_FIELDS) {
       if (req.body[f] !== undefined) updates[f] = req.body[f];

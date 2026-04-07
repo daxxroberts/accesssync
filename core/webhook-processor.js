@@ -1,4 +1,12 @@
 /**
+ * @file webhook-processor.js
+ * @layer core/layer4
+ * @role deduplication, enqueue
+ * @reads processed_event_ids, clients
+ * @writes processed_event_ids, BullMQ
+ * @exports eventQueue
+ * @dr DR-010, DR-012
+ *
  * webhook-processor.js
  * Core Engine (Layer 4)
  *
