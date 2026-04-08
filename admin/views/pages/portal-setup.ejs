@@ -1,0 +1,130 @@
+<%#
+  @file portal-setup.ejs
+  @layer admin/pages
+  @route /operator-portal/setup
+  @role operator-setup-landing
+  @auth operator JWT (requireAuthPageOrOperator)
+  @data none — static landing page
+%>
+<!DOCTYPE html>
+<html lang="en" data-mode="light">
+<head>
+  <%- include('../partials/head', { title: 'Set Up AccessSync' }) %>
+  <style>
+    .setup-wrap {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      background: var(--bg);
+    }
+    .setup-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow-md);
+      padding: 48px 40px;
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+    }
+    .setup-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 32px;
+    }
+    .setup-logo-mark {
+      width: 40px; height: 40px;
+      background: var(--brand);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .setup-logo-mark svg { width: 22px; height: 22px; }
+    .setup-logo-name {
+      font-size: 20px; font-weight: 800;
+      letter-spacing: -0.5px; color: var(--text);
+    }
+    .setup-icon {
+      width: 64px; height: 64px;
+      background: var(--brand-dim);
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 24px;
+    }
+    .setup-icon svg { width: 32px; height: 32px; color: var(--brand); }
+    .setup-heading {
+      font-size: 22px; font-weight: 800;
+      letter-spacing: -0.5px; color: var(--text);
+      margin-bottom: 12px;
+    }
+    .setup-sub {
+      font-size: 14px; color: var(--muted);
+      line-height: 1.6; margin-bottom: 32px;
+    }
+    .setup-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 14px 28px;
+      background: var(--brand); color: #fff;
+      border: none; border-radius: 12px;
+      font-family: inherit; font-size: 15px; font-weight: 700;
+      cursor: pointer; text-decoration: none;
+      box-shadow: 0 0 20px var(--brand-glow, rgba(79,110,247,0.35));
+      transition: all 0.15s;
+    }
+    .setup-btn:hover {
+      box-shadow: 0 0 32px var(--brand-glow, rgba(79,110,247,0.45));
+      transform: translateY(-1px);
+    }
+    .setup-note {
+      margin-top: 20px;
+      font-size: 12px; color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="setup-wrap">
+    <div class="setup-card">
+
+      <!-- Logo -->
+      <div class="setup-logo">
+        <div class="setup-logo-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <span class="setup-logo-name">AccessSync</span>
+      </div>
+
+      <!-- Icon -->
+      <div class="setup-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M4.93 4.93A10 10 0 0 1 19.07 19.07"/>
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2"/>
+        </svg>
+      </div>
+
+      <h1 class="setup-heading">Welcome to AccessSync</h1>
+      <p class="setup-sub">
+        Your gym's access control sync is ready to configure.<br>
+        This takes about 5 minutes.
+      </p>
+
+      <a class="setup-btn" href="/onboard?clientId=<%= clientId %>">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+        Start Setup
+      </a>
+
+      <p class="setup-note">Secure setup — your API key is encrypted at rest.</p>
+    </div>
+  </div>
+</body>
+</html>

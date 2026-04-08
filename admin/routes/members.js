@@ -57,7 +57,7 @@ router.get('/search', async (req, res) => {
           }
         }
       } catch (wixErr) {
-        console.warn('[Admin/members] Wix email lookup failed (falling back to DB search):', wixErr.message);
+        console.warn('[Admin/members]  Email lookup failed (falling back to DB search):', wixErr.message);
       }
     }
 

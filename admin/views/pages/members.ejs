@@ -194,9 +194,9 @@
         <option value="">All Statuses</option>
         <option value="active">Active</option>
         <option value="pending">Pending</option>
-        <option value="pending_hardware">Awaiting Doors</option>
-        <option value="failed">Failed</option>
-        <option value="suspended">Suspended</option>
+        <option value="pending_hardware">Needs Setup</option>
+        <option value="failed">Action Needed</option>
+        <option value="suspended">Paused</option>
       </select>
       <select class="filter-select" id="filterRole" onchange="applyFilters()">
         <option value="">All Roles</option>
@@ -291,8 +291,8 @@
         '<div class="stat-card" data-filter="" onclick="filterByStatus(this)"><div class="stat-value">' + total + '</div><div class="stat-label">Total Members</div></div>' +
         '<div class="stat-card" data-filter="active" onclick="filterByStatus(this)"><div class="stat-value">' + active + '</div><div class="stat-label">Active</div></div>' +
         '<div class="stat-card" data-filter="pending" onclick="filterByStatus(this)"><div class="stat-value">' + pending + '</div><div class="stat-label">Pending</div></div>' +
-        (pendingHardware > 0 ? '<div class="stat-card" data-filter="pending_hardware" onclick="filterByStatus(this)" style="border-left:3px solid var(--amber);"><div class="stat-value">' + pendingHardware + '</div><div class="stat-label">Awaiting Doors</div></div>' : '') +
-        (failed > 0 ? '<div class="stat-card alert" data-filter="failed" onclick="filterByStatus(this)"><div class="stat-value">' + failed + '</div><div class="stat-label">Failed</div></div>' : '');
+        (pendingHardware > 0 ? '<div class="stat-card" data-filter="pending_hardware" onclick="filterByStatus(this)" style="border-left:3px solid var(--amber);"><div class="stat-value">' + pendingHardware + '</div><div class="stat-label">Needs Setup</div></div>' : '') +
+        (failed > 0 ? '<div class="stat-card alert" data-filter="failed" onclick="filterByStatus(this)"><div class="stat-value">' + failed + '</div><div class="stat-label">Action Needed</div></div>' : '');
       syncStatCards();
     }
 
@@ -321,15 +321,15 @@
     }
 
     var STATUS_TOOLTIPS = {
-      active: 'Member has been provisioned and has door access.',
-      pending: 'Provisioning is in progress.',
-      pending_hardware: 'Plan purchased but door system not configured yet. Add your API key to provision.',
-      failed: 'Provisioning failed. Check the error queue for details.',
-      suspended: 'Access has been suspended (plan cancelled or location lapsed).'
+      active: 'Member has door access.',
+      pending: 'Access is being set up now.',
+      pending_hardware: 'Plan purchased but door system not connected. Add your API key in Locations.',
+      failed: 'Something went wrong — check the error queue for details and next steps.',
+      suspended: 'Access paused — plan cancelled or payment lapsed.'
     };
     function statusLabel(s) {
-      if (s === 'pending_hardware') return 'Awaiting Doors';
-      return s.charAt(0).toUpperCase() + s.slice(1);
+      var labels = { active: 'Active', pending: 'Processing', pending_hardware: 'Needs Setup', failed: 'Action Needed', suspended: 'Paused' };
+      return labels[s] || (s.charAt(0).toUpperCase() + s.slice(1));
     }
     function statusTooltip(s) { return STATUS_TOOLTIPS[s] || ''; }
 

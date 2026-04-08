@@ -39,6 +39,14 @@ function signToken() {
 }
 
 /**
+ * Signs a scoped operator JWT for Wix portal sessions.
+ * Carries role:'operator' and the clientId — no admin access.
+ */
+function signOperatorToken(clientId) {
+  return jwt.sign({ role: 'operator', clientId }, JWT_SECRET, { expiresIn: '8h' });
+}
+
+/**
  * Express middleware for page routes — redirects to login on auth failure.
  * Use on GET routes that render HTML pages (not API endpoints).
  */
@@ -55,4 +63,29 @@ function requireAuthPage(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, requireAuthPage, signToken };
+/**
+ * Express middleware for operator portal page routes.
+ * Accepts either:
+ *   - adminToken cookie (owner navigating via /clients)
+ *   - operatorToken cookie (Chad via Wix dashboard portal)
+ *
+ * Sets req.admin on success. For operator tokens, also sets req.admin.clientId
+ * so pages can enforce clientId scoping if needed.
+ */
+function requireAuthPageOrOperator(req, res, next) {
+  const adminToken    = req.cookies?.adminToken;
+  const operatorToken = req.cookies?.operatorToken;
+  const token = adminToken || operatorToken;
+
+  if (!token) {
+    return res.redirect('/OwnerDashboard');
+  }
+  try {
+    req.admin = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.redirect('/OwnerDashboard');
+  }
+}
+
+module.exports = { requireAuth, requireAuthPage, requireAuthPageOrOperator, signToken, signOperatorToken };

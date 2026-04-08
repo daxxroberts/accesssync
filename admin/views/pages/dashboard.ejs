@@ -311,13 +311,9 @@
     <!-- Client header -->
     <div class="client-card">
       <div>
-        <div class="client-name">House of Gains</div>
-        <div class="client-sub" id="client-sub-text">Chad Roberts · 2 locations · Fort Smith, AR</div>
+        <div class="client-name" id="client-name-text">—</div>
+        <div class="client-sub" id="client-sub-text">Loading…</div>
       </div>
-      <button class="add-btn">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>
-        Add Location
-      </button>
     </div>
 
     <!-- Platform connections -->
@@ -365,24 +361,24 @@
       <div class="section-label">Overview — All Locations</div>
       <div class="stats-grid">
         <div class="stat-card">
-          <div class="stat-delta neutral">2 locations</div>
-          <div class="stat-n">4</div>
-          <div class="stat-l">Doors Managed</div>
+          <div class="stat-delta neutral" id="stat-locations-delta">—</div>
+          <div class="stat-n sage" id="stat-active-n">—</div>
+          <div class="stat-l">Active Members</div>
         </div>
         <div class="stat-card">
           <div class="stat-delta neutral">Auto-sync</div>
-          <div class="stat-n sm">3:00 AM</div>
+          <div class="stat-n sm" id="stat-sync-n">—</div>
           <div class="stat-l">Last Sync</div>
         </div>
         <div class="stat-card" id="error-stat-card" style="cursor:pointer;" onclick="var cid=new URLSearchParams(window.location.search).get('clientId'); if(cid) window.location.href='/access?clientId='+cid+'&filter=error';">
           <div class="stat-delta warn">Attention</div>
-          <div class="stat-n red" id="top-err-n">1</div>
+          <div class="stat-n red" id="top-err-n">—</div>
           <div class="stat-l">Errors</div>
         </div>
         <div class="stat-card">
-          <div class="stat-delta warn">1 pending</div>
-          <div class="stat-n brand">104</div>
-          <div class="stat-l">Kisi Synced</div>
+          <div class="stat-delta neutral" id="stat-synced-delta">—</div>
+          <div class="stat-n brand" id="stat-synced-n">—</div>
+          <div class="stat-l">Synced / Total</div>
         </div>
       </div>
 
@@ -450,6 +446,20 @@
   <script>
     // ── Shared helpers ──
     function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    // ── Error translation — maps raw error_reason to operator-friendly message + action ──
+    function translateError(reason) {
+      if (!reason) return { message: 'Something went wrong.', action: 'Contact support.' };
+      var r = String(reason);
+      if (/401|ACS_002|api key.*reject|invalid.*key/i.test(r)) return { message: 'Your door system API key was rejected.', action: 'Go to Locations and re-enter your API key.' };
+      if (/403|suspended.*account|downgrad/i.test(r)) return { message: 'Your door system account may be suspended or downgraded.', action: 'Check your Kisi account subscription.' };
+      if (/429|ACS_004|rate.?limit/i.test(r)) return { message: 'Temporarily rate limited.', action: 'No action needed — this will retry automatically.' };
+      if (/5\d\d|ACS_005|server error/i.test(r)) return { message: 'Your door system is experiencing issues.', action: 'AccessSync will retry. If this persists, check kisi.com/status.' };
+      if (/timeout|ACS_001|timed? out/i.test(r)) return { message: 'Connection to door system timed out.', action: 'This will retry automatically.' };
+      if (/no.*mapping|plan.*not.*mapped|mapping.*not.*found/i.test(r)) return { message: "This member's plan isn't linked to a door group.", action: 'Go to Plan Mapping to assign it.' };
+      if (/pending.?hardware/i.test(r)) return { message: 'Needs Setup.', action: 'Add your API key to start provisioning.' };
+      return { message: 'Something went wrong.', action: 'Contact support.' };
+    }
 
     // ── Location accordion ──
     var _locDetailLoaded = {}; // track which locations have loaded details
@@ -521,7 +531,7 @@
         .then(function(r) { return r.json(); })
         .then(function(d) {
           var statusMap = { active: 'sage', pending: 'amber', pending_hardware: 'amber', failed: 'red', suspended: 'muted' };
-          var labelMap = { active: 'Active', pending: 'Pending', pending_hardware: 'Awaiting Doors', failed: 'Failed', suspended: 'Suspended' };
+          var labelMap = { active: 'Active', pending: 'Processing', pending_hardware: 'Needs Setup', failed: 'Action Needed', suspended: 'Paused' };
           var html = '';
 
           // ── Active Members sub-section ──
@@ -624,11 +634,12 @@
           html += '<div class="loc-sub-body" id="sub-errors-' + locId + '">';
           if (errors.length) {
             html += errors.map(function(e) {
+              var translated = translateError(e.plain_message || e.error_reason);
               return '<div class="err-row">' +
                 '<div class="err-dot"></div>' +
                 '<div class="err-info">' +
                   '<div class="err-title">' + esc(e.plan_name || e.event_type || 'Error') + '</div>' +
-                  '<div class="err-body">' + esc(e.plain_message || e.error_reason || 'Unknown error') + '</div>' +
+                  '<div class="err-body">' + esc(translated.message) + ' <span style="color:var(--muted);">' + esc(translated.action) + '</span></div>' +
                   '<div class="err-tags">' +
                     (e.plan_name ? '<span class="err-tag">' + esc(e.plan_name) + '</span>' : '') +
                     (e.door_name ? '<span class="err-tag">' + esc(e.door_name) + '</span>' : '') +
@@ -675,7 +686,17 @@
     // ══ OB-29: Live data loading ══════════════════════════════════
     (function loadLiveData() {
       var clientId = new URLSearchParams(window.location.search).get('clientId');
-      if (!clientId) return;
+      if (!clientId) {
+        // No client selected — show empty state
+        var nameEl = document.getElementById('client-name-text');
+        var subEl  = document.getElementById('client-sub-text');
+        if (nameEl) nameEl.textContent = 'No client selected';
+        if (subEl)  subEl.textContent  = 'Select a client from the Admin Hub to view their dashboard.';
+        ['stat-active-n','stat-sync-n','top-err-n','stat-synced-n'].forEach(function(id) {
+          var el = document.getElementById(id); if (el) el.textContent = '—';
+        });
+        return;
+      }
 
       // Fetch client overview
       apiFetch('/operator/' + clientId)
@@ -683,13 +704,30 @@
         .then(function(d) {
           if (!d.client) return;
           var c = d.client, s = d.stats;
-          document.querySelector('.client-name').textContent = c.name || 'Unnamed';
+          var nameEl = document.getElementById('client-name-text');
+          if (nameEl) nameEl.textContent = c.name || 'Unnamed';
           document.getElementById('client-sub-text').textContent =
             [s.location_count + ' location' + (s.location_count !== 1 ? 's' : ''),
              c.tier ? c.tier + ' tier' : ''].filter(Boolean).join(' · ');
           // Update stats
           document.getElementById('top-err-n').textContent = s.error_count;
           document.getElementById('top-err-n').className = s.error_count > 0 ? 'stat-n red' : 'stat-n sage';
+          // Active members
+          var activeN = document.getElementById('stat-active-n');
+          if (activeN) activeN.textContent = s.active_members || 0;
+          var locationsDelta = document.getElementById('stat-locations-delta');
+          if (locationsDelta) locationsDelta.textContent = s.location_count + ' location' + (s.location_count !== 1 ? 's' : '');
+          // Synced / total
+          var syncedN = document.getElementById('stat-synced-n');
+          if (syncedN) syncedN.textContent = (s.active_members || 0) + ' / ' + (s.total_members || 0);
+          var syncedDelta = document.getElementById('stat-synced-delta');
+          var gap = (s.total_members || 0) - (s.active_members || 0);
+          if (syncedDelta) { syncedDelta.textContent = gap > 0 ? gap + ' pending' : 'All synced'; syncedDelta.className = gap > 0 ? 'stat-delta warn' : 'stat-delta up'; }
+          // Last sync
+          var syncN = document.getElementById('stat-sync-n');
+          if (syncN && c.last_sync_at) {
+            syncN.textContent = new Date(c.last_sync_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+          } else if (syncN) { syncN.textContent = 'Never'; }
           // Update platform detail
           var wixDetail = document.querySelector('.platform-chip:first-child .platform-detail');
           if (wixDetail && c.site_url) wixDetail.textContent = c.site_url.replace(/^https?:\/\//, '') + ' · Webhooks active';

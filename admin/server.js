@@ -22,7 +22,8 @@ const queueRoutes    = require('./routes/queue');
 const clientsRoutes  = require('./routes/clients');
 const operatorRoutes    = require('./routes/operator');
 const multiMemberRoutes = require('./routes/multi-member');
-const { requireAuth, requireAuthPage } = require('./middleware/auth');
+const portalRoutes      = require('./routes/portal');
+const { requireAuth, requireAuthPage, requireAuthPageOrOperator } = require('./middleware/auth');
 
 const app  = express();
 const PORT = process.env.ADMIN_PORT || process.env.PORT || 3001;
@@ -49,6 +50,9 @@ app.use('/admin/clients',  requireAuth, clientsRoutes);
 // ── Operator dashboard API (auth handled inside router — signup endpoints exempt) ──
 app.use('/operator', operatorRoutes);
 
+// ── Wix Dashboard Page Extension entry point (signed instance auth) ──
+app.use('/operator-portal', portalRoutes);
+
 // ── Multi-member API (member-facing — no admin auth) ──
 app.use('/', multiMemberRoutes);
 
@@ -59,12 +63,20 @@ app.get('/health', (req, res) => res.json({ status: 'ok', service: 'admin-hub' }
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Operator dashboard pages (auth-gated) ─────────────────────
-app.get('/dashboard',    requireAuthPage, (req, res) => res.render('pages/dashboard',     { activeTab: 'overview' }));
-app.get('/members',      requireAuthPage, (req, res) => res.render('pages/members',        { activeTab: 'members' }));
-app.get('/plan-mapping', requireAuthPage, (req, res) => res.render('pages/plan-mapping',   { activeTab: 'plan-mapping' }));
-app.get('/access',       requireAuthPage, (req, res) => res.render('pages/access',         { activeTab: 'access' }));
-app.get('/locations',    requireAuthPage, (req, res) => res.render('pages/locations',      { activeTab: 'config' }));
-app.get('/admin-panel',  requireAuthPage, (req, res) => res.render('pages/admin-panel',    { activeTab: 'admin' }));
+// Operator pages — accessible by owner (adminToken) or Chad via Wix portal (operatorToken)
+app.get('/dashboard',    requireAuthPageOrOperator, (req, res) => res.render('pages/dashboard',   { activeTab: 'overview' }));
+app.get('/members',      requireAuthPageOrOperator, (req, res) => res.render('pages/members',      { activeTab: 'members' }));
+app.get('/plan-mapping', requireAuthPageOrOperator, (req, res) => res.render('pages/plan-mapping', { activeTab: 'plan-mapping' }));
+app.get('/access',       requireAuthPageOrOperator, (req, res) => res.render('pages/access',       { activeTab: 'access' }));
+app.get('/locations',    requireAuthPageOrOperator, (req, res) => res.render('pages/locations',    { activeTab: 'config' }));
+// Admin panel — owner only
+app.get('/admin-panel',  requireAuthPage,            (req, res) => res.render('pages/admin-panel', { activeTab: 'admin' }));
+// Onboarding — server-rendered so invite token is injected securely (never in URL)
+app.get('/onboard', requireAuthPageOrOperator, (req, res) =>
+  res.render('pages/onboard', {
+    clientId:    req.admin?.clientId || req.query.clientId || '',
+    inviteToken: process.env.OPERATOR_INVITE_TOKEN || '',
+  }));
 // Member-facing pages — no auth required
 app.get('/sync-status',    (req, res) => res.render('pages/sync-status'));
 app.get('/multi-member',   (req, res) => res.render('pages/multi-member'));

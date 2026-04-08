@@ -1067,8 +1067,8 @@ function setBusy(btnId, busy, idleHtml) {
   btn.innerHTML = busy ? '<span class="spinner"></span> Working…' : idleHtml;
 }
 
-// OB-24: Read invite token from URL (?invite=TOKEN) for signup endpoint auth
-const _inviteToken = new URLSearchParams(window.location.search).get('invite');
+// OB-24: Invite token injected server-side at render time (secure — never in URL)
+const _inviteToken = '<%= inviteToken %>';
 
 async function apiFetch(url, opts = {}) {
   const headers = { ...(opts.headers || {}) };
