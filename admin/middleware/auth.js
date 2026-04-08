@@ -40,10 +40,10 @@ function signToken() {
 
 /**
  * Signs a scoped operator JWT for Wix portal sessions.
- * Carries role:'operator' and the clientId — no admin access.
+ * Carries role:'operator', clientId, and instanceId (Wix site instanceId — may be null).
  */
-function signOperatorToken(clientId) {
-  return jwt.sign({ role: 'operator', clientId }, JWT_SECRET, { expiresIn: '8h' });
+function signOperatorToken(clientId, instanceId = null) {
+  return jwt.sign({ role: 'operator', clientId, instanceId }, JWT_SECRET, { expiresIn: '8h' });
 }
 
 /**

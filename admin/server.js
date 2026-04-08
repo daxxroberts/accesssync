@@ -37,6 +37,15 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json());
 app.use(cookieParser());
 
+// ── Wix iframe — allow framing from manage.wix.com only ───────
+// Helmet sets X-Frame-Options: sameorigin globally, which blocks the Wix
+// Dashboard Page Extension iframe. Override for /operator-portal routes only.
+function allowWixFrame(req, res, next) {
+  res.removeHeader('X-Frame-Options');
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'self' https://manage.wix.com");
+  next();
+}
+
 // ── Public routes ──────────────────────────────────────────────
 app.use('/auth', authRoutes);
 
@@ -51,7 +60,8 @@ app.use('/admin/clients',  requireAuth, clientsRoutes);
 app.use('/operator', operatorRoutes);
 
 // ── Wix Dashboard Page Extension entry point (signed instance auth) ──
-app.use('/operator-portal', portalRoutes);
+// allowWixFrame removes X-Frame-Options and sets frame-ancestors for manage.wix.com
+app.use('/operator-portal', allowWixFrame, portalRoutes);
 
 // ── Multi-member API (member-facing — no admin auth) ──
 app.use('/', multiMemberRoutes);
@@ -64,17 +74,19 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Operator dashboard pages (auth-gated) ─────────────────────
 // Operator pages — accessible by owner (adminToken) or Chad via Wix portal (operatorToken)
-app.get('/dashboard',    requireAuthPageOrOperator, (req, res) => res.render('pages/dashboard',   { activeTab: 'overview' }));
-app.get('/members',      requireAuthPageOrOperator, (req, res) => res.render('pages/members',      { activeTab: 'members' }));
-app.get('/plan-mapping', requireAuthPageOrOperator, (req, res) => res.render('pages/plan-mapping', { activeTab: 'plan-mapping' }));
-app.get('/access',       requireAuthPageOrOperator, (req, res) => res.render('pages/access',       { activeTab: 'access' }));
-app.get('/locations',    requireAuthPageOrOperator, (req, res) => res.render('pages/locations',    { activeTab: 'config' }));
-// Admin panel — owner only
+// allowWixFrame applied so these pages render correctly inside the Wix iframe
+app.get('/dashboard',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/dashboard',   { activeTab: 'overview' }));
+app.get('/members',      allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/members',      { activeTab: 'members' }));
+app.get('/plan-mapping', allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/plan-mapping', { activeTab: 'plan-mapping' }));
+app.get('/access',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/access',       { activeTab: 'access' }));
+app.get('/locations',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/locations',    { activeTab: 'config' }));
+// Admin panel — owner only (no iframe — no allowWixFrame)
 app.get('/admin-panel',  requireAuthPage,            (req, res) => res.render('pages/admin-panel', { activeTab: 'admin' }));
 // Onboarding — server-rendered so invite token is injected securely (never in URL)
-app.get('/onboard', requireAuthPageOrOperator, (req, res) =>
+app.get('/onboard', allowWixFrame, requireAuthPageOrOperator, (req, res) =>
   res.render('pages/onboard', {
-    clientId:    req.admin?.clientId || req.query.clientId || '',
+    clientId:    req.admin?.clientId   || req.query.clientId || '',
+    instanceId:  req.admin?.instanceId || '',
     inviteToken: process.env.OPERATOR_INVITE_TOKEN || '',
   }));
 // Member-facing pages — no auth required

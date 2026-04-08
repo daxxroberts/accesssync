@@ -32,6 +32,8 @@ router.use(function operatorAuth(req, res, next) {
     return next(); // Auth handled by requireInviteToken on these routes
   }
   if (req.method === 'POST' && req.path === '/verify-bypass') return next();
+  // Site ID verification is a GET with invite token — exempt from JWT auth
+  if (req.method === 'GET' && req.path === '/site-id/verify' && req.headers['x-invite-token']) return next();
   return requireAuth(req, res, next);
 });
 
@@ -119,6 +121,32 @@ function requireInviteToken(req, res, next) {
   }
   next();
 }
+
+// ── GET /operator/site-id/verify ─────────────────────────────────
+// Onboarding Step 1: validate a Wix site ID before account creation.
+// Checks UUID format and whether the site_id is already registered.
+// Used by the manual-entry path (owner onboarding) when instanceId is
+// not auto-injected from the Wix portal signed instance.
+router.get('/site-id/verify', requireInviteToken, async (req, res) => {
+  const { siteId } = req.query;
+  if (!siteId) return res.status(400).json({ valid: false, error: 'siteId is required' });
+
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(siteId.trim())) {
+    return res.json({ valid: false, error: 'Invalid Site ID format — expected xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' });
+  }
+
+  try {
+    const existing = await db.query('SELECT id, name FROM clients WHERE site_id = $1 LIMIT 1', [siteId.trim()]);
+    if (existing.rows.length) {
+      return res.json({ valid: false, error: 'This Wix site is already registered with AccessSync' });
+    }
+    res.json({ valid: true, message: 'Site ID accepted — full verification happens at the Wix API key step' });
+  } catch (err) {
+    console.error('[operator] GET site-id/verify error:', err.message);
+    res.status(500).json({ valid: false, error: 'Verification check failed' });
+  }
+});
 
 // ── POST /operator/clients ───────────────────────────────────────
 // Operator self-onboarding: create a new client account.

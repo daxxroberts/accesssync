@@ -25,10 +25,10 @@ const { signOperatorToken, requireAuthPageOrOperator } = require('../middleware/
 // Entry point Wix loads in the iframe. Verifies the signed instance,
 // issues a scoped operator JWT cookie, checks setup status, then routes.
 router.get('/', requireWixInstance, async (req, res) => {
-  const { clientId } = req.wixOperator;
+  const { clientId, instanceId } = req.wixOperator;
 
-  // Issue a scoped operator session cookie (8h)
-  const token = signOperatorToken(clientId);
+  // Issue a scoped operator session cookie (8h) — include instanceId so /onboard can auto-wire site_id
+  const token = signOperatorToken(clientId, instanceId);
   res.cookie('operatorToken', token, {
     httpOnly: true,
     secure:   process.env.NODE_ENV === 'production',
@@ -61,9 +61,10 @@ router.get('/', requireWixInstance, async (req, res) => {
 // Setup landing page shown when client has not yet completed onboarding.
 // clientId comes from the operator JWT (set by requireAuthPageOrOperator).
 router.get('/setup', requireAuthPageOrOperator, (req, res) => {
-  const clientId    = req.admin?.clientId || req.query.clientId;
+  const clientId    = req.admin?.clientId  || req.query.clientId;
+  const instanceId  = req.admin?.instanceId || '';
   const inviteToken = process.env.OPERATOR_INVITE_TOKEN || '';
-  res.render('pages/portal-setup', { clientId, inviteToken });
+  res.render('pages/portal-setup', { clientId, instanceId, inviteToken });
 });
 
 module.exports = router;

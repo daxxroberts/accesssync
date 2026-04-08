@@ -743,6 +743,16 @@ html, body {
             <input type="password" id="c-wix-api-key" placeholder="Paste your Wix API key here…" autocomplete="off" />
             <span class="hint">Used to pull your plans and services. <a href="https://dev.wix.com/api/rest/getting-started/api-keys" target="_blank" rel="noopener">Where do I find this? →</a></span>
           </div>
+          <!-- Site ID — shown only when instanceId is NOT auto-injected from the Wix portal -->
+          <div class="field full" id="site-id-row" style="display:none">
+            <label>Wix Site ID *</label>
+            <div style="display:flex;gap:8px;align-items:flex-start">
+              <input type="text" id="c-site-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" style="flex:1" />
+              <button type="button" class="btn btn-secondary" id="btn-test-site" style="white-space:nowrap;padding:10px 16px">Test Site</button>
+            </div>
+            <span class="hint">Your Wix site's Instance ID — found in the Wix App Dashboard under your AccessSync installation.</span>
+            <div id="site-test-result" style="display:none;margin-top:8px;font-size:13px;font-weight:600"></div>
+          </div>
         </div>
       </div>
 
@@ -988,7 +998,7 @@ const state = {
   wixApiKey: null,   // Wix API key for outbound API calls (plans, bookings)
   tier:      null,   // 'Base' | 'Pro' | 'Connect'
   hardwarePlatform: null, // 'kisi' | 'seam' — explicit selection from Step 2
-  siteId:    null,   // Wix site ID (from URL param, hidden from operator)
+  siteId:    null,   // Wix site ID — auto-wired from instanceId (portal) or URL param (Velo) or manual input
   siteName:  null,   // Wix site name (from URL param)
   clientId:      null,   // set after _provisionClient() completes
   ownerBypass:   false,  // true if owner used bypass PIN on Step 4
@@ -1028,7 +1038,7 @@ const state = {
     // Store into state so Step 1 "next" works without manual input
     state.name    = state.prefill.siteName   || '';
     state.email   = state.prefill.ownerEmail || null;
-    state.siteId  = state.prefill.siteId     || null;
+    state.siteId  = _instanceId || state.prefill.siteId || null;
     state.siteName = state.prefill.siteName  || null;
   } else {
     document.getElementById('found-panel').classList.add('hidden');
@@ -1042,6 +1052,50 @@ const state = {
     if (card) selectTier(card);
   }
 })();
+
+// ── Site ID field — show only when instanceId not auto-injected ─────
+(function initSiteIdField() {
+  if (_instanceId) {
+    // Portal path: instanceId baked into JWT, no user input needed
+    state.siteId = _instanceId;
+  } else {
+    // Owner/manual path: show the field
+    const row = document.getElementById('site-id-row');
+    if (row) row.style.display = '';
+  }
+
+  const btn = document.getElementById('btn-test-site');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const input = document.getElementById('c-site-id');
+    const siteId = (input?.value || '').trim();
+    if (!siteId) return;
+    state.siteId = siteId;
+    await testSiteId(siteId);
+  });
+})();
+
+async function testSiteId(siteId) {
+  const el = document.getElementById('site-test-result');
+  if (!el) return;
+  el.style.display = '';
+  el.style.color = 'var(--muted)';
+  el.textContent = 'Testing…';
+  try {
+    const res = await apiFetch(`/operator/site-id/verify?siteId=${encodeURIComponent(siteId)}`);
+    const data = await res.json();
+    if (data.valid) {
+      el.style.color = 'var(--green, #22C55E)';
+      el.textContent = '✓ ' + (data.message || 'Site ID accepted');
+    } else {
+      el.style.color = 'var(--red, #EF4444)';
+      el.textContent = '✗ ' + (data.error || 'Invalid Site ID');
+    }
+  } catch {
+    el.style.color = 'var(--red, #EF4444)';
+    el.textContent = '✗ Test failed — check your connection';
+  }
+}
 
 // ── Helpers ────────────────────────────────────────────────────────
 function esc(s) {
@@ -1069,6 +1123,8 @@ function setBusy(btnId, busy, idleHtml) {
 
 // OB-24: Invite token injected server-side at render time (secure — never in URL)
 const _inviteToken = '<%= inviteToken %>';
+// instanceId injected server-side from Wix signed instance (portal path) — empty string on owner path
+const _instanceId  = '<%= instanceId %>';
 
 async function apiFetch(url, opts = {}) {
   const headers = { ...(opts.headers || {}) };
@@ -1154,6 +1210,12 @@ function nextStep1() {
   const wixKey = document.getElementById('c-wix-api-key')?.value.trim();
   if (!wixKey) { toast('Please enter your Wix API key', 'error'); return; }
   state.wixApiKey = wixKey;
+  // Site ID gate — required on manual path (portal path sets it automatically via _instanceId)
+  if (!_instanceId) {
+    const manualSiteId = document.getElementById('c-site-id')?.value.trim();
+    if (manualSiteId) state.siteId = manualSiteId;
+    if (!state.siteId) { toast('Please enter your Wix Site ID', 'error'); return; }
+  }
   showStep(2);
 }
 
