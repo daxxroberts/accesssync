@@ -596,6 +596,64 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
   }
 });
 
+// ── PATCH /operator/:clientId/locations/:locationId ─────────────
+// Update location name, city, state, tier, hardware_platform (operator-facing).
+router.patch('/:clientId/locations/:locationId', async (req, res) => {
+  const { clientId, locationId } = req.params;
+  const ALLOWED = ['name', 'city', 'state', 'tier', 'hardware_platform'];
+  const updates = {};
+  for (const f of ALLOWED) {
+    if (req.body[f] !== undefined) updates[f] = req.body[f];
+  }
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields to update' });
+  try {
+    const setClauses = Object.keys(updates).map((k, i) => `${k} = $${i + 3}`);
+    const values = [locationId, clientId, ...Object.values(updates)];
+    const result = await db.query(
+      `UPDATE locations SET ${setClauses.join(', ')} WHERE id = $1 AND client_id = $2
+       RETURNING id, name, city, state, tier, hardware_platform, subscription_status`,
+      values
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    res.json({ ok: true, location: result.rows[0] });
+  } catch (err) {
+    console.error('[operator] PATCH location error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /operator/:clientId/locations/:locationId/suspend ────────
+// Operator-initiated location suspension — suspends all active members immediately.
+router.post('/:clientId/locations/:locationId/suspend', async (req, res) => {
+  const { clientId, locationId } = req.params;
+  try {
+    const { suspendLocationMembers } = require('../../core/location-lapse');
+    const result = await suspendLocationMembers(locationId, clientId, 'suspended');
+    res.json({ ok: true, suspended: result.suspended, skipped: result.skipped, errors: result.errors });
+  } catch (err) {
+    console.error('[operator] POST suspend error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /operator/:clientId/locations/:locationId/activate ───────
+// Operator-initiated location reactivation (does not re-provision members).
+router.post('/:clientId/locations/:locationId/activate', async (req, res) => {
+  const { clientId, locationId } = req.params;
+  try {
+    const result = await db.query(
+      `UPDATE locations SET subscription_status = 'active', subscribed_at = NOW()
+       WHERE id = $1 AND client_id = $2 RETURNING id, name, subscription_status`,
+      [locationId, clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    res.json({ ok: true, location: result.rows[0] });
+  } catch (err) {
+    console.error('[operator] POST activate error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /operator/:clientId/locations/:locationId/api-key/test ──
 // Validates stored location API key override against Kisi (DR-028).
 // Falls back to client-level key if no location override set.
@@ -634,11 +692,13 @@ router.get('/:clientId/locations', async (req, res) => {
   try {
     const [locations, errorCounts, doorCounts, planCounts] = await Promise.all([
       db.query(
-        `SELECT id, name, city, state, subscription_status, tier,
-                subscribed_at, hardware_api_key IS NOT NULL AS has_location_key,
-                hardware_platform, notification_email
-         FROM locations
-         WHERE client_id = $1 ORDER BY created_at ASC`,
+        `SELECT l.id, l.name, l.city, l.state, l.subscription_status, l.tier,
+                l.subscribed_at, l.hardware_platform, l.notification_email,
+                (l.hardware_api_key IS NOT NULL) AS has_location_key,
+                (l.hardware_api_key IS NOT NULL OR c.hardware_api_key IS NOT NULL) AS has_key
+         FROM locations l
+         JOIN clients c ON c.id = l.client_id
+         WHERE l.client_id = $1 ORDER BY l.created_at ASC`,
         [clientId]
       ),
       db.query(

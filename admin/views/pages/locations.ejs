@@ -4,7 +4,7 @@
   @route /locations
   @role system-config
   @data GET /operator/:clientId, /operator/:clientId/locations, /operator/clients/:clientId/wix-api-key/status, /operator/clients/:clientId/notification-email
-  @writes PATCH /admin/clients/:id/locations/:locationId (tier, platform, notification_email), POST /operator/:clientId/locations/:locationId/api-key, PUT /operator/:clientId/locations/:locationId/notification-email
+  @writes PATCH /operator/:clientId/locations/:locationId (tier, platform, name, city, state), POST /operator/:clientId/locations/:locationId/api-key, POST /operator/:clientId/locations/:locationId/suspend, POST /operator/:clientId/locations/:locationId/activate, PUT /operator/:clientId/locations/:locationId/notification-email
   @tab System Config
   @features per-location tier/platform/key/email, profile card (Wix key + rollup email), suspend/reactivate
 %>
@@ -235,7 +235,7 @@
     <!-- Locations -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <div class="section-label" style="margin-bottom:0;">Locations</div>
-      <button class="btn btn-sm btn-secondary" onclick="toggleAddLocationForm()">+ Add Location</button>
+      <% if (sessionRole === 'owner') { %><button class="btn btn-sm btn-secondary" onclick="toggleAddLocationForm()">+ Add Location</button><% } %>
     </div>
 
     <!-- Add location form -->
@@ -513,8 +513,8 @@
         : '';
 
       var platform = loc.hardware_platform || 'kisi';
-      var keyStatusLabel = loc.has_location_key
-        ? '<span class="config-row-status set">✓ Key set</span>'
+      var keyStatusLabel = loc.has_key
+        ? '<span class="config-row-status set">✓ Key set' + (loc.has_location_key ? ' (override)' : ' (org)') + '</span>'
         : '<span class="config-row-status warn">✗ Not set</span>';
       var locEmail = loc.notification_email;
       var emailStatusLabel = locEmail
@@ -551,25 +551,31 @@
         // ── Config rows
         '<div class="loc-body">' +
           '<div class="config-section" style="margin-top:0;border-top:1px solid var(--border);padding-top:0;">' +
-            // Row: Tier
+            // Row: Tier (locked once set)
             '<div class="config-row">' +
               '<div class="config-row-header">' +
                 '<span class="config-row-label">Tier</span>' +
-                '<select class="config-select" id="tier-' + loc.id + '" onchange="saveLocTier(\'' + loc.id + '\')">' +
-                  '<option value=""' + (!loc.tier ? ' selected' : '') + '>Not set</option>' +
-                  '<option value="Base"' + (loc.tier === 'Base' ? ' selected' : '') + '>Base</option>' +
-                  '<option value="Pro"' + (loc.tier === 'Pro' ? ' selected' : '') + '>Pro</option>' +
-                  '<option value="Connect"' + (loc.tier === 'Connect' ? ' selected' : '') + '>Connect</option>' +
-                '</select>' +
+                (loc.tier
+                  ? '<span class="config-row-status set">' + esc(loc.tier) + '</span>'
+                  : '<select class="config-select" id="tier-' + loc.id + '" onchange="saveLocTier(\'' + loc.id + '\')">' +
+                      '<option value="" selected>Not set</option>' +
+                      '<option value="Base">Base</option>' +
+                      '<option value="Pro">Pro</option>' +
+                      '<option value="Connect">Connect</option>' +
+                    '</select>'
+                ) +
               '</div>' +
             '</div>' +
-            // Row: Platform
+            // Row: Platform (locked once set)
             '<div class="config-row">' +
               '<div class="config-row-header">' +
                 '<span class="config-row-label">Platform</span>' +
-                '<select class="config-select" id="platform-' + loc.id + '" onchange="saveLocPlatform(\'' + loc.id + '\')">' +
-                  '<option value="kisi"' + (platform === 'kisi' ? ' selected' : '') + '>Kisi</option>' +
-                '</select>' +
+                (loc.hardware_platform
+                  ? '<span class="config-row-status set">' + esc(loc.hardware_platform.charAt(0).toUpperCase() + loc.hardware_platform.slice(1)) + '</span>'
+                  : '<select class="config-select" id="platform-' + loc.id + '" onchange="saveLocPlatform(\'' + loc.id + '\')">' +
+                      '<option value="kisi" selected>Kisi</option>' +
+                    '</select>'
+                ) +
               '</div>' +
             '</div>' +
             // Row: Hardware API Key
@@ -711,7 +717,7 @@
       var st    = document.getElementById('editstate-' + locationId).value.trim();
       if (!name) { toast('Location name is required', 'error'); return; }
 
-      apiFetch('/admin/clients/' + clientId + '/locations/' + locationId, {
+      apiFetch('/operator/' + clientId + '/locations/' + locationId, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ name: name, city: city || null, state: st || null }),
@@ -734,7 +740,7 @@
     // ── Per-location tier ───────────────────────────────────────────
     function saveLocTier(locationId) {
       var tier = document.getElementById('tier-' + locationId).value || null;
-      apiFetch('/admin/clients/' + clientId + '/locations/' + locationId, {
+      apiFetch('/operator/' + clientId + '/locations/' + locationId, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier: tier }),
@@ -752,7 +758,7 @@
     // ── Per-location platform ─────────────────────────────────────
     function saveLocPlatform(locationId) {
       var platform = document.getElementById('platform-' + locationId).value;
-      apiFetch('/admin/clients/' + clientId + '/locations/' + locationId, {
+      apiFetch('/operator/' + clientId + '/locations/' + locationId, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hardware_platform: platform }),
@@ -859,10 +865,9 @@
 
     function suspendLocation(locationId) {
       if (!confirm('Suspend this location? All active members will lose door access immediately. This cannot be undone without reactivating the location.')) return;
-      apiFetch('/admin/clients/' + clientId + '/locations/' + locationId + '/suspend', {
+      apiFetch('/operator/' + clientId + '/locations/' + locationId + '/suspend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'suspended' }),
       })
         .then(function(res) { return res.json(); })
         .then(function(data) {
@@ -879,7 +884,7 @@
     }
 
     function reactivateLocation(locationId) {
-      apiFetch('/admin/clients/' + clientId + '/locations/' + locationId + '/activate', {
+      apiFetch('/operator/' + clientId + '/locations/' + locationId + '/activate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       })

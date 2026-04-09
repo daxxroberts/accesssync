@@ -735,7 +735,7 @@
               '<div class="sync-platform"><div class="sync-platform-icon wix">' +
               '<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2.5" stroke="var(--sage-dark)" stroke-width="1.3"/><path d="M5 8.5l2-4 1.5 3 1-2 1.5 3" stroke="var(--sage-dark)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
               '</div><div><div class="sync-platform-name">Wix</div><div class="sync-platform-sub">Source of truth</div></div></div>' +
-              '<div class="sync-bar-wrap"><div class="sync-bar-track-full"><div class="sync-bar-fill-full wix" style="width:100%;"></div></div>' +
+              '<div class="sync-bar-wrap"><div class="sync-bar-track-full"><div class="sync-bar-fill-full wix" style="width:' + (wixTotal > 0 ? '100' : '0') + '%;"></div></div>' +
               '<div class="sync-bar-label"><span>Active plan members</span><span>' + wixTotal + ' total</span></div></div>' +
               '<div class="sync-count"><div class="sync-count-n sage">' + wixTotal + '</div><div class="sync-count-l">Active plans</div></div>' +
               '</div>';
