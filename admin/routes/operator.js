@@ -34,6 +34,8 @@ router.use(function operatorAuth(req, res, next) {
   if (req.method === 'POST' && req.path === '/verify-bypass') return next();
   // Site ID verification is a GET with invite token — exempt from JWT auth
   if (req.method === 'GET' && req.path === '/site-id/verify' && req.headers['x-invite-token']) return next();
+  // Onboarding GET endpoints — invite token auth (new operator has no JWT cookie yet)
+  if (req.method === 'GET' && /^\/clients\/[^/]+\/(kisi-groups|api-key\/status|api-key\/test)$/.test(req.path) && req.headers['x-invite-token']) return next();
   return requireAuth(req, res, next);
 });
 

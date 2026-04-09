@@ -1144,7 +1144,12 @@ async function apiFetch(url, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (_inviteToken) headers['X-Invite-Token'] = _inviteToken;
   const res = await fetch(url, { ...opts, headers, credentials: 'include' });
-  if (res.status === 401) { window.location.href = '/'; return; }
+  if (res.status === 401) {
+    // On the onboard page, a 401 means the invite token is missing or the endpoint still requires
+    // JWT. Do not redirect — the page itself is auth-exempt. Surface as an error instead.
+    toast('Session error (401). Please reload the page and try again.', 'error');
+    return res;
+  }
   if (res.status === 403) {
     const data = await res.clone().json().catch(() => ({}));
     if (data.error === 'Valid invite link required') {
