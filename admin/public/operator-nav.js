@@ -115,13 +115,17 @@ function showSessionExpiredModal() {
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center';
 
   var btn = isOwner && loginUrl
-    ? '<button onclick="window.location.href=\'' + loginUrl + '\'" style="padding:.5rem 1.5rem;border:none;border-radius:6px;background:var(--brand,#4F6EF7);color:#fff;cursor:pointer;font-weight:600">Sign In</button>'
+    ? '<button onclick="window.open(\'' + loginUrl + '\',\'_blank\')" style="padding:.5rem 1.5rem;border:none;border-radius:6px;background:var(--brand,#4F6EF7);color:#fff;cursor:pointer;font-weight:600">Sign In</button>'
     : '<button onclick="window.location.reload()" style="padding:.5rem 1.5rem;border:none;border-radius:6px;background:var(--brand,#4F6EF7);color:#fff;cursor:pointer;font-weight:600">Refresh Window</button>';
+
+  var body = isOwner
+    ? 'Your owner session has expired. Sign in again in a new tab, then return here and refresh.'
+    : 'Your session has expired. Please refresh to continue.';
 
   overlay.innerHTML =
     '<div style="background:var(--surface,#fff);border-radius:12px;padding:2rem;max-width:360px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.25)">' +
       '<h3 style="margin:0 0 .5rem">Session Expired</h3>' +
-      '<p style="margin:0 0 1.25rem;color:var(--muted,#888)">Your session has expired. Please refresh to continue.</p>' +
+      '<p style="margin:0 0 1.25rem;color:var(--muted,#888)">' + body + '</p>' +
       btn +
     '</div>';
   document.body.appendChild(overlay);
