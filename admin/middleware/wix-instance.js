@@ -59,6 +59,7 @@ function verifySignedInstance(instance) {
   let payload;
   try {
     payload = JSON.parse(Buffer.from(dataB64, 'base64url').toString('utf8'));
+    console.log('[wix-instance] payload:', JSON.stringify(payload));
   } catch {
     throw new Error('Wix instance data decode failed');
   }
