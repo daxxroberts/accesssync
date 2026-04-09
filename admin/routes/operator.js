@@ -15,7 +15,7 @@ const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
 const { encryptApiKey, decryptApiKey: decryptKey } = require('../../core/crypto-utils');
 const wixPlansApi = require('../../adapters/wix/wix-plans-api');
-const { requireAuth, signOperatorToken } = require('../middleware/auth');
+const { requireAuth, requireAuthOrOperator, signOperatorToken } = require('../middleware/auth');
 
 // Global rate limiter on all operator read endpoints (100 req/min/IP)
 router.use(rateLimit({ windowMs: 60_000, max: 100, standardHeaders: true, legacyHeaders: false }));
@@ -38,7 +38,7 @@ router.use(function operatorAuth(req, res, next) {
   if (req.method === 'GET' && /^\/clients\/[^/]+\/(kisi-groups|api-key\/status|api-key\/test)$/.test(req.path) && req.headers['x-invite-token']) return next();
   // Location and mapping data fetched during onboarding completion
   if (req.method === 'GET' && /^\/[^/]+\/locations(\/[^/]+\/mappings)?$/.test(req.path) && req.headers['x-invite-token']) return next();
-  return requireAuth(req, res, next);
+  return requireAuthOrOperator(req, res, next);
 });
 
 /**

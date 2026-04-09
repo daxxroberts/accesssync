@@ -30,6 +30,7 @@ const PORT = process.env.ADMIN_PORT || process.env.PORT || 3001;
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+app.set('trust proxy', 1); // Railway runs behind a reverse proxy — required for rate limiting + IP resolution
 
 // ── Security & logging middleware ─────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled — pages use inline scripts/styles

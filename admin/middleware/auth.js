@@ -64,6 +64,23 @@ function requireAuthPage(req, res, next) {
 }
 
 /**
+ * API middleware — accepts either adminToken or operatorToken cookie.
+ * Used on operator API routes that must serve both owner and Wix portal sessions.
+ */
+function requireAuthOrOperator(req, res, next) {
+  const adminToken    = req.cookies?.adminToken;
+  const operatorToken = req.cookies?.operatorToken;
+  const token = adminToken || operatorToken;
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    req.admin = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired session' });
+  }
+}
+
+/**
  * Express middleware for operator portal page routes.
  * Accepts either:
  *   - adminToken cookie (owner navigating via /clients)
@@ -88,4 +105,4 @@ function requireAuthPageOrOperator(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, requireAuthPage, requireAuthPageOrOperator, signToken, signOperatorToken };
+module.exports = { requireAuth, requireAuthOrOperator, requireAuthPage, requireAuthPageOrOperator, signToken, signOperatorToken };
