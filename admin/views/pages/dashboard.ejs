@@ -302,7 +302,7 @@
     }
   </style>
 </head>
-<body>
+<body data-session-role="<%= sessionRole %>"<% if (loginUrl) { %> data-login-url="<%= loginUrl %>"<% } %>>
   <%- include('../partials/topbar') %>
   <%- include('../partials/subnav', { activeTab: activeTab }) %>
 
@@ -333,7 +333,7 @@
           </div>
           <div style="flex:1;min-width:0;">
             <div class="platform-name">Wix</div>
-            <div class="platform-detail">houseofgains.com · Webhooks active</div>
+            <div class="platform-detail" id="wix-platform-detail">—</div>
           </div>
           <span class="pill sage"><span class="pdot pulse"></span>Live</span>
           <button class="sync-btn" id="sync-wix" onclick="syncNow('sync-wix','sync-wix-label')" style="font-size:11px;padding:5px 11px;">
@@ -346,7 +346,7 @@
           </div>
           <div style="flex:1;min-width:0;">
             <div class="platform-name">Kisi</div>
-            <div class="platform-detail">2 locations · Pro tier · $199/mo each</div>
+            <div class="platform-detail" id="hardware-platform-detail">—</div>
           </div>
           <span class="pill sage"><span class="pdot pulse"></span>Live</span>
           <button class="sync-btn" id="sync-kisi" onclick="syncNow('sync-kisi','sync-kisi-label')" style="font-size:11px;padding:5px 11px;">
@@ -366,12 +366,12 @@
           <div class="stat-l">Active Members</div>
         </div>
         <div class="stat-card">
-          <div class="stat-delta neutral">Auto-sync</div>
+          <div class="stat-delta neutral" title="Syncs automatically on every Wix event. Manual sync available above.">Auto-sync ⓘ</div>
           <div class="stat-n sm" id="stat-sync-n">—</div>
           <div class="stat-l">Last Sync</div>
         </div>
         <div class="stat-card" id="error-stat-card" style="cursor:pointer;" onclick="var cid=new URLSearchParams(window.location.search).get('clientId'); if(cid) window.location.href='/access?clientId='+cid+'&filter=error';">
-          <div class="stat-delta warn">Attention</div>
+          <div class="stat-delta warn" id="error-stat-delta">—</div>
           <div class="stat-n red" id="top-err-n">—</div>
           <div class="stat-l">Errors</div>
         </div>
@@ -382,48 +382,17 @@
         </div>
       </div>
 
-      <!-- Member sync comparison -->
-      <div class="sync-compare" style="margin-top:12px;">
+      <!-- Member sync comparison — rendered from live data by loadLiveData() -->
+      <div class="sync-compare" style="margin-top:12px;" id="sync-compare-block">
         <div class="sync-compare-header">
           <span class="sync-compare-title">
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M9 4l3 3-3 3M5 10L2 7l3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Member Sync — All Locations
           </span>
-          <span class="sync-compare-ts">As of last sync · 4 min ago</span>
+          <span class="sync-compare-ts" id="sync-compare-ts">—</span>
         </div>
-        <div class="sync-row">
-          <div class="sync-platform">
-            <div class="sync-platform-icon wix">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2.5" stroke="var(--sage-dark)" stroke-width="1.3"/><path d="M5 8.5l2-4 1.5 3 1-2 1.5 3" stroke="var(--sage-dark)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </div>
-            <div><div class="sync-platform-name">Wix</div><div class="sync-platform-sub">Source of truth</div></div>
-          </div>
-          <div class="sync-bar-wrap">
-            <div class="sync-bar-track-full"><div class="sync-bar-fill-full wix" style="width:100%;"></div></div>
-            <div class="sync-bar-label"><span>Active plan members</span><span>105 total</span></div>
-          </div>
-          <div class="sync-count"><div class="sync-count-n sage">105</div><div class="sync-count-l">Active plans</div></div>
-        </div>
-        <div class="sync-row">
-          <div class="sync-platform">
-            <div class="sync-platform-icon kisi">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="8" width="10" height="7" rx="1.5" stroke="var(--brand)" stroke-width="1.3"/><path d="M5.5 8V6a2.5 2.5 0 015 0v2" stroke="var(--brand)" stroke-width="1.3" stroke-linecap="round" fill="none"/><circle cx="8" cy="11.5" r="1" fill="var(--brand)"/></svg>
-            </div>
-            <div><div class="sync-platform-name">Kisi</div><div class="sync-platform-sub">Destination</div></div>
-          </div>
-          <div class="sync-bar-wrap">
-            <div class="sync-bar-track-full"><div class="sync-bar-fill-full kisi-synced" style="width:89%;"></div></div>
-            <div class="sync-bar-label"><span style="color:var(--brand);font-weight:600;">104 AccessSync</span><span>+ 13 not managed</span></div>
-          </div>
-          <div class="sync-count"><div class="sync-count-n brand">104</div><div class="sync-count-l">AccessSync</div></div>
-        </div>
-        <div class="sync-status warn">
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.7" fill="currentColor"/></svg>
-          1 member pending — Amber Knox provisioning incomplete (Fort Smith)
-        </div>
-        <div class="unmanaged-note">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4.5" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M1 10c0-2 2-3 5-3s5 1 5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          <span><strong>13 Kisi users</strong> are staff, contractors, or visitors — not managed by AccessSync and excluded from sync counts</span>
+        <div id="sync-compare-rows">
+          <div style="padding:16px;color:var(--muted);font-size:12px;">Loading sync data…</div>
         </div>
       </div>
     </div>
@@ -451,14 +420,14 @@
     function translateError(reason) {
       if (!reason) return { message: 'Something went wrong.', action: 'Contact support.' };
       var r = String(reason);
-      if (/401|ACS_002|api key.*reject|invalid.*key/i.test(r)) return { message: 'Your door system API key was rejected.', action: 'Go to Locations and re-enter your API key.' };
-      if (/403|suspended.*account|downgrad/i.test(r)) return { message: 'Your door system account may be suspended or downgraded.', action: 'Check your Kisi account subscription.' };
-      if (/429|ACS_004|rate.?limit/i.test(r)) return { message: 'Temporarily rate limited.', action: 'No action needed — this will retry automatically.' };
-      if (/5\d\d|ACS_005|server error/i.test(r)) return { message: 'Your door system is experiencing issues.', action: 'AccessSync will retry. If this persists, check kisi.com/status.' };
-      if (/timeout|ACS_001|timed? out/i.test(r)) return { message: 'Connection to door system timed out.', action: 'This will retry automatically.' };
+      if (/401|ACS_002|api key.*reject|invalid.*key/i.test(r)) return { message: 'Your door system API key was rejected.', action: 'Go to System Config and re-enter your API key.' };
+      if (/403|suspended.*account|downgrad/i.test(r)) return { message: 'Your hardware account may be suspended or downgraded.', action: 'Check your hardware account subscription status.' };
+      if (/429|ACS_004|rate.?limit/i.test(r)) return { message: 'Temporarily rate limited by your door system.', action: 'No action needed — AccessSync will retry automatically.' };
+      if (/5\d\d|ACS_005|server error/i.test(r)) return { message: 'Your door system is experiencing an outage.', action: 'AccessSync will retry. If this persists, check your hardware provider\'s status page.' };
+      if (/timeout|ACS_001|timed? out/i.test(r)) return { message: 'Connection to your door system timed out.', action: 'AccessSync will retry automatically.' };
       if (/no.*mapping|plan.*not.*mapped|mapping.*not.*found/i.test(r)) return { message: "This member's plan isn't linked to a door group.", action: 'Go to Plan Mapping to assign it.' };
-      if (/pending.?hardware/i.test(r)) return { message: 'Needs Setup.', action: 'Add your API key to start provisioning.' };
-      return { message: 'Something went wrong.', action: 'Contact support.' };
+      if (/pending.?hardware/i.test(r)) return { message: 'Waiting for hardware setup.', action: 'Add your API key in System Config to start provisioning.' };
+      return { message: 'An unexpected error occurred.', action: 'Try syncing again, or contact AccessSync support.' };
     }
 
     // ── Location accordion ──
@@ -510,12 +479,16 @@
         btn.disabled = false; btn.classList.remove('syncing');
         if (btnId === 'sync-all') {
           lbl.innerHTML = '<span style="display:flex;align-items:center;gap:5px;"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M10 6A4 4 0 112 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10 3v3h-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Sync all</span>';
+          showToast('success', 'Sync complete — member list refreshed');
         } else {
           var isShort = btnId === 'sync-wix' || btnId === 'sync-kisi';
           lbl.textContent = isShort ? 'Sync' : 'Sync now';
+          showToast('success', 'Sync complete');
         }
         var syncLabel = document.getElementById('sync-label');
         if (syncLabel) syncLabel.textContent = 'Just now';
+        var syncTs = document.getElementById('sync-compare-ts');
+        if (syncTs) syncTs.textContent = 'As of last sync · just now';
       }, 2500);
     }
 
@@ -710,8 +683,10 @@
             [s.location_count + ' location' + (s.location_count !== 1 ? 's' : ''),
              c.tier ? c.tier + ' tier' : ''].filter(Boolean).join(' · ');
           // Update stats
-          document.getElementById('top-err-n').textContent = s.error_count;
-          document.getElementById('top-err-n').className = s.error_count > 0 ? 'stat-n red' : 'stat-n sage';
+          var errN = document.getElementById('top-err-n');
+          if (errN) { errN.textContent = s.error_count; errN.className = s.error_count > 0 ? 'stat-n red' : 'stat-n sage'; }
+          var errDelta = document.getElementById('error-stat-delta');
+          if (errDelta) { errDelta.textContent = s.error_count > 0 ? 'Needs attention' : 'All clear'; errDelta.className = s.error_count > 0 ? 'stat-delta warn' : 'stat-delta up'; }
           // Active members
           var activeN = document.getElementById('stat-active-n');
           if (activeN) activeN.textContent = s.active_members || 0;
@@ -728,9 +703,68 @@
           if (syncN && c.last_sync_at) {
             syncN.textContent = new Date(c.last_sync_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
           } else if (syncN) { syncN.textContent = 'Never'; }
-          // Update platform detail
-          var wixDetail = document.querySelector('.platform-chip:first-child .platform-detail');
-          if (wixDetail && c.site_url) wixDetail.textContent = c.site_url.replace(/^https?:\/\//, '') + ' · Webhooks active';
+          // Update platform details from live client data
+          var wixDetail = document.getElementById('wix-platform-detail');
+          if (wixDetail) wixDetail.textContent = c.site_url ? c.site_url.replace(/^https?:\/\//, '') + ' · Webhooks active' : 'Webhooks active';
+          var hwDetail = document.getElementById('hardware-platform-detail');
+          if (hwDetail) {
+            var hwParts = [];
+            if (s.location_count) hwParts.push(s.location_count + ' location' + (s.location_count !== 1 ? 's' : ''));
+            if (c.tier) hwParts.push(c.tier + ' tier');
+            hwDetail.textContent = hwParts.length ? hwParts.join(' · ') : '—';
+          }
+          // Populate PLATFORM_CONFIG for operator-nav platform name display
+          if (c.hardware_platform && typeof PLATFORM_CONFIG !== 'undefined') {
+            PLATFORM_CONFIG.name = c.hardware_platform.charAt(0).toUpperCase() + c.hardware_platform.slice(1);
+          }
+          // Render sync-compare block from live data
+          (function renderSyncCompare() {
+            var tsEl = document.getElementById('sync-compare-ts');
+            if (tsEl) tsEl.textContent = c.last_sync_at ? 'As of last sync · ' + fmt(c.last_sync_at) : 'Not yet synced';
+            var rows = document.getElementById('sync-compare-rows');
+            if (!rows) return;
+            var hwName = c.hardware_platform ? (c.hardware_platform.charAt(0).toUpperCase() + c.hardware_platform.slice(1)) : 'Hardware';
+            var wixTotal = s.total_members || 0;
+            var synced   = s.active_members || 0;
+            var unmanaged = s.unmanaged_count || 0;
+            var pending  = s.pending_members || 0;
+            var syncedPct = wixTotal > 0 ? Math.round((synced / wixTotal) * 100) : 0;
+            var html = '';
+            // Wix row
+            html += '<div class="sync-row">' +
+              '<div class="sync-platform"><div class="sync-platform-icon wix">' +
+              '<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2.5" stroke="var(--sage-dark)" stroke-width="1.3"/><path d="M5 8.5l2-4 1.5 3 1-2 1.5 3" stroke="var(--sage-dark)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              '</div><div><div class="sync-platform-name">Wix</div><div class="sync-platform-sub">Source of truth</div></div></div>' +
+              '<div class="sync-bar-wrap"><div class="sync-bar-track-full"><div class="sync-bar-fill-full wix" style="width:100%;"></div></div>' +
+              '<div class="sync-bar-label"><span>Active plan members</span><span>' + wixTotal + ' total</span></div></div>' +
+              '<div class="sync-count"><div class="sync-count-n sage">' + wixTotal + '</div><div class="sync-count-l">Active plans</div></div>' +
+              '</div>';
+            // Hardware row
+            html += '<div class="sync-row">' +
+              '<div class="sync-platform"><div class="sync-platform-icon kisi">' +
+              '<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="8" width="10" height="7" rx="1.5" stroke="var(--brand)" stroke-width="1.3"/><path d="M5.5 8V6a2.5 2.5 0 015 0v2" stroke="var(--brand)" stroke-width="1.3" stroke-linecap="round" fill="none"/><circle cx="8" cy="11.5" r="1" fill="var(--brand)"/></svg>' +
+              '</div><div><div class="sync-platform-name">' + hwName + '</div><div class="sync-platform-sub">Destination</div></div></div>' +
+              '<div class="sync-bar-wrap"><div class="sync-bar-track-full"><div class="sync-bar-fill-full kisi-synced" style="width:' + syncedPct + '%;"></div></div>' +
+              '<div class="sync-bar-label"><span style="color:var(--brand);font-weight:600;">' + synced + ' AccessSync-managed</span>' +
+              (unmanaged > 0 ? '<span>+ ' + unmanaged + ' not managed</span>' : '') + '</div></div>' +
+              '<div class="sync-count"><div class="sync-count-n brand">' + synced + '</div><div class="sync-count-l">AccessSync</div></div>' +
+              '</div>';
+            // Pending warning
+            if (pending > 0) {
+              html += '<div class="sync-status warn">' +
+                '<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.7" fill="currentColor"/></svg>' +
+                pending + ' member' + (pending !== 1 ? 's' : '') + ' pending — provisioning incomplete. <a href="/members?clientId=' + clientId + '&filter=pending" style="color:inherit;text-decoration:underline;">View in Members</a>' +
+                '</div>';
+            }
+            // Unmanaged note
+            if (unmanaged > 0) {
+              html += '<div class="unmanaged-note">' +
+                '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4.5" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M1 10c0-2 2-3 5-3s5 1 5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>' +
+                '<span><strong>' + unmanaged + ' ' + hwName + ' user' + (unmanaged !== 1 ? 's' : '') + '</strong> are not managed by AccessSync (staff, contractors, or visitors) and are excluded from sync counts.</span>' +
+                '</div>';
+            }
+            rows.innerHTML = html;
+          })();
           // Sync label
           var syncLabel = document.getElementById('sync-label');
           if (syncLabel && c.last_sync_at) {

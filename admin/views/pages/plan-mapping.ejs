@@ -269,7 +269,7 @@
     }
   </style>
 </head>
-<body>
+<body data-session-role="<%= sessionRole %>"<% if (loginUrl) { %> data-login-url="<%= loginUrl %>"<% } %>>
   <%- include('../partials/topbar') %>
   <%- include('../partials/subnav', { activeTab: activeTab }) %>
 

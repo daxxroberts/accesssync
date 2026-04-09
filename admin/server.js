@@ -75,13 +75,19 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ── Operator dashboard pages (auth-gated) ─────────────────────
 // Operator pages — accessible by owner (adminToken) or Chad via Wix portal (operatorToken)
 // allowWixFrame applied so these pages render correctly inside the Wix iframe
-app.get('/dashboard',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/dashboard',   { activeTab: 'overview' }));
-app.get('/members',      allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/members',      { activeTab: 'members' }));
-app.get('/plan-mapping', allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/plan-mapping', { activeTab: 'plan-mapping' }));
-app.get('/access',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/access',       { activeTab: 'access' }));
-app.get('/locations',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/locations',    { activeTab: 'config' }));
+function sessionMeta(req) {
+  const role = req.admin?.role === 'operator' ? 'operator' : 'owner';
+  const loginUrl = role === 'owner' ? '/OwnerDashboard' : null;
+  return { sessionRole: role, loginUrl };
+}
+
+app.get('/dashboard',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/dashboard',   { activeTab: 'overview',     ...sessionMeta(req) }));
+app.get('/members',      allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/members',      { activeTab: 'members',      ...sessionMeta(req) }));
+app.get('/plan-mapping', allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/plan-mapping', { activeTab: 'plan-mapping', ...sessionMeta(req) }));
+app.get('/access',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/access',       { activeTab: 'access',       ...sessionMeta(req) }));
+app.get('/locations',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/locations',    { activeTab: 'config',       ...sessionMeta(req) }));
 // Admin panel — owner only (no iframe — no allowWixFrame)
-app.get('/admin-panel',  requireAuthPage,            (req, res) => res.render('pages/admin-panel', { activeTab: 'admin' }));
+app.get('/admin-panel',  requireAuthPage, (req, res) => res.render('pages/admin-panel', { activeTab: 'admin', ...sessionMeta(req) }));
 // Onboarding — server-rendered so invite token is injected securely (never in URL)
 app.get('/onboard', allowWixFrame, (req, res) =>
   res.render('pages/onboard', {

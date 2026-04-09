@@ -45,6 +45,7 @@ const state = {
 async function apiFetch(url, options = {}) {
   const res = await fetch(url, { credentials: 'include', ...options });
   if (res.status === 401) {
+    stopPolling();
     showLogin();
     throw new Error('Unauthorized');
   }

@@ -172,7 +172,7 @@
     }
   </style>
 </head>
-<body>
+<body data-session-role="<%= sessionRole %>"<% if (loginUrl) { %> data-login-url="<%= loginUrl %>"<% } %>>
   <%- include('../partials/topbar') %>
   <%- include('../partials/subnav', { activeTab: activeTab }) %>
 
@@ -411,7 +411,11 @@
       var tbody = document.getElementById('membersBody');
       tbody.innerHTML = '';
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No members match your filters.</td></tr>';
+        var searchVal = document.getElementById('filterSearch').value.trim();
+        var emptyMsg = searchVal
+          ? 'No members found for \u201c' + searchVal + '\u201d. Try searching by email address.'
+          : 'No members match the selected filters.';
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="6">' + emptyMsg + '</td></tr>';
         return;
       }
       var hasActiveFilter = document.getElementById('filterSearch').value.trim() ||

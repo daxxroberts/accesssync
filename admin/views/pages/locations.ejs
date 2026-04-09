@@ -148,7 +148,7 @@
     }
   </style>
 </head>
-<body>
+<body data-session-role="<%= sessionRole %>"<% if (loginUrl) { %> data-login-url="<%= loginUrl %>"<% } %>>
   <%- include('../partials/topbar') %>
   <%- include('../partials/subnav', { activeTab: activeTab }) %>
 
@@ -858,7 +858,7 @@
     }
 
     function suspendLocation(locationId) {
-      if (!confirm('Suspend this location? All provisioned members will lose access.')) return;
+      if (!confirm('Suspend this location? All active members will lose door access immediately. This cannot be undone without reactivating the location.')) return;
       apiFetch('/admin/clients/' + clientId + '/locations/' + locationId + '/suspend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

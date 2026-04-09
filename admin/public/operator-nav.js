@@ -7,9 +7,9 @@
 
 'use strict';
 
-// ── Platform config ────────────────────────────────────────────────
-var PLATFORM_CONFIG = { name: 'Kisi', groupLabel: 'Access Group' };
-function platformName() { return PLATFORM_CONFIG.name; }
+// ── Platform config — populated from API on load ───────────────────
+var PLATFORM_CONFIG = { name: '', groupLabel: 'Access Group' };
+function platformName() { return PLATFORM_CONFIG.name || 'Hardware'; }
 
 // ── Dark mode ──────────────────────────────────────────────────────
 function toggleDarkMode() {
@@ -31,14 +31,13 @@ function renderNav() {
 
   var activeKey = container.dataset.active || '';
 
-  // Badges are static mock values; replace with API data when live
   var tabs = [
-    { label: 'Overview',                            href: '/dashboard',     key: 'overview' },
-    { label: 'Members',                             href: '/members',       key: 'members',      badge: 2 },
-    { label: 'Plan Mapping',                        href: '/plan-mapping',  key: 'plan-mapping', badge: 1 },
-    { label: 'Access',                              href: '/access',        key: 'access' },
-    { label: 'System Config',                         href: '/locations',     key: 'config' },
-    { label: 'Admin',                               href: '/admin-panel',   key: 'admin' },
+    { label: 'Overview',     href: '/dashboard',    key: 'overview' },
+    { label: 'Members',      href: '/members',      key: 'members' },
+    { label: 'Plan Mapping', href: '/plan-mapping', key: 'plan-mapping' },
+    { label: 'Access',       href: '/access',       key: 'access' },
+    { label: 'System Config', href: '/locations',   key: 'config' },
+    { label: 'Admin',        href: '/admin-panel',  key: 'admin' },
   ];
 
   container.innerHTML = '';
@@ -89,23 +88,50 @@ function showToast(type, msg) {
 // ── Logout ─────────────────────────────────────────────────────────
 function doLogout() {
   fetch('/auth/logout', { method: 'POST', credentials: 'include' })
-    .then(function() { window.location.href = '/OwnerDashboard'; })
-    .catch(function() { window.location.href = '/OwnerDashboard'; });
+    .then(function() {
+      var loginUrl = document.body.dataset.loginUrl;
+      if (loginUrl) { window.location.href = loginUrl; }
+      else { window.location.reload(); }
+    })
+    .catch(function() { window.location.reload(); });
 }
 
 // ── Session-expired modal ─────────────────────────────────────────
+var _sessionExpired = false;
+
 function showSessionExpiredModal() {
-  if (document.getElementById('session-expired-overlay')) return;
+  if (_sessionExpired) return;
+  _sessionExpired = true;
+  stopAllPolling();
+
+  var role = document.body.dataset.sessionRole || 'operator';
+  var isOwner = role === 'owner';
+  var loginUrl = document.body.dataset.loginUrl;
+
   var overlay = document.createElement('div');
   overlay.id = 'session-expired-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center';
+
+  var btn = isOwner && loginUrl
+    ? '<button onclick="window.location.href=\'' + loginUrl + '\'" style="padding:.5rem 1.5rem;border:none;border-radius:6px;background:var(--brand,#4F6EF7);color:#fff;cursor:pointer;font-weight:600">Sign In</button>'
+    : '<button onclick="window.location.reload()" style="padding:.5rem 1.5rem;border:none;border-radius:6px;background:var(--brand,#4F6EF7);color:#fff;cursor:pointer;font-weight:600">Refresh Window</button>';
+
   overlay.innerHTML =
     '<div style="background:var(--surface,#fff);border-radius:12px;padding:2rem;max-width:360px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.25)">' +
       '<h3 style="margin:0 0 .5rem">Session Expired</h3>' +
-      '<p style="margin:0 0 1.25rem;color:var(--muted,#888)">Your session has expired. Please sign in again.</p>' +
-      '<button onclick="window.location.href=\'/OwnerDashboard\'" style="padding:.5rem 1.5rem;border:none;border-radius:6px;background:var(--brand,#E94560);color:#fff;cursor:pointer;font-weight:600">Sign In</button>' +
+      '<p style="margin:0 0 1.25rem;color:var(--muted,#888)">Your session has expired. Please refresh to continue.</p>' +
+      btn +
     '</div>';
   document.body.appendChild(overlay);
+}
+
+// ── Stop all polling (called on session expiry) ───────────────────
+function stopAllPolling() {
+  if (typeof window._pollTimers === 'object') {
+    window._pollTimers.forEach(function(t) { clearInterval(t); clearTimeout(t); });
+  }
+  // Also stop any timers registered by app.js via the shared registry
+  if (typeof stopPolling === 'function') { try { stopPolling(); } catch(e) {} }
 }
 
 // ── Global API fetch wrapper (catches 401) ────────────────────────
