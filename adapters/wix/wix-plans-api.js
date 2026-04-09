@@ -41,10 +41,7 @@ async function wixFetch(path, apiKey, siteId, options = {}) {
  */
 async function listPricingPlans(apiKey, siteId) {
   try {
-    const data = await wixFetch('/pricing-plans/v2/plans/query', apiKey, siteId, {
-      method: 'POST',
-      body: { query: {} },
-    });
+    const data = await wixFetch('/pricing-plans/v2/plans', apiKey, siteId);
     const plans = data.plans || [];
     return plans.map(p => ({
       id: p._id || p.id,
@@ -66,16 +63,13 @@ async function listPricingPlans(apiKey, siteId) {
  */
 async function listBookingServices(apiKey, siteId) {
   try {
-    const data = await wixFetch('/bookings/v1/services/query', apiKey, siteId, {
-      method: 'POST',
-      body: { query: {} },
-    });
+    const data = await wixFetch('/bookings/v1/services', apiKey, siteId);
     const services = data.services || [];
     return services.map(s => ({
       id: s._id || s.id,
-      name: s.name || 'Unnamed Service',
+      name: s.info?.name || s.name || 'Unnamed Service',
       type: 'booking_service',
-      description: s.description || '',
+      description: s.info?.description || s.description || '',
       status: s.hidden ? 'hidden' : 'active',
       slug: s.slugs?.[0]?.name || null,
     }));
@@ -103,10 +97,7 @@ async function listAllMappable(apiKey, siteId) {
  */
 async function testApiKey(apiKey, siteId) {
   try {
-    await wixFetch('/pricing-plans/v2/plans/query', apiKey, siteId, {
-      method: 'POST',
-      body: { query: { paging: { limit: 1 } } },
-    });
+    await wixFetch('/pricing-plans/v2/plans', apiKey, siteId);
     return { valid: true };
   } catch (err) {
     if (err.statusCode === 401) return { valid: false, error: 'Invalid API key — Wix rejected it' };

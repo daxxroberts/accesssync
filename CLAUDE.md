@@ -245,7 +245,7 @@ Front matter is the index. If it drifts from reality it defeats the purpose — 
 | DR-025 | `locations` table. `clients`: +site_url, +last_wix_webhook_at. `plan_mappings`: +location_id, +plan_name, +door_name, +status. |
 | DR-026 | Multi-door provisioning — `member_role_assignments` table. `payment.recovered` = enableAccess only. `UnrecoverableError` for non-retryable 4xx. Legacy fallback: `member_access_state.role_assignment_id` if `member_role_assignments` empty. |
 | DR-027 | Per-location subscription model. `plan-mapping-resolver.js` filters `subscription_status = 'active'` locations. |
-| DR-028 | Hardware API key storage — `clients.hardware_api_key` (org default, encrypted) + `locations.hardware_api_key` (nullable override). AES-256-GCM via `core/crypto-utils.js` + `KISI_ENCRYPTION_KEY` env var. Lookup: location key \|\| client key. `KISI_API_KEY_MOCK` removed (OB-23 closed). |
+| DR-028 | Hardware API key storage — `clients.hardware_api_key` (org default, encrypted) + `locations.hardware_api_key` (nullable override). AES-256-GCM via `core/crypto-utils.js` + `API_KEY_ENCRYPTION_KEY` env var. Lookup: location key \|\| client key. `KISI_API_KEY_MOCK` removed (OB-23 closed). |
 | DR-029 | Sub-member ID format — `{wix_uuid}###as{NNN}`. **⚠️ DEFERRED — family plan build post-HOG.** |
 | DR-030 | `plan_holder_id` on `member_identity` + `member_access_state`. NULL for single/booking members. **⚠️ DEFERRED.** |
 | DR-031 | Upstream explosion pattern — family events exploded in Layer 2. Core Engine unchanged. **⚠️ DEFERRED.** |
@@ -315,8 +315,9 @@ RESEND_FROM_EMAIL             Sender address (e.g. alerts@accesssync.io) — DR-
 ACCESSSYNC_OWNER_NOTIFICATION_EMAIL   Platform owner email (Daxx). Receives HMAC spike alerts,
                               reconciliation digests, and client notification fallback when
                               client has no notification_email set. Set once per Railway deployment.
-KISI_ENCRYPTION_KEY           64-char hex string — AES-256-GCM for hardware API keys (DR-028).
+API_KEY_ENCRYPTION_KEY        64-char hex string — AES-256-GCM for hardware + Wix API keys (DR-028).
                               Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+                              Required on BOTH core engine and admin hub services — must be the same value.
 DEFAULT_TENANT_ID             Temporary placeholder — remove when multi-tenant routing is complete
 
 # Admin Hub service (Railway — node admin/server.js)
