@@ -15,7 +15,7 @@ const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
 const { encryptApiKey, decryptApiKey: decryptKey } = require('../../core/crypto-utils');
 const wixPlansApi = require('../../adapters/wix/wix-plans-api');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, signOperatorToken } = require('../middleware/auth');
 
 // Global rate limiter on all operator read endpoints (100 req/min/IP)
 router.use(rateLimit({ windowMs: 60_000, max: 100, standardHeaders: true, legacyHeaders: false }));
@@ -24,7 +24,7 @@ router.use(rateLimit({ windowMs: 60_000, max: 100, standardHeaders: true, legacy
 // Onboarding endpoints use requireInviteToken middleware (validates token value).
 // Only specific POST paths are exempt — all other routes require JWT even if
 // x-invite-token header is present (H-1 security fix).
-const ONBOARDING_PATHS = new Set(['/verify-bypass']);
+const ONBOARDING_PATHS = new Set(['/verify-bypass', '/issue-session']);
 const ONBOARDING_PREFIX = /^\/clients(\/[^/]+\/(locations(\/[^/]+\/activate)?|api-key))?$/;
 router.use(function operatorAuth(req, res, next) {
   if (req.method === 'POST' && req.headers['x-invite-token'] &&
@@ -36,6 +36,8 @@ router.use(function operatorAuth(req, res, next) {
   if (req.method === 'GET' && req.path === '/site-id/verify' && req.headers['x-invite-token']) return next();
   // Onboarding GET endpoints — invite token auth (new operator has no JWT cookie yet)
   if (req.method === 'GET' && /^\/clients\/[^/]+\/(kisi-groups|api-key\/status|api-key\/test)$/.test(req.path) && req.headers['x-invite-token']) return next();
+  // Location and mapping data fetched during onboarding completion
+  if (req.method === 'GET' && /^\/[^/]+\/locations(\/[^/]+\/mappings)?$/.test(req.path) && req.headers['x-invite-token']) return next();
   return requireAuth(req, res, next);
 });
 
@@ -139,14 +141,56 @@ router.get('/site-id/verify', requireInviteToken, async (req, res) => {
   }
 
   try {
-    const existing = await db.query('SELECT id, name FROM clients WHERE site_id = $1 LIMIT 1', [siteId.trim()]);
+    const existing = await db.query(
+      `SELECT id, name, tier, hardware_platform,
+              hardware_api_key IS NOT NULL AS has_api_key
+       FROM clients WHERE site_id = $1 LIMIT 1`,
+      [siteId.trim()]
+    );
     if (existing.rows.length) {
-      return res.json({ valid: false, error: 'This Wix site is already registered with AccessSync' });
+      const c = existing.rows[0];
+      const locs = await db.query(
+        'SELECT id, name, city, state FROM locations WHERE client_id = $1 ORDER BY created_at ASC',
+        [c.id]
+      );
+      return res.json({
+        valid: false,
+        alreadyRegistered: true,
+        client: { id: c.id, name: c.name, tier: c.tier, hardware_platform: c.hardware_platform, has_api_key: c.has_api_key },
+        locations: locs.rows,
+      });
     }
     res.json({ valid: true, message: 'Site ID accepted — full verification happens at the Wix API key step' });
   } catch (err) {
     console.error('[operator] GET site-id/verify error:', err.message);
     res.status(500).json({ valid: false, error: 'Verification check failed' });
+  }
+});
+
+// ── POST /operator/issue-session ─────────────────────────────────
+// Invite-token gated. Issues an operatorToken cookie after onboarding completes,
+// so the portal path has a valid session without going through portal.js again.
+// Body: { clientId, siteId }
+router.post('/issue-session', requireInviteToken, async (req, res) => {
+  const { clientId, siteId } = req.body;
+  if (!clientId || !siteId) return res.status(400).json({ error: 'clientId and siteId are required' });
+  try {
+    const result = await db.query(
+      'SELECT id FROM clients WHERE id = $1 AND site_id = $2 LIMIT 1',
+      [clientId, siteId]
+    );
+    if (!result.rows.length) return res.status(403).json({ error: 'Client/site mismatch' });
+    const token = signOperatorToken(clientId, siteId);
+    res.cookie('operatorToken', token, {
+      httpOnly: true,
+      secure:   process.env.NODE_ENV === 'production',
+      sameSite: 'none',
+      maxAge:   8 * 60 * 60 * 1000,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[operator] POST issue-session error:', err.message);
+    res.status(500).json({ error: 'Session issue failed' });
   }
 });
 

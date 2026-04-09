@@ -1104,6 +1104,36 @@ async function testSiteId(siteId) {
       el.style.color = 'var(--green, #22C55E)';
       el.textContent = '✓ ' + (data.message || 'Site ID accepted');
       state.siteIdVerified = true;
+    } else if (data.alreadyRegistered) {
+      // Site exists — load client data into state and resume from correct step
+      state.clientId         = data.client.id;
+      state.name             = data.client.name;
+      state.tier             = data.client.tier;
+      state.hardwarePlatform = data.client.hardware_platform;
+      state.locations        = data.locations || [];
+      state.siteIdVerified   = true;
+
+      if (data.client.has_api_key && data.locations.length) {
+        // Fully configured — issue session cookie then go to dashboard
+        el.style.color = 'var(--green, #22C55E)';
+        el.textContent = '✓ Site found — loading your dashboard…';
+        await apiFetch('/operator/issue-session', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ clientId: data.client.id, siteId: state.siteId }),
+        });
+        window.location.href = '/dashboard';
+      } else if (!data.client.has_api_key) {
+        // Has client (+ possibly location) but no API key — jump to Step 4
+        el.style.color = 'var(--green, #22C55E)';
+        el.textContent = '✓ Site found — resuming your setup';
+        showStep(4);
+      } else {
+        // Has client + API key but no location — jump to Step 3
+        el.style.color = 'var(--green, #22C55E)';
+        el.textContent = '✓ Site found — resuming your setup';
+        showStep(3);
+      }
     } else {
       el.style.color = 'var(--red, #EF4444)';
       el.textContent = '✗ ' + (data.error || 'Invalid Site ID');
@@ -1431,7 +1461,10 @@ async function nextStep4() {
 
   setBusy('btn-s4', true, 'Connecting…');
   try {
-    await _provisionClient();
+    // Skip provisioning if client already exists (resume path from alreadyRegistered)
+    if (!state.clientId) {
+      await _provisionClient();
+    }
 
     const res = await apiFetch(`/operator/clients/${state.clientId}/api-key`, {
       method:  'POST',
@@ -1457,6 +1490,15 @@ async function nextStep4() {
           }
         }
       } catch (e) { /* non-blocking */ }
+    }
+
+    // Issue operatorToken cookie so dashboard pages load correctly after onboarding
+    if (state.siteId) {
+      await apiFetch('/operator/issue-session', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ clientId: state.clientId, siteId: state.siteId }),
+      }).catch(() => {}); // non-blocking — dashboard will still load
     }
 
     goToDone();
