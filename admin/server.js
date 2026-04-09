@@ -83,10 +83,10 @@ app.get('/locations',    allowWixFrame, requireAuthPageOrOperator, (req, res) =>
 // Admin panel — owner only (no iframe — no allowWixFrame)
 app.get('/admin-panel',  requireAuthPage,            (req, res) => res.render('pages/admin-panel', { activeTab: 'admin' }));
 // Onboarding — server-rendered so invite token is injected securely (never in URL)
-app.get('/onboard', allowWixFrame, requireAuthPageOrOperator, (req, res) =>
+app.get('/onboard', allowWixFrame, (req, res) =>
   res.render('pages/onboard', {
     clientId:    req.admin?.clientId   || req.query.clientId || '',
-    instanceId:  req.admin?.instanceId || '',
+    instanceId:  req.admin?.instanceId && req.admin.instanceId !== 'undefined' ? req.admin.instanceId : '',
     inviteToken: process.env.OPERATOR_INVITE_TOKEN || '',
   }));
 // Member-facing pages — no auth required

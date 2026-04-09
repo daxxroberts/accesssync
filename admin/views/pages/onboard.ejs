@@ -219,7 +219,7 @@ html, body {
   font-weight: 500;
 }
 
-/* ── Form ─────────────────────────────────────────────────────── */
+/* ── Form ───────���─────────────────────────────────────────────── */
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -999,6 +999,7 @@ const state = {
   tier:      null,   // 'Base' | 'Pro' | 'Connect'
   hardwarePlatform: null, // 'kisi' | 'seam' — explicit selection from Step 2
   siteId:    null,   // Wix site ID — auto-wired from instanceId (portal) or URL param (Velo) or manual input
+  siteIdVerified: false, // true only after Test button returns valid on manual path
   siteName:  null,   // Wix site name (from URL param)
   clientId:      null,   // set after _provisionClient() completes
   ownerBypass:   false,  // true if owner used bypass PIN on Step 4
@@ -1058,10 +1059,20 @@ const state = {
   if (_instanceId) {
     // Portal path: instanceId baked into JWT, no user input needed
     state.siteId = _instanceId;
+    state.siteIdVerified = true; // server-verified via Wix signed instance
   } else {
-    // Owner/manual path: show the field
+    // Manual path: show the field, pre-fill from URL param if available
     const row = document.getElementById('site-id-row');
     if (row) row.style.display = '';
+    const input = document.getElementById('c-site-id');
+    if (input && state.prefill.siteId) {
+      input.value = state.prefill.siteId;
+      state.siteId = state.prefill.siteId;
+    }
+    // Reset verified flag if operator changes the input after a successful test
+    if (input) {
+      input.addEventListener('input', () => { state.siteIdVerified = false; });
+    }
   }
 
   const btn = document.getElementById('btn-test-site');
@@ -1087,13 +1098,16 @@ async function testSiteId(siteId) {
     if (data.valid) {
       el.style.color = 'var(--green, #22C55E)';
       el.textContent = '✓ ' + (data.message || 'Site ID accepted');
+      state.siteIdVerified = true;
     } else {
       el.style.color = 'var(--red, #EF4444)';
       el.textContent = '✗ ' + (data.error || 'Invalid Site ID');
+      state.siteIdVerified = false;
     }
   } catch {
     el.style.color = 'var(--red, #EF4444)';
     el.textContent = '✗ Test failed — check your connection';
+    state.siteIdVerified = false;
   }
 }
 
@@ -1124,7 +1138,7 @@ function setBusy(btnId, busy, idleHtml) {
 // OB-24: Invite token injected server-side at render time (secure — never in URL)
 const _inviteToken = '<%= inviteToken %>';
 // instanceId injected server-side from Wix signed instance (portal path) — empty string on owner path
-const _instanceId  = '<%= instanceId %>';
+const _instanceId  = '<%= instanceId %>' === 'undefined' ? '' : '<%= instanceId %>';
 
 async function apiFetch(url, opts = {}) {
   const headers = { ...(opts.headers || {}) };
@@ -1215,6 +1229,7 @@ function nextStep1() {
     const manualSiteId = document.getElementById('c-site-id')?.value.trim();
     if (manualSiteId) state.siteId = manualSiteId;
     if (!state.siteId) { toast('Please enter your Wix Site ID', 'error'); return; }
+    if (!state.siteIdVerified) { toast('Please test your Site ID before continuing', 'error'); return; }
   }
   showStep(2);
 }

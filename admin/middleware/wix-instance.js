@@ -108,8 +108,8 @@ async function requireWixInstance(req, res, next) {
     );
 
     if (!result.rows.length) {
-      console.warn(`[wix-instance] No client found for instanceId: ${instanceId}`);
-      return res.status(403).send('AccessSync: no client configured for this site');
+      console.warn(`[wix-instance] No client found for instanceId: ${instanceId} — redirecting to onboarding`);
+      return res.redirect(`/onboard?siteId=${encodeURIComponent(instanceId)}`);
     }
 
     req.wixOperator = {
