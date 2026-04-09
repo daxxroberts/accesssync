@@ -177,7 +177,7 @@ html, body {
   line-height: 1.65;
 }
 
-/* ── Found-site banner ────────────────────────────────────────── */
+/* ── Found-site banner ──────────────────────���─────────────────── */
 .found-banner {
   background: var(--brand-dim);
   border: 1.5px solid var(--brand-mid);
@@ -1011,6 +1011,11 @@ const state = {
   prefill:       {},     // URL params read on load
 };
 
+// OB-24: Invite token injected server-side at render time (secure — never in URL)
+const _inviteToken = '<%= inviteToken %>';
+// instanceId injected server-side from Wix signed instance (portal path) — empty string on owner path
+const _instanceId  = '<%= instanceId %>' === 'undefined' ? '' : '<%= instanceId %>';
+
 // ── Read URL params (set by Velo redirect) ─────────────────────────
 (function initFromParams() {
   const p = new URLSearchParams(window.location.search);
@@ -1134,11 +1139,6 @@ function setBusy(btnId, busy, idleHtml) {
   btn.disabled = busy;
   btn.innerHTML = busy ? '<span class="spinner"></span> Working…' : idleHtml;
 }
-
-// OB-24: Invite token injected server-side at render time (secure — never in URL)
-const _inviteToken = '<%= inviteToken %>';
-// instanceId injected server-side from Wix signed instance (portal path) — empty string on owner path
-const _instanceId  = '<%= instanceId %>' === 'undefined' ? '' : '<%= instanceId %>';
 
 async function apiFetch(url, opts = {}) {
   const headers = { ...(opts.headers || {}) };
