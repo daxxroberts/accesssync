@@ -98,10 +98,12 @@ function doLogout() {
 
 // ── Session-expired modal ─────────────────────────────────────────
 var _sessionExpired = false;
+var _abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
 
 function showSessionExpiredModal() {
   if (_sessionExpired) return;
   _sessionExpired = true;
+  if (_abortController) _abortController.abort();
   stopAllPolling();
 
   var role = document.body.dataset.sessionRole || 'operator';
@@ -136,13 +138,18 @@ function stopAllPolling() {
 
 // ── Global API fetch wrapper (catches 401) ────────────────────────
 function apiFetch(url, options) {
+  if (_sessionExpired) return Promise.reject(new Error('Session expired'));
   options = Object.assign({ credentials: 'include' }, options || {});
+  if (_abortController) options.signal = _abortController.signal;
   return fetch(url, options).then(function(res) {
     if (res.status === 401) {
       showSessionExpiredModal();
       throw new Error('Session expired');
     }
     return res;
+  }).catch(function(err) {
+    if (err.name === 'AbortError') throw new Error('Session expired');
+    throw err;
   });
 }
 
