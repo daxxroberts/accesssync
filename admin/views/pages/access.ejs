@@ -210,57 +210,21 @@
 
   <script src="/operator-nav.js"></script>
   <script>
-    var chartData = [2, 1, 0, 1, 8, 15, 20, 25, 18, 10, 14, 16, 18, 14, 12, 16, 22, 30, 28, 25, 18, 10, 6, 3];
+    var chartData = new Array(24).fill(0);
 
-    var allActivities = [
-      { date: 'Mar 30', time: '10:42 AM', member: 'Jake Morrison',  event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge scan' },
-      { date: 'Mar 30', time: '10:15 AM', member: 'Sara Rhodes',    event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Keypad entry' },
-      { date: 'Mar 30', time: '9:58 AM',  member: 'Amber Knox',     event: 'provisioned', plan: 'Day Pass',        location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'New access activated' },
-      { date: 'Mar 29', time: '6:32 PM',  member: 'Derek Lane',     event: 'granted',     plan: 'Monthly Member', location: 'Roland — Weight Room',       locationId: 'roland',     details: 'Badge scan' },
-      { date: 'Mar 29', time: '5:47 PM',  member: 'Chris Martin',   event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Keypad entry' },
-      { date: 'Mar 29', time: '5:12 PM',  member: 'Lisa Torres',    event: 'denied',      plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Membership expired' },
-      { date: 'Mar 29', time: '4:28 PM',  member: 'Ryan Nash',      event: 'granted',     plan: 'Monthly Member', location: 'Roland — Yoga Studio',      locationId: 'roland',     details: 'Badge scan' },
-      { date: 'Mar 29', time: '3:55 PM',  member: 'Marcus Bell',    event: 'error',       plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'System timeout' },
-      { date: 'Mar 29', time: '3:12 PM',  member: 'Tina Park',      event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Badge scan' },
-      { date: 'Mar 28', time: '7:42 AM',  member: 'Jake Morrison',  event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Badge scan' },
-      { date: 'Mar 28', time: '7:15 AM',  member: 'Nina Patel',     event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge scan' },
-      { date: 'Mar 28', time: '6:48 AM',  member: 'Owen West',      event: 'provisioned', plan: 'Monthly Member', location: 'Roland — Weight Room',       locationId: 'roland',     details: 'Badge activated' },
-      { date: 'Mar 28', time: '6:22 AM',  member: 'Sara Rhodes',    event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Keypad entry' },
-      { date: 'Mar 27', time: '8:35 PM',  member: 'Paige Adams',    event: 'revoked',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Access terminated' },
-      { date: 'Mar 27', time: '7:52 PM',  member: 'Quinn Foster',   event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Badge scan' },
-      { date: 'Mar 27', time: '7:10 PM',  member: 'Ray Cooper',     event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Badge scan' },
-      { date: 'Mar 27', time: '6:45 PM',  member: 'Sage Hunter',    event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Keypad entry' },
-      { date: 'Mar 27', time: '6:12 PM',  member: 'Taylor Jackson', event: 'error',       plan: 'Monthly Member', location: 'Roland — Yoga Studio',      locationId: 'roland',     details: 'Network error' },
-      { date: 'Mar 26', time: '9:30 AM',  member: 'Amber Knox',     event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge scan' },
-      { date: 'Mar 26', time: '8:58 AM',  member: 'Blake Morgan',   event: 'provisioned', plan: 'Weekly Pass',    location: 'Roland — Front Door',        locationId: 'roland',     details: 'Temporary access' },
-      { date: 'Mar 26', time: '8:22 AM',  member: 'Cameron Drew',   event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Badge scan' },
-      { date: 'Mar 26', time: '7:45 AM',  member: 'Dana Wells',     event: 'denied',      plan: 'Suspended',      location: 'Roland — Weight Room',       locationId: 'roland',     details: 'Account suspended' },
-      { date: 'Mar 25', time: '6:20 PM',  member: 'Derek Lane',     event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge scan' },
-      { date: 'Mar 25', time: '5:58 PM',  member: 'Eva Martinez',   event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Keypad entry' },
-      { date: 'Mar 25', time: '5:30 PM',  member: 'Frank Gibson',   event: 'error',       plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge malfunction' },
-      { date: 'Mar 25', time: '4:48 PM',  member: 'Grace Lee',      event: 'granted',     plan: 'Monthly Member', location: 'Roland — Yoga Studio',      locationId: 'roland',     details: 'Badge scan' },
-      { date: 'Mar 24', time: '9:15 AM',  member: 'Henry Brown',    event: 'provisioned', plan: 'Corporate',      location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Bulk assignment' },
-      { date: 'Mar 24', time: '8:42 AM',  member: 'Iris Chang',     event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Badge scan' },
-      { date: 'Mar 24', time: '8:10 AM',  member: 'Jack Rivera',    event: 'revoked',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Membership cancelled' },
-      { date: 'Mar 23', time: '7:35 PM',  member: 'Karen White',    event: 'granted',     plan: 'Monthly Member', location: 'Roland — Front Door',        locationId: 'roland',     details: 'Badge scan' },
-      { date: 'Mar 23', time: '6:58 PM',  member: 'Leo Santos',     event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Side Entrance', locationId: 'fort-smith', details: 'Keypad entry' },
-      { date: 'Mar 23', time: '6:15 PM',  member: 'Megan Price',    event: 'denied',      plan: 'Expired',        location: 'Roland — Weight Room',       locationId: 'roland',     details: 'Membership expired' },
-      { date: 'Mar 22', time: '7:42 AM',  member: 'Nathan Hill',    event: 'granted',     plan: 'Monthly Member', location: 'Fort Smith — Front Door',    locationId: 'fort-smith', details: 'Badge scan' },
-    ];
+    var allActivities = [];
 
     var currentFilter = 'all';
     var currentLocation = 'all';
     var itemsPerPage = 15;
     var currentPage = 1;
 
-    function initLocationFilter() {
-      var locations = [
-        { label: 'All Locations',     value: 'all' },
-        { label: 'Fort Smith — Main', value: 'fort-smith' },
-        { label: 'Roland — Annex',    value: 'roland' },
-      ];
+    function initLocationFilter(locations) {
+      var items = [{ label: 'All Locations', value: 'all' }].concat(
+        (locations || []).map(function(l) { return { label: l.name + (l.city ? ' — ' + l.city : ''), value: l.id }; })
+      );
       var html = '';
-      locations.forEach(function(loc) {
+      items.forEach(function(loc) {
         var activeClass = loc.value === currentLocation ? ' active' : '';
         html += '<button class="filter-tag' + activeClass + '" onclick="filterByLocation(\'' + loc.value + '\')">' + loc.label + '</button>';
       });
@@ -292,7 +256,7 @@
     }
 
     function initChart() {
-      var maxValue = Math.max.apply(null, chartData);
+      var maxValue = Math.max.apply(null, chartData) || 1; // avoid division by zero
       var chartHtml = '';
       var labelsHtml = '';
       chartData.forEach(function(val, idx) {
@@ -375,6 +339,16 @@
       var end = start + itemsPerPage;
       var page = filtered.slice(start, end);
 
+      if (!filtered.length) {
+        document.getElementById('activity-tbody').innerHTML =
+          '<tr><td colspan="6" style="text-align:center;padding:48px 20px;color:var(--muted);font-size:13px;">' +
+          '<svg width="36" height="36" viewBox="0 0 40 40" fill="none" style="display:block;margin:0 auto 10px;opacity:.35"><path d="M12 8h16a2 2 0 012 2v20a2 2 0 01-2 2H12a2 2 0 01-2-2V10a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M16 16h8M16 21h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' +
+          '<strong style="display:block;color:var(--text2);margin-bottom:4px;">No activity yet</strong>' +
+          'Access events will appear here as members are granted and revoked.' +
+          '</td></tr>';
+        document.getElementById('load-more-btn').classList.add('hidden');
+        return;
+      }
       var html = '';
       page.forEach(function(act) {
         var rowTitle = '';
@@ -405,16 +379,7 @@
       return str.charAt(0).toUpperCase() + str.slice(1);
     }
 
-    // Read optional location param from URL
-    (function() {
-      var params = new URLSearchParams(window.location.search);
-      var loc = params.get('location');
-      if (loc === 'fort-smith' || loc === 'roland') {
-        currentLocation = loc;
-      }
-    })();
-
-    initLocationFilter();
+    initLocationFilter([]);
     initChart();
     initFilterTags();
     updateStats();
@@ -426,20 +391,20 @@
       var clientId = params.get('clientId');
       if (!clientId) return;
 
+      // Fetch locations for filter tabs
+      apiFetch('/operator/' + clientId + '/locations')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { initLocationFilter(d.locations || []); })
+        .catch(function() {});
+
       // Fetch access log (OB-31)
       apiFetch('/operator/' + clientId + '/access-log?limit=50')
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (!d.events || !d.events.length) {
-            var tbody = document.getElementById('activity-tbody');
-            if (tbody) {
-              tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:48px 20px;">' +
-                '<div style="color:var(--muted);font-size:14px;">' +
-                  '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" style="margin-bottom:12px;opacity:.4"><path d="M12 8h16a2 2 0 012 2v20a2 2 0 01-2 2H12a2 2 0 01-2-2V10a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M16 16h8M16 21h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><br>' +
-                  '<strong>No activity yet</strong><br>' +
-                  '<span style="font-size:12px;">Access events will appear here as members are granted and revoked.</span>' +
-                '</div></td></tr>';
-            }
+            allActivities = [];
+            updateStats();
+            renderActivityGrid();
             return;
           }
           allActivities = d.events.map(function(evt) {
