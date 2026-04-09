@@ -23,8 +23,8 @@ CREATE TABLE clients (
     last_sync_at TIMESTAMP WITH TIME ZONE,       -- DR-018: single timestamp per client, updated on each member sync sweep
     site_url VARCHAR(255),                       -- OD-10: operator site URL (e.g. "houseofgains.com") — dashboard header chip
     last_wix_webhook_at TIMESTAMP WITH TIME ZONE, -- OD-10: last webhook received — drives Wix LIVE/WARN/ERROR health status
-    hardware_api_key VARCHAR(500),                 -- DR-028/DR-035: AES-256-GCM encrypted org-level hardware API key (KISI_ENCRYPTION_KEY env var)
-    wix_api_key VARCHAR(500),                     -- AES-256-GCM encrypted Wix API key for outbound plan/bookings API calls
+    hardware_api_key TEXT,                         -- DR-028/DR-035: AES-256-GCM encrypted org-level hardware API key (KISI_ENCRYPTION_KEY env var)
+    wix_api_key TEXT,                             -- AES-256-GCM encrypted Wix API key for outbound plan/bookings API calls
     archived_at TIMESTAMP WITH TIME ZONE,         -- NULL when active; set on archive
     first_grant_sent BOOLEAN DEFAULT false,        -- Sprint 5: tracks whether first grant email has been sent
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -44,7 +44,7 @@ CREATE TABLE locations (
     tier              VARCHAR(50),                               -- DR-027: AccessSync billing tier for this location
     subscribed_at     TIMESTAMP WITH TIME ZONE,                 -- DR-027: when subscription was activated
     subscription_id   VARCHAR(255),                             -- DR-027: Wix/billing subscription reference ID
-    hardware_api_key      VARCHAR(500),                          -- DR-028/DR-035: AES-256-GCM encrypted override key (null = use client default)
+    hardware_api_key      TEXT,                                   -- DR-028/DR-035: AES-256-GCM encrypted override key (null = use client default)
     hardware_key_last_verified TIMESTAMP WITH TIME ZONE,        -- Sprint 5.2: last successful hardware key validation
     hardware_key_last_error    TEXT,                             -- Sprint 5.2: last hardware key validation error detail
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

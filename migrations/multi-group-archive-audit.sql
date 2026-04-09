@@ -41,7 +41,7 @@ ALTER TABLE adapter_admin_log ADD COLUMN IF NOT EXISTS target_entity VARCHAR(50)
 ALTER TABLE adapter_admin_log ADD COLUMN IF NOT EXISTS target_id UUID;
 
 -- 1E: Wix API key storage (encrypted, same pattern as hardware_api_key)
-ALTER TABLE clients ADD COLUMN IF NOT EXISTS wix_api_key VARCHAR(500);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS wix_api_key TEXT;
 
 -- 1F: Backfill existing plan_mappings into junction table
 INSERT INTO plan_mapping_groups (mapping_id, hardware_group_id, door_name)
