@@ -1,312 +1,300 @@
 -- AccessSync V1 Database Schema
--- Defines the core operational tables, access adapter layer, and logs as specified in Data_Model.md
+-- Reconciled 2026-04-10: all migrations folded in, reflects live Railway DB state.
 -- Engine: PostgreSQL
+--
+-- Migration history folded in:
+--   ob-19.sql          — per-location subscription model + API key storage (DR-027, DR-028)
+--   dr-035.sql         — platform-agnostic column renames (DR-035)
+--   sprint-5.sql       — hardware health check columns + first_grant_sent (Sprint 5.2, 5.5)
+--   wix-first-flow.sql — pending_hardware state + nullable hardware_group_id
+--   multi-member.sql   — sub-member schema (DR-029–032, deferred post-HOG)
+--   multi-group-archive-audit.sql — plan_mapping_groups, admin audit, wix_api_key
+--   per-location-config.sql — locations.hardware_platform + notification_email
+--   wix-instance-id.sql — clients.wix_instance_id for portal auth (three-path lookup)
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 --------------------------------------------------------
--- Phase 1 Foundation: Core Tables
---------------------------------------------------------
-
 -- 1. Clients (Tenants)
+--------------------------------------------------------
 CREATE TABLE clients (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,                  -- Company name (e.g. "House of Gains")
-    platform VARCHAR(50) NOT NULL DEFAULT 'wix', -- Source platform: 'wix', 'squarespace', etc.
-    site_id VARCHAR(255) UNIQUE,                 -- Platform site identifier (was wix_site_id) — used for webhook routing
-    site_name VARCHAR(255),                      -- Human-readable location name (e.g. "House of Gains - Main")
-    hardware_platform VARCHAR(50),               -- 'kisi', 'seam' — which hardware provider this client uses
-    tier VARCHAR(50),                            -- 'Base', 'Pro', 'Connect' — AccessSync billing tier
-    status VARCHAR(50) DEFAULT 'active',         -- active, cancelled, archived
-    notification_email VARCHAR(255),             -- DR-020: operator alert destination (Resend); populated by setup wizard (OB-09)
-    last_sync_at TIMESTAMP WITH TIME ZONE,       -- DR-018: single timestamp per client, updated on each member sync sweep
-    site_url VARCHAR(255),                       -- OD-10: operator site URL (e.g. "houseofgains.com") — dashboard header chip
-    last_wix_webhook_at TIMESTAMP WITH TIME ZONE, -- OD-10: last webhook received — drives Wix LIVE/WARN/ERROR health status
-    hardware_api_key TEXT,                         -- DR-028/DR-035: AES-256-GCM encrypted org-level hardware API key (KISI_ENCRYPTION_KEY env var)
-    wix_api_key TEXT,                             -- AES-256-GCM encrypted Wix API key for outbound plan/bookings API calls
-    archived_at TIMESTAMP WITH TIME ZONE,         -- NULL when active; set on archive
-    first_grant_sent BOOLEAN DEFAULT false,        -- Sprint 5: tracks whether first grant email has been sent
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name                    VARCHAR(255) NOT NULL,                   -- Company name (e.g. "House of Gains")
+    platform                VARCHAR(50)  NOT NULL DEFAULT 'wix',     -- Source platform: 'wix', 'squarespace', etc.
+    site_id                 VARCHAR(255) UNIQUE,                     -- Platform meta-site ID — used for webhook routing + Wix API calls
+    wix_instance_id         VARCHAR(255),                            -- Wix app installation ID — used for portal auth (wix-instance.js three-path lookup)
+    site_name               VARCHAR(255),                            -- Human-readable site name (e.g. "House of Gains - Main")
+    hardware_platform       VARCHAR(50),                             -- 'kisi', 'seam' — which hardware provider this client uses
+    tier                    VARCHAR(50),                             -- 'Base', 'Pro', 'Connect' — AccessSync billing tier
+    status                  VARCHAR(50)  DEFAULT 'active',           -- active, cancelled, archived
+    notification_email      VARCHAR(255),                            -- DR-020: operator alert destination (Resend)
+    last_sync_at            TIMESTAMP WITH TIME ZONE,                -- DR-018: last member sync sweep timestamp
+    site_url                VARCHAR(255),                            -- Operator site URL (e.g. "houseofgains.com") — dashboard header
+    last_wix_webhook_at     TIMESTAMP WITH TIME ZONE,                -- Last webhook received — drives Wix LIVE/WARN/ERROR health status
+    hardware_api_key        TEXT,                                    -- DR-028/DR-035: AES-256-GCM encrypted org-level hardware API key
+    wix_api_key             TEXT,                                    -- AES-256-GCM encrypted Wix API key for outbound plan/bookings API calls
+    archived_at             TIMESTAMP WITH TIME ZONE,                -- NULL when active; set on archive
+    first_grant_sent        BOOLEAN      DEFAULT false,              -- Sprint 5.5: tracks whether first grant email has been sent
+    created_at              TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Partial unique index: one wix_instance_id per client (NULL allowed for clients not yet portal-authenticated)
+CREATE UNIQUE INDEX clients_wix_instance_id_idx
+    ON clients (wix_instance_id)
+    WHERE wix_instance_id IS NOT NULL;
+
+--------------------------------------------------------
 -- 2. Locations (Physical Sites per Client)
--- One row per physical location under a client. House of Gains: Fort Smith + Roland.
+--------------------------------------------------------
+-- One row per physical location under a client.
 -- kisi_org_id intentionally excluded — G-10 open, org structure unverified. See DR-025.
 CREATE TABLE locations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,                  -- Display name (e.g. "House of Gains - Fort Smith")
-    city VARCHAR(100),
-    state VARCHAR(50),
-    subscription_status VARCHAR(50) NOT NULL DEFAULT 'inactive', -- DR-027: 'inactive', 'active', 'lapsed'
-    tier              VARCHAR(50),                               -- DR-027: AccessSync billing tier for this location
-    subscribed_at     TIMESTAMP WITH TIME ZONE,                 -- DR-027: when subscription was activated
-    subscription_id   VARCHAR(255),                             -- DR-027: Wix/billing subscription reference ID
-    hardware_api_key      TEXT,                                   -- DR-028/DR-035: AES-256-GCM encrypted override key (null = use client default)
-    hardware_key_last_verified TIMESTAMP WITH TIME ZONE,        -- Sprint 5.2: last successful hardware key validation
-    hardware_key_last_error    TEXT,                             -- Sprint 5.2: last hardware key validation error detail
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    id                          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id                   UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name                        VARCHAR(255) NOT NULL,               -- Display name (e.g. "House of Gains - Fort Smith")
+    city                        VARCHAR(100),
+    state                       VARCHAR(50),
+    subscription_status         VARCHAR(50)  NOT NULL DEFAULT 'inactive', -- DR-027: 'inactive', 'active', 'lapsed'
+    tier                        VARCHAR(50),                         -- DR-027: AccessSync billing tier for this location
+    subscribed_at               TIMESTAMP WITH TIME ZONE,            -- DR-027: when subscription was activated
+    subscription_id             VARCHAR(255),                        -- DR-027: Wix/billing subscription reference ID
+    hardware_platform           VARCHAR(50),                         -- per-location-config: override client hardware platform (null = use client default)
+    hardware_api_key            TEXT,                                -- DR-028/DR-035: AES-256-GCM encrypted override key (null = use client default)
+    hardware_key_last_verified  TIMESTAMP WITH TIME ZONE,            -- Sprint 5.2: last successful hardware key validation
+    hardware_key_last_error     TEXT,                                -- Sprint 5.2: last hardware key validation error detail
+    notification_email          VARCHAR(255),                        -- per-location-config: override client notification email (null = use client default)
+    created_at                  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+--------------------------------------------------------
 -- 3. Plan Mappings (The Translator)
+--------------------------------------------------------
 CREATE TABLE plan_mappings (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    source_plan_id VARCHAR(255) NOT NULL,            -- DR-035: was wix_plan_id; platform-agnostic plan identifier
-    hardware_group_id VARCHAR(255), -- The Kisi/Seam group ID mapped to this plan (nullable for Wix-first flow)
-    tier_name VARCHAR(50) DEFAULT 'Base', -- Base, Pro, Connect
-    action VARCHAR(50) DEFAULT 'grant', -- grant, revoke, temporary
-    location_id UUID REFERENCES locations(id),   -- OD-11: nullable — existing rows have no location assignment
-    plan_name VARCHAR(255),                       -- OD-11: display label for the plan (operator dashboard)
-    door_name VARCHAR(255),                       -- OD-11: display label for the hardware group/door
-    status VARCHAR(50) DEFAULT 'active',          -- OD-11: 'active', 'excluded' — for "Not managed" display
-    access_type VARCHAR(50) DEFAULT 'group',      -- Hardware access object type: 'group' (Kisi), 'zone'/'door' (future Seam)
-    allow_multiple BOOLEAN DEFAULT false,         -- Multi-member: plan allows additional members
-    max_members INTEGER DEFAULT 1,                -- Multi-member: max members per plan holder (1 = single member)
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id           UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    source_plan_id      VARCHAR(255) NOT NULL,           -- DR-035: was wix_plan_id; platform-agnostic plan identifier
+    hardware_group_id   VARCHAR(255),                    -- nullable: Wix-first flow allows plan recognition before group is mapped
+    tier_name           VARCHAR(50)  DEFAULT 'Base',     -- Base, Pro, Connect
+    action              VARCHAR(50)  DEFAULT 'grant',    -- grant, revoke, temporary
+    location_id         UUID REFERENCES locations(id),  -- nullable — existing rows may have no location assignment
+    plan_name           VARCHAR(255),                    -- display label for the plan (operator dashboard)
+    door_name           VARCHAR(255),                    -- display label for the hardware group/door
+    status              VARCHAR(50)  DEFAULT 'active',   -- 'active', 'excluded' — for "Not managed" display
+    access_type         VARCHAR(50)  DEFAULT 'group',    -- Hardware access object type: 'group' (Kisi), 'zone'/'door' (future Seam)
+    allow_multiple      BOOLEAN      DEFAULT false,      -- Multi-member: plan allows additional members (deferred post-HOG)
+    max_members         INTEGER      DEFAULT 1,          -- Multi-member: max members per plan holder (deferred post-HOG)
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2b. Plan Mapping Groups (Multi-Group Junction Table)
--- One row per hardware group per plan mapping. Allows one plan to grant access to multiple groups.
--- Resolver JOINs this table to expand mappings. CASCADE from plan_mappings ensures cleanup.
+--------------------------------------------------------
+-- 3b. Plan Mapping Groups (Multi-Group Junction Table)
+--------------------------------------------------------
+-- One row per hardware group per plan mapping.
+-- Allows one plan to grant access to multiple doors/groups.
+-- Resolver JOINs this table to expand mappings. Legacy rows fall back to plan_mappings.hardware_group_id.
 CREATE TABLE plan_mapping_groups (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    mapping_id UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
-    hardware_group_id VARCHAR(255) NOT NULL,
-    door_name VARCHAR(255),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    mapping_id          UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
+    hardware_group_id   VARCHAR(255) NOT NULL,
+    door_name           VARCHAR(255),
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (mapping_id, hardware_group_id)
 );
 
--- 3. Processed Event IDs (Idempotency / Deduplication)
+--------------------------------------------------------
+-- 4. Processed Event IDs (Idempotency / Deduplication)
+--------------------------------------------------------
 CREATE TABLE processed_event_ids (
-    event_id VARCHAR(255) PRIMARY KEY, -- Wix Event ID
-    client_id UUID REFERENCES clients(id),
-    processed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    event_id        VARCHAR(255) PRIMARY KEY,           -- Wix Event ID
+    client_id       UUID REFERENCES clients(id),        -- nullable: tenant not yet resolved at dedup time (S-01 known gap)
+    processed_at    TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+--------------------------------------------------------
 -- 5. Error Queue (Dead Letter Queue)
+--------------------------------------------------------
 CREATE TABLE error_queue (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    client_id UUID REFERENCES clients(id),
-    member_id UUID, -- References member_identity(id)
-    event_type VARCHAR(100),
-    payload JSONB,
-    error_reason TEXT,           -- Maps to 'plain_message' in API responses (naming conflict resolved in API layer)
-    retry_count INTEGER DEFAULT 0,
-    status VARCHAR(50) DEFAULT 'failed', -- failed, resolved
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    resolved_at TIMESTAMP WITH TIME ZONE,
-    dismiss_note TEXT,           -- Admin Hub: operator note when dismissing
-    dismissed_by VARCHAR(255),   -- Admin Hub: who dismissed ('admin' for now)
-    location_id UUID REFERENCES locations(id),   -- OD-13: nullable — error scoping by location
-    plan_name VARCHAR(255),                       -- OD-13: plan context for operator triage
-    door_name VARCHAR(255)                        -- OD-13: door context for operator triage
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id       UUID REFERENCES clients(id),
+    member_id       UUID,                               -- references member_identity(id) — no FK constraint (intentional: member may not exist)
+    event_type      VARCHAR(100),
+    payload         JSONB,
+    error_reason    TEXT,                               -- plain error message (naming: 'plain_message' in API responses)
+    retry_count     INTEGER      DEFAULT 0,
+    status          VARCHAR(50)  DEFAULT 'failed',      -- failed, resolved
+    created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    resolved_at     TIMESTAMP WITH TIME ZONE,
+    dismiss_note    TEXT,                               -- Admin Hub: operator note when dismissing
+    dismissed_by    VARCHAR(255),                       -- Admin Hub: who dismissed ('admin' for now)
+    location_id     UUID REFERENCES locations(id),     -- nullable — error scoping by location
+    plan_name       VARCHAR(255),                       -- plan context for operator triage
+    door_name       VARCHAR(255)                        -- door context for operator triage
 );
 
 --------------------------------------------------------
--- Phase 1 Foundation: Access Adapter Layer
---------------------------------------------------------
-
 -- 6. Member Identity
+--------------------------------------------------------
 CREATE TABLE member_identity (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    platform_member_id VARCHAR(255) NOT NULL,   -- DR-021: was wix_member_id; platform-agnostic
-    source_platform VARCHAR(50) NOT NULL DEFAULT 'wix', -- DR-021: 'wix', 'squarespace', etc.
-    hardware_platform VARCHAR(50) NOT NULL, -- 'seam' or 'kisi'
-    hardware_user_id VARCHAR(255), -- The generated ID in Kisi/Seam
-    source_tag VARCHAR(50) DEFAULT 'accesssync', -- Rule: Distinguishes from manual users
-    -- NOTE: For primary members, email/name fetched from Wix on-demand (data minimization).
-    --       For sub-members, stored directly (entered by plan holder in widget form — FP-01).
-    plan_holder_id UUID REFERENCES member_identity(id) ON DELETE CASCADE, -- DR-029: links sub-members to primary
-    phone VARCHAR(50),                          -- Sub-member phone (required)
-    first_name VARCHAR(255),                    -- Sub-member first name (required)
-    last_name VARCHAR(255),                     -- Sub-member last name (required)
-    email VARCHAR(255),                         -- Sub-member email (required — FP-01 resolution)
-    sub_member_status VARCHAR(50),              -- DR-032: 'draft', 'submitted', NULL for primary members
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id           UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    platform_member_id  VARCHAR(255) NOT NULL,          -- DR-021: was wix_member_id; platform-agnostic
+    source_platform     VARCHAR(50)  NOT NULL DEFAULT 'wix', -- DR-021: 'wix', 'squarespace', etc.
+    hardware_platform   VARCHAR(50)  NOT NULL,          -- 'kisi', 'seam'
+    hardware_user_id    VARCHAR(255),                   -- Generated ID in Kisi/Seam
+    source_tag          VARCHAR(50)  DEFAULT 'accesssync', -- DR-003: distinguishes from manual/staff users
+    -- Primary members: email/name fetched from Wix on-demand (DR-001 data minimization).
+    -- Sub-members: stored directly (entered by plan holder — FP-01). Different data model by design (S-07).
+    plan_holder_id      UUID REFERENCES member_identity(id) ON DELETE CASCADE, -- DR-030: links sub-members to primary
+    phone               VARCHAR(50),                    -- Sub-member phone (required)
+    first_name          VARCHAR(255),                   -- Sub-member first name (required)
+    last_name           VARCHAR(255),                   -- Sub-member last name (required)
+    email               VARCHAR(255),                   -- Sub-member email (required — FP-01 resolution)
+    sub_member_status   VARCHAR(50),                    -- DR-032: 'draft', 'submitted', NULL for primary members
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(client_id, source_platform, platform_member_id)
 );
 
+-- Fast sub-member lookup by plan holder
+CREATE INDEX idx_member_identity_plan_holder
+    ON member_identity (plan_holder_id)
+    WHERE plan_holder_id IS NOT NULL;
+
+--------------------------------------------------------
 -- 7. Member Access State (Provisioning Status)
+--------------------------------------------------------
+-- Status values: pending_sync, in_flight, active, disabled, revoked, failed,
+--                skipped_lockdown, pending_hardware
 CREATE TABLE member_access_state (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    member_id UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
-    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    status VARCHAR(50) NOT NULL, -- pending_sync, in_flight, active, disabled, revoked, failed, skipped_lockdown, pending_hardware
-    role_assignment_id VARCHAR(255), -- Kisi role assignment ID - required for clean revocation
-    plan_holder_id UUID REFERENCES member_identity(id) ON DELETE CASCADE, -- Multi-member: cascade operations
-    pending_plan_id VARCHAR(255),            -- Wix-first: source plan ID stored when parked as pending_hardware
-    provisioned_at TIMESTAMP WITH TIME ZONE,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    member_id           UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
+    client_id           UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    status              VARCHAR(50) NOT NULL,
+    role_assignment_id  VARCHAR(255),                   -- Legacy single role assignment ID (kept for backwards compat — S-08)
+    plan_holder_id      UUID REFERENCES member_identity(id) ON DELETE CASCADE, -- DR-030: cascade operations on revoke
+    pending_plan_id     VARCHAR(255),                   -- Wix-first: source plan ID stored when parked as pending_hardware
+    provisioned_at      TIMESTAMP WITH TIME ZONE,
+    updated_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(member_id)
 );
 
+-- Fast sub-member access state lookup by plan holder
+CREATE INDEX idx_member_access_state_plan_holder
+    ON member_access_state (plan_holder_id)
+    WHERE plan_holder_id IS NOT NULL;
+
+--------------------------------------------------------
 -- 8. Member Role Assignments (Multi-Door Grant Storage)
--- One row per hardware role assignment per member. Replaces the single role_assignment_id
--- column on member_access_state for multi-door support. Standard Adapter Layer owns writes.
--- On revoke: all rows for the member are deleted atomically via completeRevoke().
+--------------------------------------------------------
+-- One row per hardware role assignment per member per group.
+-- Replaces single role_assignment_id on member_access_state for multi-door support.
+-- Standard Adapter Layer exclusively owns writes (DR-023).
+-- On revoke: all rows for the member are deleted atomically in completeRevoke().
 CREATE TABLE member_role_assignments (
-    id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    member_id          UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
-    mapping_id         UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
-    role_assignment_id VARCHAR(255) NOT NULL,
-    hardware_group_id  VARCHAR(255),            -- multi-group: which specific group this assignment is for
-    created_at         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (member_id, mapping_id, hardware_group_id)  -- one role assignment per member per mapping per group
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    member_id           UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
+    mapping_id          UUID NOT NULL REFERENCES plan_mappings(id)   ON DELETE CASCADE,
+    role_assignment_id  VARCHAR(255) NOT NULL,
+    hardware_group_id   VARCHAR(255),                   -- which specific group this assignment is for
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (member_id, mapping_id, hardware_group_id)
 );
 
+--------------------------------------------------------
 -- 9. Member Access Log (Lifecycle Events)
+--------------------------------------------------------
 CREATE TABLE member_access_log (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    member_id UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
-    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    event_type VARCHAR(100) NOT NULL, -- provisioning_started, provisioned, provisioning_failed, disabled, restored, revoked
-    credential_type VARCHAR(50), -- pin, qr, kisi_app
-    credential_value TEXT, -- Encrypted PIN or QR payload
-    error_code VARCHAR(50), -- E.g. CRED_001
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    member_id       UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
+    client_id       UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    event_type      VARCHAR(100) NOT NULL,              -- provisioned, disabled, restored, revoked, deleted
+    credential_type VARCHAR(50),                        -- pin, qr, kisi_app
+    credential_value TEXT,                              -- Encrypted PIN or QR payload
+    error_code      VARCHAR(50),                        -- e.g. CRED_001
+    created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 9. Adapter Admin Log (Provisioning Audit Trail)
+--------------------------------------------------------
+-- 10. Adapter Admin Log (Provisioning + Admin Audit Trail)
+--------------------------------------------------------
+-- Dual purpose (S-10 known gap — split post-V1):
+--   a) Hardware provisioning audit trail
+--   b) Admin actions (client_archived, api_key_rotated, etc.)
 CREATE TABLE adapter_admin_log (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    client_id UUID NOT NULL REFERENCES clients(id),
-    event_type VARCHAR(100) NOT NULL,
-    platform_member_id VARCHAR(255), -- DR-021: was wix_member_id
-    hardware_user_id VARCHAR(255),
-    role_assignment_id VARCHAR(255),
-    result VARCHAR(50), -- success, failed
-    configured_by VARCHAR(255), -- DR-019: nullable — who set up the adapter (operator self-service, future)
-    configured_at TIMESTAMP WITH TIME ZONE, -- DR-019: nullable — when adapter was configured
-    admin_action VARCHAR(100),    -- admin audit: client_archived, client_deleted, client_restored, client_edited, api_key_rotated
-    details JSONB,                -- admin audit: snapshot of what changed
-    target_entity VARCHAR(50),    -- admin audit: 'client', 'location', 'plan_mapping'
-    target_id UUID,               -- admin audit: ID of the entity acted on
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id           UUID NOT NULL REFERENCES clients(id),
+    event_type          VARCHAR(100) NOT NULL,
+    platform_member_id  VARCHAR(255),                   -- DR-021: was wix_member_id
+    hardware_user_id    VARCHAR(255),
+    role_assignment_id  VARCHAR(255),
+    result              VARCHAR(50),                    -- success, failed
+    configured_by       VARCHAR(255),                   -- DR-019: who set up the adapter
+    configured_at       TIMESTAMP WITH TIME ZONE,       -- DR-019: when adapter was configured
+    admin_action        VARCHAR(100),                   -- client_archived, client_deleted, api_key_rotated, etc.
+    details             JSONB,                          -- snapshot of what changed
+    target_entity       VARCHAR(50),                    -- 'client', 'location', 'plan_mapping'
+    target_id           UUID,                           -- ID of the entity acted on
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 --------------------------------------------------------
--- Phase 1 Foundation: Alert and Configuration
+-- 11. Config Alert Log
 --------------------------------------------------------
-
--- 10. Config Alert Log
 CREATE TABLE config_alert_log (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    alert_type VARCHAR(100) NOT NULL, -- missing_door, missing_group, expired_credentials, location_mismatch
-    plan_mapping_id UUID REFERENCES plan_mappings(id),
-    hardware_ref VARCHAR(255),
-    affected_member_count INTEGER DEFAULT 0,
-    resolved_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id               UUID REFERENCES clients(id) ON DELETE CASCADE, -- nullable (S-02): malformed webhooks may not resolve tenant
+    alert_type              VARCHAR(100) NOT NULL,      -- missing_door, missing_group, expired_credentials, lockdown_detected, malformed_payload
+    plan_mapping_id         UUID REFERENCES plan_mappings(id),
+    hardware_ref            VARCHAR(255),
+    affected_member_count   INTEGER DEFAULT 0,
+    resolved_at             TIMESTAMP WITH TIME ZONE,
+    created_at              TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at            TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 --------------------------------------------------------
--- Standard Adapter Layer: Activity Summary (DR-024)
+-- 12. Client Activity Summary (DR-024)
 --------------------------------------------------------
-
--- 11. Client Activity Summary (Standard Adapter Layer — Layer 3)
 -- Daily aggregated event counts per client. UPSERT pattern on every event.
--- Fault-tolerant writes — failures are logged but never block the grant/revoke path.
+-- Fault-tolerant writes — failures never block the grant/revoke path.
 CREATE TABLE client_activity_summary (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    client_id UUID REFERENCES clients(id) NOT NULL,
-    summary_date DATE NOT NULL,
-    events_received INTEGER DEFAULT 0,
-    grants_completed INTEGER DEFAULT 0,
-    revokes_completed INTEGER DEFAULT 0,
-    errors_count INTEGER DEFAULT 0,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id           UUID NOT NULL REFERENCES clients(id),
+    summary_date        DATE NOT NULL,
+    events_received     INTEGER DEFAULT 0,
+    grants_completed    INTEGER DEFAULT 0,
+    revokes_completed   INTEGER DEFAULT 0,
+    errors_count        INTEGER DEFAULT 0,
+    updated_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (client_id, summary_date)
 );
 
 --------------------------------------------------------
--- Phase 1 Foundation: Admin Hub Observability
+-- 13. Webhook Log (Admin Hub: Webhook Inspector)
 --------------------------------------------------------
-
--- 12. Webhook Log (Admin Hub: Webhook Inspector)
+-- NOTE (S-14): No retention policy defined. High write volume + JSONB payloads.
+-- Needs TTL or partition-by-date before scale.
 CREATE TABLE webhook_log (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    event_id VARCHAR(255),
-    client_id UUID REFERENCES clients(id),
-    received_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    hmac_status VARCHAR(20) NOT NULL,   -- 'accepted', 'rejected'
-    dedup_status VARCHAR(20),           -- 'new', 'duplicate', null if rejected/errored
-    event_type VARCHAR(100),
-    raw_payload JSONB,
-    normalized_payload JSONB,
-    error_detail TEXT
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    event_id            VARCHAR(255),
+    client_id           UUID REFERENCES clients(id),
+    received_at         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    hmac_status         VARCHAR(20) NOT NULL,           -- 'accepted', 'rejected'
+    dedup_status        VARCHAR(20),                    -- 'new', 'duplicate', null if rejected
+    event_type          VARCHAR(100),
+    raw_payload         JSONB,
+    normalized_payload  JSONB,
+    error_detail        TEXT
 );
 
 --------------------------------------------------------
--- Migration Notes (Railway deployment)
+-- Known Schema Gaps (open items, not yet implemented)
+-- S-03: member_access_sources table — DR-034 multi-source grant/revoke not yet at schema level
+-- S-07: Sub-member PII exception needs its own DR
+-- S-08: Legacy role_assignment_id on member_access_state needs retirement DR
+-- S-09: allow_multiple / max_members activation gate needs DR
+-- S-10: adapter_admin_log dual-purpose — split into two tables post-V1
+-- S-14: webhook_log retention policy needed before scale
 --------------------------------------------------------
--- DR-020 (2026-03-26): Added notification_email to clients table
---   ALTER TABLE clients ADD COLUMN notification_email VARCHAR(255);
---
--- DR-021 (2026-03-26): member_identity made source-platform-agnostic
---   Applied before any live members — zero migration cost.
---   ALTER TABLE member_identity RENAME COLUMN wix_member_id TO platform_member_id;
---   ALTER TABLE member_identity ADD COLUMN source_platform VARCHAR(50) NOT NULL DEFAULT 'wix';
---   ALTER TABLE member_identity DROP CONSTRAINT member_identity_client_id_wix_member_id_key;
---   ALTER TABLE member_identity ADD CONSTRAINT member_identity_client_source_member_key
---     UNIQUE(client_id, source_platform, platform_member_id);
---   ALTER TABLE adapter_admin_log RENAME COLUMN wix_member_id TO platform_member_id;
---
--- Admin Hub V1 (2026-03-27): error_queue dismiss fields + webhook_log
---   Data minimization decision: email/name NOT stored in member_identity — fetched from Wix on-demand
---   ALTER TABLE error_queue ADD COLUMN dismiss_note TEXT;
---   ALTER TABLE error_queue ADD COLUMN dismissed_by VARCHAR(255);
---   CREATE TABLE webhook_log ( ... ) — see table definition above
---
--- Clients schema update (2026-03-27): platform-agnostic + site_name
---   ALTER TABLE clients RENAME COLUMN wix_site_id TO site_id;
---   ALTER TABLE clients ADD COLUMN platform VARCHAR(50) NOT NULL DEFAULT 'wix';
---   ALTER TABLE clients ADD COLUMN site_name VARCHAR(255);
---
--- Clients schema update (2026-03-28): hardware_platform + tier
---   ALTER TABLE clients ADD COLUMN hardware_platform VARCHAR(50);
---   ALTER TABLE clients ADD COLUMN tier VARCHAR(50);
---
--- DR-024 (2026-03-28): client_activity_summary — Standard Adapter Layer daily activity log
---   CREATE TABLE client_activity_summary ( ... ) — see table definition above
---   Railway migration: CREATE TABLE client_activity_summary (...) as defined above
---
--- DR-025 (2026-03-28): locations table + dashboard schema additions (OD-08/10/11/13)
---   Railway migration order — run in sequence (locations FK required before plan_mappings/error_queue):
---   1. CREATE TABLE locations ( ... ) — see table definition above
---   2. ALTER TABLE clients ADD COLUMN site_url VARCHAR(255);
---      ALTER TABLE clients ADD COLUMN last_wix_webhook_at TIMESTAMP WITH TIME ZONE;
---   3. ALTER TABLE plan_mappings ADD COLUMN location_id UUID REFERENCES locations(id);
---      ALTER TABLE plan_mappings ADD COLUMN plan_name VARCHAR(255);
---      ALTER TABLE plan_mappings ADD COLUMN door_name VARCHAR(255);
---      ALTER TABLE plan_mappings ADD COLUMN status VARCHAR(50) DEFAULT 'active';
---   4. ALTER TABLE error_queue ADD COLUMN location_id UUID REFERENCES locations(id);
---      ALTER TABLE error_queue ADD COLUMN plan_name VARCHAR(255);
---      ALTER TABLE error_queue ADD COLUMN door_name VARCHAR(255);
---
--- Multi-door support (2026-03-28): member_role_assignments + plan_mappings.access_type
---   Fixes: resolver returned only first row; no status='active' filter; single role_assignment_id
---   Run in sequence:
---   1. ALTER TABLE plan_mappings ADD COLUMN access_type VARCHAR(50) DEFAULT 'group';
---   2. CREATE TABLE member_role_assignments (
---        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
---        member_id UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
---        mapping_id UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
---        role_assignment_id VARCHAR(255) NOT NULL,
---        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
---        UNIQUE (member_id, mapping_id)
---      );
---
--- Multi-group + archive + audit (2026-04-02): plan_mapping_groups junction table, client archive, admin audit, Wix API key
---   See migrations/multi-group-archive-audit.sql for full migration.
---   1. CREATE TABLE plan_mapping_groups (mapping_id, hardware_group_id, door_name) — multi-group plan mapping
---   2. ALTER TABLE member_role_assignments ADD COLUMN hardware_group_id; update UNIQUE constraint
---   3. ALTER TABLE clients ADD COLUMN archived_at, wix_api_key
---   4. ALTER TABLE adapter_admin_log ADD COLUMN admin_action, details, target_entity, target_id
