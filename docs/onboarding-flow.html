@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — Operator Onboarding Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand:      #4F6EF7;
+  --brand-dark: #3D5BD4;
+  --brand-dim:  rgba(79,110,247,0.10);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --slate:      #64748B;
+  --slate-dim:  rgba(100,116,139,0.10);
+  --bg:         #F1F5F9;
+  --card:       #FFFFFF;
+  --border:     #E2E8F0;
+  --text:       #0F172A;
+  --text2:      #475569;
+  --muted:      #94A3B8;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+  --r:          12px;
+  --r-sm:       8px;
+}
+html, body { height: 100%; font-family: 'Sora', sans-serif; background: var(--bg); color: var(--text); }
+body { padding: 32px 24px 64px; }
+
+.page-header { max-width: 960px; margin: 0 auto 32px; }
+.page-header h1 { font-size: 28px; font-weight: 700; color: var(--text); }
+.page-header p  { font-size: 14px; color: var(--text2); margin-top: 6px; }
+
+.badge {
+  display: inline-block;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 3px 10px; border-radius: 20px; margin-top: 10px;
+  background: var(--amber-dim); color: var(--amber);
+  border: 1px solid rgba(245,158,11,0.25);
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  padding: 32px;
+  max-width: 960px;
+  margin: 0 auto 24px;
+}
+
+.card h2 {
+  font-size: 15px; font-weight: 600; color: var(--text);
+  margin-bottom: 20px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.legend { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 24px; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); }
+.legend-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.dot-green  { background: var(--green); }
+.dot-amber  { background: var(--amber); }
+.dot-brand  { background: var(--brand); }
+.dot-red    { background: var(--red); }
+
+.mermaid { width: 100%; overflow-x: auto; }
+
+.paths { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 960px; margin: 0 auto 24px; }
+.path-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+.path-card h3 { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.path-card p  { font-size: 12px; color: var(--text2); line-height: 1.6; }
+.path-a h3 { color: var(--green); }
+.path-b h3 { color: var(--amber); }
+.path-c h3 { color: var(--brand); }
+
+.fault-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  padding: 24px 32px;
+  max-width: 960px;
+  margin: 0 auto 24px;
+}
+.fault-card h2 {
+  font-size: 15px; font-weight: 600; color: var(--text);
+  margin-bottom: 16px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.fault-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.fault-list li {
+  font-size: 13px; color: var(--text2); line-height: 1.6;
+  padding-left: 16px; position: relative;
+}
+.fault-list li::before {
+  content: '⚠';
+  position: absolute; left: 0;
+  color: var(--amber);
+}
+.fault-list li strong { color: var(--text); }
+
+.nav { max-width: 960px; margin: 0 auto 32px; font-size: 13px; color: var(--muted); }
+.nav a { color: var(--brand); text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+
+@media (max-width: 640px) {
+  .paths { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="nav"><a href="index.html">← Knowledge Base</a></div>
+
+<div class="page-header">
+  <h1>Operator Onboarding Flow</h1>
+  <p>How AccessSync identifies, authenticates, and onboards operators via the Wix Dashboard Page Extension.</p>
+  <span class="badge">PROPOSED — not yet built</span>
+</div>
+
+<div class="paths">
+  <div class="path-card path-a">
+    <h3>Path A — Returning Operator</h3>
+    <p>instanceId matches an existing client. Operator token issued immediately. Redirected to dashboard. Zero friction.</p>
+  </div>
+  <div class="path-card path-b">
+    <h3>Path B — Known Site, New Instance</h3>
+    <p>instanceId not found, but siteId matches. Occurs on reinstall or first portal load after manual onboarding. wix_instance_id updated silently. Operator never sees onboarding.</p>
+  </div>
+  <div class="path-card path-c">
+    <h3>Path C — New Client</h3>
+    <p>Neither instanceId nor siteId matches. Operator goes through the 5-step onboarding wizard. Client row created with both identifiers. Token issued on completion.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Flow Diagram</h2>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot dot-green"></div> Path A — Returning operator</div>
+    <div class="legend-item"><div class="legend-dot dot-amber"></div> Path B — Known site, new instance</div>
+    <div class="legend-item"><div class="legend-dot dot-brand"></div> Path C — New client / onboarding</div>
+    <div class="legend-item"><div class="legend-dot dot-red"></div> Rejected / error</div>
+  </div>
+  <div class="mermaid">
+flowchart TD
+    A([Wix loads /operator-portal\n?instance=signed_token]) --> B[Decode signed instance token\nExtract: instanceId, uid, permissions\nExtract: siteId from authorizationCode]
+
+    B --> C{permissions\n=== OWNER?}
+    C -- No --> REJ([Reject 401\nNot site owner])
+    C -- Yes --> D{Lookup client\nWHERE wix_instance_id\n= instanceId}
+
+    D -- Found --> PA[PATH A\nIssue operator JWT\n8h session cookie]
+    PA --> DASH([Redirect to /dashboard])
+
+    D -- Not found --> E{Lookup client\nWHERE site_id\n= siteId}
+
+    E -- Found --> PB[PATH B\nUpdate wix_instance_id\non existing client row]
+    PB --> PA
+
+    E -- Not found --> F{authorizationCode\npresent?}
+    F -- No --> WARN[Log warning\nNo siteId available]
+    WARN --> PC
+
+    F -- Yes --> PC[PATH C\nRedirect to /onboard\npass instanceId + siteId]
+
+    PC --> W1[Step 1: Identity\nName · Email\nsite_id auto-injected\ninstance_id auto-injected]
+    W1 --> W2[Step 2: Plan\nTier selection]
+    W2 --> W3[Step 3: Location\nName · City · State]
+    W3 --> W4[Step 4: Hardware\nAPI key · Validation\nDoor mapping]
+    W4 --> W5[Step 5: Confirm\nSystem check · Webhook URL\nActivate]
+
+    W5 --> UPSERT[INSERT INTO clients\nON CONFLICT site_id\nDO UPDATE wix_instance_id\nIssue operator JWT]
+    UPSERT --> DASH
+
+    style PA fill:#22C55E,color:#fff,stroke:none
+    style PB fill:#F59E0B,color:#fff,stroke:none
+    style PC fill:#4F6EF7,color:#fff,stroke:none
+    style DASH fill:#0F172A,color:#fff,stroke:none
+    style REJ fill:#EF4444,color:#fff,stroke:none
+    style UPSERT fill:#4F6EF7,color:#fff,stroke:none
+    style WARN fill:#F59E0B,color:#fff,stroke:none
+  </div>
+</div>
+
+<div class="fault-card">
+  <h2>Known Failure Modes — FAULT</h2>
+  <ul class="fault-list">
+    <li><strong>authorizationCode absent or expired</strong> — Path B has no siteId source. Falls through to Path C. Operator re-onboards. Upsert on site_id prevents duplicate if siteId becomes available later. If siteId is never available, a duplicate client row may be created.</li>
+    <li><strong>Reinstall on a different Wix site</strong> — Both instanceId and siteId change. Neither lookup hits. Path C creates a second client row. Recovery requires admin merge or manual DB fix. No automated recovery path exists yet.</li>
+    <li><strong>Onboarding abandonment mid-flow</strong> — Client row not created. Next portal load restarts from Path C. No partial state persisted. Acceptable behavior — wizard must not show stale pre-filled data from a prior abandoned session.</li>
+    <li><strong>Concurrent onboarding sessions</strong> — Two tabs reach Step 5 simultaneously. ON CONFLICT (site_id) DO UPDATE is atomic — second write updates, does not duplicate. Requires site_id UNIQUE NOT NULL constraint at DB level.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Open Questions — PARSE Verification Pending</h2>
+  <p style="font-size:13px;color:var(--text2);line-height:1.7">
+    <strong>authorizationCode reliability:</strong> Path B depends on Wix always passing <code>authorizationCode</code> as a URL parameter when loading the Dashboard Page Extension iframe. This was observed in one log on 2026-04-09 but has not been verified as a documented, stable Wix behavior. PARSE must confirm before Path B middleware is built.<br><br>
+    <strong>instanceId stability:</strong> The Wix signed instance <code>instanceId</code> is assumed to be stable for the lifetime of an app installation. If it rotates on session or on re-authentication, Path A breaks silently. PARSE to verify.
+  </p>
+</div>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'base', themeVariables: {
+    primaryColor: '#EFF2FF',
+    primaryTextColor: '#0F172A',
+    primaryBorderColor: '#C7D2FE',
+    lineColor: '#94A3B8',
+    secondaryColor: '#F8FAFC',
+    tertiaryColor: '#F1F5F9',
+    fontSize: '13px',
+    fontFamily: 'Sora, sans-serif'
+  }});
+</script>
+</body>
+</html>

@@ -200,7 +200,7 @@ router.post('/clients', requireInviteToken, async (req, res) => {
   try {
     const {
       name, platform = 'wix', hardware_platform, tier,
-      site_id, site_name, site_url, notification_email, wix_api_key,
+      site_id, wix_instance_id, site_name, site_url, notification_email, wix_api_key,
     } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
 
@@ -211,16 +211,20 @@ router.post('/clients', requireInviteToken, async (req, res) => {
     // Encrypt Wix API key if provided (same AES-256-GCM pattern as hardware keys)
     const encryptedWixKey = wix_api_key ? encryptApiKey(wix_api_key.trim()) : null;
 
+    // Upsert on site_id — prevents duplicate clients if onboarding is re-run.
+    // On conflict, update wix_instance_id in case it changed (reinstall).
     const result = await db.query(
-      `INSERT INTO clients (name, platform, hardware_platform, tier, site_id, site_name, site_url, notification_email, wix_api_key, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', NOW(), NOW())
-       RETURNING id, name, platform, hardware_platform, tier, site_id, site_name, notification_email, status, created_at`,
-      [name.trim(), platform, derivedHardware, tier || null, site_id || null, site_name || null, site_url || null, notification_email || null, encryptedWixKey]
+      `INSERT INTO clients (name, platform, hardware_platform, tier, site_id, wix_instance_id, site_name, site_url, notification_email, wix_api_key, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', NOW(), NOW())
+       ON CONFLICT (site_id) DO UPDATE
+         SET wix_instance_id = EXCLUDED.wix_instance_id,
+             updated_at      = NOW()
+       RETURNING id, name, platform, hardware_platform, tier, site_id, wix_instance_id, site_name, notification_email, status, created_at`,
+      [name.trim(), platform, derivedHardware, tier || null, site_id || null, wix_instance_id || null, site_name || null, site_url || null, notification_email || null, encryptedWixKey]
     );
-    console.log(`[operator/setup] Created client: ${result.rows[0].name} (${result.rows[0].id})`);
+    console.log(`[operator/setup] Upserted client: ${result.rows[0].name} (${result.rows[0].id})`);
     res.status(201).json({ ok: true, client: result.rows[0] });
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'Site ID already in use' });
     console.error('[operator/setup] POST /clients error:', err.message);
     res.status(500).json({ error: err.message });
   }

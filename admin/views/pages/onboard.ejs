@@ -998,9 +998,10 @@ const state = {
   wixApiKey: null,   // Wix API key for outbound API calls (plans, bookings)
   tier:      null,   // 'Base' | 'Pro' | 'Connect'
   hardwarePlatform: null, // 'kisi' | 'seam' — explicit selection from Step 2
-  siteId:    null,   // Wix site ID — auto-wired from instanceId (portal) or URL param (Velo) or manual input
+  siteId:        null,   // Wix meta-site ID — for Wix REST API calls (wix-site-id header)
+  instanceId:    null,   // Wix app instanceId — for portal auth lookup (wix_instance_id in DB)
   siteIdVerified: false, // true only after Test button returns valid on manual path
-  siteName:  null,   // Wix site name (from URL param)
+  siteName:      null,   // Wix site name (from URL param)
   clientId:      null,   // set after _provisionClient() completes
   ownerBypass:   false,  // true if owner used bypass PIN on Step 4
   skipDoors:     false,  // true if operator chose "set up doors later" (Wix-first flow)
@@ -1016,11 +1017,12 @@ const _inviteToken = '<%= inviteToken %>';
 // instanceId injected server-side from Wix signed instance (portal path) — empty string on owner path
 const _instanceId  = '<%= instanceId %>' === 'undefined' ? '' : '<%= instanceId %>';
 
-// ── Read URL params (set by Velo redirect) ─────────────────────────
+// ── Read URL params (set by Velo redirect or portal middleware) ──────
 (function initFromParams() {
   const p = new URLSearchParams(window.location.search);
   state.prefill = {
     siteId:     p.get('siteId')     || '',
+    instanceId: p.get('instanceId') || '',   // Wix app instanceId — for portal auth lookup
     siteName:   p.get('siteName')   || '',
     ownerEmail: p.get('ownerEmail') || '',
     city:       p.get('city')       || '',
@@ -1042,10 +1044,11 @@ const _instanceId  = '<%= instanceId %>' === 'undefined' ? '' : '<%= instanceId 
     }
     // Store into state so Step 1 "next" works without typing
     // Store into state so Step 1 "next" works without manual input
-    state.name    = state.prefill.siteName   || '';
-    state.email   = state.prefill.ownerEmail || null;
-    state.siteId  = _instanceId || state.prefill.siteId || null;
-    state.siteName = state.prefill.siteName  || null;
+    state.name       = state.prefill.siteName   || '';
+    state.email      = state.prefill.ownerEmail || null;
+    state.siteId     = state.prefill.siteId     || null;   // meta-site ID for Wix API calls
+    state.instanceId = state.prefill.instanceId || null;   // app instanceId for portal auth
+    state.siteName   = state.prefill.siteName   || null;
   } else {
     document.getElementById('found-panel').classList.add('hidden');
   }
@@ -1062,8 +1065,10 @@ const _instanceId  = '<%= instanceId %>' === 'undefined' ? '' : '<%= instanceId 
 // ── Site ID field — show only when instanceId not auto-injected ─────
 (function initSiteIdField() {
   if (_instanceId) {
-    // Portal path: instanceId baked into JWT, no user input needed
-    state.siteId = _instanceId;
+    // Portal path: instanceId baked into JWT, no user input needed.
+    // _instanceId is the Wix app instanceId (portal auth), NOT the meta-site ID.
+    // state.siteId (meta-site ID for Wix API calls) comes from the siteId URL param.
+    state.instanceId     = state.instanceId || _instanceId;
     state.siteIdVerified = true; // server-verified via Wix signed instance
   } else {
     // Manual path: show the field, pre-fill from URL param if available
@@ -1388,10 +1393,11 @@ async function _provisionClient() {
       name:               state.name,
       tier:               state.tier,
       hardware_platform:  state.hardwarePlatform || (state.tier === 'Connect' ? 'kisi' : 'seam'),
-      site_id:            state.siteId   || null,
-      site_name:          state.siteName || null,
-      notification_email: state.email    || null,
-      wix_api_key:        state.wixApiKey || null,
+      site_id:            state.siteId      || null,   // Wix meta-site ID (for API calls)
+      wix_instance_id:    state.instanceId  || null,   // Wix app instanceId (for portal auth)
+      site_name:          state.siteName    || null,
+      notification_email: state.email       || null,
+      wix_api_key:        state.wixApiKey   || null,
     }),
   });
   if (!clientRes.ok) {

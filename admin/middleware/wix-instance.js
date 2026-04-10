@@ -2,7 +2,7 @@
  * @file wix-instance.js
  * @layer admin/middleware
  * @role wix-operator-auth
- * @exports verifyWixInstance
+ * @exports requireWixInstance, verifySignedInstance
  *
  * Verifies the Wix signed instance token appended to dashboard page iframe URLs.
  *
@@ -10,12 +10,20 @@
  * Token format: [HMACSHA-256 signature].[Base64-URL-encoded JSON data]
  * Verified using the WIX_APP_SECRET env var (App Secret Key from Wix App Dashboard).
  *
+ * Lookup strategy (three-path):
+ *   Path A — wix_instance_id match → known client, issue token, go to dashboard
+ *   Path B — no instance match, siteId from authorizationCode matches site_id → update wix_instance_id, go to dashboard
+ *   Path C — no match on either → redirect to onboarding
+ *
  * Payload fields used:
- *   instanceId  — identifies which Wix site (maps to clients.wix_site_id)
+ *   instanceId  — Wix app installation ID (maps to clients.wix_instance_id)
  *   uid         — Wix User ID of the viewer
  *   siteOwnerId — Wix User ID of the site owner
  *   permissions — 'OWNER' for site owners
  *   aid         — present if anonymous (reject immediately)
+ *
+ * authorizationCode param: Wix passes a signed JWT in ?authorizationCode= containing
+ *   siteId (the Wix meta-site ID, maps to clients.site_id). Used as fallback lookup key.
  */
 
 'use strict';
@@ -59,7 +67,6 @@ function verifySignedInstance(instance) {
   let payload;
   try {
     payload = JSON.parse(Buffer.from(dataB64, 'base64url').toString('utf8'));
-    console.log('[wix-instance] payload:', JSON.stringify(payload));
   } catch {
     throw new Error('Wix instance data decode failed');
   }
@@ -81,12 +88,36 @@ function verifySignedInstance(instance) {
 }
 
 /**
+ * Extracts siteId from the Wix authorizationCode JWT.
+ * The authorizationCode is a JWS passed as a URL param by Wix — we read
+ * the payload without verifying the signature (it's supplementary context,
+ * not a security boundary — the signed instance token is the auth gate).
+ *
+ * @param {string} authCode  Raw authorizationCode query param value
+ * @returns {string|null}    siteId if found, null otherwise
+ */
+function extractSiteIdFromAuthCode(authCode) {
+  try {
+    const parts = authCode.split('.');
+    if (parts.length < 2) return null;
+    const decoded = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    // payload.data is a JSON string containing decodedToken.siteId
+    const data = typeof decoded.data === 'string' ? JSON.parse(decoded.data) : decoded.data;
+    return data?.decodedToken?.siteId || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Express middleware — verifies Wix signed instance and resolves clientId.
  *
- * Reads ?instance= from query, verifies HMAC, confirms site owner,
- * then looks up clients.id by wix_site_id matching the instanceId.
+ * Three-path lookup:
+ *   Path A: wix_instance_id match → known client
+ *   Path B: site_id match via authorizationCode → update wix_instance_id, known client
+ *   Path C: no match → redirect to onboarding
  *
- * Sets req.wixOperator = { clientId, instanceId, uid } on success.
+ * Sets req.wixOperator = { clientId, instanceId, siteId, uid } on success.
  */
 async function requireWixInstance(req, res, next) {
   try {
@@ -102,24 +133,55 @@ async function requireWixInstance(req, res, next) {
       return res.status(401).send('Wix instance missing instanceId');
     }
 
-    // Resolve instanceId → clientId via site_id on clients table
-    const result = await db.query(
-      'SELECT id FROM clients WHERE site_id = $1 LIMIT 1',
+    // ── Path A: look up by wix_instance_id ───────────────────────
+    const byInstance = await db.query(
+      'SELECT id, site_id FROM clients WHERE wix_instance_id = $1 LIMIT 1',
       [instanceId]
     );
 
-    if (!result.rows.length) {
-      console.warn(`[wix-instance] No client found for instanceId: ${instanceId} — redirecting to onboarding`);
-      return res.redirect(`/onboard?siteId=${encodeURIComponent(instanceId)}`);
+    if (byInstance.rows.length) {
+      req.wixOperator = {
+        clientId:   byInstance.rows[0].id,
+        instanceId,
+        siteId:     byInstance.rows[0].site_id,
+        uid:        payload.uid,
+      };
+      return next();
     }
 
-    req.wixOperator = {
-      clientId:   result.rows[0].id,
-      instanceId,
-      uid:        payload.uid,
-    };
+    // ── Path B: fall back to site_id via authorizationCode ───────
+    const siteId = req.query.authorizationCode
+      ? extractSiteIdFromAuthCode(req.query.authorizationCode)
+      : null;
 
-    next();
+    if (siteId) {
+      const bySite = await db.query(
+        'SELECT id, site_id FROM clients WHERE site_id = $1 LIMIT 1',
+        [siteId]
+      );
+
+      if (bySite.rows.length) {
+        const clientId = bySite.rows[0].id;
+        // Wire up wix_instance_id so future loads hit Path A
+        await db.query(
+          'UPDATE clients SET wix_instance_id = $1, updated_at = NOW() WHERE id = $2',
+          [instanceId, clientId]
+        );
+        console.log(`[wix-instance] Path B: wired wix_instance_id for client ${clientId}`);
+        req.wixOperator = { clientId, instanceId, siteId, uid: payload.uid };
+        return next();
+      }
+    } else {
+      console.warn('[wix-instance] Path B: authorizationCode absent or siteId not extractable');
+    }
+
+    // ── Path C: no match — redirect to onboarding ─────────────────
+    console.warn(`[wix-instance] Path C: no client found for instanceId=${instanceId} siteId=${siteId} — redirecting to onboarding`);
+    const params = new URLSearchParams();
+    if (instanceId) params.set('instanceId', instanceId);
+    if (siteId)     params.set('siteId', siteId);
+    return res.redirect(`/onboard?${params.toString()}`);
+
   } catch (err) {
     console.warn('[wix-instance] Verification failed:', err.message);
     res.status(401).send(`Access denied: ${err.message}`);
