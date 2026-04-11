@@ -192,15 +192,16 @@ class StandardAdapter {
 
   /**
    * Records a successful grant — writes all role assignments to member_role_assignments,
+   * writes source rows to member_access_sources (DR-034),
    * then sets member_access_state to active.
    * Called after hardware role assignments succeed.
    *
    * @param {string} memberId
    * @param {string} tenantId
-   * @param {Array}  assignments  [{ mappingId, roleAssignmentId, hardwareGroupId }] from processGrant()
+   * @param {Array}  assignments  [{ mappingId, roleAssignmentId, hardwareGroupId, sourcePlanId, sourceType }]
    */
   async completeGrant(memberId, tenantId, assignments) {
-    for (const { mappingId, roleAssignmentId, hardwareGroupId } of assignments) {
+    for (const { mappingId, roleAssignmentId, hardwareGroupId, sourcePlanId, sourceType } of assignments) {
       // ON CONFLICT DO NOTHING — idempotent on retry (UNIQUE constraint on member_id, mapping_id, hardware_group_id)
       await db.query(
         `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
@@ -208,6 +209,18 @@ class StandardAdapter {
          ON CONFLICT (member_id, mapping_id, hardware_group_id) DO NOTHING`,
         [memberId, mappingId, roleAssignmentId, hardwareGroupId || null]
       );
+
+      // DR-034: Record why this member is in this group.
+      // ON CONFLICT DO NOTHING — safe for retry (idempotent).
+      if (hardwareGroupId) {
+        await db.query(
+          `INSERT INTO member_access_sources
+             (member_id, hardware_group_id, source_type, source_plan_id, mapping_id)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT DO NOTHING`,
+          [memberId, hardwareGroupId, sourceType || 'plan', sourcePlanId || null, mappingId || null]
+        );
+      }
     }
 
     await db.query(
@@ -278,15 +291,20 @@ class StandardAdapter {
    * Core Engine determines targetStatus from eventType; this layer never handles event type strings (DR-023).
    *
    * targetStatus values:
-   *   'disabled'  — payment.failed path (preserve role_assignment_id for fast recovery)
-   *   'revoked'   — plan.cancelled, booking.cancelled (clears role_assignment_id)
-   *   'deleted'   — member.deleted (clears role_assignment_id)
+   *   'disabled'  — payment.failed path (preserve role assignments for fast recovery)
+   *   'revoked'   — plan.cancelled, booking.cancelled (clears role assignments)
+   *   'deleted'   — member.deleted (clears role assignments)
+   *
+   * DR-034: For 'revoked' path, also removes the source row from member_access_sources.
+   * The caller (grant-revoke.js / queue-worker) is responsible for checking remaining
+   * source count BEFORE calling hardware removeRole — this method only cleans up DB state.
    *
    * @param {string} memberId
    * @param {string} tenantId
    * @param {string} targetStatus
+   * @param {Object} [options]   { sourcePlanId, sourceType, hardwareGroupId } — for DR-034 source cleanup
    */
-  async completeRevoke(memberId, tenantId, targetStatus) {
+  async completeRevoke(memberId, tenantId, targetStatus, options = {}) {
     const clearRole = targetStatus === 'revoked' || targetStatus === 'deleted';
     const dbClient = await db.getClient();
 
@@ -294,6 +312,25 @@ class StandardAdapter {
       await dbClient.query('BEGIN');
 
       if (clearRole) {
+        // DR-034: Remove this specific source row if planId provided (targeted revoke).
+        // If no planId (full delete), remove all source rows for this member.
+        if (options.sourcePlanId && options.hardwareGroupId) {
+          await dbClient.query(
+            `DELETE FROM member_access_sources
+             WHERE member_id = $1
+               AND hardware_group_id = $2
+               AND source_type = $3
+               AND COALESCE(source_plan_id, '') = COALESCE($4, '')`,
+            [memberId, options.hardwareGroupId, options.sourceType || 'plan', options.sourcePlanId]
+          );
+        } else {
+          // Full revoke (member.deleted or no scope info) — clear all source rows
+          await dbClient.query(
+            `DELETE FROM member_access_sources WHERE member_id = $1`,
+            [memberId]
+          );
+        }
+
         // Clear all stored role assignments atomically with state update
         await dbClient.query(
           `DELETE FROM member_role_assignments WHERE member_id = $1`,
@@ -306,6 +343,7 @@ class StandardAdapter {
           [targetStatus, memberId]
         );
       } else {
+        // 'disabled' path — preserve role assignments, just update status
         await dbClient.query(
           `UPDATE member_access_state SET status = $1, updated_at = NOW() WHERE member_id = $2`,
           [targetStatus, memberId]

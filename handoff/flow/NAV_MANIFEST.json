@@ -1,0 +1,247 @@
+{
+  "_meta": {
+    "produced_by": "NOVA + ORION",
+    "step": "4 of 9",
+    "handoff_version": "1.0.0",
+    "date": "2026-04-10",
+    "servers": {
+      "core_engine": "core/server.js — Railway service 1. 3 endpoints: /health, /webhooks/wix, /member/access-status",
+      "admin_server": "admin/server.js — Railway service 2. All operator + admin routes."
+    }
+  },
+  "screens": {
+    "S01_portal_setup": {
+      "id": "S01",
+      "name": "Portal Setup Welcome",
+      "file": "admin/views/pages/portal-setup.ejs",
+      "server": "admin_server",
+      "route": "/operator-portal/setup",
+      "auth": "operator_jwt",
+      "role": "operator",
+      "entry_conditions": ["first_run: no API key AND no locations"],
+      "exits": [
+        { "to": "S02_onboard", "trigger": "Start Setup CTA", "route": "/onboard?clientId=X" }
+      ]
+    },
+    "S02_onboard": {
+      "id": "S02",
+      "name": "Onboarding Flow",
+      "file": "admin/views/pages/onboard.ejs",
+      "server": "admin_server",
+      "route": "/onboard",
+      "auth": "invite_token_or_operator_jwt",
+      "role": "operator",
+      "entry_conditions": ["from S01 via Start Setup", "direct link with clientId"],
+      "steps": ["platform_select", "api_key", "location_create", "plan_mapping", "confirmation"],
+      "exits": [
+        { "to": "S03_dashboard", "trigger": "Step 5 completion — Go to Dashboard", "route": "/dashboard?clientId=X" }
+      ],
+      "known_gaps": ["U-09: API key label says 'Kisi API Key'"]
+    },
+    "S03_dashboard": {
+      "id": "S03",
+      "name": "Dashboard Overview",
+      "file": "admin/views/pages/dashboard.ejs",
+      "server": "admin_server",
+      "route": "/dashboard",
+      "auth": "operator_jwt",
+      "role": "operator",
+      "entry_conditions": ["returning operator (has API key OR locations)", "completion of S02"],
+      "exits": [
+        { "to": "S05_locations", "trigger": "Locations tab or Add Location button" },
+        { "to": "S06_plan_mapping", "trigger": "Plan Mapping tab or nav card" },
+        { "to": "S07_members", "trigger": "Members tab or nav card" },
+        { "to": "S08_access", "trigger": "Access tab or nav card" },
+        { "to": "S09_sync_status", "trigger": "Sync Status tab or error preview link" },
+        { "to": "S04_system_config", "trigger": "Settings / System Config tab" },
+        { "to": "S11_admin_panel", "trigger": "Admin tab" }
+      ]
+    },
+    "S04_system_config": {
+      "id": "S04",
+      "name": "System Config",
+      "file": "admin/views/pages/onboard.ejs (config sections)",
+      "server": "admin_server",
+      "route": "/system-config",
+      "auth": "operator_jwt",
+      "role": "operator",
+      "exits": [
+        { "to": "S03_dashboard", "trigger": "Dashboard tab" },
+        { "to": "any_tab", "trigger": "Subnav tabs" }
+      ],
+      "side_effects": ["Saving API key should trigger pending_hardware re-queue — WIRE-G-01 NOT YET BUILT"]
+    },
+    "S05_locations": {
+      "id": "S05",
+      "name": "Locations",
+      "file": "admin/views/pages/locations.ejs",
+      "server": "admin_server",
+      "route": "/locations",
+      "auth": "operator_jwt",
+      "role": "operator",
+      "exits": [
+        { "to": "any_tab", "trigger": "Subnav tabs" }
+      ],
+      "side_effects": ["Saving location API key should trigger pending_hardware re-queue — WIRE-G-01 NOT YET BUILT"]
+    },
+    "S06_plan_mapping": {
+      "id": "S06",
+      "name": "Plan Mapping",
+      "file": "admin/views/pages/plan-mapping.ejs",
+      "server": "admin_server",
+      "route": "/plan-mapping",
+      "auth": "operator_jwt",
+      "role": "operator",
+      "exits": [
+        { "to": "any_tab", "trigger": "Subnav tabs" }
+      ],
+      "side_effects": ["Saving plan mapping should trigger pending_hardware re-queue — WIRE-G-01 NOT YET BUILT"]
+    },
+    "S07_members": {
+      "id": "S07",
+      "name": "Members",
+      "file": "admin/views/pages/members.ejs",
+      "server": "admin_server",
+      "route": "/members",
+      "auth": "operator_jwt",
+      "role": "operator",
+      "exits": [
+        { "to": "any_tab", "trigger": "Subnav tabs" },
+        { "to": "member_timeline_drawer", "trigger": "Timeline icon (overlay, no route change)" }
+      ],
+      "known_gaps": ["Member names are mock data — production shows platform_member_id split"]
+    },
+    "S08_access": {
+      "id": "S08",
+      "name": "Access Log",
+      "file": "admin/views/pages/access.ejs",
+      "server": "admin_server",
+      "route": "/access",
+      "auth": "operator_jwt",
+      "role": "operator",
+      "exits": [
+        { "to": "any_tab", "trigger": "Subnav tabs" }
+      ]
+    },
+    "S09_sync_status": {
+      "id": "S09",
+      "name": "Sync Status (Operator)",
+      "file": "admin/views/pages/sync-status.ejs",
+      "server": "admin_server",
+      "route": "/sync-status",
+      "auth": "operator_jwt",
+      "role": "operator",
+      "contains": ["S10_error_queue_component"],
+      "exits": [
+        { "to": "any_tab", "trigger": "Subnav tabs" }
+      ]
+    },
+    "S11_admin_panel": {
+      "id": "S11",
+      "name": "Admin Panel",
+      "file": "admin/views/pages/admin-panel.ejs",
+      "server": "admin_server",
+      "route": "/admin-panel",
+      "auth": "operator_jwt",
+      "role": "operator",
+      "data_status": "mock — Wix admin sync not built",
+      "exits": [
+        { "to": "any_tab", "trigger": "Subnav tabs" }
+      ]
+    },
+    "S12_multi_member": {
+      "id": "S12",
+      "name": "Multi-Member Editor",
+      "file": "admin/views/pages/multi-member.ejs",
+      "server": "admin_server",
+      "route": "/multi-member",
+      "auth": "operator_jwt or member_jwt",
+      "role": "operator or plan_holder",
+      "status": "GATED — deferred post-HOG",
+      "gate_condition": "allow_multiple = true on plan_mappings",
+      "exits": []
+    },
+    "S13_sync_status_member": {
+      "id": "S13",
+      "name": "Sync Status Widget (Member-Facing)",
+      "file": "admin/views/pages/sync-status.ejs",
+      "server": "core_engine",
+      "route": "/sync-status?memberId=X&clientId=Y",
+      "auth": "none (URL param) or member_jwt (Wix widget)",
+      "audience": "gym_member",
+      "data_endpoint": "GET /member/access-status",
+      "polling": { "interval_ms": 3000, "max_polls": 60, "stale_threshold_ms": 30000 },
+      "exits": [],
+      "known_gaps": ["U-09: 'Kisi app' hardcoded in active state copy"]
+    },
+    "S14_admin_login": {
+      "id": "S14",
+      "name": "Admin Hub Login",
+      "file": "admin/public/index.html (login section)",
+      "server": "admin_server",
+      "route": "/admin/login",
+      "auth": "none (pre-auth)",
+      "audience": "platform_admin",
+      "exits": [
+        { "to": "S15_admin_hub", "trigger": "Google OAuth success" }
+      ]
+    },
+    "S15_admin_hub": {
+      "id": "S15",
+      "name": "Admin Hub Dashboard",
+      "file": "admin/public/index.html + admin/public/app.js",
+      "server": "admin_server",
+      "route": "/admin/dashboard",
+      "auth": "admin_session_jwt",
+      "audience": "platform_admin",
+      "tabs": ["error_queue", "debug_center", "webhook_inspector", "queue_monitor", "clients", "member_sync"],
+      "exits": [
+        { "to": "S14_admin_login", "trigger": "Session expiry → modal → login" }
+      ]
+    }
+  },
+  "entry_flows": {
+    "operator_first_run": {
+      "description": "New operator accessing from Wix Dashboard sidebar for the first time",
+      "path": ["Wix Dashboard sidebar click", "GET /operator-portal?instance=X", "JWT issued", "setup check: no API key AND no locations", "S01_portal_setup", "S02_onboard", "S03_dashboard"]
+    },
+    "operator_returning": {
+      "description": "Existing operator accessing from Wix Dashboard sidebar",
+      "path": ["Wix Dashboard sidebar click", "GET /operator-portal?instance=X", "JWT issued", "setup check: has API key OR locations", "S03_dashboard"]
+    },
+    "operator_first_run_gap": {
+      "description": "FUNNEL-G-15: Operator has API key but no locations (or vice versa) — goes to dashboard directly, bypasses setup",
+      "path": ["GET /operator-portal?instance=X", "JWT issued", "setup check fails edge case", "S03_dashboard (no setup completed)"]
+    },
+    "member_post_purchase": {
+      "description": "Gym member after buying plan on Wix — Wix sends them to sync status page",
+      "path": ["Wix purchase confirmation", "Redirect to /sync-status?memberId=X&clientId=Y", "S13 polls /member/access-status", "Active state when provisioned"]
+    },
+    "platform_admin": {
+      "description": "Daxx accessing Admin Hub",
+      "path": ["Direct browser URL", "S14_admin_login", "Google OAuth", "S15_admin_hub"]
+    }
+  },
+  "auth_types": {
+    "operator_jwt": {
+      "issued_by": "admin/routes/portal.js",
+      "duration": "8h",
+      "cookie": "sameSite: none (iframe-safe)",
+      "payload": ["clientId", "role: operator"]
+    },
+    "invite_token": {
+      "issued_by": "admin/routes/operator.js",
+      "use": "Onboarding link for new operators before portal auth is set up"
+    },
+    "admin_session_jwt": {
+      "issued_by": "admin/auth/google endpoint",
+      "audience": "platform admin only",
+      "restriction": "allowed email list"
+    },
+    "member_jwt": {
+      "issued_by": "Wix (RS256)",
+      "verified_by": "core/member-sync-api.js via JWKS (cached 1h)",
+      "payload_key": "uid = Wix member ID = platform_member_id"
+    }
+  }
+}

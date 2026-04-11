@@ -1,5 +1,5 @@
 # CLAUDE.md — AccessSync
-**Version:** 4.2 | **Updated:** 2026-04-06 | **Author:** Daxx Roberts / KEEPER
+**Version:** 4.3 | **Updated:** 2026-04-10 | **Author:** Daxx Roberts / KEEPER
 
 > **Read this file before writing a single line of code. Then read `open_items.md`. Then read the spec for what you're building.**
 
@@ -47,9 +47,9 @@ When asked about a UI page or to view/open one:
 
 ## Repository State
 
-**All 4 project-plan sprints complete. Business-risk-aware test framework live (Concept #6): 32 tests across P1/P2/P3 tiers, custom Jest reporter + sequencer. `npm run test:deploy` gives DEPLOY SAFE / DO NOT DEPLOY verdict. End-to-end provisioning pipeline working. Member-facing sync status page live. Operator console wired to live data. Onboarding hardened with invite token auth, end-to-end validation step, and location auto-activation. Sprint 5 complete as of 2026-04-02. 6 operator UI screens live. Pending: OB-19 (Railway env vars + DR-034 migration — REOPENED 2026-04-01), OB-46/47/48 (multi-source grant/revoke), business gates G-01/02/03/08/09.**
+**All 4 project-plan sprints complete. Business-risk-aware test framework live (Concept #6): 32 tests across P1/P2/P3 tiers, custom Jest reporter + sequencer. `npm run test:deploy` gives DEPLOY SAFE / DO NOT DEPLOY verdict. End-to-end provisioning pipeline working. Member-facing sync status page live. Operator console wired to live data. Onboarding hardened with invite token auth, end-to-end validation step, and location auto-activation. Sprint 5 complete as of 2026-04-02. 6 operator UI screens live. Pre-HOG code gaps closed 2026-04-10: retryPendingHardwareMembers scoped to plan mapping save (WIRE-G-01), all platform-specific "Kisi app" copy replaced (U-09), full Humanizer pass on all 6 operator UI screens + onboarding portal. OB-46 Railway migration complete 2026-04-10 (member_access_sources table live). Business gates closed 2026-04-10: G-03 (Kisi partner), G-08 (Kisi API access), G-09 (Chad bought Kisi). Pending: G-01 (Chad agreement), G-02 (LLC), G-05 (insurance), G-06 (failure runbook), OB-47/48 (multi-source grant/revoke logic).**
 
-**Current status as of 2026-04-06:**
+**Current status as of 2026-04-10:**
 - `schema.sql` — DR-018 through DR-035 applied. 13 tables in Railway DB today; 14th table (`member_access_sources`, DR-034) pending OB-46 migration. `member_role_assignments` (DR-026), `access_type` on `plan_mappings` (DR-026), `hardware_api_key` columns (DR-035), `source_plan_id` (DR-035), `hardware_key_last_verified` + `hardware_key_last_error` on `locations` (sprint-5), `first_grant_sent` on `clients` (sprint-5).
 - `db.js` — ✅ Built. pg pool, query helper, `getClient()`, `healthCheck()`, `pool` exported.
 - `adapters/wix/wix-connector.js` — ✅ Layer 1. HTTP handler, HMAC verification (uses `req.rawBody`). Reads `X-AccessSync-Client-Id` header → calls `tenantResolver.registerSiteId()` for self-registration. Calls wix-adapter.parseEvent(). On HMAC rejection: calls `hmacMonitor.recordFailure()` (Sprint 5.1).
@@ -290,13 +290,13 @@ Full open items: `AccessSync/open_items.md`
 |---|---|
 | G-01 | Chad signed agreement | Open — pitch sent, awaiting response |
 | G-02 | LLC formation | Open |
-| G-03 | Kisi reseller agreement — attorney review | Open |
+| G-03 | Kisi reseller agreement — attorney review | **CLOSED 2026-04-10 — Daxx is a Kisi partner** |
 | G-04 | Wix developer account confirmed | **CLOSED 2026-04-02** |
 | G-05 | Business technology insurance | Open |
 | G-06 | Failure runbook complete | Open — optimistic error resolve risk must be documented |
 | G-07 | Michael partnership decision | **CLOSED 2026-03-24 — No partnership. Daxx building solo.** |
-| G-08 | Kisi API access confirmed from Joe | Open — email to Joe pending |
-| G-09 | Chad confirmed on Kisi Pro tier ($199/mo/location) | Open — must be in service agreement |
+| G-08 | Kisi API access confirmed from Joe | **CLOSED 2026-04-10 — Kisi partner API access confirmed** |
+| G-09 | Chad confirmed on Kisi Pro tier ($199/mo/location) | **CLOSED 2026-04-10 — Chad bought Kisi** |
 | G-10 | NOVA reviews Kisi API docs, confirms schema assumptions | Open — blocks adapter build start |
 
 ---
@@ -544,5 +544,6 @@ REX will not allow build work to begin until this statement is made.
 | v4.0 | 2026-04-02 | AI-forward knowledge base complete. 8 docs, llms-full.txt. DR-035 + sprint-5 migrations applied and confirmed. |
 | v4.1 | 2026-04-06 | Merged v4.0 (repo) with vault state corrections: platform-agnostic product description; DR-029–034 added to locked decisions; OB-19 corrected to REOPENED; G-04 closed; REDIS_URL + CORE_ENGINE_URL added to env vars; new open items OB-25/28/34/39/40/46–49/51/56/RI-01/DEF-01 added; DR-014 color values corrected to match DECISION_LOG (#4F6EF7/#4ADE80); schema count clarified (13 in DB, 14 when OB-46 runs); SPAN/LENS agents added to team table. |
 | v4.2 | 2026-04-06 | Added Pre-Commit / Pre-Push Gate — `npm run test:deploy` required before every commit or push. DEPLOY SAFE / DO NOT DEPLOY verdict gates all code merges. |
+| v4.3 | 2026-04-10 | Pre-HOG code complete. WIRE-G-01 closed (retryPendingHardwareMembers scoped to plan mapping PATCH). U-09 closed (all platform-specific copy removed from operator UI + onboarding + sync-status). Humanizer pass complete — all 6 operator pages + onboarding portal. Graphify rebuilt (262 nodes, 370 edges). HANDOFF_BRIEF + APP_CONTEXT updated to reflect closed gaps. |
 
 *Archive of prior versions: `01_Project_Foundation/Claude_Versions/`*

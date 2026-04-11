@@ -156,7 +156,7 @@
     <div class="page-header">
       <div>
         <div class="page-title">System Config</div>
-        <div class="page-sub">Manage your integrations, API keys, and locations</div>
+        <div class="page-sub">Connect your integrations, manage API keys, and set up your locations</div>
       </div>
     </div>
 
@@ -201,7 +201,7 @@
           </div>
           <div class="key-form" id="wix-key-form">
             <div class="key-form-inner" style="margin-top:10px;">
-              <div class="key-input-hint">Write-only — encrypted at rest (AES-256-GCM). Required for member plan lookups.</div>
+              <div class="key-input-hint">Stored securely — write-only. Required so AccessSync can look up your member plans.</div>
               <input type="password" class="key-input" id="wix-key-input" placeholder="Paste your Wix API key…" autocomplete="off"/>
               <div class="key-form-actions">
                 <button class="btn btn-ghost btn-sm" onclick="toggleWixKeyForm()">Cancel</button>
@@ -220,7 +220,7 @@
           </div>
           <div class="key-form" id="notif-form">
             <div class="key-form-inner" style="margin-top:10px;">
-              <div class="key-input-hint">Receives alerts from all locations — errors, key failures, and grant confirmations. Locations can override with their own email.</div>
+              <div class="key-input-hint">Gets alerts for all locations — errors, key failures, and grant confirmations. Each location can use its own email instead.</div>
               <input type="email" class="key-input" id="notif-email-input" placeholder="alerts@yourgym.com" autocomplete="off"/>
               <div class="key-form-actions">
                 <button class="btn btn-ghost btn-sm" onclick="toggleNotifForm()">Cancel</button>
@@ -613,7 +613,7 @@
               '</div>' +
               '<div class="key-form" id="emailform-' + loc.id + '">' +
                 '<div class="key-form-inner">' +
-                  '<div class="key-input-hint">Override the rollup email for this location. Leave blank to use the rollup.</div>' +
+                  '<div class="key-input-hint">Alerts for this location go here instead of the rollup email. Leave blank to use the rollup.</div>' +
                   '<input type="email" class="key-input" id="emailinput-' + loc.id + '" placeholder="alerts@yourlocation.com" autocomplete="off" value="' + esc(locEmail || '') + '"/>' +
                   '<div class="key-form-actions">' +
                     '<button class="btn btn-ghost btn-sm" onclick="toggleLocEmailForm(\'' + loc.id + '\')">Cancel</button>' +

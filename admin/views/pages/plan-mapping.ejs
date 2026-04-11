@@ -325,7 +325,7 @@
     <!-- Empty state -->
     <div id="emptyState" class="empty-state" style="display:none;">
       <div class="empty-state-icon">&#128203;</div>
-      <div>Your Wix plans and services will appear here automatically.<br>Make sure your Wix API key is connected.</div>
+      <div>Your plans and services will appear here once your Wix API key is connected.<br>Add it in System Config to get started.</div>
     </div>
   </div>
 
@@ -364,7 +364,7 @@
     }
 
     function getInfoBannerHTML() {
-      return '<strong>How it works:</strong> Each plan or service is mapped to one or more ' + platformName() + ' ' + groupLabel().toLowerCase() + 's. When a member purchases a plan or books a service, they automatically receive access to all assigned groups. Multi-member plans allow the plan holder to add additional people.';
+      return '<strong>How it works:</strong> Each plan or service is linked to one or more ' + platformName() + ' ' + groupLabel().toLowerCase() + 's. When a member buys a plan or books a service, AccessSync grants them access to every assigned group automatically. Multi-member plans let the plan holder add extra people.';
     }
 
     function getToggleSublabel(plan) {
@@ -385,7 +385,7 @@
     }
 
     function getGroupHelper() {
-      return 'Members on this plan will receive access to all assigned ' + groupLabel().toLowerCase() + 's.';
+      return 'Anyone on this plan gets access to every ' + groupLabel().toLowerCase() + ' you assign here.';
     }
 
     // ═══════════════════════════════════════
@@ -868,7 +868,7 @@
               var banner = document.createElement('div');
               banner.style.cssText = 'background:var(--amber-dim);border:1px solid var(--amber);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text);display:flex;align-items:center;gap:10px;';
               banner.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="var(--amber)" stroke-width="1.3" fill="none"/><path d="M9 5.5v4M9 12v.5" stroke="var(--amber)" stroke-width="1.5" stroke-linecap="round"/></svg>' +
-                '<div><strong>No API key configured.</strong> Your Wix plans are listed below but door groups can\'t be assigned yet. <a href="/locations?clientId=' + clientId + '" style="color:var(--brand);font-weight:600;">Add your API key</a> to enable mapping.</div>';
+                '<div><strong>No API key connected yet.</strong> Your plans are listed below, but you can\'t assign door groups until AccessSync can reach your hardware. <a href="/locations?clientId=' + clientId + '" style="color:var(--brand);font-weight:600;">Add your API key in System Config</a> to continue.</div>';
               header.parentNode.insertBefore(banner, header.nextSibling);
             }
             return;

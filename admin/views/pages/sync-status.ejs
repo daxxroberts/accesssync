@@ -119,7 +119,7 @@ html, body {
     <div id="state-syncing">
       <div class="status-icon syncing"><div class="spinner-ring"></div></div>
       <h2>Setting up your access...</h2>
-      <p>We're connecting your membership to your gym's door system. This usually takes less than 30 seconds.</p>
+      <p>We're linking your membership to your gym's door system. This usually takes less than 30 seconds.</p>
     </div>
 
     <!-- Active state -->
@@ -130,7 +130,7 @@ html, body {
         </svg>
       </div>
       <h2>You're all set!</h2>
-      <p>Your access is active. Use the Kisi app or your assigned credential to enter the gym.</p>
+      <p>Your access is active. Use your assigned credential to enter.</p>
       <div id="access-list" class="access-list"></div>
     </div>
 
@@ -143,14 +143,14 @@ html, body {
         </svg>
       </div>
       <h2>Something went wrong</h2>
-      <p>We couldn't set up your access automatically. Your gym has been notified and will resolve this shortly. No action needed from you.</p>
+      <p>We couldn't activate your access automatically. Your gym has been notified and will sort it out shortly — you don't need to do anything.</p>
     </div>
 
     <!-- Pending state (member not found yet — webhook hasn't arrived) -->
     <div id="state-pending" class="hidden">
       <div class="status-icon syncing"><div class="spinner-ring"></div></div>
       <h2>Waiting for confirmation...</h2>
-      <p>Your purchase is confirmed. We're waiting for the notification from your gym's website — this usually takes a few seconds.</p>
+      <p>Your purchase went through. We're waiting for your gym's system to send us the signal — this usually takes a few seconds.</p>
     </div>
 
     <div id="timestamp" class="timestamp hidden"></div>

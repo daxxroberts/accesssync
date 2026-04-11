@@ -707,7 +707,7 @@ html, body {
     <div id="step-1" class="card">
       <div class="card-eyebrow">Step 1 of 5</div>
       <div class="card-title">Set up your AccessSync account</div>
-      <div class="card-sub">Tell us about your gym and we'll get your account ready. This takes about 5 minutes.</div>
+      <div class="card-sub">Enter your gym details below — we'll use this to set up your account and connect your doors.</div>
 
       <!-- Auto-detected from Velo URL params -->
       <div id="found-panel" class="hidden">
@@ -765,7 +765,7 @@ html, body {
     <div id="step-2" class="card hidden">
       <div class="card-eyebrow">Step 2 of 5</div>
       <div class="card-title">Choose your door system and plan</div>
-      <div class="card-sub">First, select the door hardware you use, then pick the plan that fits.</div>
+      <div class="card-sub">Select the hardware system your gym uses — this determines which plan options are available.</div>
 
       <!-- Platform selector -->
       <div class="platform-selector" style="display:flex;gap:12px;margin-bottom:20px;">
@@ -835,7 +835,7 @@ html, body {
     <div id="step-3" class="card hidden">
       <div class="card-eyebrow">Step 3 of 5</div>
       <div class="card-title">Where is your gym?</div>
-      <div class="card-sub" id="s3-sub">Add your first location. You can add more from the Admin Hub later.</div>
+      <div class="card-sub" id="s3-sub">Add your first location so AccessSync knows where to provision door access. You can add more locations later from your dashboard.</div>
 
       <div class="form-grid">
         <div class="field full">
@@ -863,7 +863,7 @@ html, body {
     <div id="step-4" class="card hidden">
       <div class="card-eyebrow">Step 4 of 5</div>
       <div class="card-title" id="s4-title">Connect your door system</div>
-      <div class="card-sub" id="s4-sub">An API token is a password that lets AccessSync talk to your door system. You generate it once in Kisi — we store it encrypted so you never need to enter it again.</div>
+      <div class="card-sub" id="s4-sub">Your API key gives AccessSync permission to open and close doors on your behalf. You generate it once in your door system — we store it securely so you never have to enter it again.</div>
 
       <div class="key-context" id="s4-context"></div>
 
@@ -896,8 +896,8 @@ html, body {
             <path d="M7 15l6 6L23 9" stroke="#16A34A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
-        <h2 id="done-headline">Account created!</h2>
-        <p>Your AccessSync account is ready. Complete the two steps below and your gym will be fully live — members will get door access the moment they sign up on Wix.</p>
+        <h2 id="done-headline">You're in. Two steps left to go live.</h2>
+        <p>Your account is set up. Finish the two steps below and your gym is live — members get door access the moment they buy a plan.</p>
       </div>
 
       <!-- ── Step A: Map plans (required — do this first) ── -->
@@ -905,7 +905,7 @@ html, body {
       <div id="mapping-section" class="hidden">
         <div class="done-section-title">Step 1 of 2 — Map your pricing plans to doors</div>
         <p style="font-size:13px;color:var(--text2);margin-bottom:6px;line-height:1.65">
-          Tell AccessSync which Wix plan unlocks which door. <strong>This is required</strong> — without it, no members will get access automatically.
+          Match each pricing plan to a door. Without this, no one gets access — this step is required before you go live.
         </p>
         <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">Takes about 2 minutes.</p>
         <div class="mapping-links" id="mapping-links"></div>
@@ -916,7 +916,7 @@ html, body {
       <div>
         <div class="done-section-title">Step 2 of 2 — Add your Wix code</div>
         <p class="code-instructions">
-          This code tells your Wix site to notify AccessSync when a member joins or cancels. Paste it once and you're done — no updates needed.
+          This code connects your Wix site to AccessSync. When a member buys or cancels a plan, Wix sends AccessSync the signal automatically. Paste it once — you'll never need to touch it again.
         </p>
         <ol class="code-steps">
           <li>In your Wix Editor, click <strong>Dev Mode</strong> in the top menu bar to enable it</li>
@@ -945,7 +945,7 @@ html, body {
       <ul style="font-size:13px;color:var(--text2);line-height:2;padding-left:18px;margin-bottom:4px;">
         <li>A member buys a plan on your Wix site</li>
         <li>AccessSync receives the event automatically</li>
-        <li>Their door access is provisioned in Kisi within seconds</li>
+        <li>Their door access is activated within seconds</li>
         <li>When they cancel, access is revoked — no action needed from you</li>
       </ul>
 
@@ -955,7 +955,7 @@ html, body {
         <div class="done-section-title">System Check</div>
         <div id="validation-checks" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
           <div class="val-row" id="val-key"><span class="val-icon" id="val-key-icon">⏳</span><span class="val-label">API key connected</span></div>
-          <div class="val-row" id="val-key-valid"><span class="val-icon" id="val-key-valid-icon">⏳</span><span class="val-label">API key validates against door system</span></div>
+          <div class="val-row" id="val-key-valid"><span class="val-icon" id="val-key-valid-icon">⏳</span><span class="val-label">API key works with your door system</span></div>
           <div class="val-row" id="val-mapping"><span class="val-icon" id="val-mapping-icon">⏳</span><span class="val-label">At least one plan → door mapping configured</span></div>
           <div class="val-row" id="val-location"><span class="val-icon" id="val-location-icon">⏳</span><span class="val-label">Location activated for provisioning</span></div>
         </div>
@@ -973,7 +973,7 @@ html, body {
       <!-- Setup incomplete warning -->
       <div id="setup-incomplete-banner" class="hidden" style="margin-top:20px;background:#fef3c7;border:1px solid #fbbf24;border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:10px;">
         <span style="font-size:20px;">&#9888;</span>
-        <div style="font-size:13px;color:#92400e;line-height:1.5;"><strong>Setup is not complete.</strong> Your members won't get door access until both tasks above are done.</div>
+        <div style="font-size:13px;color:#92400e;line-height:1.5;"><strong>You're not live yet.</strong> Finish both steps above before members can get door access.</div>
       </div>
 
       <div class="btn-row" style="margin-top:28px">

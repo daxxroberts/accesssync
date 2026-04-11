@@ -48,7 +48,14 @@ class GrantRevokeLogic {
       const roleId = await hardwareAdapter.assignRole(
         mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId
       );
-      assignments.push({ mappingId: mapping.mappingId, roleAssignmentId: String(roleId), hardwareGroupId: mapping.hardwareGroupId });
+      // DR-034: include sourcePlanId and sourceType so completeGrant() can write member_access_sources
+      assignments.push({
+        mappingId:        mapping.mappingId,
+        roleAssignmentId: String(roleId),
+        hardwareGroupId:  mapping.hardwareGroupId,
+        sourcePlanId:     wixEvent.planId || null,
+        sourceType:       wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
+      });
     }
 
     await db.query(
@@ -113,10 +120,53 @@ class GrantRevokeLogic {
 
       case 'plan.cancelled':
       case 'booking.cancelled': {
-        // Remove every role assignment the member holds
-        for (const raId of roleAssignmentIds) {
-          await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
+        // DR-034: Check remaining sources before calling Kisi DELETE.
+        // If another plan/booking still grants the same group, skip the hardware call.
+        const sourceType = eventType === 'booking.cancelled' ? 'booking' : 'plan';
+        const planId = wixEvent.planId || null;
+
+        // Get all role assignments with their group IDs to check per-group
+        const raWithGroups = await db.query(
+          `SELECT mra.role_assignment_id, mra.hardware_group_id
+           FROM member_role_assignments mra
+           WHERE mra.member_id = $1`,
+          [memberId]
+        );
+
+        for (const { role_assignment_id: raId, hardware_group_id: groupId } of raWithGroups.rows) {
+          // Remove this source row
+          await db.query(
+            `DELETE FROM member_access_sources
+             WHERE member_id = $1
+               AND hardware_group_id = $2
+               AND source_type = $3
+               AND COALESCE(source_plan_id, '') = COALESCE($4, '')`,
+            [memberId, groupId, sourceType, planId]
+          );
+
+          // Check if any other source still justifies this group
+          const remaining = await db.query(
+            `SELECT COUNT(*) AS cnt FROM member_access_sources
+             WHERE member_id = $1 AND hardware_group_id = $2`,
+            [memberId, groupId]
+          );
+
+          if (parseInt(remaining.rows[0].cnt, 10) > 0) {
+            console.log(`[Revoke] Skipping hardware DELETE for group ${groupId} — ${remaining.rows[0].cnt} other source(s) remain`);
+          } else {
+            await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
+          }
         }
+
+        // Fallback: if no raWithGroups rows (legacy member with no member_role_assignments rows),
+        // use the flat roleAssignmentIds array and call removeRole directly
+        if (raWithGroups.rows.length === 0 && roleAssignmentIds.length > 0) {
+          console.log(`[Revoke] No member_role_assignments rows — using legacy roleAssignmentIds fallback`);
+          for (const raId of roleAssignmentIds) {
+            await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
+          }
+        }
+
         await db.query(
           `INSERT INTO member_access_log (member_id, client_id, event_type) VALUES ($1, $2, 'revoked')`,
           [memberId, tenantId]

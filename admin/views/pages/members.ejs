@@ -413,8 +413,8 @@
       if (filtered.length === 0) {
         var searchVal = document.getElementById('filterSearch').value.trim();
         var emptyMsg = searchVal
-          ? 'No members found for \u201c' + searchVal + '\u201d. Try searching by email address.'
-          : 'No members match the selected filters.';
+          ? 'No members found for \u201c' + searchVal + '\u201d. Try searching by email address instead.'
+          : 'No members match those filters. Try adjusting or clearing them.';
         tbody.innerHTML = '<tr class="empty-row"><td colspan="6">' + emptyMsg + '</td></tr>';
         return;
       }

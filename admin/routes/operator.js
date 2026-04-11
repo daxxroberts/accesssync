@@ -46,13 +46,19 @@ router.use(function operatorAuth(req, res, next) {
  * Called after an API key is saved/rotated so parked members get provisioned.
  * Returns the count of members re-queued.
  */
-async function retryPendingHardwareMembers(clientId) {
+async function retryPendingHardwareMembers(clientId, planId = null) {
   const result = await db.query(
-    `SELECT mi.platform_member_id, mi.source_platform, mas.pending_plan_id
-     FROM member_access_state mas
-     JOIN member_identity mi ON mi.id = mas.member_id
-     WHERE mas.client_id = $1 AND mas.status = 'pending_hardware'`,
-    [clientId]
+    planId
+      ? `SELECT mi.platform_member_id, mi.source_platform, mas.pending_plan_id
+         FROM member_access_state mas
+         JOIN member_identity mi ON mi.id = mas.member_id
+         WHERE mas.client_id = $1 AND mas.status = 'pending_hardware'
+           AND COALESCE(mas.pending_plan_id, '') = COALESCE($2, '')`
+      : `SELECT mi.platform_member_id, mi.source_platform, mas.pending_plan_id
+         FROM member_access_state mas
+         JOIN member_identity mi ON mi.id = mas.member_id
+         WHERE mas.client_id = $1 AND mas.status = 'pending_hardware'`,
+    planId ? [clientId, planId] : [clientId]
   );
   if (result.rows.length === 0) return 0;
 
@@ -967,6 +973,12 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     }
 
     res.json(mapping);
+
+    // Re-queue any members parked in pending_hardware for this plan mapping.
+    // Scoped by source_plan_id so only members waiting on THIS plan are retried.
+    retryPendingHardwareMembers(clientId, mapping.source_plan_id).catch(err =>
+      console.warn('[operator] retryPendingHardwareMembers after plan mapping save failed:', err.message)
+    );
   } catch (err) {
     console.error('[operator] PATCH plan-mappings/:mappingId error:', err.message);
     res.status(500).json({ error: 'Internal server error' });

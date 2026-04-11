@@ -203,6 +203,34 @@ CREATE TABLE member_role_assignments (
 );
 
 --------------------------------------------------------
+-- 8b. Member Access Sources (Multi-Source Grant Safety — DR-034)
+--------------------------------------------------------
+-- Tracks WHY a member is in a hardware group (plan, booking, family_plan).
+-- Standard Adapter exclusively owns writes (DR-023).
+-- Grant: INSERT source row. Revoke: DELETE source row, then check COUNT.
+-- Kisi DELETE only called when COUNT(*) for member+group = 0.
+-- Prevents unsafe revoke when multiple plans grant the same group.
+CREATE TABLE member_access_sources (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    member_id         UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,
+    hardware_group_id VARCHAR(255) NOT NULL,                    -- Kisi/Seam group ID
+    source_type       VARCHAR(50)  NOT NULL,                    -- 'plan' | 'booking' | 'family_plan'
+    source_plan_id    VARCHAR(255),                             -- NULL if booking source
+    source_booking_id VARCHAR(255),                             -- NULL if plan source
+    mapping_id        UUID REFERENCES plan_mappings(id) ON DELETE SET NULL, -- for traceability
+    valid_until       TIMESTAMP WITH TIME ZONE,                 -- NULL = permanent access
+    granted_at        TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (member_id, hardware_group_id, source_type,
+            COALESCE(source_plan_id, ''), COALESCE(source_booking_id, ''))
+);
+
+CREATE INDEX idx_member_access_sources_member_group
+    ON member_access_sources (member_id, hardware_group_id);
+
+CREATE INDEX idx_member_access_sources_member
+    ON member_access_sources (member_id);
+
+--------------------------------------------------------
 -- 9. Member Access Log (Lifecycle Events)
 --------------------------------------------------------
 CREATE TABLE member_access_log (
@@ -291,7 +319,7 @@ CREATE TABLE webhook_log (
 
 --------------------------------------------------------
 -- Known Schema Gaps (open items, not yet implemented)
--- S-03: member_access_sources table — DR-034 multi-source grant/revoke not yet at schema level
+-- S-03: member_access_sources table — RESOLVED by dr-034.sql migration (2026-04-10)
 -- S-07: Sub-member PII exception needs its own DR
 -- S-08: Legacy role_assignment_id on member_access_state needs retirement DR
 -- S-09: allow_multiple / max_members activation gate needs DR
