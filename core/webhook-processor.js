@@ -3,7 +3,7 @@
  * @layer core/layer4
  * @role deduplication, enqueue
  * @reads processed_event_ids, clients
- * @writes processed_event_ids, BullMQ
+ * @writes processed_event_ids, BullMQ, diagnostic_log (via logger)
  * @exports eventQueue
  * @dr DR-010, DR-012
  *
@@ -21,46 +21,39 @@ const { Queue } = require('bullmq');
 const db = require('../db');
 const tenantResolver = require('./tenant-resolver');
 const { getRedisConnection } = require('./redis-utils');
+const { log } = require('./logger');
 
 const connection = getRedisConnection();
 
 const eventQueue = new Queue('accesssync-events', {
   connection,
   defaultJobOptions: {
-    attempts: 3,                  // Max retries before dead-lettering (aligns with retry-engine)
+    attempts: 3,
     backoff: {
       type: 'exponential',
-      delay: 1000,                // 1s, 2s, 4s
+      delay: 1000,
     },
-    removeOnComplete: 100,        // Keep last 100 completed jobs for observability
-    removeOnFail: 500,            // Keep last 500 failed jobs for debugging
+    removeOnComplete: 100,
+    removeOnFail: 500,
   },
 });
 
 class WebhookProcessor {
 
-  /**
-   * Main entry point from Wix Adapter.
-   * Validates → deduplicates → enqueues. Fast path — no hardware calls here.
-   *
-   * @param {string} eventId
-   * @param {Object} standardEvent
-   * @param {string} rawPayload
-   */
   async processIncoming(eventId, standardEvent, rawPayload) {
-    console.log(`[Webhook Processor] Received event ${eventId} of type ${standardEvent.eventType}`);
+    log.info('webhook.received', { eventId, eventType: standardEvent.eventType });
 
     // 1. Validate Structure
     if (!this._validateStructure(standardEvent)) {
-      console.warn(`[Webhook Processor] Invalid structure for ${eventId}. Rejecting.`);
-      await this._logToAlertLog(eventId, standardEvent, 'Missing required fields: wixMemberId or eventType');
+      log.warn('webhook.invalid_structure', { eventId, eventType: standardEvent.eventType });
+      await this._logToAlertLog(eventId, standardEvent, 'Missing required fields: platformMemberId or eventType');
       return;
     }
 
     // 2. Deduplication check (Idempotency — DR-010)
     const isDuplicate = await this._checkIfDuplicate(eventId);
     if (isDuplicate) {
-      console.log(`[Webhook Processor] Event ${eventId} is a duplicate. Dropping.`);
+      log.info('webhook.duplicate', { eventId, eventType: standardEvent.eventType });
       return;
     }
 
@@ -68,7 +61,6 @@ class WebhookProcessor {
     await this._markEventProcessed(eventId, standardEvent);
 
     // 3b. Log to webhook_log for Admin Hub Webhook Inspector
-    // Dedup status known now; tenant resolution happens next
     await this.logWebhookAttempt({
       eventId,
       hmacStatus: 'accepted',
@@ -76,12 +68,14 @@ class WebhookProcessor {
       eventType: standardEvent.eventType,
       rawPayload: rawPayload ? (() => { try { return JSON.parse(rawPayload); } catch { return null; } })() : null,
       normalizedPayload: standardEvent
-    }).catch(() => {}); // best-effort
+    }).catch(() => {});
 
-    // 4. Resolve tenant from wix_site_id (OB-03)
+    // 4. Resolve tenant from wix_site_id
     const tenantId = await tenantResolver.resolve(standardEvent.wixSiteId);
     if (!tenantId) {
-      console.warn(`[Webhook Processor] Could not resolve tenant for wix_site_id: ${standardEvent.wixSiteId}. Event ${eventId} dropped.`);
+      const err = new Error(`Unknown wix_site_id: ${standardEvent.wixSiteId}`);
+      err.code = 'TENANT_NOT_RESOLVED';
+      log.warn('webhook.tenant_not_resolved', { eventId, wixSiteId: standardEvent.wixSiteId }, err);
       await this._logToAlertLog(eventId, standardEvent, `Unknown wix_site_id: ${standardEvent.wixSiteId}`);
       return;
     }
@@ -89,29 +83,23 @@ class WebhookProcessor {
     // 5. Classify and enqueue (DR-012)
     if (['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(standardEvent.eventType)) {
       await eventQueue.add('grant', { tenantId, standardEvent }, { jobId: `grant-${eventId}` });
-      console.log(`[Webhook Processor] Event ${eventId} enqueued as grant job.`);
+      log.info('webhook.enqueued', { eventId, eventType: standardEvent.eventType, jobType: 'grant', tenantId });
 
     } else if (['plan.cancelled', 'payment.failed', 'booking.cancelled', 'member.deleted'].includes(standardEvent.eventType)) {
       await eventQueue.add('revoke', { tenantId, standardEvent }, { jobId: `revoke-${eventId}` });
-      console.log(`[Webhook Processor] Event ${eventId} enqueued as revoke job.`);
+      log.info('webhook.enqueued', { eventId, eventType: standardEvent.eventType, jobType: 'revoke', tenantId });
 
     } else {
-      console.log(`[Webhook Processor] Unrecognized event type: ${standardEvent.eventType}. Ignoring.`);
+      log.info('webhook.unrecognised_type', { eventId, eventType: standardEvent.eventType });
     }
   }
 
-  /**
-   * @param {Object} event
-   * @returns {boolean}
-   */
   _validateStructure(event) {
     if (!event.eventType) return false;
-    if (!event.platformMemberId) return false; // DR-021: was wixMemberId
-
+    if (!event.platformMemberId) return false;
     if (['plan.purchased', 'plan.cancelled'].includes(event.eventType)) {
       if (!event.planId) return false;
     }
-
     return true;
   }
 
@@ -124,8 +112,6 @@ class WebhookProcessor {
   }
 
   async _markEventProcessed(eventId, event) {
-    // Note: client_id not yet available at this point in the flow — tenant resolution
-    // happens after deduplication. The processed_event_ids table allows nullable client_id.
     await db.query(
       'INSERT INTO processed_event_ids (event_id) VALUES ($1) ON CONFLICT DO NOTHING',
       [eventId]
@@ -144,10 +130,6 @@ class WebhookProcessor {
     );
   }
 
-  /**
-   * Writes a webhook attempt to webhook_log for Admin Hub observability.
-   * Best-effort — caller wraps in .catch(() => {}) to avoid blocking.
-   */
   async logWebhookAttempt({
     eventId = null, clientId = null, hmacStatus, dedupStatus = null,
     eventType = null, rawPayload = null, normalizedPayload = null, errorDetail = null
@@ -168,4 +150,4 @@ class WebhookProcessor {
 
 const instance = new WebhookProcessor();
 module.exports = instance;
-module.exports.eventQueue = eventQueue; // Exported for reconciliation re-queue (DR-012)
+module.exports.eventQueue = eventQueue;

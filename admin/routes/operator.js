@@ -1327,7 +1327,9 @@ router.get('/:clientId/wix-plans', async (req, res) => {
     }
 
     const apiKey = decryptKey(client.rows[0].wix_api_key);
+    console.log('[wix-plans-diag] clientId:', clientId, '| siteId:', client.rows[0].site_id, '| keyPrefix:', apiKey ? apiKey.slice(0, 10) + '...' : 'NULL');
     const allPlans = await wixPlansApi.listAllMappable(apiKey, client.rows[0].site_id);
+    console.log('[wix-plans-diag] listAllMappable returned', allPlans.length, 'plans');
 
     // Auto-accept: create plan_mappings rows for plans not yet in DB
     if (allPlans.length > 0) {
@@ -1407,6 +1409,112 @@ router.get('/clients/:clientId/wix-api-key/test', async (req, res) => {
     console.error('[operator] GET wix-api-key/test error:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── GET /operator/:clientId/diagnostics/summary ──────────────────
+// Fetches recent diagnostic_log events for a client and asks Claude
+// to identify the top failure reason, trend, and recommended action.
+// Query params:
+//   since=7d  — lookback window in days (default 7, max 90)
+//   limit=50  — max rows to fetch (default 50, max 200)
+router.get('/:clientId/diagnostics/summary', async (req, res) => {
+  const { clientId } = req.params;
+  const limit     = Math.min(parseInt(req.query.limit || '50',  10), 200);
+  const sinceDays = Math.min(parseInt((req.query.since || '7d').replace('d', ''), 10) || 7, 90);
+
+  let rows;
+  try {
+    const result = await db.query(
+      `SELECT id, created_at, service, level, error_code, message, context, resolved_at
+       FROM diagnostic_log
+       WHERE client_id = $1
+         AND created_at >= NOW() - ($2 || ' days')::INTERVAL
+       ORDER BY created_at DESC
+       LIMIT $3`,
+      [clientId, sinceDays, limit]
+    );
+    rows = result.rows;
+  } catch (err) {
+    console.error('[operator] GET diagnostics/summary DB error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch diagnostic data' });
+  }
+
+  // No events — return a clean healthy state without calling AI.
+  if (rows.length === 0) {
+    return res.json({
+      summary: {
+        topFailureReason: null,
+        trend: 'stable',
+        trendRationale: 'No warn/error events recorded in this period.',
+        recommendedAction: 'Everything looks healthy.',
+        confidence: 'high',
+      },
+      rawEvents: [],
+      meta: { clientId, windowDays: sinceDays, eventCount: 0 },
+    });
+  }
+
+  // Build a compact event list for the prompt — no raw stack traces or full JSONB.
+  const eventLines = rows.map(r => {
+    const ts       = new Date(r.created_at).toISOString();
+    const resolved = r.resolved_at ? 'resolved' : 'open';
+    return `[${ts}] ${r.level.toUpperCase()} | ${r.service} | ${r.error_code} | ${resolved} | ${r.message}`;
+  }).join('\n');
+
+  const prompt = `You are analyzing failure logs for an access control automation platform called AccessSync.
+AccessSync connects Wix membership plans to Kisi hardware door access control.
+When a member buys a plan, AccessSync provisions their access. When they cancel, it revokes it.
+
+The following diagnostic events occurred for one client in the last ${sinceDays} days:
+
+${eventLines}
+
+Respond in this exact JSON format only — no markdown, no prose outside the JSON:
+{
+  "topFailureReason": "<one sentence — the most common or impactful failure>",
+  "trend": "improving" | "worsening" | "stable",
+  "trendRationale": "<one sentence explaining the trend>",
+  "recommendedAction": "<one specific, actionable next step the operator can take>",
+  "confidence": "high" | "medium" | "low"
+}
+
+Rules:
+- If most events have resolved=resolved, trend is likely improving.
+- If the same error_code repeats with no resolved events, trend is worsening.
+- WIX_KEY_INVALID or HARDWARE_KEY_INVALID repeating = call that out as topFailureReason.
+- HMAC_FAILURE_SPIKE = possible security issue, mention it directly.
+- PLAN_NOT_MAPPED = operator needs to map a plan in the Plan Mapping screen.
+- If events span many different error codes with no pattern, set confidence to low.
+- Never recommend "contact support" unless no operator action is available.`;
+
+  let analysis;
+  try {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const message = await anthropic.messages.create({
+      model:      'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      messages:   [{ role: 'user', content: prompt }],
+    });
+    const text = message.content[0]?.text || '{}';
+    analysis = JSON.parse(text);
+  } catch (err) {
+    // AI failure is non-fatal — return raw events with a fallback so the page still renders.
+    console.error('[operator] diagnostics/summary AI error:', err.message);
+    analysis = {
+      topFailureReason: 'AI analysis unavailable',
+      trend: 'unknown',
+      trendRationale: 'Could not reach the AI service.',
+      recommendedAction: 'Review the raw events below.',
+      confidence: 'low',
+    };
+  }
+
+  res.json({
+    summary:   analysis,
+    rawEvents: rows,
+    meta: { clientId, windowDays: sinceDays, eventCount: rows.length },
+  });
 });
 
 module.exports = router;

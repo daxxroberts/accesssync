@@ -3,6 +3,7 @@
  * @layer core/layer4
  * @role provisioning
  * @reads plan_mappings, member_identity, member_access_log, member_role_assignments
+ * @writes member_access_log, config_alert_log, diagnostic_log (via logger)
  * @calls hardware-adapter
  * @exports processGrant, processRevoke
  * @dr DR-022, DR-026
@@ -24,6 +25,7 @@ const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { decryptApiKey } = require('./crypto-utils');
+const { log } = require('./logger');
 
 class GrantRevokeLogic {
 
@@ -42,13 +44,15 @@ class GrantRevokeLogic {
     const assignments = [];
 
     for (const mapping of mappings) {
-      // DR-028: apiKey resolved per-mapping by plan-mapping-resolver (location override || client default)
       const apiKey = mapping.apiKey;
-      console.log(`[Grant] Assigning role to user ${hardwareUserId} in group ${mapping.hardwareGroupId}`);
+      log.info('grant.role.assigning', {
+        tenantId, memberId, hardwareUserId,
+        hardwareGroupId: mapping.hardwareGroupId,
+        mappingId: mapping.mappingId,
+      });
       const roleId = await hardwareAdapter.assignRole(
         mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId
       );
-      // DR-034: include sourcePlanId and sourceType so completeGrant() can write member_access_sources
       assignments.push({
         mappingId:        mapping.mappingId,
         roleAssignmentId: String(roleId),
@@ -64,49 +68,30 @@ class GrantRevokeLogic {
       [memberId, tenantId]
     );
 
-    console.log(`[Grant] Success for member ${wixEvent.platformMemberId}, ${assignments.length} role(s) assigned`);
     return assignments;
   }
 
   /**
-   * Executes the hardware revoke for a member.
-   * Called by queue-worker after Standard Adapter resolves lock and reads existing state.
-   *
-   * Three paths based on eventType:
-   *   payment.failed       → Suspend (preserve roles for fast recovery) → returns 'disabled'
-   *   plan/booking cancel  → Remove all role assignments (preserve user) → returns 'revoked'
-   *   member.deleted       → Delete user from hardware org entirely      → returns 'deleted'
-   *
-   * @param {string} tenantId
-   * @param {string} memberId
-   * @param {string} hardwareUserId
-   * @param {Array}  roleAssignmentIds  all active role assignment IDs for this member
-   * @param {string} hardwarePlatform
-   * @param {string} eventType
-   * @param {Object} wixEvent
-   * @returns {string} targetStatus   passed to standardAdapter.completeRevoke()
-   */
-  /**
    * Looks up and decrypts the client-level hardware API key for revoke operations.
-   * Revokes are org-level operations — client key is correct for all single-org operators.
-   * Multi-org per-location revoke is a future enhancement (post V1).
    */
   async _getClientApiKey(tenantId) {
     const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [tenantId]);
     const enc = result.rows[0]?.hardware_api_key;
     if (enc) return decryptApiKey(enc);
-    return null; // DR-028: no API key in DB — hardware calls will fail with a clear error. Set key via Admin Hub.
+    return null;
   }
 
   async processRevoke(tenantId, memberId, hardwareUserId, roleAssignmentIds, hardwarePlatform, eventType, wixEvent) {
-    console.log(`[Revoke] Processing revoke (${eventType}) for tenant ${tenantId}, member ${wixEvent.platformMemberId}`);
+    log.info('revoke.start', {
+      tenantId, memberId, eventType,
+      platformMemberId: wixEvent.platformMemberId,
+    });
 
     const apiKey = await this._getClientApiKey(tenantId);
 
     switch (eventType) {
 
       case 'payment.failed': {
-        // Suspend the user account — all role assignments preserved for fast recovery
         await hardwareAdapter.suspendAccess(
           hardwarePlatform, apiKey, hardwareUserId,
           `Payment failed on ${new Date().toISOString()}`
@@ -120,12 +105,9 @@ class GrantRevokeLogic {
 
       case 'plan.cancelled':
       case 'booking.cancelled': {
-        // DR-034: Check remaining sources before calling Kisi DELETE.
-        // If another plan/booking still grants the same group, skip the hardware call.
         const sourceType = eventType === 'booking.cancelled' ? 'booking' : 'plan';
         const planId = wixEvent.planId || null;
 
-        // Get all role assignments with their group IDs to check per-group
         const raWithGroups = await db.query(
           `SELECT mra.role_assignment_id, mra.hardware_group_id
            FROM member_role_assignments mra
@@ -134,7 +116,6 @@ class GrantRevokeLogic {
         );
 
         for (const { role_assignment_id: raId, hardware_group_id: groupId } of raWithGroups.rows) {
-          // Remove this source row
           await db.query(
             `DELETE FROM member_access_sources
              WHERE member_id = $1
@@ -144,24 +125,27 @@ class GrantRevokeLogic {
             [memberId, groupId, sourceType, planId]
           );
 
-          // Check if any other source still justifies this group
           const remaining = await db.query(
             `SELECT COUNT(*) AS cnt FROM member_access_sources
              WHERE member_id = $1 AND hardware_group_id = $2`,
             [memberId, groupId]
           );
 
-          if (parseInt(remaining.rows[0].cnt, 10) > 0) {
-            console.log(`[Revoke] Skipping hardware DELETE for group ${groupId} — ${remaining.rows[0].cnt} other source(s) remain`);
+          const remainingCount = parseInt(remaining.rows[0].cnt, 10);
+          if (remainingCount > 0) {
+            log.info('revoke.group.skipped', {
+              tenantId, memberId, hardwareGroupId: groupId, remainingSources: remainingCount,
+            });
           } else {
             await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
           }
         }
 
-        // Fallback: if no raWithGroups rows (legacy member with no member_role_assignments rows),
-        // use the flat roleAssignmentIds array and call removeRole directly
+        // Fallback: legacy member with no member_role_assignments rows
         if (raWithGroups.rows.length === 0 && roleAssignmentIds.length > 0) {
-          console.log(`[Revoke] No member_role_assignments rows — using legacy roleAssignmentIds fallback`);
+          log.warn('revoke.legacy_fallback', {
+            tenantId, memberId, roleAssignmentCount: roleAssignmentIds.length,
+          });
           for (const raId of roleAssignmentIds) {
             await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
           }
@@ -182,7 +166,6 @@ class GrantRevokeLogic {
           `INSERT INTO member_access_log (member_id, client_id, event_type) VALUES ($1, $2, 'deleted')`,
           [memberId, tenantId]
         );
-        // Flag for operator review
         await db.query(
           `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
            VALUES ($1, 'member_deleted_review', $2)`,
@@ -191,8 +174,12 @@ class GrantRevokeLogic {
         return 'deleted';
       }
 
-      default:
-        throw new Error(`[Revoke] Unknown event type: ${eventType}`);
+      default: {
+        const err = new Error(`Unknown revoke event type: ${eventType}`);
+        err.code = 'REVOKE_UNKNOWN_EVENT';
+        log.error('revoke.unknown_event_type', { tenantId, memberId, eventType }, err);
+        throw err;
+      }
     }
   }
 }

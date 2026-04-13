@@ -8,6 +8,8 @@
  *       https://dev.wix.com/docs/rest/api-reference/wix-bookings
  */
 
+const { log } = require('../../core/logger');
+
 const WIX_API_BASE = 'https://www.wixapis.com';
 
 /**
@@ -70,6 +72,7 @@ async function listPricingPlans(apiKey, siteId) {
   try {
     const data = await wixFetch('/pricing-plans/v2/plans', apiKey, siteId);
     const plans = data.plans || [];
+    log.info('wix.pricing_plans.fetched', { siteId, count: plans.length });
     return plans.map(p => ({
       id: p._id || p.id,
       name: p.name || 'Unnamed Plan',
@@ -79,7 +82,7 @@ async function listPricingPlans(apiKey, siteId) {
       slug: p.slug || null,
     }));
   } catch (err) {
-    console.error('[WixPlansAPI] Failed to list pricing plans:', err.message);
+    log.error('wix.pricing_plans.fetch_failed', { siteId, httpStatus: err.statusCode }, err);
     return [];
   }
 }
@@ -96,6 +99,7 @@ async function listBookingServices(apiKey, siteId) {
       body: { query: {} },
     });
     const services = data.services || [];
+    log.info('wix.booking_services.fetched', { siteId, count: services.length });
     return services.map(s => ({
       id: s.id,
       name: s.name || 'Unnamed Service',
@@ -105,7 +109,7 @@ async function listBookingServices(apiKey, siteId) {
       slug: s.mainSlug?.name || s.supportedSlugs?.[0]?.name || null,
     }));
   } catch (err) {
-    console.error('[WixPlansAPI] Failed to list booking services:', err.message);
+    log.error('wix.booking_services.fetch_failed', { siteId, httpStatus: err.statusCode }, err);
     return [];
   }
 }
