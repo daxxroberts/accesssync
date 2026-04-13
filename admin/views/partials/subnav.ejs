@@ -3,8 +3,8 @@
   @layer admin/partials
   @role shared-subnav
   @props activeTab (string) — drives tab highlight via operator-nav.js
-  @tabs Overview, Members, Plan Mapping, Access, System Config — all roles
-  @tabs Errors, Admin — owner only (hidden from operator via operator-nav.js + requireAuthPage)
+  @tabs Overview, Members, Plan Mapping, Access, System Config, Admin — all roles
+  @note Errors are in the Owner Dashboard (/OwnerDashboard), not this subnav
   @usage include('../partials/subnav', { activeTab: activeTab })
 %>
 <nav class="sub-nav" id="subNav" data-active="<%= activeTab %>"></nav>
