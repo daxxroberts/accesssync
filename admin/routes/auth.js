@@ -71,6 +71,48 @@ router.post('/google', async (req, res) => {
   }
 });
 
+// ── GET /auth/google/callback ───────────────────────────────────
+// Handles OAuth redirect flow (fallback when GIS button is blocked by origin).
+router.get('/google/callback', async (req, res) => {
+  const { code, error } = req.query;
+  if (error) {
+    console.error('[Admin Auth] OAuth callback error:', error);
+    return res.redirect('/OwnerDashboard?auth_error=' + encodeURIComponent(error));
+  }
+  if (!code) {
+    return res.redirect('/OwnerDashboard?auth_error=no_code');
+  }
+  try {
+    const redirectUri = `${req.protocol}://${req.get('host')}/auth/google/callback`;
+    const { tokens } = await client.getToken({ code, redirect_uri: redirectUri });
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    console.log('[Admin Auth] OAuth callback login attempt:', payload.email);
+
+    const allowedEmail = process.env.ADMIN_ALLOWED_EMAIL;
+    if (payload.email !== allowedEmail) {
+      console.warn('[Admin Auth] OAuth callback rejected:', payload.email);
+      return res.redirect('/OwnerDashboard?auth_error=access_denied');
+    }
+
+    const token = signToken();
+    res.cookie('adminToken', token, {
+      httpOnly: true,
+      secure:   process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge:   24 * 60 * 60 * 1000,
+    });
+    console.log('[Admin Auth] OAuth callback login success:', payload.email);
+    res.redirect('/OwnerDashboard');
+  } catch (err) {
+    console.error('[Admin Auth] OAuth callback verification error:', err.message);
+    res.redirect('/OwnerDashboard?auth_error=' + encodeURIComponent(err.message));
+  }
+});
+
 // ── POST /auth/logout ───────────────────────────────────────────
 router.post('/logout', (req, res) => {
   res.clearCookie('adminToken');

@@ -172,34 +172,77 @@ async function initGoogleSignIn() {
   _googleInitialized = true;
 
   try {
+    console.log('[Auth] Fetching /auth/config...');
     const res = await fetch('/auth/config');
-    if (!res.ok) throw new Error('Config endpoint failed');
+    if (!res.ok) throw new Error(`Config endpoint failed: ${res.status}`);
     const { clientId } = await res.json();
+    console.log('[Auth] clientId received:', clientId ? clientId.slice(0, 20) + '...' : 'MISSING');
 
     if (!clientId) {
       showLoginError('Auth not configured — GOOGLE_CLIENT_ID missing on server.');
       return;
     }
 
+    console.log('[Auth] Waiting for Google GIS script...');
     await waitForGoogle();
+    console.log('[Auth] Google GIS script loaded. Initializing...');
 
     google.accounts.id.initialize({
       client_id:             clientId,
       callback:              handleGoogleCredential,
       auto_select:           false,
       cancel_on_tap_outside: true,
+      error_callback:        (err) => {
+        console.error('[Auth] GIS error_callback:', JSON.stringify(err));
+        // If button renderer fails due to origin, show manual fallback button
+        if (err && err.type === 'unknown') {
+          showGoogleFallbackButton(clientId);
+        }
+      },
     });
 
-    google.accounts.id.renderButton(
-      document.getElementById('google-signin-btn'),
-      { theme: 'outline', size: 'large', text: 'sign_in_with', width: 288 }
-    );
+    console.log('[Auth] Rendering Google button...');
+    const btnEl = document.getElementById('google-signin-btn');
+    google.accounts.id.renderButton(btnEl, {
+      theme: 'outline', size: 'large', text: 'sign_in_with', width: 288
+    });
+
+    // If the button iframe fails to render (origin blocked), show fallback after 2s
+    setTimeout(() => {
+      const iframe = btnEl.querySelector('iframe');
+      if (!iframe) {
+        console.warn('[Auth] Google button iframe not rendered — showing fallback');
+        showGoogleFallbackButton(clientId);
+      } else {
+        console.log('[Auth] Google button iframe rendered successfully');
+      }
+    }, 2000);
 
   } catch (err) {
     console.error('[Admin] Google Sign-In init failed:', err.message);
     showLoginError('Failed to load sign-in. Refresh and try again.');
-    _googleInitialized = false; // allow retry on next showLogin()
+    _googleInitialized = false;
   }
+}
+
+// Fallback: use Google OAuth redirect flow when GIS button is blocked by origin
+function showGoogleFallbackButton(clientId) {
+  const btnEl = document.getElementById('google-signin-btn');
+  if (btnEl.querySelector('.fallback-signin-btn')) return; // already shown
+  btnEl.innerHTML = '';
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-accent fallback-signin-btn';
+  btn.style = 'width:288px;padding:10px 16px;font-size:14px;';
+  btn.textContent = 'Sign in with Google';
+  btn.addEventListener('click', () => {
+    const redirectUri = encodeURIComponent(window.location.origin + '/auth/google/callback');
+    const scope = encodeURIComponent('openid email profile');
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&access_type=offline&prompt=select_account`;
+    console.log('[Auth] Redirecting to Google OAuth...');
+    window.location.href = url;
+  });
+  btnEl.appendChild(btn);
+  console.log('[Auth] Fallback button rendered');
 }
 
 async function handleGoogleCredential(response) {
