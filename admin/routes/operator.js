@@ -16,6 +16,7 @@ const { eventQueue } = require('../../core/webhook-processor');
 const { encryptApiKey, decryptApiKey: decryptKey } = require('../../core/crypto-utils');
 const wixPlansApi = require('../../adapters/wix/wix-plans-api');
 const { requireAuth, requireAuthOrOperator, signOperatorToken } = require('../middleware/auth');
+const hardwareAdapter = require('../../adapters/hardware-adapter');
 
 // Global rate limiter on all operator read endpoints (100 req/min/IP)
 router.use(rateLimit({ windowMs: 60_000, max: 100, standardHeaders: true, legacyHeaders: false }));
@@ -40,6 +41,169 @@ router.use(function operatorAuth(req, res, next) {
   if (req.method === 'GET' && /^\/[^/]+\/locations(\/[^/]+\/mappings)?$/.test(req.path) && req.headers['x-invite-token']) return next();
   return requireAuthOrOperator(req, res, next);
 });
+
+/**
+ * Resolves the hardware API key for a client, preferring location-level override.
+ * Used by syncMappingMembers for direct hardware calls.
+ */
+async function resolveApiKey(clientId, locationId) {
+  if (locationId) {
+    const loc = await db.query(
+      'SELECT hardware_api_key FROM locations WHERE id = $1 AND client_id = $2',
+      [locationId, clientId]
+    );
+    const enc = loc.rows[0]?.hardware_api_key;
+    if (enc) return decryptKey(enc);
+  }
+  const cli = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
+  const enc = cli.rows[0]?.hardware_api_key;
+  if (enc) return decryptKey(enc);
+  return null;
+}
+
+/**
+ * Syncs all currently active members on a plan mapping to the new group configuration.
+ * Called after every PATCH to plan_mapping_groups. Handles all 9 sync scenarios:
+ *
+ *   Group changes  — add group: grant all active members to new group
+ *                  — remove group: revoke all active members from removed group
+ *                  — swap: revoke old, grant new
+ *   Status changes — inactive: revoke all active members from all groups
+ *                  — active: grant all members with active access_state on this plan
+ *   Location change — handled via group diff (old groups revoked, new groups granted)
+ *
+ * Fire-and-forget — called after response is sent. Errors logged, never thrown.
+ */
+async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, newStatus, oldStatus) {
+  try {
+    const mapping = await db.query(
+      `SELECT pm.source_plan_id, pm.location_id, c.hardware_platform
+       FROM plan_mappings pm
+       JOIN clients c ON c.id = pm.client_id
+       WHERE pm.id = $1 AND pm.client_id = $2`,
+      [mappingId, clientId]
+    );
+    if (!mapping.rows.length) return;
+    const { source_plan_id, location_id, hardware_platform } = mapping.rows[0];
+    const apiKey = await resolveApiKey(clientId, location_id);
+    if (!apiKey) {
+      console.warn(`[syncMappingMembers] No API key for client ${clientId} — skipping sync`);
+      return;
+    }
+
+    // ── Status deactivation: revoke all active members from all groups ──
+    if (newStatus === 'inactive' && oldStatus === 'active') {
+      const members = await db.query(
+        `SELECT mi.id AS member_id, mi.hardware_user_id,
+                mra.role_assignment_id, mra.hardware_group_id
+         FROM member_role_assignments mra
+         JOIN member_identity mi ON mi.id = mra.member_id
+         WHERE mra.mapping_id = $1 AND mi.hardware_user_id IS NOT NULL`,
+        [mappingId]
+      );
+      for (const m of members.rows) {
+        try {
+          await hardwareAdapter.removeRole(hardware_platform, apiKey, m.role_assignment_id);
+          await db.query('DELETE FROM member_role_assignments WHERE mapping_id = $1 AND member_id = $2', [mappingId, m.member_id]);
+          await db.query('DELETE FROM member_access_sources WHERE member_id = $1 AND hardware_group_id = $2', [m.member_id, m.hardware_group_id]);
+          console.log(`[syncMappingMembers] Revoked member ${m.member_id} from group ${m.hardware_group_id} (mapping deactivated)`);
+        } catch (err) {
+          console.warn(`[syncMappingMembers] Failed to revoke member ${m.member_id}:`, err.message);
+        }
+      }
+      return;
+    }
+
+    // ── Status activation: grant all members with active access on this plan ──
+    if (newStatus === 'active' && oldStatus === 'inactive') {
+      const members = await db.query(
+        `SELECT mi.id AS member_id, mi.hardware_user_id
+         FROM member_access_state mas
+         JOIN member_identity mi ON mi.id = mas.member_id
+         WHERE mas.client_id = $1
+           AND mas.status = 'active'
+           AND COALESCE(mas.pending_plan_id, '') = COALESCE($2, '')
+           AND mi.hardware_user_id IS NOT NULL`,
+        [clientId, source_plan_id]
+      );
+      for (const m of members.rows) {
+        for (const groupId of newGroupIds) {
+          try {
+            const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, m.hardware_user_id, groupId);
+            await db.query(
+              `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
+               VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+              [m.member_id, mappingId, String(roleId), groupId]
+            );
+            console.log(`[syncMappingMembers] Granted member ${m.member_id} to group ${groupId} (mapping activated)`);
+          } catch (err) {
+            console.warn(`[syncMappingMembers] Failed to grant member ${m.member_id} to group ${groupId}:`, err.message);
+          }
+        }
+      }
+      return;
+    }
+
+    // ── Group diff: added groups → grant, removed groups → revoke ──
+    const added   = newGroupIds.filter(id => !oldGroupIds.includes(id));
+    const removed = oldGroupIds.filter(id => !newGroupIds.includes(id));
+
+    if (!added.length && !removed.length) return;
+
+    // Get all active members currently on this mapping
+    const activeMembers = await db.query(
+      `SELECT mi.id AS member_id, mi.hardware_user_id, mra.role_assignment_id, mra.hardware_group_id
+       FROM member_role_assignments mra
+       JOIN member_identity mi ON mi.id = mra.member_id
+       WHERE mra.mapping_id = $1 AND mi.hardware_user_id IS NOT NULL`,
+      [mappingId]
+    );
+
+    // Also get members with active access state (for added groups — they may not have mra rows yet for new groups)
+    const activeMembersForGrant = await db.query(
+      `SELECT DISTINCT mi.id AS member_id, mi.hardware_user_id
+       FROM member_access_state mas
+       JOIN member_identity mi ON mi.id = mas.member_id
+       WHERE mas.client_id = $1 AND mas.status = 'active'
+         AND COALESCE(mas.pending_plan_id, '') = COALESCE($2, '')
+         AND mi.hardware_user_id IS NOT NULL`,
+      [clientId, source_plan_id]
+    );
+
+    // Grant added groups to all active members
+    for (const groupId of added) {
+      for (const m of activeMembersForGrant.rows) {
+        try {
+          const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, m.hardware_user_id, groupId);
+          await db.query(
+            `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
+             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+            [m.member_id, mappingId, String(roleId), groupId]
+          );
+          console.log(`[syncMappingMembers] Granted member ${m.member_id} to added group ${groupId}`);
+        } catch (err) {
+          console.warn(`[syncMappingMembers] Failed to grant member ${m.member_id} to group ${groupId}:`, err.message);
+        }
+      }
+    }
+
+    // Revoke removed groups from members who have those assignments
+    for (const m of activeMembers.rows) {
+      if (!removed.includes(m.hardware_group_id)) continue;
+      try {
+        await hardwareAdapter.removeRole(hardware_platform, apiKey, m.role_assignment_id);
+        await db.query('DELETE FROM member_role_assignments WHERE mapping_id = $1 AND member_id = $2 AND hardware_group_id = $3', [mappingId, m.member_id, m.hardware_group_id]);
+        await db.query('DELETE FROM member_access_sources WHERE member_id = $1 AND hardware_group_id = $2', [m.member_id, m.hardware_group_id]);
+        console.log(`[syncMappingMembers] Revoked member ${m.member_id} from removed group ${m.hardware_group_id}`);
+      } catch (err) {
+        console.warn(`[syncMappingMembers] Failed to revoke member ${m.member_id} from group ${m.hardware_group_id}:`, err.message);
+      }
+    }
+
+  } catch (err) {
+    console.error('[syncMappingMembers] Unexpected error:', err.message);
+  }
+}
 
 /**
  * Wix-first flow: Re-enqueue all pending_hardware members for a client.
@@ -927,6 +1091,14 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
   const { clientId, mappingId } = req.params;
   const { status, door_name, hardware_group_id, groups, allow_multiple, max_members, location_id } = req.body;
   try {
+    // Snapshot old groups + status BEFORE any changes — needed for member sync diff
+    const [oldGroupsResult, oldMappingResult] = await Promise.all([
+      db.query('SELECT hardware_group_id FROM plan_mapping_groups WHERE mapping_id = $1', [mappingId]),
+      db.query('SELECT status FROM plan_mappings WHERE id = $1 AND client_id = $2', [mappingId, clientId]),
+    ]);
+    const oldGroupIds = oldGroupsResult.rows.map(r => r.hardware_group_id);
+    const oldStatus   = oldMappingResult.rows[0]?.status;
+
     // Update plan_mappings row (legacy fields + status + multi-member config)
     const fields = [], vals = [mappingId, clientId];
     if (status !== undefined)            { fields.push(`status = $${vals.length + 1}`);            vals.push(status); }
@@ -978,6 +1150,17 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     }
 
     res.json(mapping);
+
+    // Compute new group IDs from junction table after write
+    const newGroupIds = (groups && Array.isArray(groups))
+      ? groups.map(g => g.hardware_group_id).filter(Boolean)
+      : oldGroupIds; // no group change — pass same set so diff is empty
+
+    const newStatus = status !== undefined ? status : oldStatus;
+
+    // Sync active members to reflect group/status changes — fire-and-forget
+    syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, newStatus, oldStatus)
+      .catch(err => console.warn('[operator] syncMappingMembers failed:', err.message));
 
     // Re-queue any members parked in pending_hardware for this plan mapping.
     // Scoped by source_plan_id so only members waiting on THIS plan are retried.
