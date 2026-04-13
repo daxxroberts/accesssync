@@ -118,7 +118,10 @@ app.get('/sync-status',    (req, res) => res.render('pages/sync-status'));
 app.get('/multi-member',   (req, res) => res.render('pages/multi-member'));
 
 // ── Admin Hub ──────────────────────────────────────────────────
-app.get('/',               (req, res) => res.redirect('/OwnerDashboard'));
+// Serve index.html at both / and /OwnerDashboard — no redirect.
+// Google GIS requires the JS origin to match exactly; a redirect to /OwnerDashboard
+// changes window.location.origin to include the path, breaking postMessage.
+app.get('/',               (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/OwnerDashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('*',               (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
