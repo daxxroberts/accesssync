@@ -1,6 +1,6 @@
 {
   "name": "accesssync-engine",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "AccessSync Core Engine - Integration layer between Wix and Physical Access Control Systems",
   "main": "server.js",
   "scripts": {
