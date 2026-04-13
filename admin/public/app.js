@@ -149,6 +149,7 @@ function showLogin() {
 function showDashboard() {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('dashboard').classList.remove('hidden');
+  if (typeof window.mountSveltePanels === 'function') window.mountSveltePanels();
 }
 
 // Returns a promise that resolves once window.google is available (GIS script loaded).

@@ -23,20 +23,30 @@ import ErrorQueuePanel  from './panels/ErrorQueuePanel.svelte';
 import MemberSyncPanel  from './panels/MemberSyncPanel.svelte';
 import ClientsPanel     from './panels/ClientsPanel.svelte';
 
-const queueTarget = document.getElementById('svelte-queue');
-if (queueTarget) mount(QueuePanel, { target: queueTarget });
+// mountPanels() is called by app.js after auth is confirmed — not on page load.
+// This prevents panels from making 401 API calls before the user is logged in,
+// which was causing Google Sign-In postMessage errors.
+let _mounted = false;
 
-const webhookTarget = document.getElementById('svelte-webhooks');
-if (webhookTarget) mount(WebhookPanel, { target: webhookTarget });
+window.mountSveltePanels = function () {
+  if (_mounted) return;
+  _mounted = true;
 
-const debugTarget = document.getElementById('svelte-debug');
-if (debugTarget) mount(DebugCenterPanel, { target: debugTarget });
+  const queueTarget = document.getElementById('svelte-queue');
+  if (queueTarget) mount(QueuePanel, { target: queueTarget });
 
-const errorsTarget = document.getElementById('svelte-errors');
-if (errorsTarget) mount(ErrorQueuePanel, { target: errorsTarget });
+  const webhookTarget = document.getElementById('svelte-webhooks');
+  if (webhookTarget) mount(WebhookPanel, { target: webhookTarget });
 
-const membersyncTarget = document.getElementById('svelte-membersync');
-if (membersyncTarget) mount(MemberSyncPanel, { target: membersyncTarget });
+  const debugTarget = document.getElementById('svelte-debug');
+  if (debugTarget) mount(DebugCenterPanel, { target: debugTarget });
 
-const clientsTarget = document.getElementById('svelte-clients');
-if (clientsTarget) mount(ClientsPanel, { target: clientsTarget });
+  const errorsTarget = document.getElementById('svelte-errors');
+  if (errorsTarget) mount(ErrorQueuePanel, { target: errorsTarget });
+
+  const membersyncTarget = document.getElementById('svelte-membersync');
+  if (membersyncTarget) mount(MemberSyncPanel, { target: membersyncTarget });
+
+  const clientsTarget = document.getElementById('svelte-clients');
+  if (clientsTarget) mount(ClientsPanel, { target: clientsTarget });
+};
