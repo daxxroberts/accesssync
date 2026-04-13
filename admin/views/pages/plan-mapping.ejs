@@ -1245,6 +1245,8 @@
           btn.style.background = 'rgba(74,222,128,0.1)';
           btn.style.color      = '#4ADE80';
           btn.style.borderColor= 'rgba(74,222,128,0.3)';
+          // Notify Svelte panel it's now visible so it recalculates wire positions
+          requestAnimationFrame(function() { window.dispatchEvent(new Event('pm-panel-shown')); });
         } else {
           wrap.style.display   = 'none';
           legacy.style.display = '';

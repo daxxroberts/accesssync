@@ -221,15 +221,22 @@
   // ── Resize observer ──────────────────────────────────────────────────
   let resizeObs;
 
+  function onPanelVisible() { recalcWires(); }
+
   onMount(async () => {
     await loadLocations();
     if (canvasEl) {
       resizeObs = new ResizeObserver(() => recalcWires());
       resizeObs.observe(canvasEl);
     }
+    // Re-calc wires when the outer wrapper becomes visible (toggle from display:none)
+    window.addEventListener('pm-panel-shown', onPanelVisible);
   });
 
-  onDestroy(() => resizeObs?.disconnect());
+  onDestroy(() => {
+    resizeObs?.disconnect();
+    window.removeEventListener('pm-panel-shown', onPanelVisible);
+  });
 
   afterUpdate(() => recalcWires());
 </script>
