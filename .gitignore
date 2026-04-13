@@ -19,3 +19,6 @@ Thumbs.db
 
 # Test artifacts
 .test-images/
+
+# Svelte build output — built on Railway deploy via npm run build
+admin/public/dist/
