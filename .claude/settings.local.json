@@ -70,7 +70,8 @@
       "Bash(find 'C:\\\\Users\\\\daxxr\\\\OneDrive\\\\Documents - Personal OneDrive\\\\Projects\\\\WORK\\\\Business Files\\\\AccessSync\\\\AccessSync' -name *business* -o -name *model* -o -name *tier*)",
       "Bash(grep -l \"tier\\\\|pricing\\\\|subscription\\\\|Connect\\\\|Base\\\\|Pro\" \"C:\\\\Users\\\\daxxr\\\\OneDrive\\\\Documents - Personal OneDrive\\\\Projects\\\\WORK\\\\Business Files\\\\AccessSync\\\\AccessSync\\\\13_Decision_Records\"/*.md)",
       "mcp__mcp-registry__search_mcp_registry",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(node -e ':*)"
     ]
   },
   "hooks": {
