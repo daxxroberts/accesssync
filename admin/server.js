@@ -101,7 +101,7 @@ app.get('/members',      allowWixFrame, requireAuthPageOrOperator, (req, res) =>
 app.get('/plan-mapping', allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/plan-mapping', { activeTab: 'plan-mapping', ...sessionMeta(req) }));
 app.get('/access',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/access',       { activeTab: 'access',       ...sessionMeta(req) }));
 app.get('/locations',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/locations',    { activeTab: 'config',       ...sessionMeta(req) }));
-app.get('/errors',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/errors',       { activeTab: 'errors',       ...sessionMeta(req) }));
+app.get('/errors',       allowWixFrame, requireAuthPage,          (req, res) => res.render('pages/errors',       { activeTab: 'errors',       ...sessionMeta(req) }));
 // Admin panel — owner only (no iframe — no allowWixFrame)
 app.get('/admin-panel',  requireAuthPage, (req, res) => res.render('pages/admin-panel',  { activeTab: 'admin', ...sessionMeta(req) }));
 // Admin error queue — full cross-tenant view with raw payload, owner only

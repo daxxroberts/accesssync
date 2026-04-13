@@ -30,19 +30,20 @@ function renderNav() {
   if (!container) return;
 
   var activeKey = container.dataset.active || '';
+  var isOwner = (document.body.dataset.sessionRole || 'operator') === 'owner';
 
   var tabs = [
-    { label: 'Overview',     href: '/dashboard',    key: 'overview' },
-    { label: 'Members',      href: '/members',      key: 'members' },
-    { label: 'Plan Mapping', href: '/plan-mapping', key: 'plan-mapping' },
-    { label: 'Access',       href: '/access',       key: 'access' },
-    { label: 'Errors',       href: '/errors',       key: 'errors' },
-    { label: 'System Config', href: '/locations',   key: 'config' },
-    { label: 'Admin',        href: '/admin-panel',  key: 'admin' },
+    { label: 'Overview',      href: '/dashboard',    key: 'overview' },
+    { label: 'Members',       href: '/members',      key: 'members' },
+    { label: 'Plan Mapping',  href: '/plan-mapping', key: 'plan-mapping' },
+    { label: 'Access',        href: '/access',       key: 'access' },
+    { label: 'Errors',        href: '/errors',       key: 'errors',     ownerOnly: true },
+    { label: 'System Config', href: '/locations',    key: 'config' },
+    { label: 'Admin',         href: '/admin-panel',  key: 'admin',      ownerOnly: true },
   ];
 
   container.innerHTML = '';
-  tabs.forEach(function(tab) {
+  tabs.filter(function(tab) { return !tab.ownerOnly || isOwner; }).forEach(function(tab) {
     var a = document.createElement('a');
     a.href = tab.href + window.location.search;
     a.className = 'sub-nav-link' + (tab.key === activeKey ? ' active' : '');
