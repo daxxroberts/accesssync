@@ -83,7 +83,7 @@ router.get('/google/callback', async (req, res) => {
     return res.redirect('/OwnerDashboard?auth_error=no_code');
   }
   try {
-    const redirectUri = `${req.protocol}://${req.get('host')}/auth/google/callback`;
+    const redirectUri = `https://${req.get('host')}/auth/google/callback`;
     const { tokens } = await client.getToken({ code, redirect_uri: redirectUri });
     const ticket = await client.verifyIdToken({
       idToken: tokens.id_token,
