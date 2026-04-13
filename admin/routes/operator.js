@@ -1010,6 +1010,128 @@ router.get('/:clientId/plan-mappings/:mappingId/groups', async (req, res) => {
   }
 });
 
+// ── GET /operator/:clientId/plan-mappings/:mappingId/members ────────
+// Returns count of members currently assigned to a mapping (for remap confirmation modal).
+router.get('/:clientId/plan-mappings/:mappingId/members', async (req, res) => {
+  try {
+    const { clientId, mappingId } = req.params;
+    const check = await db.query('SELECT id FROM plan_mappings WHERE id = $1 AND client_id = $2', [mappingId, clientId]);
+    if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+
+    const result = await db.query(
+      `SELECT COUNT(DISTINCT mra.member_id) AS count
+       FROM member_role_assignments mra
+       JOIN member_identity mi ON mi.id = mra.member_id
+       WHERE mra.mapping_id = $1 AND mi.client_id = $2`,
+      [mappingId, clientId]
+    );
+    res.json({ count: parseInt(result.rows[0].count, 10) });
+  } catch (err) {
+    console.error('[operator] GET plan-mappings/:mappingId/members error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /operator/:clientId/plan-mappings/:mappingId/remap ─────────
+// Bulk-moves existing members from oldGroupIds to newGroupIds in Kisi + DB.
+// Body: { oldGroupIds: string[], newGroupIds: string[] }
+// Returns: { moved: N, failed: [{ memberId, error }] }
+router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
+  const { clientId, mappingId } = req.params;
+  const { oldGroupIds, newGroupIds } = req.body;
+
+  if (!Array.isArray(oldGroupIds) || !Array.isArray(newGroupIds) || newGroupIds.length === 0) {
+    return res.status(400).json({ error: 'oldGroupIds and newGroupIds are required arrays' });
+  }
+
+  try {
+    // Verify mapping belongs to client + get location_id
+    const mappingRow = await db.query(
+      'SELECT id, location_id FROM plan_mappings WHERE id = $1 AND client_id = $2',
+      [mappingId, clientId]
+    );
+    if (!mappingRow.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+    const locationId = mappingRow.rows[0].location_id;
+
+    // Resolve hardware API key and platform
+    const keyRow = await db.query(
+      `SELECT COALESCE(l.hardware_api_key, c.hardware_api_key) AS raw_key, c.hardware_platform AS platform
+       FROM clients c
+       LEFT JOIN locations l ON l.id = $2
+       WHERE c.id = $1`,
+      [clientId, locationId]
+    );
+    if (!keyRow.rows.length || !keyRow.rows[0].raw_key) {
+      return res.status(400).json({ error: 'No hardware API key configured' });
+    }
+    const apiKey = decryptKey(keyRow.rows[0].raw_key);
+    const platform = keyRow.rows[0].platform || 'kisi';
+
+    // Fetch all member assignments for this mapping in the old groups
+    const membersResult = await db.query(
+      `SELECT mra.id AS mra_id, mra.member_id, mra.role_assignment_id, mra.hardware_group_id,
+              mi.hardware_user_id
+       FROM member_role_assignments mra
+       JOIN member_identity mi ON mi.id = mra.member_id
+       WHERE mra.mapping_id = $1 AND mra.hardware_group_id = ANY($2::text[]) AND mi.client_id = $3`,
+      [mappingId, oldGroupIds, clientId]
+    );
+
+    const hardwareAdapter = require('../../adapters/hardware-adapter');
+    let moved = 0;
+    const failed = [];
+
+    // Group rows by member so we process each member once
+    const byMember = {};
+    for (const row of membersResult.rows) {
+      if (!byMember[row.member_id]) byMember[row.member_id] = [];
+      byMember[row.member_id].push(row);
+    }
+
+    for (const [memberId, rows] of Object.entries(byMember)) {
+      try {
+        const hardwareUserId = rows[0].hardware_user_id;
+
+        // Remove each old group assignment from Kisi
+        for (const row of rows) {
+          if (row.role_assignment_id) {
+            await hardwareAdapter.removeRole(platform, apiKey, row.role_assignment_id);
+          }
+        }
+
+        // Assign each new group in Kisi
+        const newAssignments = [];
+        for (const newGroupId of newGroupIds) {
+          const roleAssignmentId = await hardwareAdapter.assignRole(platform, apiKey, hardwareUserId, newGroupId);
+          newAssignments.push({ groupId: newGroupId, roleAssignmentId });
+        }
+
+        // DB: remove old rows, insert new rows
+        const oldMraIds = rows.map(r => r.mra_id);
+        await db.query('DELETE FROM member_role_assignments WHERE id = ANY($1::uuid[])', [oldMraIds]);
+
+        for (const assignment of newAssignments) {
+          await db.query(
+            `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (member_id, mapping_id, hardware_group_id) DO UPDATE SET role_assignment_id = EXCLUDED.role_assignment_id`,
+            [memberId, mappingId, assignment.roleAssignmentId, assignment.groupId]
+          );
+        }
+
+        moved++;
+      } catch (err) {
+        failed.push({ memberId, error: err.message });
+      }
+    }
+
+    res.json({ moved, failed });
+  } catch (err) {
+    console.error('[operator] POST plan-mappings/:mappingId/remap error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ══ OB-05: Operator-facing visibility endpoints ════════════════════
 // These are consumed by OB-06 (Wix widget) once built.
 // Auth: OB-08 (Wix JWT) will gate these before widget launch.

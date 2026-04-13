@@ -4,9 +4,10 @@
   @route /plan-mapping
   @role plan-to-door-mapping
   @data GET /operator/:clientId/locations/:locationId/mappings, GET /operator/:clientId/kisi-groups
-  @writes PATCH /operator/:clientId/plan-mappings/:mappingId
+  @writes PATCH /operator/:clientId/plan-mappings/:mappingId, POST /operator/:clientId/plan-mappings/:mappingId/remap
+  @reads GET /operator/:clientId/plan-mappings/:mappingId/members (remap modal member count)
   @tab Plan Mapping
-  @features multi-group, multi-member toggle, duplicate-group warning
+  @features multi-group, multi-member toggle, duplicate-group warning, remap confirmation modal
 %>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
@@ -262,6 +263,17 @@
       background: var(--brand-dim); color: var(--brand);
     }
 
+    /* ── Remap modal list ── */
+    .remap-list { list-style: none; margin: 0 0 20px; padding: 0; text-align: left; }
+    .remap-item {
+      padding: 12px 14px; border-radius: 10px; background: var(--surface);
+      border: 1px solid var(--border); margin-bottom: 8px;
+    }
+    .remap-item-name { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .remap-item-groups { font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .remap-item-arrow { color: var(--muted); }
+    .remap-item-count { font-size: 11px; font-weight: 600; color: var(--brand); margin-top: 4px; }
+
     @media (max-width: 640px) {
       .config-grid { grid-template-columns: 1fr; }
       .plan-card-header { flex-wrap: wrap; gap: 10px; }
@@ -345,6 +357,20 @@
       <div class="modal-actions">
         <button class="modal-btn cancel" onclick="closeModal()">Cancel</button>
         <button class="modal-btn" id="modalConfirmBtn" onclick="confirmAction()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remap confirmation modal -->
+  <div class="modal-overlay" id="remapModal">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-icon warning">&#9888;</div>
+      <div class="modal-title">Move Existing Members?</div>
+      <div class="modal-text" style="margin-bottom:12px;">The following plan remaps will immediately move members in your hardware system.</div>
+      <ul class="remap-list" id="remapList"></ul>
+      <div class="modal-actions">
+        <button class="modal-btn cancel" onclick="closeRemapModal()">Cancel</button>
+        <button class="modal-btn confirm" id="remapConfirmBtn" onclick="executeRemapAndSave()">Move Members</button>
       </div>
     </div>
   </div>
@@ -761,6 +787,36 @@
       } catch(e) {}
     })();
 
+    // ── Remap detection helpers ────────────────────────────────────────
+
+    function getRemaps() {
+      var original = JSON.parse(originalState);
+      return plans.filter(function(plan) {
+        var orig = original.find(function(o) { return o.id === plan.id; });
+        if (!orig) return false;
+        var origIds = (orig.groupIds || []).slice().sort();
+        var newIds  = (plan.groupIds || []).slice().sort();
+        // Only a remap if there were existing groups AND they changed
+        return origIds.length > 0 && JSON.stringify(origIds) !== JSON.stringify(newIds) && newIds.length > 0;
+      });
+    }
+
+    function getGroupName(groupId) {
+      var g = PLATFORM_GROUPS.find(function(x) { return String(x.id) === String(groupId); });
+      return g ? g.name : groupId;
+    }
+
+    // ── Remap modal ───────────────────────────────────────────────────
+
+    var _remapData = null; // { clientId, remaps: [{ plan, origIds, newIds, memberCount }] }
+
+    function closeRemapModal() {
+      document.getElementById('remapModal').classList.remove('visible');
+      _remapData = null;
+      var btn = document.querySelector('.save-bar .save-btn.primary');
+      if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
+    }
+
     function saveChanges() {
       var urlParams = new URLSearchParams(window.location.search);
       var clientId = urlParams.get('clientId');
@@ -769,37 +825,145 @@
         return;
       }
 
-      var saveBtn = document.querySelector('.save-bar .btn-save');
+      var saveBtn = document.querySelector('.save-bar .save-btn.primary');
       if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
 
+      var remaps = getRemaps();
       var original = JSON.parse(originalState);
+
+      if (remaps.length === 0) {
+        // No remaps — save directly
+        executeSave(clientId, original, saveBtn, []);
+        return;
+      }
+
+      // Fetch member counts for each remapped plan, then show modal if any have members
+      var counts = {};
+      var fetches = remaps.map(function(plan) {
+        return apiFetch('/operator/' + clientId + '/plan-mappings/' + plan.id + '/members')
+          .then(function(r) { return r.json(); })
+          .then(function(data) { counts[plan.id] = data.count || 0; })
+          .catch(function() { counts[plan.id] = 0; });
+      });
+
+      Promise.all(fetches).then(function() {
+        var remapsWithMembers = remaps.filter(function(p) { return counts[p.id] > 0; });
+
+        if (remapsWithMembers.length === 0) {
+          // All remapped plans have 0 members — save without modal
+          executeSave(clientId, original, saveBtn, []);
+          return;
+        }
+
+        // Build modal content
+        var listEl = document.getElementById('remapList');
+        listEl.innerHTML = '';
+        remapsWithMembers.forEach(function(plan) {
+          var orig = original.find(function(o) { return o.id === plan.id; });
+          var origIds = orig ? (orig.groupIds || []) : [];
+          var newIds  = plan.groupIds || [];
+          var li = document.createElement('li');
+          li.className = 'remap-item';
+          var oldNames = origIds.map(getGroupName).join(', ') || '—';
+          var newNames = newIds.map(getGroupName).join(', ') || '—';
+          var n = counts[plan.id];
+          li.innerHTML =
+            '<div class="remap-item-name">' + esc(plan.name || plan.planName || plan.id) + '</div>' +
+            '<div class="remap-item-groups">' +
+              '<span>' + esc(oldNames) + '</span>' +
+              '<span class="remap-item-arrow">&#8594;</span>' +
+              '<span>' + esc(newNames) + '</span>' +
+            '</div>' +
+            '<div class="remap-item-count">' + n + ' member' + (n !== 1 ? 's' : '') + ' will be moved</div>';
+          listEl.appendChild(li);
+        });
+
+        // Store remap data for executeRemapAndSave
+        _remapData = {
+          clientId: clientId,
+          saveBtn: saveBtn,
+          original: original,
+          remapsWithMembers: remapsWithMembers.map(function(plan) {
+            var orig = original.find(function(o) { return o.id === plan.id; });
+            return {
+              plan: plan,
+              origIds: orig ? (orig.groupIds || []) : [],
+              newIds: plan.groupIds || [],
+              memberCount: counts[plan.id],
+            };
+          }),
+        };
+
+        document.getElementById('remapModal').classList.add('visible');
+      });
+    }
+
+    function executeRemapAndSave() {
+      if (!_remapData) return;
+      var d = _remapData;
+      var confirmBtn = document.getElementById('remapConfirmBtn');
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Moving…';
+      document.getElementById('remapModal').classList.remove('visible');
+
+      // Fire PATCH saves for all changed plans first
+      executeSave(d.clientId, d.original, d.saveBtn, d.remapsWithMembers, function() {
+        // After save, run remaps
+        var total = 0;
+        var totalFailed = 0;
+        var remapPending = d.remapsWithMembers.length;
+
+        d.remapsWithMembers.forEach(function(item) {
+          apiFetch('/operator/' + d.clientId + '/plan-mappings/' + item.plan.id + '/remap', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ oldGroupIds: item.origIds, newGroupIds: item.newIds }),
+          })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            total += data.moved || 0;
+            totalFailed += (data.failed || []).length;
+          })
+          .catch(function() { totalFailed++; })
+          .finally(function() {
+            remapPending--;
+            if (remapPending > 0) return;
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Move Members';
+            _remapData = null;
+            if (totalFailed > 0) {
+              showToast('error', total + ' moved, ' + totalFailed + ' failed — check error queue');
+            } else {
+              showToast('success', total + ' member' + (total !== 1 ? 's' : '') + ' moved to new group');
+            }
+          });
+        });
+      });
+    }
+
+    function executeSave(clientId, original, saveBtn, remapsWithMembers, onComplete) {
       var pending = plans.length;
       var failed = false;
 
-      plans.forEach(function(plan, idx) {
+      plans.forEach(function(plan) {
         var orig = original.find(function(o) { return o.id === plan.id; });
-        if (!orig) { pending--; return; }
+        if (!orig) { pending--; if (pending === 0) checkDone(); return; }
 
-        // Check if multi-member config changed
-        var multiChanged = plan.isMultiMember !== orig.isMultiMember || plan.maxMembers !== orig.maxMembers;
-        // Check if group mapping changed
-        var groupChanged = JSON.stringify(plan.groups || []) !== JSON.stringify(orig.groups || []);
-        var statusChanged = plan.status !== orig.status;
+        var multiChanged   = plan.isMultiMember !== orig.isMultiMember || plan.maxMembers !== orig.maxMembers;
+        var groupChanged   = JSON.stringify(plan.groups || []) !== JSON.stringify(orig.groups || []);
+        var statusChanged  = plan.status !== orig.status;
 
-        if (!multiChanged && !groupChanged && !statusChanged) { pending--; checkDone(); return; }
+        if (!multiChanged && !groupChanged && !statusChanged) { pending--; if (pending === 0) checkDone(); return; }
 
         var body = {};
-        if (multiChanged) {
-          body.allow_multiple = plan.isMultiMember;
-          body.max_members = plan.maxMembers;
-        }
+        if (multiChanged) { body.allow_multiple = plan.isMultiMember; body.max_members = plan.maxMembers; }
         if (statusChanged) body.status = plan.status;
         if (groupChanged && plan.groups) body.groups = plan.groups;
 
         apiFetch('/operator/' + clientId + '/plan-mappings/' + plan.id, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
+          body: JSON.stringify(body),
         }).then(function(r) {
           if (!r.ok) failed = true;
           pending--;
@@ -816,11 +980,12 @@
           originalState = JSON.stringify(plans);
           dirty = false;
           document.getElementById('saveBar').classList.remove('visible');
-          showToast('success', 'Changes saved successfully');
+          try { sessionStorage.removeItem(_draftKey); } catch(e) {}
+          if (!onComplete) showToast('success', 'Changes saved');
         }
+        if (typeof onComplete === 'function') onComplete();
       }
 
-      // Handle case where no plans needed saving
       if (pending === 0) checkDone();
     }
 
