@@ -925,11 +925,12 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
 // Also accepts legacy single-group fields for backward compat.
 router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
   const { clientId, mappingId } = req.params;
-  const { status, door_name, hardware_group_id, groups, allow_multiple, max_members } = req.body;
+  const { status, door_name, hardware_group_id, groups, allow_multiple, max_members, location_id } = req.body;
   try {
     // Update plan_mappings row (legacy fields + status + multi-member config)
     const fields = [], vals = [mappingId, clientId];
     if (status !== undefined)            { fields.push(`status = $${vals.length + 1}`);            vals.push(status); }
+    if (location_id !== undefined)       { fields.push(`location_id = $${vals.length + 1}`);       vals.push(location_id || null); }
     if (door_name !== undefined)         { fields.push(`door_name = $${vals.length + 1}`);         vals.push(door_name); }
     if (hardware_group_id !== undefined) { fields.push(`hardware_group_id = $${vals.length + 1}`); vals.push(hardware_group_id); }
     if (allow_multiple !== undefined)    { fields.push(`allow_multiple = $${vals.length + 1}`);    vals.push(!!allow_multiple); }
@@ -1333,19 +1334,22 @@ router.get('/:clientId/wix-plans', async (req, res) => {
 
     // Auto-accept: create plan_mappings rows for plans not yet in DB
     if (allPlans.length > 0) {
-      const existing = await db.query(
-        'SELECT source_plan_id FROM plan_mappings WHERE client_id = $1',
-        [clientId]
-      );
+      const [existing, locationRows] = await Promise.all([
+        db.query('SELECT source_plan_id FROM plan_mappings WHERE client_id = $1', [clientId]),
+        db.query('SELECT id FROM locations WHERE client_id = $1 AND subscription_status = \'active\'', [clientId]),
+      ]);
       const existingIds = new Set(existing.rows.map(r => r.source_plan_id));
+      // If the client has exactly one active location, auto-assign it so plan-mapping-resolver
+      // can resolve the per-location hardware API key and subscription status (DR-027/DR-028).
+      const defaultLocationId = locationRows.rows.length === 1 ? locationRows.rows[0].id : null;
 
       for (const plan of allPlans) {
         if (!existingIds.has(plan.id)) {
           await db.query(
-            `INSERT INTO plan_mappings (client_id, source_plan_id, hardware_group_id, plan_name, status, created_at)
-             VALUES ($1, $2, '', $3, 'inactive', NOW())
+            `INSERT INTO plan_mappings (client_id, source_plan_id, hardware_group_id, plan_name, status, location_id, created_at)
+             VALUES ($1, $2, '', $3, 'inactive', $4, NOW())
              ON CONFLICT DO NOTHING`,
-            [clientId, plan.id, plan.name]
+            [clientId, plan.id, plan.name, defaultLocationId]
           ).catch(e => console.warn('[wix-plans] Auto-insert failed for', plan.id, e.message));
         }
       }
