@@ -28,8 +28,35 @@ async function wixFetch(path, apiKey, siteId, options = {}) {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+
+    const statusMap = {
+      401: {
+        code: 'WIX_KEY_INVALID',
+        userMessage: "Your Wix API key was rejected. It may have expired or been revoked.",
+        action: 'Go to System Config and update your Wix API key.',
+        resolution: 'UPDATE_WIX_KEY',
+      },
+      403: {
+        code: 'WIX_KEY_PERMISSIONS',
+        userMessage: "Your Wix API key doesn't have the permissions AccessSync needs.",
+        action: 'Regenerate your Wix API key with Pricing Plans and Bookings read permissions.',
+        resolution: 'UPDATE_WIX_KEY',
+      },
+    };
+
+    const mapped = statusMap[res.status] || {
+      code: 'WIX_API_ERROR',
+      userMessage: `Wix returned an unexpected error (${res.status}).`,
+      action: 'Try refreshing. If the problem persists, contact AccessSync support.',
+      resolution: 'RETRY',
+    };
+
     const err = new Error(`Wix API ${res.status}: ${text.slice(0, 200)}`);
     err.statusCode = res.status;
+    err.code = mapped.code;
+    err.userMessage = mapped.userMessage;
+    err.action = mapped.action;
+    err.resolution = mapped.resolution;
     throw err;
   }
   return res.json();
@@ -60,18 +87,22 @@ async function listPricingPlans(apiKey, siteId) {
 /**
  * List all booking services for a Wix site.
  * Returns normalized service objects.
+ * Uses Bookings Services V2 API (POST query pattern).
  */
 async function listBookingServices(apiKey, siteId) {
   try {
-    const data = await wixFetch('/bookings/v1/services', apiKey, siteId);
+    const data = await wixFetch('/_api/bookings/v2/services/query', apiKey, siteId, {
+      method: 'POST',
+      body: { query: {} },
+    });
     const services = data.services || [];
     return services.map(s => ({
-      id: s._id || s.id,
-      name: s.info?.name || s.name || 'Unnamed Service',
+      id: s.id,
+      name: s.name || 'Unnamed Service',
       type: 'booking_service',
-      description: s.info?.description || s.description || '',
+      description: s.description || '',
       status: s.hidden ? 'hidden' : 'active',
-      slug: s.slugs?.[0]?.name || null,
+      slug: s.mainSlug?.name || s.supportedSlugs?.[0]?.name || null,
     }));
   } catch (err) {
     console.error('[WixPlansAPI] Failed to list booking services:', err.message);

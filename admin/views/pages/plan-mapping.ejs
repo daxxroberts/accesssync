@@ -841,6 +841,7 @@
 
     // ═══════════════════════════════════════
     render();
+    activateJumpTarget();
 
     // ══ Live data loading ═════════════════════════════════════════════
     (function loadLiveData() {
@@ -884,7 +885,8 @@
         }).catch(function(e) { console.error('Groups load error:', e); });
 
       // 2. Load Wix plans + booking services (auto-accept creates missing plan_mappings rows)
-      apiFetch('/operator/' + clientId + '/wix-plans')
+      var wixPlansUrl = '/operator/' + clientId + '/wix-plans' + (locationId ? '?locationId=' + locationId : '');
+      apiFetch(wixPlansUrl)
         .then(function(r) { return r.json(); })
         .then(function(d) {
           var wixPlans = d.plans || [];

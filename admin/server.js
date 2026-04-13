@@ -34,7 +34,21 @@ app.set('trust proxy', 1); // Railway runs behind a reverse proxy — required f
 
 // ── Security & logging middleware ─────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled — pages use inline scripts/styles
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+// JSON request logger — consistent with core/logger.js structured output
+// Replaces Apache 'combined' format so all stdout is parseable JSON in Railway
+morgan.token('body-size', (req) => req.headers['content-length'] || '0');
+app.use(morgan(function (tokens, req, res) {
+  return JSON.stringify({
+    ts:     new Date().toISOString(),
+    level:  res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
+    event:  'http.request',
+    method: tokens.method(req, res),
+    path:   tokens.url(req, res),
+    status: parseInt(tokens.status(req, res), 10),
+    ms:     parseFloat(tokens['response-time'](req, res)),
+    ip:     tokens['remote-addr'](req, res),
+  });
+}));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -87,8 +101,11 @@ app.get('/members',      allowWixFrame, requireAuthPageOrOperator, (req, res) =>
 app.get('/plan-mapping', allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/plan-mapping', { activeTab: 'plan-mapping', ...sessionMeta(req) }));
 app.get('/access',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/access',       { activeTab: 'access',       ...sessionMeta(req) }));
 app.get('/locations',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/locations',    { activeTab: 'config',       ...sessionMeta(req) }));
+app.get('/errors',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/errors',       { activeTab: 'errors',       ...sessionMeta(req) }));
 // Admin panel — owner only (no iframe — no allowWixFrame)
-app.get('/admin-panel',  requireAuthPage, (req, res) => res.render('pages/admin-panel', { activeTab: 'admin', ...sessionMeta(req) }));
+app.get('/admin-panel',  requireAuthPage, (req, res) => res.render('pages/admin-panel',  { activeTab: 'admin', ...sessionMeta(req) }));
+// Admin error queue — full cross-tenant view with raw payload, owner only
+app.get('/admin-errors', requireAuthPage, (req, res) => res.render('pages/admin-errors', { activeTab: 'admin', ...sessionMeta(req) }));
 // Onboarding — server-rendered so invite token is injected securely (never in URL)
 app.get('/onboard', allowWixFrame, (req, res) =>
   res.render('pages/onboard', {

@@ -38,6 +38,7 @@ const planMappingResolver = require('./plan-mapping-resolver');
 const { getRedisConnection } = require('./redis-utils');
 const db = require('../db');
 const { decryptApiKey } = require('./crypto-utils');
+const { log, withTrace } = require('./logger');
 
 const connection = getRedisConnection();
 
@@ -60,8 +61,14 @@ async function getClientApiKey(tenantId) {
  */
 async function processJob(job) {
   const { tenantId, standardEvent } = job.data;
+  const traceId = standardEvent.traceId || null;
+  const logger = traceId ? withTrace(traceId) : log;
 
-  console.log(`[Queue Worker] Processing job ${job.id} (${job.name}) for tenant ${tenantId}, member ${standardEvent.platformMemberId}`);
+  logger.info('queue.job.start', {
+    jobId: job.id, jobName: job.name,
+    tenantId, memberId: standardEvent.platformMemberId,
+    eventType: standardEvent.eventType, planId: standardEvent.planId,
+  });
 
   let memberId = null;
 
@@ -72,7 +79,7 @@ async function processJob(job) {
       if (standardEvent.eventType === 'payment.recovered') {
         const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null);
         if (!lockResult) {
-          console.warn(`[Queue Worker] No identity for payment.recovered — member ${standardEvent.platformMemberId}. Dropping.`);
+          logger.warn('queue.grant.recovered.no_identity', { tenantId, memberId: standardEvent.platformMemberId });
           return;
         }
         const { memberId: resolvedMemberId, hardwareUserId, hardwarePlatform } = lockResult;
@@ -80,21 +87,22 @@ async function processJob(job) {
         const apiKey = await getClientApiKey(tenantId);
         await hardwareAdapter.enableAccess(hardwarePlatform, apiKey, hardwareUserId);
         await standardAdapter.completeRevoke(memberId, tenantId, 'active');
+        logger.info('queue.grant.recovered.complete', { tenantId, memberId });
         return;
       }
 
       // Step 1: Resolve all active plan mappings for this plan (returns array, null, or empty array)
       const mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
       if (mappings === null) {
-        console.warn(`[Queue Worker] Unknown plan ${standardEvent.planId}. Dropping job.`);
+        logger.warn('queue.grant.plan_unknown', { tenantId, planId: standardEvent.planId, memberId: standardEvent.platformMemberId });
         return; // Already alerted in resolver via config_alert_log
       }
       if (mappings.length === 0) {
         // Plan recognized but no hardware group mapped yet (Wix-first flow) — park member
-        console.log(`[Queue Worker] Plan ${standardEvent.planId} recognized but not hardware-mapped. Parking member as pending_hardware.`);
-        const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, 'kisi'); // default platform
+        const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, 'kisi');
         memberId = lockResult.memberId;
         await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
+        logger.info('queue.grant.parked.no_mapping', { tenantId, memberId, planId: standardEvent.planId });
         return;
       }
 
@@ -105,8 +113,8 @@ async function processJob(job) {
       // Step 3: Check for hardware API key — if missing, park as pending_hardware (Wix-first flow)
       const apiKey = await getClientApiKey(tenantId);
       if (!apiKey) {
-        console.log(`[Queue Worker] No hardware API key for tenant ${tenantId}. Parking member ${standardEvent.platformMemberId} as pending_hardware.`);
         await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
+        logger.info('queue.grant.parked.no_api_key', { tenantId, memberId, planId: standardEvent.planId });
         return;
       }
 
@@ -123,13 +131,14 @@ async function processJob(job) {
 
       // Step 6: Record success — writes all assignments to member_role_assignments
       await standardAdapter.completeGrant(memberId, tenantId, assignments);
+      logger.info('queue.grant.complete', { tenantId, memberId, assignments: assignments.length });
 
     } else if (job.name === 'revoke') {
       // Step 1: Resolve identity + acquire lock (reads hardwarePlatform from existing row)
       const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null);
 
       if (!lockResult) {
-        console.warn(`[Queue Worker] No identity record for revoke — member ${standardEvent.platformMemberId}. Dropping job.`);
+        logger.warn('queue.revoke.no_identity', { tenantId, memberId: standardEvent.platformMemberId, eventType: standardEvent.eventType });
         return; // Member never existed — skip silently
       }
 
@@ -144,13 +153,18 @@ async function processJob(job) {
 
       // Step 3: Record success
       await standardAdapter.completeRevoke(memberId, tenantId, targetStatus);
+      logger.info('queue.revoke.complete', { tenantId, memberId, targetStatus });
 
     } else {
-      console.warn(`[Queue Worker] Unknown job name: ${job.name}. Skipping.`);
+      logger.warn('queue.job.unknown_name', { jobId: job.id, jobName: job.name });
     }
 
   } catch (error) {
-    console.error(`[Queue Worker] Job ${job.id} (${job.name}) failed:`, error.message);
+    logger.error('queue.job.failed', {
+      jobId: job.id, jobName: job.name,
+      tenantId, memberId,
+      attempt: job.attemptsMade,
+    }, error);
 
     // Release in_flight lock before BullMQ retries
     if (memberId) {
@@ -181,11 +195,18 @@ function startWorker() {
   });
 
   worker.on('completed', (job) => {
-    console.log(`[Queue Worker] Job ${job.id} (${job.name}) completed.`);
+    const traceId = job.data?.standardEvent?.traceId || null;
+    const logger = traceId ? withTrace(traceId) : log;
+    logger.info('queue.job.completed', { jobId: job.id, jobName: job.name });
   });
 
   worker.on('failed', async (job, err) => {
-    console.error(`[Queue Worker] Job ${job.id} (${job.name}) failed (attempt ${job.attemptsMade}/${job.opts.attempts}):`, err.message);
+    const traceId = job.data?.standardEvent?.traceId || null;
+    const logger = traceId ? withTrace(traceId) : log;
+    logger.error('queue.job.exhausted', {
+      jobId: job.id, jobName: job.name,
+      attempt: job.attemptsMade, maxAttempts: job.opts.attempts,
+    }, err);
 
     if (job.attemptsMade >= job.opts.attempts) {
       await retryEngine.handleFailure(job, err);
@@ -193,10 +214,10 @@ function startWorker() {
   });
 
   worker.on('error', (err) => {
-    console.error('[Queue Worker] Worker error:', err.message);
+    log.critical('queue.worker.error', {}, err);
   });
 
-  console.log('[Queue Worker] BullMQ worker started. Listening on accesssync-events queue.');
+  log.info('queue.worker.started', { queue: 'accesssync-events', concurrency: 20 });
   return worker;
 }
 

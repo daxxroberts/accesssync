@@ -36,6 +36,7 @@ function renderNav() {
     { label: 'Members',      href: '/members',      key: 'members' },
     { label: 'Plan Mapping', href: '/plan-mapping', key: 'plan-mapping' },
     { label: 'Access',       href: '/access',       key: 'access' },
+    { label: 'Errors',       href: '/errors',       key: 'errors' },
     { label: 'System Config', href: '/locations',   key: 'config' },
     { label: 'Admin',        href: '/admin-panel',  key: 'admin' },
   ];
@@ -61,7 +62,7 @@ function renderBreadcrumb() {
   var container = document.getElementById('subNav');
   if (!container) return;
   var activeKey = container.dataset.active || '';
-  var labels = { overview: 'Overview', members: 'Members', 'plan-mapping': 'Plan Mapping', access: 'Access', config: 'System Config', admin: 'Admin' };
+  var labels = { overview: 'Overview', members: 'Members', 'plan-mapping': 'Plan Mapping', access: 'Access', errors: 'Errors', config: 'System Config', admin: 'Admin' };
   var label = labels[activeKey] || '';
   if (!label) return;
   var bc = document.createElement('div');
@@ -179,4 +180,43 @@ document.addEventListener('keydown', function(e) {
 function esc(s) {
   if (!s) return '';
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Jump-to-fix: navigate to destination page with a highlight target ──
+function jumpToFix(url) {
+  window.location.href = url;
+}
+
+// ── On-page: read jumpTo + tip params, scroll to element, pulse + tooltip ──
+// Called at DOMContentLoaded by destination pages (locations, plan-mapping).
+// Polls for the element because those pages render content via async fetch.
+function activateJumpTarget() {
+  var params = new URLSearchParams(window.location.search);
+  var jumpTo = params.get('jumpTo');
+  var tip    = params.get('tip');
+  if (!jumpTo) return;
+
+  var attempts = 0;
+  var interval = setInterval(function() {
+    var el = document.getElementById(jumpTo);
+    if (el || attempts++ > 20) {
+      clearInterval(interval);
+      if (!el) return;
+
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('jump-highlight');
+      setTimeout(function() { el.classList.remove('jump-highlight'); }, 4000);
+
+      if (tip) {
+        var bubble = document.createElement('div');
+        bubble.className = 'jump-tip';
+        bubble.innerHTML =
+          '<span class="jump-tip-arrow"></span>' +
+          '<span class="jump-tip-text">' + esc(tip) + '</span>' +
+          '<button class="jump-tip-close" onclick="this.parentNode.remove()">&#215;</button>';
+        el.style.position = 'relative';
+        el.appendChild(bubble);
+      }
+    }
+  }, 150);
 }

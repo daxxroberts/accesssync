@@ -116,22 +116,37 @@ CREATE TABLE processed_event_ids (
 -- 5. Error Queue (Dead Letter Queue)
 --------------------------------------------------------
 CREATE TABLE error_queue (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    client_id       UUID REFERENCES clients(id),
-    member_id       UUID,                               -- references member_identity(id) — no FK constraint (intentional: member may not exist)
-    event_type      VARCHAR(100),
-    payload         JSONB,
-    error_reason    TEXT,                               -- plain error message (naming: 'plain_message' in API responses)
-    retry_count     INTEGER      DEFAULT 0,
-    status          VARCHAR(50)  DEFAULT 'failed',      -- failed, resolved
-    created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    resolved_at     TIMESTAMP WITH TIME ZONE,
-    dismiss_note    TEXT,                               -- Admin Hub: operator note when dismissing
-    dismissed_by    VARCHAR(255),                       -- Admin Hub: who dismissed ('admin' for now)
-    location_id     UUID REFERENCES locations(id),     -- nullable — error scoping by location
-    plan_name       VARCHAR(255),                       -- plan context for operator triage
-    door_name       VARCHAR(255)                        -- door context for operator triage
+    id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id        UUID REFERENCES clients(id),
+    member_id        UUID,                               -- references member_identity(id) — no FK constraint (intentional: member may not exist)
+    event_type       VARCHAR(100),
+    payload          JSONB,
+    error_reason     TEXT,                               -- plain error message (naming: 'plain_message' in API responses)
+    error_code       VARCHAR(100),                       -- structured code: HARDWARE_KEY_INVALID, PLAN_NOT_MAPPED, etc. (error-queue-v2)
+    user_message     TEXT,                               -- humanized message from connector — persisted for display (error-queue-v2)
+    resolution       VARCHAR(100),                       -- enum: ROTATE_API_KEY, RETRY, REMAP_PLAN, CHECK_PERMISSIONS (error-queue-v2)
+    action_text      TEXT,                               -- "what to do" instruction string (error-queue-v2)
+    http_status      INTEGER,                            -- HTTP status code from hardware/Wix API (error-queue-v2)
+    raw_api_body     JSONB,                              -- full API response body for debugging (error-queue-v2)
+    occurred_count   INTEGER      DEFAULT 1,             -- recurrence count for dedup grouping (error-queue-v2)
+    last_occurred_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, -- most recent occurrence (error-queue-v2)
+    retry_count      INTEGER      DEFAULT 0,
+    status           VARCHAR(50)  DEFAULT 'failed',      -- failed, resolved
+    created_at       TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    resolved_at      TIMESTAMP WITH TIME ZONE,
+    dismiss_note     TEXT,                               -- Admin Hub: operator note when dismissing
+    dismissed_by     VARCHAR(255),                       -- Admin Hub: who dismissed ('admin' for now)
+    location_id      UUID REFERENCES locations(id),     -- nullable — error scoping by location
+    plan_name        VARCHAR(255),                       -- plan context for operator triage
+    door_name        VARCHAR(255)                        -- door context for operator triage
 );
+
+CREATE INDEX IF NOT EXISTS idx_error_queue_dedup
+  ON error_queue (client_id, member_id, error_code)
+  WHERE status = 'failed';
+
+CREATE INDEX IF NOT EXISTS idx_error_queue_client_code
+  ON error_queue (client_id, error_code, status);
 
 --------------------------------------------------------
 -- 6. Member Identity

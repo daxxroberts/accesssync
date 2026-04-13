@@ -287,6 +287,7 @@
     };
 
     document.addEventListener('DOMContentLoaded', function() {
+      activateJumpTarget();
       if (!clientId) {
         toast('No clientId in URL — add ?clientId=YOUR_ID', 'error');
         return;

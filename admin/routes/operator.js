@@ -757,10 +757,12 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
   try {
     const [errors, planMappings, accessLog, activeMembers] = await Promise.all([
       db.query(
-        `SELECT id, event_type, error_reason, retry_count, plan_name, door_name, created_at
+        `SELECT id, event_type, error_reason, retry_count, plan_name, door_name, created_at,
+                error_code, user_message, action_text, resolution,
+                occurred_count, last_occurred_at
          FROM error_queue
          WHERE location_id = $1 AND status = 'failed'
-         ORDER BY created_at DESC`,
+         ORDER BY last_occurred_at DESC NULLS LAST, created_at DESC`,
         [locationId]
       ),
       db.query(
@@ -832,8 +834,10 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
       ),
       db.query(
         `SELECT id, source_plan_id, plan_name, door_name, hardware_group_id, status, allow_multiple, max_members, created_at
-         FROM plan_mappings WHERE location_id = $1 ORDER BY plan_name`,
-        [locationId]
+         FROM plan_mappings
+         WHERE client_id = $2 AND (location_id = $1 OR location_id IS NULL)
+         ORDER BY plan_name`,
+        [locationId, clientId]
       ),
     ]);
     if (!locationResult.rows.length) return res.status(404).json({ error: 'Location not found' });
@@ -1127,10 +1131,12 @@ router.get('/:clientId/errors', async (req, res) => {
     const result = await db.query(
       `SELECT id, event_type, error_reason AS plain_message,
               plan_name, door_name, location_id,
-              retry_count, status, created_at
+              retry_count, status, created_at,
+              error_code, user_message, action_text, resolution,
+              occurred_count, last_occurred_at
        FROM error_queue
        WHERE client_id = $1 AND status = 'failed'
-       ORDER BY created_at DESC
+       ORDER BY last_occurred_at DESC NULLS LAST, created_at DESC
        LIMIT $2`,
       [clientId, parseInt(limit)]
     );
@@ -1144,6 +1150,47 @@ router.get('/:clientId/errors', async (req, res) => {
     });
   } catch (err) {
     console.error('[operator] GET /:clientId/errors error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /operator/:clientId/errors/summary ──────────────────────────────────
+// Total active error count + breakdown by error_code + breakdown by location.
+// Used by the /errors page header and filter dropdowns.
+// NOTE: placed before /:clientId/errors/:errorId routes to avoid param collision.
+router.get('/:clientId/errors/summary', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const [total, breakdown, byLocation] = await Promise.all([
+      db.query(
+        `SELECT COUNT(*)::int AS total FROM error_queue WHERE client_id = $1 AND status = 'failed'`,
+        [clientId]
+      ),
+      db.query(
+        `SELECT error_code, COUNT(*)::int AS count, MAX(last_occurred_at) AS latest
+         FROM error_queue
+         WHERE client_id = $1 AND status = 'failed'
+         GROUP BY error_code
+         ORDER BY count DESC`,
+        [clientId]
+      ),
+      db.query(
+        `SELECT eq.location_id, l.name AS location_name, COUNT(*)::int AS count
+         FROM error_queue eq
+         LEFT JOIN locations l ON l.id = eq.location_id
+         WHERE eq.client_id = $1 AND eq.status = 'failed'
+         GROUP BY eq.location_id, l.name
+         ORDER BY count DESC`,
+        [clientId]
+      ),
+    ]);
+    res.json({
+      total:       total.rows[0].total,
+      by_code:     breakdown.rows,
+      by_location: byLocation.rows,
+    });
+  } catch (err) {
+    console.error('[operator] GET /:clientId/errors/summary error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

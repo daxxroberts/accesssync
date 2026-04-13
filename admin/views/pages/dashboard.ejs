@@ -416,18 +416,35 @@
     // ── Shared helpers ──
     function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-    // ── Error translation — maps raw error_reason to operator-friendly message + action ──
-    function translateError(reason) {
-      if (!reason) return { message: 'Something went wrong.', action: 'Contact support if this keeps happening.' };
-      var r = String(reason);
-      if (/401|ACS_002|api key.*reject|invalid.*key/i.test(r)) return { message: 'Your API key was rejected by the door system.', action: 'Go to System Config and re-enter your API key.' };
-      if (/403|suspended.*account|downgrad/i.test(r)) return { message: 'Your door system account may be suspended or downgraded.', action: 'Check your subscription status with your hardware provider.' };
-      if (/429|ACS_004|rate.?limit/i.test(r)) return { message: 'Your door system is rate limiting requests right now.', action: 'No action needed — AccessSync will retry automatically.' };
-      if (/5\d\d|ACS_005|server error/i.test(r)) return { message: 'Your door system is having an outage.', action: 'AccessSync will keep retrying. If it persists, check your hardware provider\'s status page.' };
-      if (/timeout|ACS_001|timed? out/i.test(r)) return { message: 'The connection to your door system timed out.', action: 'AccessSync will retry automatically.' };
-      if (/no.*mapping|plan.*not.*mapped|mapping.*not.*found/i.test(r)) return { message: "This member's plan isn't linked to a door group yet.", action: 'Go to Plan Mapping and assign a door group to this plan.' };
-      if (/pending.?hardware/i.test(r)) return { message: 'This member is waiting for your hardware setup to complete.', action: 'Add your API key in System Config to start provisioning.' };
-      return { message: 'An unexpected error occurred.', action: 'Try syncing again, or contact AccessSync support.' };
+    // ── Error translation — code-first lookup, regex fallback for legacy rows ──
+    var _clientId = new URLSearchParams(window.location.search).get('clientId') || '';
+    var ERROR_MAP = {
+      'HARDWARE_KEY_INVALID':        { message: "Your door system rejected the API key — it may have been rotated or revoked since you connected it.", action: 'Update API key', href: '/locations?clientId=' + _clientId },
+      'HARDWARE_KEY_PERMISSIONS':    { message: "Your API key connected, but it doesn't have permission to manage users. This usually means the key needs a higher access level.", action: 'Check key permissions', href: '/locations?clientId=' + _clientId },
+      'HARDWARE_KEY_MISSING':        { message: "There's no API key connected for this location yet, so AccessSync can't provision access.", action: 'Add your API key', href: '/locations?clientId=' + _clientId },
+      'HARDWARE_RESOURCE_NOT_FOUND': { message: "The door group assigned to this plan no longer exists — it may have been deleted or renamed in your door system.", action: 'Re-map this plan', href: '/plan-mapping?clientId=' + _clientId },
+      'HARDWARE_VALIDATION_ERROR':   { message: "The door system rejected this request — the member data or group assignment may be invalid.", action: 'Retry', href: null },
+      'HARDWARE_API_ERROR':          { message: "The door system returned an unexpected error. This is usually temporary.", action: 'Retry or contact support', href: null },
+      'WIX_KEY_INVALID':             { message: "Your Wix API key was rejected — it may have expired or been revoked. You'll need to generate a new one.", action: 'Update Wix API key', href: '/dashboard?clientId=' + _clientId + '#config' },
+      'WIX_KEY_MISSING':             { message: "No Wix API key is connected yet, so AccessSync can't read your plans.", action: 'Add Wix API key', href: '/dashboard?clientId=' + _clientId + '#config' },
+      'WIX_KEY_PERMISSIONS':         { message: "Your Wix API key is connected but is missing the Pricing Plans or Bookings read permissions.", action: 'Update Wix API key', href: '/dashboard?clientId=' + _clientId + '#config' },
+      'PLAN_NOT_MAPPED':             { message: "This member purchased a plan that hasn't been linked to a door group yet.", action: 'Map this plan', href: '/plan-mapping?clientId=' + _clientId },
+      'SUBSCRIPTION_LAPSED':         { message: "This location's AccessSync subscription is inactive, so access provisioning is paused.", action: 'Reactivate location', href: '/locations?clientId=' + _clientId },
+    };
+    function translateError(errorCode, rawReason) {
+      // Code-first: use structured error code if available
+      if (errorCode && ERROR_MAP[errorCode]) return ERROR_MAP[errorCode];
+      // Regex fallback for legacy error_queue rows without error_code
+      var r = String(rawReason || '');
+      if (/401|api key.*reject|invalid.*key/i.test(r))     return ERROR_MAP['HARDWARE_KEY_INVALID'];
+      if (/403|suspended|downgrad/i.test(r))               return ERROR_MAP['HARDWARE_KEY_PERMISSIONS'];
+      if (/429|rate.?limit/i.test(r))                      return { message: "The door system is rate-limiting requests right now — too many in a short window.", action: 'Retry in a few minutes', href: null };
+      if (/5\d\d|server error/i.test(r))                   return { message: "The door system is having an issue on their end. AccessSync will keep retrying.", action: 'Retry — AccessSync will keep trying', href: null };
+      if (/timeout|timed?\s*out/i.test(r))                 return { message: "The door system didn't respond in time. This is usually temporary.", action: 'Retry', href: null };
+      if (/no.*mapping|plan.*not.*mapped|mapping.*not.*found/i.test(r)) return ERROR_MAP['PLAN_NOT_MAPPED'];
+      if (/pending.?hardware/i.test(r))                    return ERROR_MAP['HARDWARE_KEY_MISSING'];
+      if (/subscription.*lapsed|subscription.*inactive/i.test(r)) return ERROR_MAP['SUBSCRIPTION_LAPSED'];
+      return { message: "Something went wrong while provisioning this member's access.", action: 'Retry or contact support', href: null };
     }
 
     // ── Location accordion ──
@@ -596,35 +613,26 @@
           }
           html += '</div>';
 
-          // ── Errors sub-section ──
+          // ── Errors summary — links to /errors page ──
           var errors = d.errors || [];
-          html += '<div class="loc-sub-header" onclick="toggleLocSub(\'' + locId + '\', \'errors\')">' +
-            '<div class="loc-sub-title">' +
-              '<svg class="loc-sub-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-              'Errors <span class="count ' + (errors.length > 0 ? 'red' : 'sage') + '">' + errors.length + '</span>' +
+          var errCount = errors.length;
+          html += '<div style="display:flex;align-items:center;justify-content:space-between;' +
+            'padding:12px 16px;border-top:1px solid var(--border);background:var(--surface);">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+              (errCount > 0
+                ? '<span class="count" style="background:var(--red,#ef4444);color:#fff;">' + errCount + '</span>' +
+                  '<span style="font-size:12px;color:var(--text2);">active error' + (errCount === 1 ? '' : 's') + '</span>'
+                : '<span class="no-err-badge">' +
+                    '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+                    'All clear' +
+                  '</span>') +
             '</div>' +
+            (errCount > 0
+              ? '<a href="/errors' + window.location.search + '" ' +
+                  'style="font-size:11px;font-weight:600;color:var(--brand);text-decoration:none;">' +
+                  'View errors →</a>'
+              : '') +
           '</div>';
-          html += '<div class="loc-sub-body" id="sub-errors-' + locId + '">';
-          if (errors.length) {
-            html += errors.map(function(e) {
-              var translated = translateError(e.plain_message || e.error_reason);
-              return '<div class="err-row">' +
-                '<div class="err-dot"></div>' +
-                '<div class="err-info">' +
-                  '<div class="err-title">' + esc(e.plan_name || e.event_type || 'Error') + '</div>' +
-                  '<div class="err-body">' + esc(translated.message) + ' <span style="color:var(--muted);">' + esc(translated.action) + '</span></div>' +
-                  '<div class="err-tags">' +
-                    (e.plan_name ? '<span class="err-tag">' + esc(e.plan_name) + '</span>' : '') +
-                    (e.door_name ? '<span class="err-tag">' + esc(e.door_name) + '</span>' : '') +
-                    '<span class="err-tag">' + (e.retry_count || 0) + ' retries</span>' +
-                  '</div>' +
-                '</div>' +
-              '</div>';
-            }).join('');
-          } else {
-            html += '<div class="no-err"><span class="no-err-badge"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>No errors — all clear</span></div>';
-          }
-          html += '</div>';
 
           // ── Footer ──
           html += '<div class="loc-footer">' +

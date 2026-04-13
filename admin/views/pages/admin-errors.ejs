@@ -1,0 +1,334 @@
+<%#
+  @file admin-errors.ejs
+  @layer admin/pages
+  @route /admin-errors
+  @role error-queue-admin
+  @data GET /admin/errors, POST /admin/errors/:id/retry, POST /admin/errors/:id/dismiss
+        POST /admin/errors/bulk-retry, GET /admin/clients
+  @tab Admin
+  @status owner-only — no allowWixFrame, no operator access
+%>
+<!DOCTYPE html>
+<html lang="en" data-mode="light">
+<head>
+  <%- include('../partials/head', { title: 'Admin Hub: Error Queue' }) %>
+  <style>
+    .page { padding: 18px 16px 60px; display: flex; flex-direction: column; gap: 14px; max-width: 1100px; margin: 0 auto; }
+
+    .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .page-header-left { display: flex; align-items: center; gap: 10px; }
+    .page-title { font-size: 20px; font-weight: 800; letter-spacing: -0.4px; color: var(--text); margin: 0; }
+    .page-subtitle { font-size: 11px; color: var(--muted); }
+    .page-header-actions { display: flex; gap: 8px; }
+
+    .filter-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .filter-select { padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 11px; color: var(--text2); background: var(--card); cursor: pointer; }
+
+    .err-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+    .err-card-main { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; }
+    .err-card-body { flex: 1; min-width: 0; }
+    .err-card-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .err-card-context { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+    .err-card-msg { font-size: 12px; color: var(--text2); line-height: 1.6; margin-bottom: 4px; }
+    .err-card-meta { font-size: 10px; color: var(--muted); line-height: 1.6; }
+
+    .err-tag-type { background: var(--surface); color: var(--muted); border: 1px solid var(--border); font-size: 10px; padding: 2px 7px; border-radius: 10px; }
+    .err-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red, #ef4444); box-shadow: 0 0 5px rgba(239,68,68,0.4); flex-shrink: 0; margin-top: 3px; }
+    .err-dot.sage { background: var(--sage-dark); box-shadow: 0 0 5px rgba(34,197,94,0.3); }
+
+    .err-card-actions { display: flex; gap: 6px; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; align-items: center; }
+    .btn-retry, .btn-dismiss { padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer; background: transparent; transition: background 0.15s; }
+    .btn-retry { color: var(--brand); border-color: var(--brand); }
+    .btn-retry:hover:not(:disabled) { background: var(--brand); color: #fff; }
+    .btn-dismiss { color: var(--muted); }
+    .btn-dismiss:hover:not(:disabled) { background: var(--surface); }
+    .btn-retry:disabled, .btn-dismiss:disabled { opacity: 0.4; cursor: default; }
+    .btn-details { padding: 5px 10px; background: transparent; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 10px; font-weight: 500; color: var(--muted); cursor: pointer; margin-left: auto; }
+    .btn-details:hover { background: var(--surface); }
+
+    .err-details-panel { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg); }
+    .details-row { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+    .details-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+    .details-val { font-size: 12px; color: var(--text2); word-break: break-all; }
+    .details-json { font-size: 11px; color: var(--text2); background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 240px; overflow-y: auto; margin: 0; }
+
+    .sync-btn { padding: 7px 14px; background: var(--brand); color: #fff; border: none; border-radius: 8px; font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
+    .sync-btn:hover { opacity: 0.88; }
+    .sync-btn.secondary { background: transparent; color: var(--text2); border: 1px solid var(--border); }
+    .sync-btn.secondary:hover { background: var(--surface); }
+
+    .empty-state { display: flex; justify-content: center; align-items: center; padding: 48px 16px; }
+    .loading-state { padding: 24px 16px; font-size: 12px; color: var(--muted); text-align: center; }
+  </style>
+</head>
+<body data-session-role="<%= sessionRole %>" data-login-url="<%= loginUrl || '' %>">
+
+  <%- include('../partials/topbar') %>
+  <%- include('../partials/subnav', { activeTab: 'admin' }) %>
+
+  <div class="page">
+
+    <!-- Page header -->
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1 class="page-title">Error Queue</h1>
+        <span class="count" id="admin-total-badge" style="background:var(--red,#ef4444);color:#fff;">—</span>
+        <span class="page-subtitle">across all clients</span>
+      </div>
+      <div class="page-header-actions">
+        <button class="sync-btn secondary" onclick="bulkDismissAll()">Dismiss all</button>
+        <button class="sync-btn" onclick="bulkRetryAll()">Retry all</button>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <select class="filter-select" id="admin-filter-client" onchange="loadAdminErrors()">
+        <option value="">All clients</option>
+      </select>
+      <select class="filter-select" id="admin-filter-status" onchange="loadAdminErrors()">
+        <option value="failed">Active</option>
+        <option value="resolved">Resolved</option>
+        <option value="all">All</option>
+      </select>
+    </div>
+
+    <!-- Error list -->
+    <div id="admin-error-list">
+      <div class="loading-state">Loading errors…</div>
+    </div>
+
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/operator-nav.js"></script>
+  <script>
+    var _adminErrors = [];
+
+    var CODE_LABELS = {
+      HARDWARE_KEY_INVALID:        'Invalid API Key',
+      HARDWARE_KEY_PERMISSIONS:    'API Key Permissions',
+      HARDWARE_KEY_MISSING:        'No API Key Connected',
+      HARDWARE_RESOURCE_NOT_FOUND: 'Door Group Not Found',
+      HARDWARE_VALIDATION_ERROR:   'Validation Error',
+      HARDWARE_API_ERROR:          'Hardware API Error',
+      WIX_KEY_INVALID:             'Wix API Key Invalid',
+      WIX_KEY_MISSING:             'No Wix API Key',
+      WIX_KEY_PERMISSIONS:         'Wix Key Permissions',
+      PLAN_NOT_MAPPED:             'Plan Not Mapped',
+      SUBSCRIPTION_LAPSED:         'Subscription Lapsed',
+    };
+    function getCodeLabel(code) { return code ? (CODE_LABELS[code] || code) : null; }
+
+    // ── Data loading ───────────────────────────────────────────────
+    function loadAdminErrors() {
+      var clientId = document.getElementById('admin-filter-client').value;
+      var status   = document.getElementById('admin-filter-status').value;
+      var params   = new URLSearchParams({ limit: 100 });
+      if (clientId) params.set('client_id', clientId);
+      if (status !== 'all') params.set('status', status);
+
+      apiFetch('/admin/errors?' + params.toString())
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          _adminErrors = d.data || [];
+          renderAdminErrors(_adminErrors);
+          updateBadge(d.total || _adminErrors.length);
+        })
+        .catch(function(e) { console.error('[admin-errors] load failed:', e); });
+    }
+
+    function loadClients() {
+      apiFetch('/admin/clients')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          var list = Array.isArray(d) ? d : (d.clients || []);
+          var sel  = document.getElementById('admin-filter-client');
+          list.forEach(function(c) {
+            var opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name || c.id;
+            sel.appendChild(opt);
+          });
+        })
+        .catch(function() {}); // Non-fatal — filter just won't populate
+    }
+
+    function updateBadge(total) {
+      var badge = document.getElementById('admin-total-badge');
+      if (!badge) return;
+      badge.textContent = total;
+      badge.style.background = total > 0 ? 'var(--red, #ef4444)' : 'var(--sage-dark)';
+    }
+
+    // ── Rendering ─────────────────────────────────────────────────
+    function renderAdminErrors(errors) {
+      var container = document.getElementById('admin-error-list');
+      if (!errors.length) {
+        container.innerHTML =
+          '<div class="empty-state">' +
+            '<span class="no-err-badge">' +
+              '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              'No errors found' +
+            '</span>' +
+          '</div>';
+        return;
+      }
+      container.innerHTML = errors.map(renderAdminCard).join('');
+    }
+
+    function renderAdminCard(e) {
+      var isResolved = e.status === 'resolved';
+      var dotClass   = 'err-dot' + (isResolved ? ' sage' : '');
+      var timeLabel  = timeAgo(new Date(e.last_occurred_at || e.created_at));
+      var recurrence = (e.occurred_count > 1)
+        ? 'Happened ' + e.occurred_count + 'x — last ' + timeLabel
+        : timeLabel;
+
+      var rawData = JSON.stringify({
+        http_status:        e.http_status        || null,
+        raw_api_body:       e.raw_api_body       || null,
+        payload:            e.payload            || null,
+        platform_member_id: e.platform_member_id || null,
+        source_platform:    e.source_platform    || null,
+      });
+
+      return '<div class="err-card" data-id="' + esc(e.id) + '">' +
+        '<div class="err-card-main">' +
+          '<div class="' + dotClass + '"></div>' +
+          '<div class="err-card-body">' +
+            '<div class="err-card-title">' +
+              esc(e.client_name || e.client_id || 'Unknown client') +
+              (e.plan_name ? '<span style="font-size:11px;color:var(--muted);font-weight:400;margin:0 5px;">·</span>' + esc(e.plan_name) : '') +
+              (e.door_name ? '<span style="font-size:11px;color:var(--muted);font-weight:400;margin:0 5px;">→</span>' + esc(e.door_name) : '') +
+            '</div>' +
+            '<div class="err-card-context">' +
+              '<span class="err-tag err-tag-type">' + esc(getCodeLabel(e.error_code) || e.event_type || 'Error') + '</span>' +
+              (e.member_email ? '<span class="err-tag">' + esc(e.member_email) + '</span>' : '') +
+            '</div>' +
+            '<div class="err-card-msg">' + esc(e.user_message || e.error_reason || '—') + '</div>' +
+            '<div class="err-card-meta">' +
+              'HTTP ' + esc(String(e.http_status || '—')) +
+              (e.platform_member_id ? ' · member: ' + esc(e.platform_member_id) : '') +
+              (e.source_platform    ? ' · via ' + esc(e.source_platform) : '') +
+              (e.occurred_count > 1 ? ' · occurred ' + e.occurred_count + 'x' : '') +
+              ' · ' + esc(recurrence) +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="err-card-actions">' +
+          '<button class="btn-retry"' + (isResolved ? ' disabled' : '') + ' onclick="adminRetry(\'' + esc(e.id) + '\', this)">Retry</button>' +
+          '<button class="btn-dismiss"' + (isResolved ? ' disabled' : '') + ' onclick="adminDismiss(\'' + esc(e.id) + '\', this)">Dismiss</button>' +
+          '<button class="btn-details" onclick="toggleAdminDetails(\'' + esc(e.id) + '\')" data-raw="' + esc(rawData) + '">▼ Details</button>' +
+        '</div>' +
+        '<div class="err-details-panel" id="admin-details-' + esc(e.id) + '" style="display:none;"></div>' +
+      '</div>';
+    }
+
+    // ── Details toggle ────────────────────────────────────────────
+    function toggleAdminDetails(id) {
+      var panel = document.getElementById('admin-details-' + id);
+      var card  = document.querySelector('[data-id="' + id + '"]');
+      var btn   = card ? card.querySelector('.btn-details') : null;
+      if (!panel) return;
+
+      if (panel.style.display === 'none') {
+        var raw = {};
+        try { raw = JSON.parse((btn && btn.dataset.raw) || '{}'); } catch(e) {}
+        panel.innerHTML =
+          '<div class="details-row">' +
+            '<span class="details-label">HTTP Status</span>' +
+            '<span class="details-val">' + esc(String(raw.http_status || '—')) + '</span>' +
+          '</div>' +
+          (raw.platform_member_id
+            ? '<div class="details-row"><span class="details-label">Platform Member ID</span>' +
+              '<span class="details-val">' + esc(raw.platform_member_id) + '</span></div>'
+            : '') +
+          (raw.source_platform
+            ? '<div class="details-row"><span class="details-label">Source Platform</span>' +
+              '<span class="details-val">' + esc(raw.source_platform) + '</span></div>'
+            : '') +
+          (raw.raw_api_body
+            ? '<div class="details-row"><span class="details-label">API Response</span>' +
+              '<pre class="details-json">' + esc(JSON.stringify(raw.raw_api_body, null, 2)) + '</pre></div>'
+            : '') +
+          (raw.payload
+            ? '<div class="details-row"><span class="details-label">Event Payload</span>' +
+              '<pre class="details-json">' + esc(JSON.stringify(raw.payload, null, 2)) + '</pre></div>'
+            : '');
+        panel.style.display = 'block';
+        if (btn) btn.textContent = '▲ Details';
+      } else {
+        panel.style.display = 'none';
+        if (btn) btn.textContent = '▼ Details';
+      }
+    }
+
+    // ── Actions ───────────────────────────────────────────────────
+    function adminRetry(id, btn) {
+      btn.disabled = true; btn.textContent = '…';
+      apiFetch('/admin/errors/' + id + '/retry', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function() { showToast('success', 'Requeued'); loadAdminErrors(); })
+        .catch(function() { showToast('error', 'Retry failed'); btn.disabled = false; btn.textContent = 'Retry'; });
+    }
+
+    function adminDismiss(id, btn) {
+      btn.disabled = true; btn.textContent = '…';
+      apiFetch('/admin/errors/' + id + '/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: '' }),
+      })
+        .then(function(r) { return r.json(); })
+        .then(function() { showToast('success', 'Dismissed'); loadAdminErrors(); })
+        .catch(function() { showToast('error', 'Dismiss failed'); btn.disabled = false; btn.textContent = 'Dismiss'; });
+    }
+
+    function bulkRetryAll() {
+      var activeIds = _adminErrors.filter(function(e) { return e.status === 'failed'; }).map(function(e) { return e.id; });
+      if (!activeIds.length) { showToast('info', 'No active errors to retry'); return; }
+      apiFetch('/admin/errors/bulk-retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: activeIds }),
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { showToast('success', 'Queued ' + (d.queued || 0) + ' for retry'); loadAdminErrors(); })
+        .catch(function() { showToast('error', 'Bulk retry failed'); });
+    }
+
+    function bulkDismissAll() {
+      var activeIds = _adminErrors.filter(function(e) { return e.status === 'failed'; }).map(function(e) { return e.id; });
+      if (!activeIds.length) { showToast('info', 'Nothing to dismiss'); return; }
+      // Sequential dismiss — no bulk-dismiss endpoint, reuse individual endpoint
+      Promise.all(activeIds.map(function(id) {
+        return apiFetch('/admin/errors/' + id + '/dismiss', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note: 'bulk dismiss' }),
+        });
+      }))
+        .then(function() { showToast('success', 'Dismissed ' + activeIds.length + ' errors'); loadAdminErrors(); })
+        .catch(function() { showToast('error', 'Some dismissals failed'); loadAdminErrors(); });
+    }
+
+    // ── Time ago helper ───────────────────────────────────────────
+    function timeAgo(date) {
+      if (!date || isNaN(date)) return '—';
+      var s = Math.floor((Date.now() - date) / 1000);
+      if (s < 60)    return 'just now';
+      if (s < 3600)  return Math.floor(s / 60) + 'm ago';
+      if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+      return Math.floor(s / 86400) + 'd ago';
+    }
+
+    // ── Init ──────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function() {
+      loadClients();
+      loadAdminErrors();
+    });
+  </script>
+</body>
+</html>

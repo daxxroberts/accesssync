@@ -244,3 +244,33 @@ body {
   .sub-nav     { padding: 0 32px; }
   .dash-content { padding: 32px 24px; }
 }
+
+/* ── Jump-to-fix highlight & tooltip ──────────────────────────── */
+@keyframes jump-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(79,110,247,.45); border-color: var(--brand); }
+  60%  { box-shadow: 0 0 0 10px rgba(79,110,247,0); border-color: var(--brand); }
+  100% { box-shadow: 0 0 0 0 rgba(79,110,247,0); border-color: var(--border); }
+}
+.jump-highlight { animation: jump-pulse 2.5s ease-out forwards; border-color: var(--brand) !important; border-radius: 8px; }
+.jump-tip {
+  position: absolute; top: -52px; left: 0; right: 0;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--brand); color: #fff;
+  padding: 8px 10px 8px 12px; border-radius: 8px;
+  font-size: 11px; font-weight: 600; line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(79,110,247,.35); z-index: 200;
+  animation: fadeInDown .2s ease;
+}
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.jump-tip-arrow {
+  position: absolute; bottom: -7px; left: 18px;
+  width: 0; height: 0;
+  border-left: 7px solid transparent; border-right: 7px solid transparent;
+  border-top: 7px solid var(--brand);
+}
+.jump-tip-text { flex: 1; }
+.jump-tip-close { margin-left: auto; background: none; border: none; color: rgba(255,255,255,.8); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; }
+.jump-tip-close:hover { color: #fff; }

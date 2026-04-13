@@ -17,6 +17,7 @@ const wixConnector = require('./adapters/wix/wix-connector');
 const memberSyncApi = require('./core/member-sync-api');
 const db = require('./db');
 const { startWorker } = require('./core/queue-worker');
+const { log } = require('./core/logger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -56,31 +57,26 @@ app.get('/member/access-status', async (req, res) => {
 
 // --- Boot Server ---
 const serverInstance = app.listen(PORT, () => {
-    console.log(`[AccessSync Core Engine] Server listening on port ${PORT}`);
-    console.log(`[AccessSync Core Engine] Environment: ${process.env.NODE_ENV}`);
-
-    // Start BullMQ worker (DR-012)
-    // Worker connects to Redis and begins consuming from 'accesssync-events' queue
+    log.info('server.started', { port: PORT, env: process.env.NODE_ENV });
     startWorker();
 });
 
 // --- Graceful Shutdown (OI-09) ---
 process.on('SIGTERM', () => {
-    console.log('[AccessSync] SIGTERM received — graceful shutdown starting.');
+    log.info('server.shutdown.start', {});
     serverInstance.close(async () => {
-        console.log('[AccessSync] HTTP server closed.');
+        log.info('server.shutdown.http_closed', {});
         try {
             const { pool } = require('./db');
             await pool.end();
-            console.log('[AccessSync] DB pool closed.');
+            log.info('server.shutdown.db_closed', {});
         } catch (e) {
-            console.error('[AccessSync] DB pool close error:', e.message);
+            log.error('server.shutdown.db_close_failed', {}, e);
         }
         process.exit(0);
     });
-    // Force exit after 15s if graceful shutdown stalls
     setTimeout(() => {
-        console.error('[AccessSync] Graceful shutdown timeout. Force exiting.');
+        log.critical('server.shutdown.timeout', {});
         process.exit(1);
     }, 15000).unref();
 });

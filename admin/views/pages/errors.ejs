@@ -1,0 +1,474 @@
+<%#
+  @file errors.ejs
+  @layer admin/pages
+  @route /errors
+  @role error-management
+  @data GET /operator/:clientId/errors, GET /operator/:clientId/errors/summary
+        POST /operator/:clientId/errors/:id/retry, POST /operator/:clientId/errors/:id/dismiss
+        POST /admin/errors/bulk-retry
+  @tab Errors
+%>
+<!DOCTYPE html>
+<html lang="en" data-mode="light">
+<head>
+  <%- include('../partials/head', { title: 'Operator Dashboard: Errors' }) %>
+  <style>
+    .page { padding: 18px 16px 60px; display: flex; flex-direction: column; gap: 14px; max-width: 900px; margin: 0 auto; }
+
+    /* ── Page header ── */
+    .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .page-header-left { display: flex; align-items: center; gap: 10px; }
+    .page-title { font-size: 20px; font-weight: 800; letter-spacing: -0.4px; color: var(--text); margin: 0; }
+
+    /* ── Filter bar ── */
+    .filter-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .filter-tabs { display: flex; gap: 4px; }
+    .filter-tab { padding: 5px 14px; border: 1px solid var(--border); border-radius: 20px; font-family: inherit; font-size: 11px; font-weight: 600; color: var(--text2); cursor: pointer; background: transparent; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+    .filter-tab.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+    .filter-tab:hover:not(.active) { background: var(--surface); }
+    .filter-select { padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 11px; color: var(--text2); background: var(--card); cursor: pointer; }
+
+    /* ── Error card ── */
+    .err-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+    .err-card-main { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; }
+    .err-card-body { flex: 1; min-width: 0; }
+    .err-card-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .err-card-context { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+    .err-sep { font-size: 10px; color: var(--muted); }
+    .err-title-sep { font-size: 11px; color: var(--muted); margin: 0 5px; font-weight: 400; }
+    .err-tag-type { background: var(--surface); color: var(--muted); border: 1px solid var(--border); font-size: 10px; padding: 2px 7px; border-radius: 10px; }
+    .err-card-msg { font-size: 12px; color: var(--text2); line-height: 1.6; margin-bottom: 6px; }
+    .err-card-consequence  { font-size: 11px; color: var(--red, #ef4444); font-weight: 600; margin-bottom: 5px; line-height: 1.5; }
+    .err-card-reason       { font-size: 11px; color: var(--muted); font-style: italic; margin-bottom: 6px; line-height: 1.5; }
+    .err-card-directions   { font-size: 11px; color: var(--text2); margin-bottom: 8px; line-height: 1.7; background: var(--surface); border-left: 3px solid var(--brand); padding: 6px 10px; border-radius: 0 6px 6px 0; }
+    .err-card-directions strong { color: var(--text); font-weight: 700; }
+    .err-card-cta { margin-bottom: 4px; }
+    .err-card-meta { font-size: 10px; color: var(--muted); }
+    .cta-link { font-size: 11px; font-weight: 600; color: var(--brand); text-decoration: none; }
+    .cta-link:hover { text-decoration: underline; }
+    .cta-muted { font-size: 11px; color: var(--muted); }
+
+    /* ── Card actions row ── */
+    .err-card-actions { display: flex; gap: 6px; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; align-items: center; }
+    .btn-jump { padding: 5px 12px; border: none; border-radius: 6px; background: var(--brand); color: #fff; font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; transition: opacity .15s; }
+    .btn-jump:hover { opacity: .85; }
+    .btn-retry, .btn-dismiss { padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer; background: transparent; transition: background 0.15s; }
+    .btn-retry { color: var(--brand); border-color: var(--brand); }
+    .btn-retry:hover:not(:disabled) { background: var(--brand); color: #fff; }
+    .btn-dismiss { color: var(--muted); }
+    .btn-dismiss:hover:not(:disabled) { background: var(--surface); }
+    .btn-retry:disabled, .btn-dismiss:disabled { opacity: 0.4; cursor: default; }
+    .btn-details { padding: 5px 10px; background: transparent; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 10px; font-weight: 500; color: var(--muted); cursor: pointer; margin-left: auto; }
+    .btn-details:hover { background: var(--surface); }
+
+    /* ── Expandable details panel ── */
+    .err-details-panel { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg); }
+    .details-row { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+    .details-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+    .details-val { font-size: 12px; color: var(--text2); }
+    .details-json { font-size: 11px; color: var(--text2); background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; margin: 0; }
+
+    /* ── Dot colors ── */
+    .err-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red, #ef4444); box-shadow: 0 0 5px rgba(239,68,68,0.4); flex-shrink: 0; margin-top: 3px; }
+    .err-dot.sage { background: var(--sage-dark); box-shadow: 0 0 5px rgba(34,197,94,0.3); }
+
+    /* ── Empty / loading states ── */
+    .empty-state { display: flex; justify-content: center; align-items: center; padding: 48px 16px; }
+    .loading-state { padding: 24px 16px; font-size: 12px; color: var(--muted); text-align: center; }
+
+    /* ── Retry-all button (reuse add-btn pattern from members) ── */
+    .retry-all-btn { padding: 8px 16px; border: none; border-radius: 8px; font-family: inherit; font-size: 12px; font-weight: 700; background: var(--brand); color: #fff; cursor: pointer; transition: opacity 0.15s; }
+    .retry-all-btn:hover { opacity: 0.88; }
+    .retry-all-btn:disabled { opacity: 0.4; cursor: default; }
+
+    @media (min-width: 640px) {
+      .err-card-actions { flex-wrap: nowrap; }
+      .filter-bar { flex-wrap: nowrap; }
+    }
+  </style>
+</head>
+<body data-session-role="<%= sessionRole %>" data-login-url="<%= loginUrl || '' %>">
+
+  <%- include('../partials/topbar') %>
+  <%- include('../partials/subnav', { activeTab: 'errors' }) %>
+
+  <div class="page">
+
+    <!-- Page header -->
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1 class="page-title">Errors</h1>
+        <span class="count" id="err-total-badge" style="background:var(--red,#ef4444);color:#fff;">—</span>
+      </div>
+      <button class="retry-all-btn" id="btn-retry-all" onclick="retryAll()">Retry all active</button>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <div class="filter-tabs" id="filter-tabs">
+        <button class="filter-tab" data-filter="failed" onclick="setFilter('failed')">Active</button>
+        <button class="filter-tab" data-filter="resolved" onclick="setFilter('resolved')">Resolved</button>
+        <button class="filter-tab" data-filter="all" onclick="setFilter('all')">All</button>
+      </div>
+      <select class="filter-select" id="filter-location" onchange="applyFilters()">
+        <option value="">All locations</option>
+      </select>
+      <select class="filter-select" id="filter-code" onchange="applyFilters()">
+        <option value="">All error types</option>
+      </select>
+    </div>
+
+    <!-- Error list -->
+    <div id="error-list">
+      <div class="loading-state">Loading errors…</div>
+    </div>
+
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/operator-nav.js"></script>
+  <script>
+    var _clientId      = new URLSearchParams(window.location.search).get('clientId') || '';
+    var _currentFilter = 'failed';
+    var _filterLocation = '';
+    var _filterCode    = '';
+    var _errors        = [];
+    var _pollTimer     = null;
+
+    // ── Error code → human label ──────────────────────────────────
+    var CODE_LABELS = {
+      HARDWARE_KEY_INVALID:        'Invalid API Key',
+      HARDWARE_KEY_PERMISSIONS:    'API Key Permissions',
+      HARDWARE_KEY_MISSING:        'No API Key Connected',
+      HARDWARE_RESOURCE_NOT_FOUND: 'Door Group Not Found',
+      HARDWARE_VALIDATION_ERROR:   'Validation Error',
+      HARDWARE_API_ERROR:          'Hardware API Error',
+      WIX_KEY_INVALID:             'Wix API Key Invalid',
+      WIX_KEY_MISSING:             'No Wix API Key',
+      WIX_KEY_PERMISSIONS:         'Wix Key Permissions',
+      PLAN_NOT_MAPPED:             'Plan Not Mapped',
+      SUBSCRIPTION_LAPSED:         'Subscription Lapsed',
+    };
+    function getCodeLabel(code) { return code ? (CODE_LABELS[code] || code) : null; }
+
+    // ── ERROR_MAP — jumpUrl + reason + consequence ──────────────────
+    // jumpUrl: destination with jumpTo= (element ID) and tip= (tooltip text).
+    // Location-specific errors use LOCID placeholder replaced at render time with e.location_id.
+    var ERROR_MAP = {
+      'HARDWARE_KEY_INVALID': {
+        jumpUrl:     '/locations?clientId=' + _clientId + '&jumpTo=keyform-LOCID&tip=Paste+a+new+hardware+API+key+here',
+        reason:      'This usually happens when an API key is regenerated in Kisi, or when the Kisi account password is changed — both invalidate existing keys.',
+        consequence: 'Affected members cannot be provisioned or have their access changed until the key is updated.',
+      },
+      'HARDWARE_KEY_PERMISSIONS': {
+        jumpUrl:     '/locations?clientId=' + _clientId + '&jumpTo=keyform-LOCID&tip=Replace+this+key+with+one+that+has+full+user+management+permissions',
+        reason:      'The key is valid but was generated with limited scope, or the Kisi account it belongs to is on a tier that restricts user management.',
+        consequence: 'AccessSync can connect to Kisi but cannot add, remove, or modify member access.',
+      },
+      'HARDWARE_KEY_MISSING': {
+        jumpUrl:     '/locations?clientId=' + _clientId + '&jumpTo=keyform-LOCID&tip=No+hardware+API+key+yet+%E2%80%94+add+one+here',
+        reason:      'No API key has been entered for this location yet. This is required before AccessSync can communicate with your door system.',
+        consequence: 'No access provisioning will happen at this location until a key is added.',
+      },
+      'HARDWARE_RESOURCE_NOT_FOUND': {
+        jumpUrl:     '/plan-mapping?clientId=' + _clientId + '&jumpTo=unmappedSection&tip=Re-map+this+plan+to+an+active+door+group',
+        reason:      'The door group this plan was mapped to was deleted or renamed in Kisi. AccessSync still has the old reference.',
+        consequence: 'Members purchasing this plan will not receive door access until the plan is re-mapped to an existing group.',
+      },
+      'HARDWARE_VALIDATION_ERROR': {
+        jumpUrl:     null,
+        reason:      'Kisi rejected the request due to unexpected data — this can happen if a member record is in an unusual state or a group assignment conflicts with an existing rule.',
+        consequence: 'This member\'s access change did not complete. A retry will attempt the same operation again.',
+      },
+      'HARDWARE_API_ERROR': {
+        jumpUrl:     null,
+        reason:      'Kisi returned an unexpected server-side error. This is usually a temporary issue on Kisi\'s end, not a configuration problem.',
+        consequence: 'AccessSync will retry automatically. If this keeps happening, Kisi may be experiencing an outage.',
+      },
+      'WIX_KEY_INVALID': {
+        jumpUrl:     '/locations?clientId=' + _clientId + '&jumpTo=wix-key-form&tip=Your+Wix+API+key+is+invalid+%E2%80%94+replace+it+here',
+        reason:      'Wix API keys expire or get invalidated when permissions are changed in the Wix dashboard, or when the key is manually revoked.',
+        consequence: 'AccessSync cannot read new plan purchases from Wix. Members who buy plans will not be provisioned until this is fixed.',
+      },
+      'WIX_KEY_MISSING': {
+        jumpUrl:     '/locations?clientId=' + _clientId + '&jumpTo=wix-key-form&tip=No+Wix+API+key+connected+%E2%80%94+add+one+here',
+        reason:      'A Wix API key hasn\'t been connected for this account yet.',
+        consequence: 'AccessSync cannot read any plan data from Wix. No provisioning will happen until a key is added.',
+      },
+      'WIX_KEY_PERMISSIONS': {
+        jumpUrl:     '/locations?clientId=' + _clientId + '&jumpTo=wix-key-form&tip=Key+is+saved+but+missing+Pricing+Plans+read+permission+%E2%80%94+replace+it',
+        reason:      'The Wix API key was generated without the Pricing Plans or Bookings read permissions enabled.',
+        consequence: 'AccessSync can connect to Wix but cannot read plan purchases, so no provisioning is triggered.',
+      },
+      'PLAN_NOT_MAPPED': {
+        jumpUrl:     '/plan-mapping?clientId=' + _clientId + '&jumpTo=unmappedSection&tip=This+plan+needs+a+door+group+assigned',
+        reason:      'A member bought a plan that exists in Wix but hasn\'t been linked to a door group in AccessSync yet.',
+        consequence: 'This member paid for access but has not been let into the door system. They are waiting.',
+      },
+      'SUBSCRIPTION_LAPSED': {
+        jumpUrl:     '/locations?clientId=' + _clientId + '&jumpTo=loc-LOCID&tip=This+location%27s+AccessSync+subscription+is+lapsed',
+        reason:      'The AccessSync subscription for this location is no longer active.',
+        consequence: 'All access provisioning at this location is paused. Existing members keep their access, but new grants and revokes are not processed.',
+      },
+    };
+    function errorJumpUrl(code, locationId) {
+      if (!code || !ERROR_MAP[code] || !ERROR_MAP[code].jumpUrl) return null;
+      return ERROR_MAP[code].jumpUrl.replace(/LOCID/g, locationId || '');
+    }
+    function errorReason(code)      { return (code && ERROR_MAP[code]) ? ERROR_MAP[code].reason      : null; }
+    function errorConsequence(code) { return (code && ERROR_MAP[code]) ? ERROR_MAP[code].consequence : null; }
+
+    // ── Data loading ───────────────────────────────────────────────
+    function loadErrors() {
+      if (!_clientId) return;
+      var params = new URLSearchParams({ limit: 100 });
+      if (_currentFilter !== 'all') params.set('status', _currentFilter);
+      apiFetch('/operator/' + _clientId + '/errors?' + params.toString())
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          _errors = d.errors || [];
+          applyFilters();
+          updateBadge(d.total || _errors.length);
+        })
+        .catch(function(e) { console.error('[errors] load failed:', e); });
+    }
+
+    function loadSummary() {
+      if (!_clientId) return;
+      apiFetch('/operator/' + _clientId + '/errors/summary')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          populateLocationFilter(d.by_location || []);
+          populateCodeFilter(d.by_code || []);
+          updateBadge(d.total || 0);
+        })
+        .catch(function(e) { console.error('[errors] summary load failed:', e); });
+    }
+
+    // ── Filters ───────────────────────────────────────────────────
+    function setFilter(f) {
+      _currentFilter = f;
+      document.querySelectorAll('.filter-tab').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.filter === f);
+      });
+      loadErrors();
+    }
+
+    function applyFilters() {
+      var filtered = _errors.filter(function(e) {
+        if (_filterLocation && e.location_id !== _filterLocation) return false;
+        if (_filterCode     && e.error_code  !== _filterCode)     return false;
+        return true;
+      });
+      renderErrors(filtered);
+    }
+
+    document.getElementById('filter-location').addEventListener('change', function() {
+      _filterLocation = this.value;
+      applyFilters();
+    });
+    document.getElementById('filter-code').addEventListener('change', function() {
+      _filterCode = this.value;
+      applyFilters();
+    });
+
+    function populateLocationFilter(locations) {
+      var sel = document.getElementById('filter-location');
+      // Clear existing options (keep "All locations" placeholder)
+      while (sel.options.length > 1) sel.remove(1);
+      locations.forEach(function(l) {
+        var opt = document.createElement('option');
+        opt.value = l.location_id || '';
+        opt.textContent = (l.location_name || 'Unknown') + ' (' + l.count + ')';
+        sel.appendChild(opt);
+      });
+    }
+
+    function populateCodeFilter(codes) {
+      var sel = document.getElementById('filter-code');
+      while (sel.options.length > 1) sel.remove(1);
+      codes.forEach(function(c) {
+        var opt = document.createElement('option');
+        opt.value = c.error_code || '';
+        opt.textContent = (getCodeLabel(c.error_code) || c.error_code || 'Unknown') + ' (' + c.count + ')';
+        sel.appendChild(opt);
+      });
+    }
+
+    function updateBadge(total) {
+      var badge = document.getElementById('err-total-badge');
+      if (!badge) return;
+      badge.textContent = total;
+      badge.style.background = total > 0 ? 'var(--red, #ef4444)' : 'var(--sage-dark)';
+    }
+
+    // ── Rendering ─────────────────────────────────────────────────
+    function renderErrors(errors) {
+      var container = document.getElementById('error-list');
+      if (!errors.length) {
+        container.innerHTML =
+          '<div class="empty-state">' +
+            '<span class="no-err-badge">' +
+              '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              'All clear — no errors here' +
+            '</span>' +
+          '</div>';
+        return;
+      }
+      container.innerHTML = errors.map(renderErrorCard).join('');
+    }
+
+    function renderErrorCard(e) {
+      var isResolved    = e.status === 'resolved';
+      var dotClass      = 'err-dot' + (isResolved ? ' sage' : '');
+      var timeLabel     = timeAgo(new Date(e.last_occurred_at || e.created_at));
+      var recurrence    = (e.occurred_count > 1)
+        ? 'Happened ' + e.occurred_count + 'x — last ' + timeLabel
+        : timeLabel;
+
+      // Message: prefer DB-stored user_message, fall back to plain_message
+      var msg = e.user_message || e.plain_message || e.error_reason || 'An error occurred.';
+
+      var reason      = errorReason(e.error_code);
+      var consequence = errorConsequence(e.error_code);
+      var jumpUrl     = errorJumpUrl(e.error_code, e.location_id);
+
+      var rawData = JSON.stringify({
+        http_status:  e.http_status  || null,
+        raw_api_body: e.raw_api_body || null,
+        payload:      e.payload      || null,
+      });
+
+      return '<div class="err-card" data-id="' + esc(e.id) + '">' +
+        '<div class="err-card-main">' +
+          '<div class="' + dotClass + '"></div>' +
+          '<div class="err-card-body">' +
+            '<div class="err-card-title">' +
+              (e.plan_name
+                ? esc(e.plan_name) + (e.door_name ? '<span class="err-title-sep">→</span>' + esc(e.door_name) : '')
+                : esc(getCodeLabel(e.error_code) || e.event_type || 'Error')) +
+            '</div>' +
+            '<div class="err-card-context">' +
+              (e.plan_name ? '<span class="err-tag err-tag-type">' + esc(getCodeLabel(e.error_code) || e.event_type || '') + '</span>' : '') +
+            '</div>' +
+            '<div class="err-card-msg">' + esc(msg) + '</div>' +
+            (consequence ? '<div class="err-card-consequence">⚠ ' + esc(consequence) + '</div>' : '') +
+            (reason      ? '<div class="err-card-reason">Why: ' + esc(reason) + '</div>' : '') +
+            '<div class="err-card-meta">' + esc(recurrence) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="err-card-actions">' +
+          (jumpUrl ? '<button class="btn-jump" onclick="jumpToFix(\'' + esc(jumpUrl) + '\')">Jump to Fix ↗</button>' : '') +
+          '<button class="btn-retry"' + (isResolved ? ' disabled' : '') + ' onclick="retryOne(\'' + esc(e.id) + '\', this)">Retry</button>' +
+          '<button class="btn-dismiss"' + (isResolved ? ' disabled' : '') + ' onclick="dismissOne(\'' + esc(e.id) + '\', this)">Dismiss</button>' +
+          '<button class="btn-details" onclick="toggleDetails(\'' + esc(e.id) + '\')" data-raw="' + esc(rawData) + '">▼ Details</button>' +
+        '</div>' +
+        '<div class="err-details-panel" id="details-' + esc(e.id) + '" style="display:none;"></div>' +
+      '</div>';
+    }
+
+    // ── Details toggle ────────────────────────────────────────────
+    function toggleDetails(id) {
+      var panel = document.getElementById('details-' + id);
+      var card  = document.querySelector('[data-id="' + id + '"]');
+      var btn   = card ? card.querySelector('.btn-details') : null;
+      if (!panel) return;
+
+      if (panel.style.display === 'none') {
+        var raw = {};
+        try { raw = JSON.parse((btn && btn.dataset.raw) || '{}'); } catch(e) {}
+        panel.innerHTML =
+          '<div class="details-row">' +
+            '<span class="details-label">HTTP Status</span>' +
+            '<span class="details-val">' + esc(String(raw.http_status || '—')) + '</span>' +
+          '</div>' +
+          (raw.raw_api_body
+            ? '<div class="details-row"><span class="details-label">API Response</span>' +
+              '<pre class="details-json">' + esc(JSON.stringify(raw.raw_api_body, null, 2)) + '</pre></div>'
+            : '') +
+          (raw.payload
+            ? '<div class="details-row"><span class="details-label">Event Payload</span>' +
+              '<pre class="details-json">' + esc(JSON.stringify(raw.payload, null, 2)) + '</pre></div>'
+            : '');
+        panel.style.display = 'block';
+        if (btn) btn.textContent = '▲ Details';
+      } else {
+        panel.style.display = 'none';
+        if (btn) btn.textContent = '▼ Details';
+      }
+    }
+
+    // ── Actions ───────────────────────────────────────────────────
+    function retryOne(id, btn) {
+      btn.disabled = true; btn.textContent = '…';
+      apiFetch('/operator/' + _clientId + '/errors/' + id + '/retry', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function() { showToast('success', 'Requeued — AccessSync will retry provisioning'); loadErrors(); loadSummary(); })
+        .catch(function() { showToast('error', 'Retry failed'); btn.disabled = false; btn.textContent = 'Retry'; });
+    }
+
+    function dismissOne(id, btn) {
+      btn.disabled = true; btn.textContent = '…';
+      apiFetch('/operator/' + _clientId + '/errors/' + id + '/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: '' }),
+      })
+        .then(function(r) { return r.json(); })
+        .then(function() { showToast('success', 'Dismissed'); loadErrors(); loadSummary(); })
+        .catch(function() { showToast('error', 'Dismiss failed'); btn.disabled = false; btn.textContent = 'Dismiss'; });
+    }
+
+    function retryAll() {
+      var activeIds = _errors.filter(function(e) { return e.status === 'failed'; }).map(function(e) { return e.id; });
+      if (!activeIds.length) { showToast('info', 'No active errors to retry'); return; }
+      var btn = document.getElementById('btn-retry-all');
+      if (btn) { btn.disabled = true; btn.textContent = 'Retrying…'; }
+      apiFetch('/admin/errors/bulk-retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: activeIds }),
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          showToast('success', 'Queued ' + (d.queued || 0) + ' for retry');
+          loadErrors(); loadSummary();
+        })
+        .catch(function() { showToast('error', 'Bulk retry failed'); })
+        .finally(function() { if (btn) { btn.disabled = false; btn.textContent = 'Retry all active'; } });
+    }
+
+    // ── Polling ───────────────────────────────────────────────────
+    function startPolling() {
+      if (_pollTimer) return;
+      _pollTimer = setInterval(loadErrors, 30000);
+      if (!window._pollTimers) window._pollTimers = [];
+      window._pollTimers.push(_pollTimer);
+    }
+
+    // ── Time ago helper ───────────────────────────────────────────
+    function timeAgo(date) {
+      if (!date || isNaN(date)) return '—';
+      var s = Math.floor((Date.now() - date) / 1000);
+      if (s < 60)   return 'just now';
+      if (s < 3600) return Math.floor(s / 60) + 'm ago';
+      if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+      return Math.floor(s / 86400) + 'd ago';
+    }
+
+    // ── Init ──────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function() {
+      // Set default active filter tab
+      setFilter('failed');
+      if (!_clientId) {
+        document.getElementById('error-list').innerHTML =
+          '<div class="loading-state">No client selected — add ?clientId= to the URL.</div>';
+        return;
+      }
+      loadSummary();
+      startPolling();
+    });
+  </script>
+</body>
+</html>
