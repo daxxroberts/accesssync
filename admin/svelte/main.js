@@ -15,6 +15,7 @@
  *   6. ClientsPanel     ✅ mounted
  */
 
+import { mount } from 'svelte';
 import QueuePanel       from './panels/QueuePanel.svelte';
 import WebhookPanel     from './panels/WebhookPanel.svelte';
 import DebugCenterPanel from './panels/DebugCenterPanel.svelte';
@@ -23,19 +24,19 @@ import MemberSyncPanel  from './panels/MemberSyncPanel.svelte';
 import ClientsPanel     from './panels/ClientsPanel.svelte';
 
 const queueTarget = document.getElementById('svelte-queue');
-if (queueTarget) new QueuePanel({ target: queueTarget });
+if (queueTarget) mount(QueuePanel, { target: queueTarget });
 
 const webhookTarget = document.getElementById('svelte-webhooks');
-if (webhookTarget) new WebhookPanel({ target: webhookTarget });
+if (webhookTarget) mount(WebhookPanel, { target: webhookTarget });
 
 const debugTarget = document.getElementById('svelte-debug');
-if (debugTarget) new DebugCenterPanel({ target: debugTarget });
+if (debugTarget) mount(DebugCenterPanel, { target: debugTarget });
 
 const errorsTarget = document.getElementById('svelte-errors');
-if (errorsTarget) new ErrorQueuePanel({ target: errorsTarget });
+if (errorsTarget) mount(ErrorQueuePanel, { target: errorsTarget });
 
 const membersyncTarget = document.getElementById('svelte-membersync');
-if (membersyncTarget) new MemberSyncPanel({ target: membersyncTarget });
+if (membersyncTarget) mount(MemberSyncPanel, { target: membersyncTarget });
 
 const clientsTarget = document.getElementById('svelte-clients');
-if (clientsTarget) new ClientsPanel({ target: clientsTarget });
+if (clientsTarget) mount(ClientsPanel, { target: clientsTarget });
