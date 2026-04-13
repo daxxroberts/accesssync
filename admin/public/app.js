@@ -192,7 +192,7 @@ function showGoogleFallbackButton(clientId) {
   btn.addEventListener('click', () => {
     const redirectUri = encodeURIComponent(window.location.origin + '/auth/google/callback');
     const scope = encodeURIComponent('openid email profile');
-    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&access_type=offline&prompt=select_account`;
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&prompt=select_account`;
     console.log('[Auth] Redirecting to Google OAuth...');
     window.location.href = url;
   });

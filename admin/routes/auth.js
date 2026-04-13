@@ -12,7 +12,10 @@ const router  = require('express').Router();
 const { OAuth2Client } = require('google-auth-library');
 const { signToken, requireAuth } = require('../middleware/auth');
 
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const client = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET
+);
 
 // ── GET /auth/config ────────────────────────────────────────────
 // Returns Google Client ID to the frontend so GIS can initialize.
