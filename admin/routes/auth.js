@@ -116,6 +116,29 @@ router.get('/google/callback', async (req, res) => {
   }
 });
 
+// ── POST /auth/pin ──────────────────────────────────────────────
+router.post('/pin', (req, res) => {
+  const { pin } = req.body;
+  const ownerPin = process.env.OWNER_PIN;
+  if (!ownerPin) {
+    console.error('[Admin Auth] OWNER_PIN env var not set.');
+    return res.status(500).json({ error: 'PIN auth not configured' });
+  }
+  if (!pin || pin !== ownerPin) {
+    console.warn('[Admin Auth] Invalid PIN attempt');
+    return res.status(401).json({ error: 'Invalid PIN' });
+  }
+  const token = signToken();
+  res.cookie('adminToken', token, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge:   24 * 60 * 60 * 1000,
+  });
+  console.log('[Admin Auth] PIN login success');
+  res.json({ ok: true });
+});
+
 // ── POST /auth/logout ───────────────────────────────────────────
 router.post('/logout', (req, res) => {
   res.clearCookie('adminToken');

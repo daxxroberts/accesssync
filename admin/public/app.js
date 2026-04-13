@@ -211,6 +211,36 @@ function hideLoginError() {
   document.getElementById('login-error').classList.add('hidden');
 }
 
+// ── PIN Auth ───────────────────────────────────────────────────────
+async function submitPin() {
+  const pin = document.getElementById('pin-input').value.trim();
+  if (!pin) return;
+  hideLoginError();
+  try {
+    const res = await fetch('/auth/pin', {
+      method:      'POST',
+      credentials: 'include',
+      headers:     { 'Content-Type': 'application/json' },
+      body:        JSON.stringify({ pin }),
+    });
+    if (res.ok) {
+      document.getElementById('pin-input').value = '';
+      showDashboard();
+      initDashboard();
+    } else {
+      const json = await res.json().catch(() => ({}));
+      showLoginError(json.error === 'Invalid PIN' ? 'Incorrect PIN.' : 'Sign-in failed. Try again.');
+    }
+  } catch {
+    showLoginError('Network error. Try again.');
+  }
+}
+
+document.getElementById('pin-submit').addEventListener('click', submitPin);
+document.getElementById('pin-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submitPin();
+});
+
 document.getElementById('logout-btn').addEventListener('click', async () => {
   await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
   stopPolling();

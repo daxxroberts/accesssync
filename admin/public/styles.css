@@ -149,6 +149,46 @@ code, .code-sm {
   max-width: 288px;
 }
 
+.login-divider {
+  width: 288px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 4px 0;
+  position: relative;
+}
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 42%;
+  height: 1px;
+  background: var(--border);
+}
+.login-divider::before { left: 0; }
+.login-divider::after  { right: 0; }
+
+.login-pin-wrap {
+  width: 288px;
+}
+.login-pin-wrap input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 18px;
+  letter-spacing: 6px;
+  text-align: center;
+  background: var(--surface);
+  color: var(--text);
+  box-sizing: border-box;
+}
+.login-pin-wrap input:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+
 .login-google-wrap {
   display: flex;
   flex-direction: column;
