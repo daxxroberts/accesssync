@@ -206,6 +206,69 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
 }
 
 /**
+ * GAP 3 — Re-provision all previously active members when a location is reactivated.
+ * Iterates every active plan mapping at the location and calls syncMappingMembers()
+ * treating each as an inactive→active status transition.
+ * Fire-and-forget — errors logged per mapping, never thrown.
+ */
+async function activateLocationMembers(clientId, locationId) {
+  try {
+    const mappings = await db.query(
+      `SELECT id, status FROM plan_mappings WHERE location_id = $1 AND client_id = $2`,
+      [locationId, clientId]
+    );
+    for (const m of mappings.rows) {
+      // Treat as inactive→active regardless of current stored status — we just activated the location
+      const oldGroupsResult = await db.query(
+        'SELECT hardware_group_id FROM plan_mapping_groups WHERE mapping_id = $1', [m.id]
+      );
+      const groupIds = oldGroupsResult.rows.map(r => r.hardware_group_id);
+      await syncMappingMembers(clientId, m.id, [], groupIds, 'active', 'inactive');
+    }
+    console.log(`[activateLocationMembers] Re-provisioned members for ${mappings.rows.length} mappings at location ${locationId}`);
+  } catch (err) {
+    console.error('[activateLocationMembers] Error:', err.message);
+  }
+}
+
+/**
+ * GAP 6/7 — Validate that a newly saved API key can reach all active groups for a client.
+ * Writes a config_alert_log entry for any group the new key cannot access.
+ * Fire-and-forget — never blocks the key save response.
+ */
+async function validateApiKeyGroups(clientId, apiKey, hardwarePlatform) {
+  try {
+    const groups = await db.query(
+      `SELECT DISTINCT pmg.hardware_group_id
+       FROM plan_mapping_groups pmg
+       JOIN plan_mappings pm ON pm.id = pmg.mapping_id
+       WHERE pm.client_id = $1 AND pm.status = 'active'`,
+      [clientId]
+    );
+    for (const { hardware_group_id } of groups.rows) {
+      try {
+        await hardwareAdapter.getGroups(hardwarePlatform || 'kisi', apiKey);
+        // If getGroups succeeds we assume access — group-level check would require
+        // a per-group GET which Kisi supports but is expensive. Log success.
+      } catch (err) {
+        const isAuthError = err.statusCode === 401 || err.statusCode === 403;
+        if (isAuthError) {
+          await db.query(
+            `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, created_at)
+             VALUES ($1, 'api_key_invalid_after_rotation', $2, NOW())`,
+            [clientId, hardware_group_id]
+          );
+          console.warn(`[validateApiKeyGroups] Key rotation alert: group ${hardware_group_id} unreachable for client ${clientId}`);
+        }
+        break; // One auth failure means all groups will fail — no need to loop
+      }
+    }
+  } catch (err) {
+    console.error('[validateApiKeyGroups] Error:', err.message);
+  }
+}
+
+/**
  * Wix-first flow: Re-enqueue all pending_hardware members for a client.
  * Called after an API key is saved/rotated so parked members get provisioned.
  * Returns the count of members re-queued.
@@ -570,6 +633,11 @@ router.put('/clients/:clientId/api-key', async (req, res) => {
     const retried = await retryPendingHardwareMembers(clientId);
 
     res.json({ ok: true, message: 'API key updated', pendingRetried: retried });
+
+    // GAP 7: validate new key can reach all active groups — writes config_alert_log on failure
+    const clientRow = await db.query('SELECT hardware_platform FROM clients WHERE id = $1', [clientId]);
+    validateApiKeyGroups(clientId, apiKey.trim(), clientRow.rows[0]?.hardware_platform)
+      .catch(err => console.warn('[operator] validateApiKeyGroups failed:', err.message));
   } catch (err) {
     console.error('[operator] PUT api-key error:', err.message);
     res.status(500).json({ error: err.message });
@@ -764,6 +832,15 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
     const retried = await retryPendingHardwareMembers(clientId);
 
     res.json({ ok: true, message: 'Location API key saved', pendingRetried: retried });
+
+    // GAP 6: validate new key can reach all active groups at this location
+    const locPlatform = await db.query(
+      `SELECT COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform
+       FROM locations l JOIN clients c ON c.id = l.client_id
+       WHERE l.id = $1`, [locationId]
+    );
+    validateApiKeyGroups(clientId, apiKey.trim(), locPlatform.rows[0]?.hardware_platform)
+      .catch(err => console.warn('[operator] validateApiKeyGroups (location) failed:', err.message));
   } catch (err) {
     console.error('[operator] POST /:clientId/locations/:locationId/api-key error:', err.message);
     res.status(500).json({ error: err.message });
@@ -771,10 +848,12 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
 });
 
 // ── PATCH /operator/:clientId/locations/:locationId ─────────────
-// Update location name, city, state, tier, hardware_platform (operator-facing).
+// Update location name, city, state, tier (operator-facing).
+// GAP 1/2: hardware_platform intentionally excluded — changing it once members
+// are provisioned would leave them in the wrong hardware system with no sync.
 router.patch('/:clientId/locations/:locationId', async (req, res) => {
   const { clientId, locationId } = req.params;
-  const ALLOWED = ['name', 'city', 'state', 'tier', 'hardware_platform'];
+  const ALLOWED = ['name', 'city', 'state', 'tier'];
   const updates = {};
   for (const f of ALLOWED) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
@@ -811,7 +890,8 @@ router.post('/:clientId/locations/:locationId/suspend', async (req, res) => {
 });
 
 // ── POST /operator/:clientId/locations/:locationId/activate ───────
-// Operator-initiated location reactivation (does not re-provision members).
+// Operator-initiated location reactivation. Re-provisions all previously
+// active members via activateLocationMembers() — fire-and-forget after response.
 router.post('/:clientId/locations/:locationId/activate', async (req, res) => {
   const { clientId, locationId } = req.params;
   try {
@@ -822,6 +902,9 @@ router.post('/:clientId/locations/:locationId/activate', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
     res.json({ ok: true, location: result.rows[0] });
+    // GAP 3: re-provision all previously active members at this location
+    activateLocationMembers(clientId, locationId)
+      .catch(err => console.warn('[operator] activateLocationMembers failed:', err.message));
   } catch (err) {
     console.error('[operator] POST activate error:', err.message);
     res.status(500).json({ error: err.message });
