@@ -52,7 +52,7 @@ router.get('/', async (req, res) => {
     );
 
     const countResult = await db.query(
-      `SELECT COUNT(*) FROM error_queue eq WHERE ${conditions.slice(0, -2).join(' AND ')}`,
+      `SELECT COUNT(*) FROM error_queue eq WHERE ${conditions.join(' AND ')}`,
       params.slice(0, -2)
     );
 

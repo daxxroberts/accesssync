@@ -23,6 +23,8 @@
 
   // ── State ──────────────────────────────────────────────────────────
   let statusFilter = 'failed';
+  let clientFilter = '';
+  let clients      = [];
   let limit        = 50;
   let offset       = 0;
   let total        = 0;
@@ -63,12 +65,21 @@
     return res;
   }
 
+  async function loadClients() {
+    try {
+      const res  = await apiFetch('/admin/clients');
+      const json = await res.json();
+      clients = json.data || [];
+    } catch { /* non-fatal */ }
+  }
+
   async function load() {
     loading  = true;
     rows     = [];
     selected = new Set();
     try {
       const params = new URLSearchParams({ status: statusFilter, limit, offset });
+      if (clientFilter) params.set('client_id', clientFilter);
       const res    = await apiFetch(`/admin/errors?${params}`);
       const json   = await res.json();
       rows  = json.data  || [];
@@ -162,7 +173,7 @@
     load();
   }
 
-  onMount(load);
+  onMount(async () => { await loadClients(); load(); });
 </script>
 
 <!-- ── Toolbar ────────────────────────────────────────────────────── -->
@@ -171,6 +182,12 @@
     <option value="failed">Failed</option>
     <option value="resolved">Resolved</option>
     <option value="all">All</option>
+  </select>
+  <select class="select-sm" bind:value={clientFilter} on:change={() => { offset = 0; load(); }}>
+    <option value="">All Clients</option>
+    {#each clients as c}
+      <option value={c.id}>{c.name}</option>
+    {/each}
   </select>
   <button class="btn btn-secondary btn-sm" on:click={load}>Refresh</button>
   <button
