@@ -11,6 +11,7 @@
 --   multi-group-archive-audit.sql — plan_mapping_groups, admin audit, wix_api_key
 --   per-location-config.sql — locations.hardware_platform + notification_email
 --   wix-instance-id.sql — clients.wix_instance_id for portal auth (three-path lookup)
+--   dr-036.sql         — client_subscriptions table + tier_subscription_id FK (DR-036, PENDING OB-70)
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -333,6 +334,45 @@ CREATE TABLE webhook_log (
 );
 
 --------------------------------------------------------
+-- 14. Client Subscriptions (DR-036 — PENDING OB-70 MIGRATION)
+--------------------------------------------------------
+-- Platform-agnostic billing record per operator subscription.
+-- One row per subscription purchase (one per location in V1).
+-- subscription_source mirrors source_platform pattern from DR-021.
+-- UNIQUE(subscription_source, subscription_id) prevents duplicate billing webhook rows.
+-- locations.tier_subscription_id FK links each location to its subscription.
+-- Supersedes: locations.tier, locations.subscription_status, locations.subscription_id,
+--             plan_mappings.tier_name (all become redundant after Phase 2 dual-read).
+-- OB-65: subscription-manager.js (owns all writes to this table)
+-- OB-70: Run migrations/dr-036.sql on Railway before deploying any OB-65–68 code.
+--
+-- NOTE: This table does NOT yet exist in the live Railway DB.
+--       Run migrations/dr-036.sql (Phase 1) to create it and backfill location rows.
+CREATE TABLE client_subscriptions (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id           UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    subscription_source VARCHAR(50) NOT NULL,                           -- 'wix', 'squarespace', 'accesssync', etc. — DR-036
+    subscription_id     TEXT NOT NULL,                                  -- platform-native subscription/order reference ID
+    tier                VARCHAR(50) NOT NULL,                           -- 'Base', 'Pro', 'Connect' — source of truth for tier
+    status              VARCHAR(50) NOT NULL DEFAULT 'trial',           -- 'trial', 'active', 'suspended', 'cancelled'
+    trial_ends_at       TIMESTAMP WITH TIME ZONE,                       -- NULL = no trial; set = trial clock, billing starts after
+    activated_at        TIMESTAMP WITH TIME ZONE,                       -- when subscription became active (billing start date)
+    cancelled_at        TIMESTAMP WITH TIME ZONE,                       -- when subscription was cancelled
+    created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (subscription_source, subscription_id)                       -- idempotency: prevents duplicate rows from repeated billing events
+);
+
+-- After running migrations/dr-036.sql, the following FK is added to locations:
+-- ALTER TABLE locations ADD COLUMN tier_subscription_id UUID REFERENCES client_subscriptions(id) ON DELETE SET NULL;
+-- (Included in dr-036.sql Phase 1 migration)
+
+CREATE INDEX IF NOT EXISTS idx_client_subscriptions_client_id
+    ON client_subscriptions (client_id);
+
+CREATE INDEX IF NOT EXISTS idx_client_subscriptions_status
+    ON client_subscriptions (status);
+
+--------------------------------------------------------
 -- Known Schema Gaps (open items, not yet implemented)
 -- S-03: member_access_sources table — RESOLVED by dr-034.sql migration (2026-04-10)
 -- S-07: Sub-member PII exception needs its own DR
@@ -340,4 +380,6 @@ CREATE TABLE webhook_log (
 -- S-09: allow_multiple / max_members activation gate needs DR
 -- S-10: adapter_admin_log dual-purpose — split into two tables post-V1
 -- S-14: webhook_log retention policy needed before scale
+-- S-15: locations.tier, subscription_status, subscription_id — REDUNDANT once DR-036 Phase 2 dual-read live (OB-69)
+-- S-16: plan_mappings.tier_name — REDUNDANT once DR-036 Phase 6 column removal runs (OB-71)
 --------------------------------------------------------
