@@ -295,14 +295,30 @@
   <%- include('../partials/topbar') %>
   <%- include('../partials/subnav', { activeTab: activeTab }) %>
 
+  <!-- Svelte toast mount (floats above everything) -->
+  <div id="svelte-toast-pm"></div>
+
   <div class="dash-content">
     <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;">
       <div>
         <div class="page-title">Plan Mapping</div>
         <div class="page-subtitle" id="pageSubtitle"></div>
       </div>
-      <button class="btn btn-sm btn-ghost" id="refreshPlansBtn" onclick="refreshPlans()" style="display:none;">&#8635; Refresh Plans</button>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="btn btn-sm btn-ghost" id="refreshPlansBtn" onclick="refreshPlans()" style="display:none;">&#8635; Refresh Plans</button>
+        <button class="btn btn-sm" id="toggleNewUiBtn" onclick="toggleNewUI()" style="background:rgba(79,110,247,0.12);color:#4F6EF7;border:1px solid rgba(79,110,247,0.35);font-size:12px;font-weight:700;padding:6px 14px;border-radius:8px;cursor:pointer;">
+          ✦ New UI Preview
+        </button>
+      </div>
     </div>
+
+    <!-- ── NEW UI: Svelte wire graph (toggled) ── -->
+    <div id="svelte-plan-mapping-wrap" style="display:none;margin:-8px -8px 0;border-radius:14px;overflow:hidden;border:1px solid rgba(79,110,247,0.2);">
+      <div id="svelte-plan-mapping"></div>
+    </div>
+
+    <!-- ── LEGACY UI (hidden when new UI is active) ── -->
+    <div id="legacy-plan-mapping-content">
 
     <div class="info-banner">
       <div class="info-banner-icon">&#9432;</div>
@@ -1208,5 +1224,49 @@
       };
     })();
   </script>
+
+  <!-- Close legacy wrapper (opened in page-header block) -->
+  </div><!-- #legacy-plan-mapping-content -->
+
+  <!-- Toggle logic -->
+  <script>
+    (function() {
+      var NEW_UI_KEY = 'pm_new_ui';
+      var wrap   = document.getElementById('svelte-plan-mapping-wrap');
+      var legacy = document.getElementById('legacy-plan-mapping-content');
+      var btn    = document.getElementById('toggleNewUiBtn');
+      var newUILoaded = false;
+
+      function applyState(on) {
+        if (on) {
+          wrap.style.display   = 'block';
+          legacy.style.display = 'none';
+          btn.textContent      = '← Classic View';
+          btn.style.background = 'rgba(74,222,128,0.1)';
+          btn.style.color      = '#4ADE80';
+          btn.style.borderColor= 'rgba(74,222,128,0.3)';
+        } else {
+          wrap.style.display   = 'none';
+          legacy.style.display = '';
+          btn.textContent      = '✦ New UI Preview';
+          btn.style.background = 'rgba(79,110,247,0.12)';
+          btn.style.color      = '#4F6EF7';
+          btn.style.borderColor= 'rgba(79,110,247,0.35)';
+        }
+      }
+
+      window.toggleNewUI = function() {
+        var on = wrap.style.display === 'none';
+        localStorage.setItem(NEW_UI_KEY, on ? '1' : '0');
+        applyState(on);
+      };
+
+      // Restore last state on load
+      if (localStorage.getItem(NEW_UI_KEY) === '1') applyState(true);
+    })();
+  </script>
+
+  <!-- Svelte plan-mapping bundle (lazy — loads on demand) -->
+  <script type="module" src="/dist/plan-mapping.js"></script>
 </body>
 </html>

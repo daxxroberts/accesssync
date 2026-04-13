@@ -2,23 +2,27 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'path';
 
-// Vite config for AccessSync Owner Dashboard (Svelte component library)
-// Source:  admin/svelte/
-// Output:  admin/public/dist/
-// Served:  Express static middleware → admin/public/
-
 export default defineConfig({
   plugins: [svelte()],
   root: path.resolve(__dirname, 'admin/svelte'),
   build: {
     outDir: path.resolve(__dirname, 'admin/public/dist'),
-    emptyOutDir: true,
+    emptyOutDir: false,
     rollupOptions: {
-      input: path.resolve(__dirname, 'admin/svelte/main.js'),
+      input: {
+        bundle: path.resolve(__dirname, 'admin/svelte/main.js'),
+        planmapping: path.resolve(__dirname, 'admin/svelte/plan-mapping-entry.js'),
+      },
       output: {
-        entryFileNames: 'bundle.js',
-        chunkFileNames: 'bundle-[name].js',
-        assetFileNames: (info) => info.name?.endsWith('.css') ? 'bundle.css' : '[name][extname]',
+        entryFileNames: (chunk) => {
+          if (chunk.name === 'planmapping') return 'plan-mapping.js';
+          return '[name].js';
+        },
+        chunkFileNames: 'chunk-[name].js',
+        assetFileNames: (info) => {
+          if (info.name && info.name.endsWith('.css')) return '[name].css';
+          return '[name][extname]';
+        },
       },
     },
   },
