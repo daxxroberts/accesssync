@@ -79,6 +79,10 @@ class HardwareAdapter {
   async getLocks(hardwarePlatform, apiKey) {
     return this._getAdapter(hardwarePlatform).getLocks(apiKey);
   }
+
+  async getGroups(hardwarePlatform, apiKey) {
+    return this._getAdapter(hardwarePlatform).getGroups(apiKey);
+  }
 }
 
 module.exports = new HardwareAdapter();

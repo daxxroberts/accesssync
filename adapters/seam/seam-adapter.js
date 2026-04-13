@@ -43,6 +43,11 @@ class SeamAdapter {
     // Implement when Seam adapter is built: map Seam lock fields to { id, name, locked: boolean }.
     return [];
   }
+
+  async getGroups(apiKey) {
+    // Stub — returns [] so health check group reconciliation skips Seam clients safely.
+    return [];
+  }
 }
 
 module.exports = new SeamAdapter();

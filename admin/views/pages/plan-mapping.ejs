@@ -7,7 +7,7 @@
   @writes PATCH /operator/:clientId/plan-mappings/:mappingId, POST /operator/:clientId/plan-mappings/:mappingId/remap
   @reads GET /operator/:clientId/plan-mappings/:mappingId/members (remap modal member count)
   @tab Plan Mapping
-  @features multi-group, multi-member toggle, duplicate-group warning, remap confirmation modal
+  @features multi-group, multi-member toggle, duplicate-group warning, remap confirmation modal, stale-group detection
 %>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
@@ -262,6 +262,16 @@
       font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 6px;
       background: var(--brand-dim); color: var(--brand);
     }
+    .header-group-tag.stale { background: #FEF3C7; color: #92400E; }
+
+    /* ── Stale group warning ── */
+    .stale-group-warning {
+      background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 10px;
+      padding: 10px 14px; margin-bottom: 12px;
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: #92400E;
+    }
+    .group-tag.stale { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
 
     /* ── Remap modal list ── */
     .remap-list { list-style: none; margin: 0 0 20px; padding: 0; text-align: left; }
@@ -414,6 +424,13 @@
       return 'Anyone on this plan gets access to every ' + groupLabel().toLowerCase() + ' you assign here.';
     }
 
+    function getStaleGroupIds(plan) {
+      if (!PLATFORM_GROUPS.length || !plan.groupIds) return [];
+      return plan.groupIds.filter(function(gid) {
+        return !PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
+      });
+    }
+
     // ═══════════════════════════════════════
     // Data
     // ═══════════════════════════════════════
@@ -488,7 +505,8 @@
         headerTags = '<div class="header-group-tags">';
         plan.groupIds.forEach(function(gid) {
           var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
-          headerTags += '<span class="header-group-tag">' + (g ? esc(g.name) : gid) + '</span>';
+          var isStale = PLATFORM_GROUPS.length > 0 && !g;
+          headerTags += '<span class="header-group-tag' + (isStale ? ' stale' : '') + '">' + (g ? esc(g.name) : gid + ' (not found)') + '</span>';
         });
         headerTags += '</div>';
       }
@@ -511,6 +529,17 @@
 
       var bodyHTML = '<div class="plan-card-body">';
 
+      // ── Stale group warning ──
+      var staleIds = getStaleGroupIds(plan);
+      if (staleIds.length > 0) {
+        bodyHTML += '<div class="stale-group-warning">'
+          + '<span>&#9888;</span> '
+          + staleIds.length + ' group' + (staleIds.length > 1 ? 's' : '')
+          + ' no longer exist' + (staleIds.length === 1 ? 's' : '')
+          + ' in ' + platformName() + ' &mdash; re-map this plan'
+          + '</div>';
+      }
+
       // ── Group tags (multi-select) ──
       bodyHTML += '<div class="config-item full" style="margin-bottom:16px;">';
       bodyHTML += '<div class="config-label">' + platformName() + ' ' + groupLabel() + 's</div>';
@@ -518,7 +547,8 @@
       if (plan.groupIds && plan.groupIds.length > 0) {
         plan.groupIds.forEach(function(gid) {
           var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
-          bodyHTML += '<span class="group-tag">' + (g ? esc(g.name) : gid) +
+          var isStale = PLATFORM_GROUPS.length > 0 && !g;
+          bodyHTML += '<span class="group-tag' + (isStale ? ' stale' : '') + '">' + (g ? esc(g.name) : gid + ' (not found)') +
             ' <button class="group-tag-remove" onclick="removeGroup(\'' + plan.id + '\', \'' + gid + '\', event)" title="Remove">&times;</button></span>';
         });
       }

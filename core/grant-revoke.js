@@ -3,7 +3,7 @@
  * @layer core/layer4
  * @role provisioning
  * @reads plan_mappings, member_identity, member_access_log, member_role_assignments
- * @writes member_access_log, config_alert_log, diagnostic_log (via logger)
+ * @writes member_access_log, config_alert_log, plan_mappings (stale-group deactivation), diagnostic_log (via logger)
  * @calls hardware-adapter
  * @exports processGrant, processRevoke
  * @dr DR-022, DR-026
@@ -50,16 +50,34 @@ class GrantRevokeLogic {
         hardwareGroupId: mapping.hardwareGroupId,
         mappingId: mapping.mappingId,
       });
-      const roleId = await hardwareAdapter.assignRole(
-        mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId
-      );
-      assignments.push({
-        mappingId:        mapping.mappingId,
-        roleAssignmentId: String(roleId),
-        hardwareGroupId:  mapping.hardwareGroupId,
-        sourcePlanId:     wixEvent.planId || null,
-        sourceType:       wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
-      });
+      // If Kisi returns 404 (group deleted), auto-deactivate this mapping so no
+      // further grants target a ghost group. Re-throw always — queue-worker dead-letters.
+      // Safe on retry: Kisi assignRole is idempotent and member_role_assignments has ON CONFLICT.
+      try {
+        const roleId = await hardwareAdapter.assignRole(
+          mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId
+        );
+        assignments.push({
+          mappingId:        mapping.mappingId,
+          roleAssignmentId: String(roleId),
+          hardwareGroupId:  mapping.hardwareGroupId,
+          sourcePlanId:     wixEvent.planId || null,
+          sourceType:       wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
+        });
+      } catch (err) {
+        if (err.code === 'HARDWARE_RESOURCE_NOT_FOUND') {
+          log.warn('grant.group_not_found', {
+            tenantId, memberId, mappingId: mapping.mappingId,
+            hardwareGroupId: mapping.hardwareGroupId,
+          }, err);
+          // Fire-and-forget deactivation (same pattern as logger.js persistToDiagnosticLog)
+          setImmediate(() => {
+            db.query("UPDATE plan_mappings SET status = 'inactive' WHERE id = $1", [mapping.mappingId])
+              .catch(() => {});
+          });
+        }
+        throw err;
+      }
     }
 
     await db.query(
