@@ -47,7 +47,9 @@
         delayed:   data.delayed   ?? '0',
         paused:    data.paused    ?? '0',
       };
-    } catch { /* silent poll failure */ }
+    } catch (err) {
+      if (err.message === 'Unauthorized') clearInterval(pollTimer);
+    }
   }
 
   async function loadJobs(tab) {

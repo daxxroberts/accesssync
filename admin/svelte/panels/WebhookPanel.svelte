@@ -65,7 +65,9 @@
         rows          = [...newRows, ...rows].slice(0, 200);
         lastTimestamp = rows[0].received_at;
       }
-    } catch { /* silent poll failure */ }
+    } catch (err) {
+      if (err.message === 'Unauthorized') clearInterval(pollTimer);
+    }
   }
 
   function togglePolling() {
