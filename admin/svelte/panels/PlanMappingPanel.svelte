@@ -97,7 +97,12 @@
         let mGroups = [];
         try {
           const gd = await apiFetch(`/operator/${CLIENT_ID}/plan-mappings/${m.id}/groups`);
-          mGroups = gd.groups || gd || [];
+          // Normalize: API returns { hardware_group_id, door_name } — map to { id, name }
+          // so wire drawing can match against the Kisi groups array by id
+          mGroups = (gd.groups || gd || []).map(g => ({
+            id:   g.hardware_group_id,
+            name: g.door_name || groups.find(kg => kg.id === g.hardware_group_id)?.name || g.hardware_group_id,
+          }));
         } catch (_) {}
         resolvedPlans.push({ ...m, mappingId: m.id, planName: m.plan_name || m.planName || '—', groups: mGroups });
       }
