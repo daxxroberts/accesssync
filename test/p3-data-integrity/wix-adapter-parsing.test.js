@@ -20,6 +20,8 @@ const {
   CONNECT_PLAN_ID,
   wixPlanPurchasedPayload,
   wixMemberDeletedPayload,
+  wixRestOrderCreatedPayload,
+  wixRestMemberDeletedPayload,
 } = require('../helpers/fixtures');
 
 // ─── memberId Resolution ─────────────────────────────────────────────────────
@@ -116,6 +118,33 @@ describe('[P3] Parsed event always contains the required fields for downstream p
     const result = wixAdapter.parseEvent('plan.purchased', 'site-001', wixPlanPurchasedPayload);
     expect(result.email).toBe('chad@houseofgains.com');
     expect(result.name).toBe('Chad Member');
+  });
+
+});
+
+// ─── REST Webhook Format (data.metadata + data.entity) ──────────────────────
+
+describe('[P3] Wix REST webhook format (data.entity) resolves correctly', () => {
+
+  it('resolves memberId from REST webhook entity.buyer.memberId', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderCreated', 'site-001', wixRestOrderCreatedPayload);
+    expect(result.platformMemberId).toBe(WIX_MEMBER_ID);
+  });
+
+  it('resolves planId from REST webhook entity.planId', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderCreated', 'site-001', wixRestOrderCreatedPayload);
+    expect(result.planId).toBe(CONNECT_PLAN_ID);
+  });
+
+  it('resolves email and name from REST webhook entity.buyer', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderCreated', 'site-001', wixRestOrderCreatedPayload);
+    expect(result.email).toBe('chad@houseofgains.com');
+    expect(result.name).toBe('Chad Member');
+  });
+
+  it('resolves memberId from REST webhook member deleted entity', () => {
+    const result = wixAdapter.parseEvent('wixMembers.memberDeleted', 'site-001', wixRestMemberDeletedPayload);
+    expect(result.platformMemberId).toBe(WIX_MEMBER_ID);
   });
 
 });

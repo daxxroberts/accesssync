@@ -29,12 +29,17 @@ class WixAdapter {
     //   wixMembers:      event.member.id or event.memberId
 
     const d = body?.data;  // The raw Wix event object from events.js _send()
+    const entity = d?.entity;  // REST webhook format: data.entity is the Order/Booking/Member object
 
     // Resolve memberId — try each Wix module's known path
     const memberId =
-      d?.order?.buyer?.memberId   ||  // wixPricingPlans events
-      d?.booking?.contactId       ||  // wixBookings events (contactId maps to member)
-      d?.member?._id              ||  // wixMembers events (member deleted)
+      entity?.buyer?.memberId     ||  // REST webhook: entity is the Order object
+      entity?.buyer?.contactId    ||  // REST webhook: contactId fallback
+      d?.order?.buyer?.memberId   ||  // Velo events.js: wixPricingPlans events
+      d?.booking?.contactId       ||  // Velo events.js: wixBookings events
+      d?.member?._id              ||  // Velo events.js: wixMembers events (member deleted)
+      entity?.member?._id         ||  // REST webhook: member deleted
+      entity?.contactId           ||  // REST webhook: booking contactId
       d?.memberId                 ||  // direct field (some event shapes)
       d?.data?.order?.buyer?.memberId || // double-wrapped edge case
       body?.memberId              ||  // top-level fallback
@@ -42,9 +47,12 @@ class WixAdapter {
 
     // Resolve planId
     const planId =
-      d?.order?.planId            ||  // wixPricingPlans events
-      d?.order?.planName          ||  // fallback — name if ID missing
-      d?.booking?.serviceId       ||  // wixBookings — service maps to plan
+      entity?.planId              ||  // REST webhook: entity is the Order object
+      entity?.planName            ||  // REST webhook: planName fallback
+      d?.order?.planId            ||  // Velo events.js: wixPricingPlans events
+      d?.order?.planName          ||  // Velo events.js: planName fallback
+      d?.booking?.serviceId       ||  // Velo events.js: wixBookings
+      entity?.serviceId           ||  // REST webhook: booking serviceId
       d?.planId                   ||  // direct field
       d?.data?.order?.planId      ||  // double-wrapped edge case
       body?.planId                ||  // top-level fallback
@@ -52,14 +60,18 @@ class WixAdapter {
 
     // Resolve email/name from buyer or member data
     const email =
-      d?.order?.buyer?.email      ||
-      d?.member?.loginEmail       ||
+      entity?.buyer?.email        ||  // REST webhook
+      d?.order?.buyer?.email      ||  // Velo events.js
+      entity?.member?.loginEmail  ||  // REST webhook: member event
+      d?.member?.loginEmail       ||  // Velo events.js: member event
       d?.email                    ||
       body?.email                 ||
       null;
     const name =
-      d?.order?.buyer?.fullName   ||
-      d?.member?.name             ||
+      entity?.buyer?.fullName     ||  // REST webhook
+      d?.order?.buyer?.fullName   ||  // Velo events.js
+      entity?.member?.name        ||  // REST webhook: member event
+      d?.member?.name             ||  // Velo events.js: member event
       d?.name                     ||
       body?.name                  ||
       null;

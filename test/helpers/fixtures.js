@@ -69,6 +69,50 @@ const wixMemberDeletedPayload = {
   }
 };
 
+// ─── Wix REST Webhook Payloads (data.metadata + data.entity format) ─────────
+// These match the structure that Wix sends via REST webhook subscriptions
+// (as opposed to Velo events.js). The order object is nested under data.entity.
+
+const wixRestOrderCreatedPayload = {
+  data: {
+    metadata: {
+      id: 'evt-rest-001',
+      entityId: 'order-rest-001',
+      eventTime: '2026-04-14T18:52:38.000Z',
+      instanceId: 'wix-site-hog-001',
+    },
+    entity: {
+      _id: 'order-rest-001',
+      planId: CONNECT_PLAN_ID,
+      planName: 'Connect All Access',
+      buyer: {
+        memberId: WIX_MEMBER_ID,
+        contactId: 'contact-rest-001',
+        email: 'chad@houseofgains.com',
+        fullName: 'Chad Member',
+      },
+      subscriptionId: 'sub-rest-001',
+      status: 'ACTIVE',
+      startDate: '2026-04-14T18:52:38.000Z',
+      createdDate: '2026-04-14T18:52:38.000Z',
+    }
+  }
+};
+
+const wixRestMemberDeletedPayload = {
+  data: {
+    metadata: {
+      id: 'evt-rest-002',
+      entityId: WIX_MEMBER_ID,
+      eventTime: '2026-04-14T19:00:00.000Z',
+      instanceId: 'wix-site-hog-001',
+    },
+    entity: {
+      member: { _id: WIX_MEMBER_ID }
+    }
+  }
+};
+
 // ─── Standard Events (post wix-adapter.parseEvent()) ────────────────────────
 // These are what queue-worker receives after wix-connector → wix-adapter transforms the webhook.
 
@@ -167,11 +211,15 @@ module.exports = {
   WIX_MEMBER_ID,
   ENCRYPTED_API_KEY_DB_VALUE,
 
-  // Payloads
+  // Payloads (Velo events.js format)
   wixPlanPurchasedPayload,
   wixPlanCancelledPayload,
   wixPaymentFailedPayload,
   wixMemberDeletedPayload,
+
+  // Payloads (REST webhook format)
+  wixRestOrderCreatedPayload,
+  wixRestMemberDeletedPayload,
 
   // Standard events (post-adapter)
   planPurchasedEvent,

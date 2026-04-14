@@ -61,7 +61,8 @@ class WixConnector {
 
       // OB-03-A RESOLVED (PARSE VERIFIED 2026-03-28): No 'x-wix-site-id' header exists.
       // instanceId is the site identifier — present in the Wix webhook body.
-      const wixSiteId = req.body?.instanceId || null;
+      // REST webhooks nest it under data.metadata.instanceId; Velo events.js puts it at top level.
+      const wixSiteId = req.body?.instanceId || req.body?.data?.metadata?.instanceId || null;
 
       // Self-registration: if events.js includes X-AccessSync-Client-Id, wire site_id on
       // first arrival so future lookups resolve by site_id without DEFAULT_TENANT_ID.
