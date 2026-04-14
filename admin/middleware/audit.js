@@ -6,6 +6,7 @@
  */
 
 const db = require('../../db');
+const { log } = require('../../core/logger');
 
 /**
  * Log an admin action for audit trail.
@@ -23,7 +24,7 @@ async function logAdminAction(clientId, action, details, targetEntity = 'client'
       [clientId, action, JSON.stringify(details), targetEntity, targetId || clientId]
     );
   } catch (err) {
-    console.error('[Audit] Failed to log admin action:', err.message);
+    log.error('admin.audit_log_failed', { clientId, action }, err);
   }
 }
 

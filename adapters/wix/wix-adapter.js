@@ -5,10 +5,12 @@
  * Responsibilities:
  * - Wix-specific payload parsing only
  * - parseEvent() returns AccessSync standard event object
- * - Zero dependencies — pure transformation, no imports
+ * - Depends only on core/logger for structured logging
  *
  * Called by wix-connector (Layer 1) after HMAC verification passes.
  */
+
+const { log } = require('../../core/logger');
 
 class WixAdapter {
 
@@ -77,10 +79,10 @@ class WixAdapter {
       null;
 
     if (!memberId) {
-      console.warn(`[WixAdapter] No memberId resolved for ${eventType}. body.data keys: ${d ? Object.keys(d).join(',') : 'null'}`);
+      log.warn('wix.parse.no_member_id', { eventType, dataKeys: d ? Object.keys(d).join(',') : 'null' });
     }
     if (!planId && eventType && !eventType.includes('memberDeleted')) {
-      console.warn(`[WixAdapter] No planId resolved for ${eventType}. body.data keys: ${d ? Object.keys(d).join(',') : 'null'}`);
+      log.warn('wix.parse.no_plan_id', { eventType, dataKeys: d ? Object.keys(d).join(',') : 'null' });
     }
 
     return {

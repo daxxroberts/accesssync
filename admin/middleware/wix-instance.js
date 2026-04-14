@@ -30,6 +30,7 @@
 
 const crypto = require('crypto');
 const db     = require('../../db');
+const { log } = require('../../core/logger');
 
 const APP_SECRET = process.env.WIX_APP_SECRET;
 
@@ -167,23 +168,23 @@ async function requireWixInstance(req, res, next) {
           'UPDATE clients SET wix_instance_id = $1, updated_at = NOW() WHERE id = $2',
           [instanceId, clientId]
         );
-        console.log(`[wix-instance] Path B: wired wix_instance_id for client ${clientId}`);
+        log.info('admin.wix_instance_wired', { clientId });
         req.wixOperator = { clientId, instanceId, siteId, uid: payload.uid };
         return next();
       }
     } else {
-      console.warn('[wix-instance] Path B: authorizationCode absent or siteId not extractable');
+      log.warn('admin.wix_instance_no_auth_code', { instanceId });
     }
 
     // ── Path C: no match — redirect to onboarding ─────────────────
-    console.warn(`[wix-instance] Path C: no client found for instanceId=${instanceId} siteId=${siteId} — redirecting to onboarding`);
+    log.warn('admin.wix_instance_not_found', { instanceId, siteId });
     const params = new URLSearchParams();
     if (instanceId) params.set('instanceId', instanceId);
     if (siteId)     params.set('siteId', siteId);
     return res.redirect(`/onboard?${params.toString()}`);
 
   } catch (err) {
-    console.warn('[wix-instance] Verification failed:', err.message);
+    log.warn('admin.wix_instance_verify_failed', {}, err);
     res.status(401).send(`Access denied: ${err.message}`);
   }
 }

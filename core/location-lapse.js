@@ -31,6 +31,7 @@
 const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const { decryptApiKey } = require('./crypto-utils');
+const { log } = require('./logger');
 
 /**
  * Suspend all active member access at a location.
@@ -66,7 +67,7 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
   const { hardware_platform, client_key, location_key, location_name, current_status } = ctxResult.rows[0];
 
   if (current_status === 'cancelled') {
-    console.log(`[LocationLapse] Location ${location_name} already cancelled — skipping member suspension`);
+    log.info('location.already_cancelled', { locationId, location: location_name });
     return { suspended: 0, skipped: 0, errors: [] };
   }
 
@@ -93,7 +94,7 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
 
   const rows = membersResult.rows;
   if (!rows.length) {
-    console.log(`[LocationLapse] No active members at location ${location_name} (${locationId})`);
+    log.info('location.no_active_members', { locationId, location: location_name });
     await _setLocationStatus(locationId, targetStatus);
     return { suspended: 0, skipped: 0, errors: [] };
   }
@@ -108,7 +109,7 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
       if (row.hardware_user_id) {
         await hardwareAdapter.suspendAccess(platform, apiKey, row.hardware_user_id);
       } else {
-        console.warn(`[LocationLapse] Member ${row.member_id} has no hardware_user_id — skipping hardware call`);
+        log.warn('location.no_hardware_user', { memberId: row.member_id });
         skipped++;
       }
 
@@ -127,7 +128,7 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
 
       suspended++;
     } catch (err) {
-      console.error(`[LocationLapse] Failed to suspend member ${row.member_id}:`, err.message);
+      log.error('location.suspend_member_failed', { memberId: row.member_id }, err);
       errors.push(`${row.platform_member_id}: ${err.message}`);
     }
   }
@@ -135,9 +136,7 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
   // 6. Update location subscription_status
   await _setLocationStatus(locationId, targetStatus);
 
-  console.log(
-    `[LocationLapse] ${location_name}: ${suspended} suspended, ${skipped} skipped, ${errors.length} errors`
-  );
+  log.info('location.lapse_complete', { location: location_name, suspended, skipped, errors: errors.length });
   return { suspended, skipped, errors };
 }
 

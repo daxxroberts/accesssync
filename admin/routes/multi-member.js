@@ -97,7 +97,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
       })),
     });
   } catch (err) {
-    console.error('[multi-member] GET /widget-data error:', err.message);
+    log.error('admin.multi_member_widget_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -157,7 +157,7 @@ router.post('/api/multi-member/members', async (req, res) => {
        holderId, firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim()]
     );
 
-    console.log(`[multi-member] Draft sub-member added: ${subPlatformMemberId} under holder ${holderId}`);
+    log.info('admin.sub_member_added', { subPlatformMemberId, holderId });
     res.status(201).json({
       ok: true,
       subMember: {
@@ -174,7 +174,7 @@ router.post('/api/multi-member/members', async (req, res) => {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'A member with this identifier already exists' });
     }
-    console.error('[multi-member] POST /members error:', err.message);
+    log.error('admin.multi_member_add_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -203,10 +203,10 @@ router.put('/api/multi-member/members/:subId', async (req, res) => {
       return res.status(404).json({ error: 'Draft sub-member not found (only draft members can be edited)' });
     }
 
-    console.log(`[multi-member] Draft sub-member updated: ${subId}`);
+    log.info('admin.sub_member_updated', { subId });
     res.json({ ok: true, subMember: result.rows[0] });
   } catch (err) {
-    console.error('[multi-member] PUT /members/:subId error:', err.message);
+    log.error('admin.multi_member_update_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -237,7 +237,7 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
     if (member.sub_member_status === 'draft') {
       // Draft: just delete — no hardware to clean up
       await db.query('DELETE FROM member_identity WHERE id = $1', [subId]);
-      console.log(`[multi-member] Draft sub-member deleted: ${subId}`);
+      log.info('admin.sub_member_deleted', { subId });
       return res.json({ ok: true, message: 'Draft member removed' });
     }
 
@@ -252,16 +252,16 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
       };
       const jobId = `revoke-multi-member-${subId}-${Date.now()}`;
       await eventQueue.add('revoke', { tenantId: member.client_id, standardEvent: syntheticEvent }, { jobId });
-      console.log(`[multi-member] Enqueued revoke for sub-member ${member.platform_member_id} (job: ${jobId})`);
+      log.info('admin.sub_member_revoke_queued', { platformMemberId: member.platform_member_id, jobId });
     }
 
     // Clean up DB records (CASCADE from member_identity handles access state + role assignments)
     await db.query('DELETE FROM member_identity WHERE id = $1', [subId]);
 
-    console.log(`[multi-member] Sub-member removed (was ${member.sub_member_status}): ${subId}`);
+    log.info('admin.sub_member_removed', { status: member.sub_member_status, subId });
     res.json({ ok: true, message: 'Member removed and access revoked' });
   } catch (err) {
-    console.error('[multi-member] DELETE /members/:subId error:', err.message);
+    log.error('admin.multi_member_delete_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -333,13 +333,13 @@ router.post('/api/multi-member/submit', async (req, res) => {
         };
         const jobId = `grant-multi-member-${draft.id}-${Date.now()}`;
         await eventQueue.add('grant', { tenantId: clientId, standardEvent: syntheticEvent }, { jobId });
-        console.log(`[multi-member] Enqueued synthetic grant for sub-member ${draft.platform_member_id} (job: ${jobId})`);
+        log.info('admin.sub_member_grant_queued', { platformMemberId: draft.platform_member_id, jobId });
       }
     } else {
-      console.warn(`[multi-member] No multi-member plan mapping found for client ${clientId} — sub-members submitted but not provisioned`);
+      log.warn('admin.sub_member_no_mapping', { clientId });
     }
 
-    console.log(`[multi-member] ${drafts.rows.length} sub-members submitted for holder ${holderId}`);
+    log.info('admin.sub_members_submitted', { count: drafts.rows.length, holderId });
     res.json({
       ok: true,
       submitted: drafts.rows.length,
@@ -352,7 +352,7 @@ router.post('/api/multi-member/submit', async (req, res) => {
       })),
     });
   } catch (err) {
-    console.error('[multi-member] POST /submit error:', err.message);
+    log.error('admin.multi_member_submit_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -14,6 +14,7 @@
 
 const db = require('../db');
 const hardwareAdapter = require('./hardware-adapter');
+const { log } = require('../core/logger');
 
 class StandardAdapter {
 
@@ -69,7 +70,7 @@ class StandardAdapter {
 
         if (identityResult.rows.length === 0) {
           await dbClient.query('ROLLBACK');
-          console.warn(`[Standard Adapter] No identity record for member ${event.platformMemberId}. Skipping revoke.`);
+          log.warn('adapter.no_identity', { platformMemberId: event.platformMemberId });
           return null;
         }
 
@@ -112,7 +113,7 @@ class StandardAdapter {
         if (hardwarePlatform === null) {
           // Revoke with no state row — nothing to revoke
           await dbClient.query('ROLLBACK');
-          console.warn(`[Standard Adapter] No access state for member ${event.platformMemberId}. Skipping revoke.`);
+          log.warn('adapter.no_access_state', { platformMemberId: event.platformMemberId });
           return null;
         }
 
@@ -129,7 +130,7 @@ class StandardAdapter {
 
       // Increment events_received — fault-tolerant (DR-024)
       this._incrementActivity(tenantId, 'events_received').catch(err =>
-        console.warn('[Standard Adapter] client_activity_summary update failed (events_received):', err.message)
+        log.warn('adapter.activity_update_failed', { field: 'events_received' }, err)
       );
 
       if (hardwarePlatform !== null) {
@@ -166,7 +167,7 @@ class StandardAdapter {
       [memberId]
     );
     if (cached.rows[0]?.hardware_user_id) {
-      console.log(`[Standard Adapter] DB cache hit for member ${memberId}`);
+      log.info('adapter.identity_cache_hit', { memberId });
       return cached.rows[0].hardware_user_id;
     }
 
@@ -174,10 +175,10 @@ class StandardAdapter {
     let hardwareUserId = await hardwareAdapter.findUserByEmail(hardwarePlatform, apiKey, email);
 
     if (hardwareUserId) {
-      console.log(`[Standard Adapter] Found existing ${hardwarePlatform} user: ${hardwareUserId}`);
+      log.info('adapter.identity_found', { hardwarePlatform, hardwareUserId });
     } else {
       // 3. Create in hardware system
-      console.log(`[Standard Adapter] Creating new ${hardwarePlatform} user for ${email}`);
+      log.info('adapter.identity_creating', { hardwarePlatform, email });
       hardwareUserId = await hardwareAdapter.createUser(hardwarePlatform, apiKey, email, name);
     }
 
@@ -231,13 +232,13 @@ class StandardAdapter {
     );
 
     this._incrementActivity(tenantId, 'grants_completed').catch(err =>
-      console.warn('[Standard Adapter] client_activity_summary update failed (grants_completed):', err.message)
+      log.warn('adapter.activity_update_failed', { field: 'grants_completed' }, err)
     );
 
     // Sprint 5.5: First grant experience — send welcome email on first successful grant per client.
     // Fault-tolerant: never blocks the grant completion path.
     this._maybeFireFirstGrantEmail(tenantId, memberId).catch(err =>
-      console.warn('[Standard Adapter] first grant email check failed:', err.message)
+      log.warn('adapter.first_grant_email_failed', {}, err)
     );
   }
 
@@ -258,7 +259,7 @@ class StandardAdapter {
     const { name: clientName, notification_email } = result.rows[0];
     const toEmail = notification_email || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
     if (!toEmail) {
-      console.log(`[Standard Adapter] First grant fired for ${clientName} — no notification email configured.`);
+      log.info('adapter.first_grant_no_email', { clientName });
       return;
     }
 
@@ -280,9 +281,9 @@ class StandardAdapter {
           'You can view member status and access history in the AccessSync dashboard.',
         ].join('\n'),
       });
-      console.log(`[Standard Adapter] First grant email sent to ${toEmail} for client ${clientName}`);
+      log.info('adapter.first_grant_email_sent', { toEmail, clientName });
     } catch (err) {
-      console.error('[Standard Adapter] First grant email send failed:', err.message);
+      log.error('adapter.first_grant_email_error', {}, err);
     }
   }
 
@@ -359,7 +360,7 @@ class StandardAdapter {
     }
 
     this._incrementActivity(tenantId, 'revokes_completed').catch(err =>
-      console.warn('[Standard Adapter] client_activity_summary update failed (revokes_completed):', err.message)
+      log.warn('adapter.activity_update_failed', { field: 'revokes_completed' }, err)
     );
   }
 
@@ -381,21 +382,21 @@ class StandardAdapter {
         `UPDATE member_access_state SET status = $1, pending_plan_id = $2, updated_at = NOW() WHERE member_id = $3`,
         [lockStatus, options.planId, memberId]
       ).catch(err =>
-        console.error('[Standard Adapter] Failed to set pending_hardware:', err.message)
+        log.error('adapter.pending_hardware_failed', { memberId }, err)
       );
     } else {
       await db.query(
         `UPDATE member_access_state SET status = $1, updated_at = NOW() WHERE member_id = $2`,
         [lockStatus, memberId]
       ).catch(err =>
-        console.error('[Standard Adapter] Failed to release in_flight lock:', err.message)
+        log.error('adapter.lock_release_failed', { memberId }, err)
       );
     }
 
     // Don't count pending_hardware as errors — it's an expected state, not a failure
     if (lockStatus !== 'pending_hardware') {
       this._incrementActivity(tenantId, 'errors_count').catch(err =>
-        console.warn('[Standard Adapter] client_activity_summary update failed (errors_count):', err.message)
+        log.warn('adapter.activity_update_failed', { field: 'errors_count' }, err)
       );
     }
   }

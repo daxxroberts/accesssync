@@ -11,6 +11,7 @@
 const router  = require('express').Router();
 const { OAuth2Client } = require('google-auth-library');
 const { signToken, requireAuth } = require('../middleware/auth');
+const { log } = require('../../core/logger');
 
 const client = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
@@ -23,7 +24,7 @@ const client = new OAuth2Client(
 router.get('/config', (req, res) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
-    console.error('[Admin Auth] GOOGLE_CLIENT_ID env var not set.');
+    log.error('auth.missing_google_client_id', {});
     return res.status(500).json({ error: 'Auth not configured' });
   }
   res.json({ clientId });
@@ -39,7 +40,7 @@ router.post('/google', async (req, res) => {
 
     const allowedEmail = process.env.ADMIN_ALLOWED_EMAIL;
     if (!allowedEmail) {
-      console.error('[Admin Auth] ADMIN_ALLOWED_EMAIL env var not set.');
+      log.error('auth.missing_allowed_email', {});
       return res.status(500).json({ error: 'Auth not configured' });
     }
 
@@ -53,7 +54,7 @@ router.post('/google', async (req, res) => {
 
     // Email gate — only the configured admin email is allowed
     if (payload.email !== allowedEmail) {
-      console.warn(`[Admin Auth] Rejected login attempt from: ${payload.email}`);
+      log.warn('auth.login_rejected', { email: payload.email });
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -69,7 +70,7 @@ router.post('/google', async (req, res) => {
     res.json({ ok: true, email: payload.email });
 
   } catch (err) {
-    console.error('[Admin Auth] Google verification error:', err.message);
+    log.error('auth.google_verify_failed', {}, err);
     res.status(401).json({ error: 'Invalid Google credential' });
   }
 });
@@ -79,7 +80,7 @@ router.post('/google', async (req, res) => {
 router.get('/google/callback', async (req, res) => {
   const { code, error } = req.query;
   if (error) {
-    console.error('[Admin Auth] OAuth callback error:', error);
+    log.error('auth.oauth_callback_error', { error });
     return res.redirect('/OwnerDashboard?auth_error=' + encodeURIComponent(error));
   }
   if (!code) {
@@ -93,11 +94,11 @@ router.get('/google/callback', async (req, res) => {
       audience: process.env.GOOGLE_CLIENT_ID,
     });
     const payload = ticket.getPayload();
-    console.log('[Admin Auth] OAuth callback login attempt:', payload.email);
+    log.info('auth.oauth_callback_attempt', { email: payload.email });
 
     const allowedEmail = process.env.ADMIN_ALLOWED_EMAIL;
     if (payload.email !== allowedEmail) {
-      console.warn('[Admin Auth] OAuth callback rejected:', payload.email);
+      log.warn('auth.oauth_callback_rejected', { email: payload.email });
       return res.redirect('/OwnerDashboard?auth_error=access_denied');
     }
 
@@ -108,10 +109,10 @@ router.get('/google/callback', async (req, res) => {
       sameSite: 'strict',
       maxAge:   24 * 60 * 60 * 1000,
     });
-    console.log('[Admin Auth] OAuth callback login success:', payload.email);
+    log.info('auth.oauth_callback_success', { email: payload.email });
     res.redirect('/OwnerDashboard');
   } catch (err) {
-    console.error('[Admin Auth] OAuth callback verification error:', err.message);
+    log.error('auth.oauth_callback_verify_failed', {}, err);
     res.redirect('/OwnerDashboard?auth_error=' + encodeURIComponent(err.message));
   }
 });
@@ -121,11 +122,11 @@ router.post('/pin', (req, res) => {
   const { pin } = req.body;
   const ownerPin = process.env.OWNER_PIN;
   if (!ownerPin) {
-    console.error('[Admin Auth] OWNER_PIN env var not set.');
+    log.error('auth.missing_owner_pin', {});
     return res.status(500).json({ error: 'PIN auth not configured' });
   }
   if (!pin || pin !== ownerPin) {
-    console.warn('[Admin Auth] Invalid PIN attempt');
+    log.warn('auth.invalid_pin', {});
     return res.status(401).json({ error: 'Invalid PIN' });
   }
   const token = signToken();
@@ -135,7 +136,7 @@ router.post('/pin', (req, res) => {
     sameSite: 'strict',
     maxAge:   24 * 60 * 60 * 1000,
   });
-  console.log('[Admin Auth] PIN login success');
+  log.info('auth.pin_login_success', {});
   res.json({ ok: true });
 });
 

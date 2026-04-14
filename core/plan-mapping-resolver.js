@@ -19,6 +19,7 @@
 
 const db = require('../db');
 const { decryptApiKey } = require('./crypto-utils');
+const { log } = require('./logger');
 
 class PlanMappingResolver {
 
@@ -68,16 +69,16 @@ class PlanMappingResolver {
 
       if (planExists.rows.length > 0) {
         // Plan is mapped but has no hardware group assigned yet — Wix-first scenario
-        console.warn(`[PlanMappingResolver] Plan ${planId} recognized but no hardware group mapped yet in tenant ${tenantId}`);
+        log.warn('plan.no_hardware_group', { tenantId, planId });
         return []; // Empty array signals "recognized but not ready" (vs null = "unknown plan")
       }
 
-      console.warn(`[PlanMappingResolver] No active mapping for plan ${planId} in tenant ${tenantId}`);
+      log.warn('plan.not_mapped', { tenantId, planId });
       await db.query(
         `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
          VALUES ($1, 'missing_group', $2)`,
         [tenantId, planId]
-      ).catch(e => console.error('[PlanMappingResolver] Failed to log alert:', e.message));
+      ).catch(e => log.error('plan.alert_log_failed', { tenantId, planId }, e));
       return null;
     }
 

@@ -8,6 +8,7 @@
  */
 
 const router = require('express').Router();
+const { log } = require('../../core/logger');
 const db     = require('../../db');
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../../core/redis-utils');
@@ -57,7 +58,7 @@ router.get('/search', async (req, res) => {
           }
         }
       } catch (wixErr) {
-        console.warn('[Admin/members]  Email lookup failed (falling back to DB search):', wixErr.message);
+        log.warn('admin.members_email_lookup_failed', {}, wixErr);
       }
     }
 
@@ -107,7 +108,7 @@ router.get('/search', async (req, res) => {
       searchType: platformMemberIds ? 'email_resolved' : 'pattern_match',
     });
   } catch (err) {
-    console.error('[Admin/members] GET /search error:', err.message);
+    log.error('admin.members_search_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -172,7 +173,7 @@ router.get('/:id/timeline', async (req, res) => {
       timeline: timeline.rows
     });
   } catch (err) {
-    console.error('[Admin/members] GET /:id/timeline error:', err.message);
+    log.error('admin.members_timeline_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -219,7 +220,7 @@ router.post('/:id/retry', async (req, res) => {
 
     res.json({ ok: true, queued: jobName, errorId });
   } catch (err) {
-    console.error('[Admin/members] POST /:id/retry error:', err.message);
+    log.error('admin.members_retry_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -314,7 +315,7 @@ router.get('/by-client', async (req, res) => {
       breakdown,
     });
   } catch (err) {
-    console.error('[Admin/members] GET /by-client error:', err.message);
+    log.error('admin.members_by_client_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });

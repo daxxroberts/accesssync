@@ -9,6 +9,7 @@
  */
 
 const router = require('express').Router();
+const { log } = require('../../core/logger');
 const db     = require('../../db');
 
 // ── GET /admin/webhooks/recent ─────────────────────────────────
@@ -45,7 +46,7 @@ router.get('/recent', async (req, res) => {
 
     res.json({ data: result.rows });
   } catch (err) {
-    console.error('[Admin/webhooks] GET /recent error:', err.message);
+    log.error('admin.webhooks_recent_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -63,7 +64,7 @@ router.get('/:id', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('[Admin/webhooks] GET /:id error:', err.message);
+    log.error('admin.webhooks_detail_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });

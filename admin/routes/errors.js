@@ -63,7 +63,7 @@ router.get('/', async (req, res) => {
       offset: parseInt(offset)
     });
   } catch (err) {
-    console.error('[Admin/errors] GET / error:', err.message);
+    log.error('admin.errors_list_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -87,7 +87,7 @@ router.get('/:id', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('[Admin/errors] GET /:id error:', err.message);
+    log.error('admin.errors_detail_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -109,7 +109,7 @@ router.post('/:id/dismiss', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, ...result.rows[0] });
   } catch (err) {
-    console.error('[Admin/errors] POST /:id/dismiss error:', err.message);
+    log.error('admin.errors_dismiss_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -143,7 +143,7 @@ router.post('/:id/retry', async (req, res) => {
 
     res.json({ ok: true, queued: jobName });
   } catch (err) {
-    console.error('[Admin/errors] POST /:id/retry error:', err.message);
+    log.error('admin.errors_retry_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -187,7 +187,7 @@ router.post('/bulk-retry', async (req, res) => {
 
     res.json(results);
   } catch (err) {
-    console.error('[Admin/errors] POST /bulk-retry error:', err.message);
+    log.error('admin.errors_bulk_retry_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });

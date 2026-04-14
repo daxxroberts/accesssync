@@ -27,6 +27,7 @@
 const crypto = require('crypto');
 const https  = require('https');
 const db     = require('../db');
+const { log } = require('./logger');
 
 // Cache Wix public keys for 1 hour to avoid hammering their endpoint
 let _keyCache      = null;
@@ -54,7 +55,7 @@ class MemberSyncApi {
         try {
           jwtPayload = await this._verifyWixJWT(token);
         } catch (jwtErr) {
-          console.warn('[MemberSyncApi] JWT verification failed:', jwtErr.message);
+          log.warn('member.jwt_failed', {}, jwtErr);
           return res.status(401).json({ error: 'Unauthorized' });
         }
       } else {
@@ -154,7 +155,7 @@ class MemberSyncApi {
       });
 
     } catch (error) {
-      console.error('[MemberSyncApi] Error:', error.message);
+      log.error('member.access_status_error', {}, error);
       return res.status(500).json({ error: 'Internal server error' });
     }
   }

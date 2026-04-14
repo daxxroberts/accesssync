@@ -24,6 +24,7 @@ const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const { eventQueue } = require('./webhook-processor');
 const { decryptApiKey } = require('./crypto-utils');
+const { log } = require('./logger');
 
 class NightlyReconciliation {
 
@@ -35,7 +36,7 @@ class NightlyReconciliation {
    * Main entry point for the Railway Cron Job
    */
   async runNightlySweep() {
-    console.log('[Nightly Reconciliation] Starting sweep at', new Date().toISOString());
+    log.info('reconciliation.sweep_start', {});
 
     try {
       // Step 1: Clean up stale in_flight records (crash protection)
@@ -45,14 +46,14 @@ class NightlyReconciliation {
          WHERE status = 'in_flight'
            AND updated_at < NOW() - INTERVAL '${this.staleThresholdMinutes} minutes'`
       );
-      console.log('[Nightly Reconciliation] Stale in_flight records reset to failed.');
+      log.info('reconciliation.stale_reset', {});
 
       // Step 2: Sync Door Lockdown States
       await this._syncDoorLockdownStates();
 
       // Step 3: Fetch Actionable Records
       const recordsToProcess = await this._fetchActionableRecords();
-      console.log(`[Nightly Reconciliation] Found ${recordsToProcess.length} actionable records.`);
+      log.info('reconciliation.actionable_records', { count: recordsToProcess.length });
 
       // Step 4: Re-process records with rate limit compliance
       for (const record of recordsToProcess) {
@@ -63,9 +64,9 @@ class NightlyReconciliation {
       // Step 5: Send Operator Email Digest
       await this._generateAndSendDigest();
 
-      console.log('[Nightly Reconciliation] Sweep complete.');
+      log.info('reconciliation.sweep_complete', {});
     } catch (error) {
-      console.error('[Nightly Reconciliation] CRITICAL ERROR during sweep:', error);
+      log.critical('reconciliation.sweep_failed', {}, error);
     }
   }
 
@@ -83,7 +84,7 @@ class NightlyReconciliation {
     for (const loc of locationsResult.rows) {
       const apiKey = loc.hardware_api_key ? decryptApiKey(loc.hardware_api_key) : null;
       if (!apiKey) {
-        console.warn(`[Nightly Reconciliation] No API key for location ${loc.location_id} — skipping lockdown sync.`);
+        log.warn('reconciliation.no_api_key', { locationId: loc.location_id });
         continue;
       }
 
@@ -96,7 +97,7 @@ class NightlyReconciliation {
           `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, last_seen_at)
            VALUES ($1, 'lockdown_detected', $2, NOW())`,
           [loc.client_id, String(door.id || door.name || 'unknown')]
-        ).catch(e => console.error('[Nightly Reconciliation] Failed to log lockdown alert:', e.message));
+        ).catch(e => log.error('reconciliation.lockdown_alert_failed', { clientId: loc.client_id }, e));
       }
     }
   }
@@ -123,7 +124,7 @@ class NightlyReconciliation {
     );
 
     if (errorResult.rows.length === 0) {
-      console.warn(`[Nightly Reconciliation] No error_queue entry for member ${record.member_id}. Skipping.`);
+      log.warn('reconciliation.no_error_entry', { memberId: record.member_id });
       return;
     }
 
@@ -132,7 +133,7 @@ class NightlyReconciliation {
     try {
       standardEvent = typeof payload === 'string' ? JSON.parse(payload) : payload;
     } catch (e) {
-      console.error(`[Nightly Reconciliation] Failed to parse payload for member ${record.member_id}:`, e.message);
+      log.error('reconciliation.payload_parse_failed', { memberId: record.member_id }, e);
       return;
     }
 
@@ -142,7 +143,7 @@ class NightlyReconciliation {
 
     // 2. Re-queue to BullMQ — respects in_flight lock and concurrency controls (not direct grant-revoke call)
     await eventQueue.add(jobName, { tenantId: record.client_id, standardEvent });
-    console.log(`[Nightly Reconciliation] Re-queued ${jobName} for member ${record.member_id} (${record.platform_member_id}).`);
+    log.info('reconciliation.requeued', { jobName, memberId: record.member_id, platformMemberId: record.platform_member_id });
   }
 
   async _generateAndSendDigest() {
@@ -167,17 +168,17 @@ class NightlyReconciliation {
       failedJobs: failedJobsResult.rows,
     };
 
-    console.log('[Nightly Reconciliation] DIGEST:', JSON.stringify(digest, null, 2));
+    log.info('reconciliation.digest', { configAlerts: digest.configAlerts.length, failedJobs: digest.failedJobs.length });
 
     if (configAlertsResult.rows.length === 0 && failedJobsResult.rows.length === 0) {
-      console.log('[Nightly Reconciliation] Digest: nothing to report.');
+      log.info('reconciliation.digest_empty', {});
       return;
     }
 
     // DR-020: Send nightly digest via Resend — same pattern as retry-engine._notifyOperator
     const toEmail = process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL || null;
     if (!toEmail) {
-      console.warn('[Nightly Reconciliation] ACCESSSYNC_OWNER_NOTIFICATION_EMAIL not set — digest logged only.');
+      log.warn('reconciliation.no_notification_email', {});
       return;
     }
 
@@ -199,9 +200,9 @@ class NightlyReconciliation {
         subject: '[AccessSync] Nightly digest',
         text: lines.join('\n'),
       });
-      console.log(`[Nightly Reconciliation] Digest sent to ${toEmail}`);
+      log.info('reconciliation.digest_sent', { toEmail });
     } catch (err) {
-      console.error('[Nightly Reconciliation] Failed to send digest email:', err.message);
+      log.error('reconciliation.digest_send_failed', { toEmail }, err);
     }
   }
 
@@ -219,7 +220,7 @@ if (require.main === module) {
   instance.runNightlySweep().then(() => {
     process.exit(0);
   }).catch(err => {
-    console.error(err);
+    log.critical('reconciliation.fatal', {}, err);
     process.exit(1);
   });
 }

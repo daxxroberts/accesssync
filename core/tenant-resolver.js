@@ -23,6 +23,7 @@
  */
 
 const db = require('../db');
+const { log } = require('./logger');
 
 class TenantResolver {
   constructor() {
@@ -39,7 +40,7 @@ class TenantResolver {
    */
   async resolve(wixSiteId) {
     if (!wixSiteId) {
-      console.warn('[Tenant Resolver] No wixSiteId provided. Cannot resolve tenant.');
+      log.warn('tenant.no_site_id', {});
       return null;
     }
 
@@ -62,21 +63,21 @@ class TenantResolver {
         // normally. Remove DEFAULT_TENANT_ID from env after first successful webhook.
         const fallback = process.env.DEFAULT_TENANT_ID || null;
         if (fallback) {
-          console.warn(`[Tenant Resolver] No client for site_id: ${wixSiteId} — using DEFAULT_TENANT_ID fallback.`);
+          log.warn('tenant.fallback_used', { wixSiteId });
           // Auto-wire: write this site_id to the fallback client row (only if not already set)
           try {
             await db.query(
               `UPDATE clients SET site_id = $1 WHERE id = $2 AND (site_id IS NULL OR site_id = '')`,
               [wixSiteId, fallback]
             );
-            console.log(`[Tenant Resolver] Auto-wired site_id ${wixSiteId} to client ${fallback}`);
+            log.info('tenant.auto_wired', { wixSiteId, clientId: fallback });
           } catch (wireErr) {
-            console.error('[Tenant Resolver] Auto-wire failed (non-fatal):', wireErr.message);
+            log.error('tenant.auto_wire_failed', { wixSiteId, clientId: fallback }, wireErr);
           }
           this._cache.set(wixSiteId, { clientId: fallback, cachedAt: Date.now() });
           return fallback;
         }
-        console.warn(`[Tenant Resolver] No active client found for site_id: ${wixSiteId}`);
+        log.warn('tenant.not_found', { wixSiteId });
         return null;
       }
 
@@ -88,7 +89,7 @@ class TenantResolver {
       return clientId;
 
     } catch (err) {
-      console.error('[Tenant Resolver] DB lookup failed:', err.message);
+      log.error('tenant.db_lookup_failed', {}, err);
       // Do not throw — return null so webhook-processor can handle gracefully
       return null;
     }
@@ -110,10 +111,10 @@ class TenantResolver {
         [siteId, clientId]
       );
       if (result.rowCount > 0) {
-        console.log(`[Tenant Resolver] Registered site_id ${siteId} for client ${clientId}`);
+        log.info('tenant.site_id_registered', { clientId, siteId });
       }
     } catch (err) {
-      console.error('[Tenant Resolver] registerSiteId failed (non-fatal):', err.message);
+      log.error('tenant.register_failed', { clientId, siteId }, err);
     }
   }
 

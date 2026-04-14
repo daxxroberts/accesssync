@@ -24,7 +24,7 @@ router.get('/counts', async (req, res) => {
     );
     res.json(counts);
   } catch (err) {
-    console.error('[Admin/queue] GET /counts error:', err.message);
+    log.error('admin.queue_counts_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -55,7 +55,7 @@ router.get('/jobs', async (req, res) => {
 
     res.json({ state, data: formatted });
   } catch (err) {
-    console.error('[Admin/queue] GET /jobs error:', err.message);
+    log.error('admin.queue_jobs_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });

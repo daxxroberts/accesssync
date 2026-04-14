@@ -18,6 +18,7 @@ const wixAdapter = require('./wix-adapter');
 const webhookProcessor = require('../../core/webhook-processor');
 const tenantResolver = require('../../core/tenant-resolver');
 const hmacMonitor = require('../../core/hmac-monitor'); // Sprint 5.1
+const { log } = require('../../core/logger');
 
 class WixConnector {
   constructor() {
@@ -40,8 +41,8 @@ class WixConnector {
 
       // 1. Verify Signature (DR-009)
       if (!this._verifySignature(rawBody, signature)) {
-        console.warn('[Wix Connector] Invalid webhook signature rejected.');
         const clientHint = req.headers['x-accesssync-client-id'] || 'unknown';
+        log.warn('wix.hmac.rejected', { clientHint });
         hmacMonitor.recordFailure(clientHint).catch(() => {}); // Sprint 5.1 — non-blocking
         await webhookProcessor.logWebhookAttempt({
           eventId: req.headers['x-wix-event-id'] || null,
@@ -77,7 +78,7 @@ class WixConnector {
       await webhookProcessor.processIncoming(eventId, standardEvent, rawBody);
 
     } catch (error) {
-      console.error('[Wix Connector] Webhook processing error:', error);
+      log.error('wix.webhook.processing_error', {}, error);
       if (!res.headersSent) {
         res.status(500).send('Internal Server Error');
       }
@@ -105,7 +106,7 @@ class WixConnector {
       if (secureExpected.length !== secureActual.length) return false;
       return crypto.timingSafeEqual(secureExpected, secureActual);
     } catch (e) {
-      console.error('[Wix Connector] Signature verification failed:', e);
+      log.error('wix.hmac.verification_error', {}, e);
       return false;
     }
   }

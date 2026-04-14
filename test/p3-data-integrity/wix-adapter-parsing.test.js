@@ -55,13 +55,15 @@ describe('[P3] Wix webhook → memberId resolves correctly', () => {
   });
 
   it('returns null memberId and logs a warning when no memberId found — prevents ghost provisioning', () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { log } = require('../../core/logger');
+    const warnSpy = jest.spyOn(log, 'warn').mockImplementation(() => {});
 
     const result = wixAdapter.parseEvent('plan.purchased', 'site-001', { data: {} });
 
     expect(result.platformMemberId).toBeNull();
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('No memberId resolved')
+      'wix.parse.no_member_id',
+      expect.objectContaining({ eventType: 'plan.purchased' })
     );
 
     warnSpy.mockRestore();

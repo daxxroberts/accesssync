@@ -18,6 +18,7 @@ const { encryptApiKey, decryptApiKey } = require('../../core/crypto-utils');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { logAdminAction } = require('../middleware/audit');
+const { log } = require('../../core/logger');
 const hardwareAdapter = require('../../adapters/hardware-adapter');
 
 // hardware_platform is intentionally excluded — blocked once members are provisioned (GAP 1/2)
@@ -74,14 +75,14 @@ async function activateLocationMembersAdmin(clientId, locationId) {
               [mem.member_id, m.id, String(roleId), groupId]
             );
           } catch (err) {
-            console.warn(`[activateLocationMembersAdmin] member ${mem.member_id} group ${groupId}:`, err.message);
+            log.warn('admin.activate_member_failed', { memberId: mem.member_id, groupId }, err);
           }
         }
       }
     }
-    console.log(`[activateLocationMembersAdmin] Done for location ${locationId}`);
+    log.info('admin.activate_location_done', { locationId });
   } catch (err) {
-    console.error('[activateLocationMembersAdmin] Error:', err.message);
+    log.error('admin.activate_location_error', { locationId }, err);
   }
 }
 
@@ -101,11 +102,11 @@ router.post('/', async (req, res) => {
        RETURNING id, name, platform, hardware_platform, tier, site_id, site_name, notification_email, status, created_at`,
       [name.trim(), platform, derivedHardware, tier || null, site_id || null, site_name || null, site_url || null, notification_email || null]
     );
-    console.log(`[Admin/clients] Created new client: ${result.rows[0].name} (${result.rows[0].id})`);
+    log.info('admin.client_created', { name: result.rows[0].name, clientId: result.rows[0].id });
     res.status(201).json({ ok: true, client: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Site ID already in use' });
-    console.error('[Admin/clients] POST / error:', err.message);
+    log.error('admin.clients_create_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -153,7 +154,7 @@ router.get('/', async (req, res) => {
     );
     res.json({ data: result.rows });
   } catch (err) {
-    console.error('[Admin/clients] GET / error:', err.message);
+    log.error('admin.clients_list_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -187,7 +188,7 @@ router.patch('/:id', async (req, res) => {
     logAdminAction(id, 'client_edited', { fields: Object.keys(updates), values: updates });
     res.json({ ok: true, client: safeClient });
   } catch (err) {
-    console.error('[Admin/clients] PATCH /:id error:', err.message);
+    log.error('admin.clients_patch_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -213,10 +214,10 @@ router.post('/:id/api-key', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     logAdminAction(id, 'api_key_rotated', { type: 'hardware', client_name: result.rows[0].name });
-    console.log(`[Admin/clients] API key set for client ${id} (${result.rows[0].name})`);
+    log.info('admin.api_key_set', { clientId: id, name: result.rows[0].name });
     res.json({ ok: true, message: 'API key saved' });
   } catch (err) {
-    console.error('[Admin/clients] POST /:id/api-key error:', err.message);
+    log.error('admin.clients_api_key_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -239,7 +240,7 @@ router.get('/:id/api-key/test', async (req, res) => {
   } catch (err) {
     if (err.statusCode === 401) return res.json({ valid: false, error: 'Invalid API key — Kisi rejected it' });
     if (err.statusCode === 403) return res.json({ valid: false, error: 'API key authenticated but lacks required permissions' });
-    console.error('[Admin/clients] GET /:id/api-key/test error:', err.message);
+    log.error('admin.clients_api_key_test_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -253,7 +254,7 @@ router.get('/:id/api-key/status', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     res.json({ hasKey: !!result.rows[0].hardware_api_key });
   } catch (err) {
-    console.error('[Admin/clients] GET /:id/api-key/status error:', err.message);
+    log.error('admin.clients_api_key_status_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -279,7 +280,7 @@ router.get('/:id/locations', async (req, res) => {
     );
     res.json({ data: result.rows });
   } catch (err) {
-    console.error('[Admin/clients] GET /:id/locations error:', err.message);
+    log.error('admin.clients_locations_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -301,10 +302,10 @@ router.post('/:id/locations', async (req, res) => {
        RETURNING id, client_id, name, city, state, tier, subscription_status, created_at`,
       [id, name.trim(), city || null, state || null, tier || null]
     );
-    console.log(`[Admin/clients] Created location ${result.rows[0].name} for client ${id}`);
+    log.info('admin.location_created', { name: result.rows[0].name, clientId: id });
     res.status(201).json({ ok: true, location: result.rows[0] });
   } catch (err) {
-    console.error('[Admin/clients] POST /:id/locations error:', err.message);
+    log.error('admin.clients_location_create_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -346,7 +347,7 @@ router.patch('/:id/locations/:locationId', async (req, res) => {
           );
           // Re-provision members fire-and-forget (requires operator.js activateLocationMembers
           // but that lives in operator.js — log intent here, full reprovision via activate endpoint)
-          console.log(`[Admin/clients] Location ${locationId} reactivated via PATCH — members should re-provision via activate endpoint`);
+          log.info('admin.location_reactivated', { locationId });
           return res.json({ ok: true, message: 'Location reactivated. Use the activate endpoint to re-provision members.' });
         }
       }
@@ -365,7 +366,7 @@ router.patch('/:id/locations/:locationId', async (req, res) => {
     const { hardware_api_key, ...safeLocation } = result.rows[0];
     res.json({ ok: true, location: safeLocation });
   } catch (err) {
-    console.error('[Admin/clients] PATCH /:id/locations/:locationId error:', err.message);
+    log.error('admin.clients_location_patch_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -387,10 +388,10 @@ router.post('/:id/locations/:locationId/api-key', async (req, res) => {
       [encrypted, locationId, id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
-    console.log(`[Admin/clients] Location API key set for ${result.rows[0].name} (${locationId})`);
+    log.info('admin.location_api_key_set', { name: result.rows[0].name, locationId });
     res.json({ ok: true, message: 'Location API key saved' });
   } catch (err) {
-    console.error('[Admin/clients] POST /:id/locations/:locationId/api-key error:', err.message);
+    log.error('admin.clients_location_key_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -402,7 +403,7 @@ router.post('/:id/locations/:locationId/suspend', async (req, res) => {
     const { id: clientId, locationId } = req.params;
     const { status = 'suspended' } = req.body; // 'suspended' or 'cancelled'
 
-    console.log(`[Admin/clients] Lapse trigger: location ${locationId}, status → ${status}`);
+    log.info('admin.lapse_trigger', { locationId, status });
     const result = await suspendLocationMembers(locationId, clientId, status);
 
     res.json({
@@ -412,7 +413,7 @@ router.post('/:id/locations/:locationId/suspend', async (req, res) => {
       errors:    result.errors,
     });
   } catch (err) {
-    console.error('[Admin/clients] POST /:id/locations/:locationId/suspend error:', err.message);
+    log.error('admin.clients_location_suspend_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -436,14 +437,14 @@ router.post('/:id/locations/:locationId/activate', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
 
-    console.log(`[Admin/clients] Location ${result.rows[0].name} activated`);
+    log.info('admin.location_activated', { name: result.rows[0].name });
     res.json({ ok: true, location: result.rows[0] });
 
     // GAP 3: re-provision all previously active members at this location
     activateLocationMembersAdmin(clientId, locationId)
-      .catch(err => console.warn('[Admin/clients] activateLocationMembersAdmin failed:', err.message));
+      .catch(err => log.warn('admin.activate_members_failed', {}, err));
   } catch (err) {
-    console.error('[Admin/clients] POST /:id/locations/:locationId/activate error:', err.message);
+    log.error('admin.clients_location_activate_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -462,10 +463,10 @@ router.post('/:id/archive', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found or already archived' });
     logAdminAction(id, 'client_archived', { name: result.rows[0].name });
-    console.log(`[Admin/clients] Archived client: ${result.rows[0].name} (${id})`);
+    log.info('admin.client_archived', { name: result.rows[0].name, clientId: id });
     res.json({ ok: true, client: result.rows[0] });
   } catch (err) {
-    console.error('[Admin/clients] POST /:id/archive error:', err.message);
+    log.error('admin.clients_archive_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -482,10 +483,10 @@ router.post('/:id/restore', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found or not archived' });
     logAdminAction(id, 'client_restored', { name: result.rows[0].name });
-    console.log(`[Admin/clients] Restored client: ${result.rows[0].name} (${id})`);
+    log.info('admin.client_restored', { name: result.rows[0].name, clientId: id });
     res.json({ ok: true, client: result.rows[0] });
   } catch (err) {
-    console.error('[Admin/clients] POST /:id/restore error:', err.message);
+    log.error('admin.clients_restore_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -539,7 +540,7 @@ router.get('/:id/dependencies', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[Admin/clients] GET /:id/dependencies error:', err.message);
+    log.error('admin.clients_dependencies_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -595,11 +596,11 @@ router.delete('/:id', async (req, res) => {
     await pgClient.query('DELETE FROM clients WHERE id = $1', [id]);
 
     await pgClient.query('COMMIT');
-    console.log(`[Admin/clients] Permanently deleted client: ${clientName} (${id})`);
+    log.info('admin.client_deleted', { clientName, clientId: id });
     res.json({ ok: true, message: `Client "${clientName}" and all related data permanently deleted` });
   } catch (err) {
     await pgClient.query('ROLLBACK').catch(() => {});
-    console.error('[Admin/clients] DELETE /:id error:', err.message);
+    log.error('admin.clients_delete_error', {}, err);
     res.status(500).json({ error: err.message });
   } finally {
     pgClient.release();
@@ -622,7 +623,7 @@ router.get('/:id/audit', async (req, res) => {
     );
     res.json({ data: result.rows });
   } catch (err) {
-    console.error('[Admin/clients] GET /:id/audit error:', err.message);
+    log.error('admin.clients_audit_error', {}, err);
     res.status(500).json({ error: err.message });
   }
 });

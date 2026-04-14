@@ -18,6 +18,7 @@
 
 const router = require('express').Router();
 const db     = require('../../db');
+const { log } = require('../../core/logger');
 const { requireWixInstance } = require('../middleware/wix-instance');
 const { signOperatorToken, requireAuthPageOrOperator } = require('../middleware/auth');
 
@@ -50,7 +51,7 @@ router.get('/', requireWixInstance, async (req, res) => {
       return res.redirect('/operator-portal/setup');
     }
   } catch (err) {
-    console.error('[portal] Setup check failed:', err.message);
+    log.error('admin.portal_setup_check_failed', {}, err);
     // On DB error, fall through to dashboard rather than blocking the operator
   }
 

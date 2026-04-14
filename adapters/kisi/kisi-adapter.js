@@ -10,6 +10,7 @@
  */
 
 const kisiConnector = require('./kisi-connector');
+const { log } = require('../../core/logger');
 
 class KisiAdapter {
 
@@ -113,14 +114,14 @@ class KisiAdapter {
    */
   async getGroups(apiKey) {
     if (!apiKey) {
-      console.warn('[Kisi Adapter] getGroups called with no API key. Skipping.');
+      log.warn('kisi.get_groups_no_key', {});
       return [];
     }
     try {
       const data = await kisiConnector.makeRequest('/groups', { method: 'GET' }, apiKey);
       return Array.isArray(data) ? data : [];
     } catch (err) {
-      console.error('[Kisi Adapter] getGroups failed:', err.message);
+      log.error('kisi.get_groups_failed', {}, err);
       return [];
     }
   }
@@ -136,7 +137,7 @@ class KisiAdapter {
    */
   async getLocks(apiKey) {
     if (!apiKey) {
-      console.warn('[Kisi Adapter] getLocks called with no API key. Skipping.');
+      log.warn('kisi.get_locks_no_key', {});
       return [];
     }
     try {
@@ -148,7 +149,7 @@ class KisiAdapter {
         locked: l.is_locked === true,
       }));
     } catch (err) {
-      console.error('[Kisi Adapter] getLocks failed:', err.message);
+      log.error('kisi.get_locks_failed', {}, err);
       return [];
     }
   }

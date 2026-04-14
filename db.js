@@ -16,6 +16,13 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 
+// Lazy-require logger to avoid circular dependency (logger requires db)
+let _log = null;
+function getLog() {
+  if (!_log) _log = require('./core/logger').log;
+  return _log;
+}
+
 // --- Startup Validation ---
 
 if (!process.env.DATABASE_URL) {
@@ -41,7 +48,7 @@ const pool = new Pool({
 // Log pool-level errors (e.g. dropped connection, Postgres restart)
 // These are non-fatal — the pool will reconnect automatically
 pool.on('error', (err) => {
-  console.error('[DB] Unexpected pool error:', err.message);
+  getLog().error('db.pool_error', {}, err);
 });
 
 // --- Query Helper ---
@@ -67,16 +74,11 @@ async function query(text, params) {
     const duration = Date.now() - start;
     // Log slow queries in production (> 500ms) for observability
     if (process.env.NODE_ENV === 'production' && duration > 500) {
-      console.warn(`[DB] Slow query (${duration}ms):`, text);
+      getLog().warn('db.slow_query', { duration, query: text });
     }
     return result;
   } catch (err) {
-    console.error('[DB] Query error:', {
-      query: text,
-      params,
-      error: err.message,
-      code: err.code,
-    });
+    getLog().error('db.query_error', { query: text, params, code: err.code }, err);
     throw err; // Re-throw so calling module can handle or route to retry engine
   }
 }
@@ -115,7 +117,7 @@ async function healthCheck() {
     await pool.query('SELECT 1');
     return true;
   } catch (err) {
-    console.error('[DB] Health check failed:', err.message);
+    getLog().error('db.health_check_failed', {}, err);
     return false;
   }
 }

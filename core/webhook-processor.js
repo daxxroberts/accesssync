@@ -119,15 +119,19 @@ class WebhookProcessor {
   }
 
   async _logToAlertLog(eventId, event, reason) {
-    await db.query(
-      `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
-       VALUES ($1, $2, $3)`,
-      [
-        process.env.DEFAULT_TENANT_ID || null,
-        'malformed_payload',
-        eventId
-      ]
-    );
+    try {
+      await db.query(
+        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
+         VALUES ($1, $2, $3)`,
+        [
+          process.env.DEFAULT_TENANT_ID || null,
+          'malformed_payload',
+          eventId
+        ]
+      );
+    } catch (err) {
+      log.error('webhook.alert_log_failed', { eventId, reason }, err);
+    }
   }
 
   async logWebhookAttempt({

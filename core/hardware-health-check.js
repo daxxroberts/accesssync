@@ -35,7 +35,7 @@ const { decryptApiKey } = require('./crypto-utils');
 const { log } = require('./logger');
 
 async function runHealthCheck() {
-  console.log('[Hardware Health Check] Starting at', new Date().toISOString());
+  log.info('health.check_start', {});
 
   // Per-location iteration: each active location gets its own key + platform check
   const locationsResult = await db.query(
@@ -53,7 +53,7 @@ async function runHealthCheck() {
     await _checkLocation(loc);
   }
 
-  console.log('[Hardware Health Check] Complete.');
+  log.info('health.check_complete', {});
 }
 
 async function _checkLocation(loc) {
@@ -62,7 +62,7 @@ async function _checkLocation(loc) {
   const encKey = loc.hardware_api_key;
   if (!encKey) {
     const msg = 'No hardware API key configured. Set your API key in the AccessSync dashboard under this location.';
-    console.warn(`[Hardware Health Check] ${loc.client_name} / ${loc.location_name}: no key set.`);
+    log.warn('health.no_key', { clientId: loc.client_id, location: loc.location_name });
     await _notifyFailure(loc, null, 'no_key', msg);
     await _updateLocationVerification(loc.location_id, null, msg);
     return;
@@ -72,7 +72,7 @@ async function _checkLocation(loc) {
   try {
     apiKey = decryptApiKey(encKey);
   } catch (err) {
-    console.error(`[Hardware Health Check] ${loc.client_name} / ${loc.location_name}: key decryption failed.`);
+    log.error('health.key_decrypt_failed', { clientId: loc.client_id, location: loc.location_name }, err);
     return;
   }
 
@@ -81,7 +81,7 @@ async function _checkLocation(loc) {
   let errorType = null;
   try {
     await hardwareAdapter.getLocks(platform, apiKey);
-    console.log(`[Hardware Health Check] ${loc.client_name} / ${loc.location_name}: key valid ✓`);
+    log.info('health.key_valid', { clientId: loc.client_id, location: loc.location_name });
   } catch (err) {
     error = err;
     if (err.statusCode === 401) {
@@ -91,7 +91,7 @@ async function _checkLocation(loc) {
     } else {
       errorType = 'network_error';
     }
-    console.warn(`[Hardware Health Check] ${loc.client_name} / ${loc.location_name}: ${errorType} — ${err.message}`);
+    log.warn('health.key_check_failed', { clientId: loc.client_id, location: loc.location_name, errorType }, err);
   }
 
   const errorMsg = error ? _diagnose(errorType, platform) : null;
@@ -121,7 +121,7 @@ async function _reconcileGroups(loc, platform, apiKey) {
   try {
     liveGroups = await hardwareAdapter.getGroups(platform, apiKey);
   } catch (err) {
-    console.warn(`[Hardware Health Check] getGroups failed for ${loc.client_name}: ${err.message}`);
+    log.warn('health.get_groups_failed', { clientId: loc.client_id }, err);
     return;
   }
 
@@ -237,11 +237,11 @@ async function _reconcileGroups(loc, platform, apiKey) {
   }
 
   if (orphans.length > 0) {
-    console.log(`[Hardware Health Check] ${loc.client_name}: ${orphans.length} group(s) flagged as not found.`);
+    log.info('health.groups_orphaned', { clientId: loc.client_id, count: orphans.length });
     await _notifyOrphanedGroups(loc, orphans, platform);
   }
   if (recovered.length > 0) {
-    console.log(`[Hardware Health Check] ${loc.client_name}: ${recovered.length} group(s) recovered.`);
+    log.info('health.groups_recovered', { clientId: loc.client_id, count: recovered.length });
   }
 }
 
@@ -285,9 +285,9 @@ async function _notifyOrphanedGroups(loc, orphans, platform) {
         'To fix this: log in to AccessSync → Plan Mapping → remap or remove the affected groups.',
       ].join('\n'),
     });
-    console.log(`[Hardware Health Check] Orphaned group alert sent to ${toEmail}`);
+    log.info('health.orphan_alert_sent', { toEmail });
   } catch (err) {
-    console.error('[Hardware Health Check] Failed to send orphan alert:', err.message);
+    log.error('health.orphan_alert_failed', { toEmail }, err);
   }
 }
 
@@ -317,7 +317,7 @@ async function _reconcileWixPlans(loc) {
   try {
     wixPlans = await wixPlansApi.listPricingPlans(wixApiKey, client.wix_instance_id);
   } catch (err) {
-    console.warn(`[Hardware Health Check] Wix plans fetch failed for ${loc.client_name}: ${err.message}`);
+    log.warn('health.wix_plans_fetch_failed', { clientId: loc.client_id }, err);
     return;
   }
 
@@ -376,7 +376,7 @@ async function _reconcileWixPlans(loc) {
   }
 
   if (newlyArchived.length > 0) {
-    console.log(`[Hardware Health Check] ${loc.client_name}: ${newlyArchived.length} Wix plan(s) archived.`);
+    log.info('health.wix_plans_archived', { clientId: loc.client_id, count: newlyArchived.length });
     await _notifyArchivedPlans(loc, newlyArchived);
   }
 }
@@ -415,9 +415,9 @@ async function _notifyArchivedPlans(loc, archivedPlans) {
         'You can view affected plans in AccessSync → Plan Mapping.',
       ].join('\n'),
     });
-    console.log(`[Hardware Health Check] Archived plan alert sent to ${toEmail}`);
+    log.info('health.archived_plan_alert_sent', { toEmail });
   } catch (err) {
-    console.error('[Hardware Health Check] Failed to send archived plan alert:', err.message);
+    log.error('health.archived_plan_alert_failed', { toEmail }, err);
   }
 }
 
@@ -441,13 +441,13 @@ async function _updateLocationVerification(locationId, verifiedAt, errorMsg) {
          hardware_key_last_error    = $2
      WHERE id = $3`,
     [verifiedAt, errorMsg, locationId]
-  ).catch(e => console.error('[Hardware Health Check] Failed to update location:', e.message));
+  ).catch(e => log.error('health.location_update_failed', { locationId }, e));
 }
 
 async function _notifyFailure(loc, locName, errorType, message) {
   const toEmail = loc.notification_email || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
   if (!toEmail) {
-    console.warn(`[Hardware Health Check] No notification email for ${loc.client_name} / ${loc.location_name} — logged only.`);
+    log.warn('health.no_notification_email', { clientId: loc.client_id, location: loc.location_name });
     return;
   }
 
@@ -477,9 +477,9 @@ async function _notifyFailure(loc, locName, errorType, message) {
         'Members will not lose existing access, but new signups will not provision until the key is corrected.',
       ].join('\n'),
     });
-    console.log(`[Hardware Health Check] Alert sent to ${toEmail} for ${loc.location_name}`);
+    log.info('health.alert_sent', { toEmail, location: loc.location_name });
   } catch (err) {
-    console.error('[Hardware Health Check] Failed to send alert:', err.message);
+    log.error('health.alert_send_failed', { toEmail, location: loc.location_name }, err);
   }
 }
 
@@ -487,7 +487,7 @@ async function _notifyFailure(loc, locName, errorType, message) {
 if (require.main === module) {
   runHealthCheck()
     .then(() => process.exit(0))
-    .catch(err => { console.error(err); process.exit(1); });
+    .catch(err => { log.critical('health.fatal', {}, err); process.exit(1); });
 }
 
 module.exports = { runHealthCheck };

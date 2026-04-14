@@ -24,6 +24,7 @@ const operatorRoutes    = require('./routes/operator');
 const multiMemberRoutes = require('./routes/multi-member');
 const portalRoutes      = require('./routes/portal');
 const { requireAuth, requireAuthPage, requireAuthPageOrOperator } = require('./middleware/auth');
+const { log } = require('../core/logger');
 
 const app  = express();
 const PORT = process.env.ADMIN_PORT || process.env.PORT || 3001;
@@ -127,20 +128,19 @@ app.get('*',               allowWixFrame, (req, res) => res.sendFile(path.join(_
 
 // ── Global error handler ──────────────────────────────────────
 app.use((err, req, res, _next) => {
-  console.error('[Admin Hub] Unhandled error:', err.stack || err.message);
+  log.error('admin.unhandled_error', { path: req.path }, err);
   if (res.headersSent) return;
   res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, () => {
-  console.log(`[AccessSync Admin Hub] Running on port ${PORT}`);
-  console.log(`[AccessSync Admin Hub] Environment: ${process.env.NODE_ENV}`);
+  log.info('admin.started', { port: PORT, env: process.env.NODE_ENV });
 });
 
 // ── Prevent silent crashes ─────────────────────────────────────
 process.on('uncaughtException', (err) => {
-  console.error('[Admin Hub] uncaughtException:', err.message, err.stack);
+  log.critical('admin.uncaught_exception', {}, err);
 });
 process.on('unhandledRejection', (reason) => {
-  console.error('[Admin Hub] unhandledRejection:', reason);
+  log.critical('admin.unhandled_rejection', { reason: String(reason) });
 });
