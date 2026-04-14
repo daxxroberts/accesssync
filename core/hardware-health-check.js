@@ -4,7 +4,7 @@
  * @role cron-6hr
  * @schedule every 6 hours via Railway Cron
  * @reads locations, clients, plan_mappings, plan_mapping_groups, member_role_assignments
- * @writes locations.hardware_key_last_verified, locations.hardware_key_last_error, plan_mapping_groups.health_status, plan_mappings.wix_status
+ * @writes locations.hardware_key_last_verified, locations.hardware_key_last_error, plan_mapping_groups.health_status, plan_mapping_groups.door_name, plan_mappings.door_name, plan_mappings.wix_status
  * @calls hardware-adapter (getLocks, getGroups), wix-plans-api (listPricingPlans), resend (alerts)
  * @exports runHealthCheck
  * @dr DR-028
@@ -132,17 +132,20 @@ async function _reconcileGroups(loc, platform, apiKey) {
   }
 
   const liveGroupIdSet = new Set(liveGroups.map(g => String(g.id)));
+  const liveGroupNameMap = new Map(liveGroups.map(g => [String(g.id), g.name]));
 
   // Query all mapped group IDs for this client (junction table + legacy single-group)
   const mappedResult = await db.query(
     `SELECT DISTINCT pmg.hardware_group_id, pm.id AS mapping_id, pm.plan_name,
-            COALESCE(pmg.health_status, 'ok') AS current_health
+            COALESCE(pmg.health_status, 'ok') AS current_health,
+            pmg.door_name AS cached_name
      FROM plan_mapping_groups pmg
      JOIN plan_mappings pm ON pmg.mapping_id = pm.id
      WHERE pm.client_id = $1 AND pm.status = 'active'
      UNION
      SELECT DISTINCT pm.hardware_group_id, pm.id AS mapping_id, pm.plan_name,
-            'legacy' AS current_health
+            'legacy' AS current_health,
+            pm.door_name AS cached_name
      FROM plan_mappings pm
      WHERE pm.client_id = $1 AND pm.status = 'active'
        AND pm.hardware_group_id IS NOT NULL
@@ -159,6 +162,28 @@ async function _reconcileGroups(loc, platform, apiKey) {
   const recovered = mappedResult.rows.filter(r =>
     liveGroupIdSet.has(String(r.hardware_group_id)) && r.current_health === 'not_found'
   );
+
+  // Sync stale group names first — runs even when no orphans or recoveries
+  let namesUpdated = 0;
+  for (const row of mappedResult.rows) {
+    const liveName = liveGroupNameMap.get(String(row.hardware_group_id));
+    if (!liveName || liveName === row.cached_name) continue;
+    if (row.current_health === 'legacy') {
+      await db.query(
+        `UPDATE plan_mappings SET door_name = $1 WHERE id = $2 AND hardware_group_id = $3`,
+        [liveName, row.mapping_id, row.hardware_group_id]
+      );
+    } else {
+      await db.query(
+        `UPDATE plan_mapping_groups SET door_name = $1 WHERE mapping_id = $2 AND hardware_group_id = $3`,
+        [liveName, row.mapping_id, row.hardware_group_id]
+      );
+    }
+    namesUpdated++;
+  }
+  if (namesUpdated > 0) {
+    log.info('health.group_names_synced', { clientId: loc.client_id, count: namesUpdated });
+  }
 
   if (orphans.length === 0 && recovered.length === 0) return;
 

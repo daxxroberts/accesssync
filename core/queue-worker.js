@@ -4,7 +4,7 @@
  * @role queue-coordinator
  * @reads BullMQ:grant,revoke jobs
  * @calls standard-adapter, grant-revoke, retry-engine
- * @exports worker
+ * @exports startWorker, processJob
  * @dr DR-022, DR-023, DR-026
  *
  * queue-worker.js
@@ -227,4 +227,4 @@ function startWorker() {
   return worker;
 }
 
-module.exports = { startWorker };
+module.exports = { startWorker, processJob };
