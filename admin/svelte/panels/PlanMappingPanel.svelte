@@ -99,7 +99,7 @@
           const gd = await apiFetch(`/operator/${CLIENT_ID}/plan-mappings/${m.id}/groups`);
           mGroups = gd.groups || gd || [];
         } catch (_) {}
-        resolvedPlans.push({ ...m, mappingId: m.id, groups: mGroups });
+        resolvedPlans.push({ ...m, mappingId: m.id, planName: m.plan_name || m.planName || '—', groups: mGroups });
       }
       plans = resolvedPlans;
 
