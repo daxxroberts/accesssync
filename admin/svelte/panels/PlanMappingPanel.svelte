@@ -214,15 +214,20 @@
     if (!confirm(`Disconnect "${wire.planName}" from "${wire.groupName}"?`)) return;
     hoveredWire = null;
     try {
-      await apiFetch(`/operator/${CLIENT_ID}/plan-mappings/${wire.planId}`, {
-        method:  'PATCH',
+      const res = await fetch(`/operator/${CLIENT_ID}/plan-mappings/${wire.planId}`, {
+        method: 'PATCH', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ removeGroupId: wire.groupId }),
+        body: JSON.stringify({ removeGroupId: wire.groupId }),
       });
+      if (!res.ok && res.status !== 304) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `HTTP ${res.status}`);
+      }
       await loadMappings(activeLocId);
       showToast('Disconnected', 'success');
-    } catch {
-      showToast('Failed to disconnect', 'error');
+    } catch (e) {
+      console.error('[PlanMapping] disconnect failed:', e.message);
+      showToast(`Failed to disconnect: ${e.message}`, 'error');
     }
   }
 
@@ -326,16 +331,16 @@
 
             <!-- Outer glow -->
             <path {d} fill="none"
-              stroke={wire.status === 'active' ? BRAND : '#888'}
+              stroke={hov ? SAGE : (wire.status === 'active' ? BRAND : '#888')}
               stroke-width={hov ? 8 : 5}
-              stroke-opacity={hov ? 0.3 : 0.12}
+              stroke-opacity={hov ? 0.35 : 0.12}
               filter="url(#pmGlowSoft)"
               style="pointer-events:none"
             />
 
             <!-- Main wire -->
             <path {d} fill="none"
-              stroke={wire.status === 'active' ? BRAND : '#555'}
+              stroke={hov ? SAGE : (wire.status === 'active' ? BRAND : '#555')}
               stroke-width={hov ? WIRE_W_HOVER : WIRE_W}
               stroke-opacity={hov ? 1 : 0.65}
               stroke-dasharray={wire.status === 'active' ? 'none' : '5 4'}
@@ -687,17 +692,17 @@
   .pm-node-body {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 14px 16px;
+    gap: 8px;
+    padding: 8px 12px;
     flex: 1;
     min-width: 0;
   }
 
   .pm-node-icon {
-    width: 36px; height: 36px;
-    border-radius: 9px;
+    width: 28px; height: 28px;
+    border-radius: 7px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 17px;
+    font-size: 13px;
     flex-shrink: 0;
   }
   .pm-icon-plan     { background: rgba(79,110,247,0.12); }
@@ -705,7 +710,7 @@
 
   .pm-node-info { flex: 1; min-width: 0; }
   .pm-node-name {
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 600;
     color: rgba(255,255,255,0.9);
     white-space: nowrap;
@@ -713,9 +718,9 @@
     text-overflow: ellipsis;
   }
   .pm-node-sub {
-    font-size: 11px;
+    font-size: 10px;
     color: rgba(255,255,255,0.3);
-    margin-top: 2px;
+    margin-top: 1px;
   }
 
   .pm-node-meta {
@@ -727,12 +732,12 @@
 
   /* ── Pills ─────────────────────────────────────────────────────────── */
   .pm-pill {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
-    padding: 3px 8px;
-    border-radius: 6px;
+    padding: 2px 5px;
+    border-radius: 4px;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.04em;
     white-space: nowrap;
   }
   .pm-pill-active    { background: rgba(74,222,128,0.15);  color: #4ADE80; }
