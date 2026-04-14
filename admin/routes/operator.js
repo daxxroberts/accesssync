@@ -1190,7 +1190,6 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
         `INSERT INTO plan_mapping_groups (mapping_id, hardware_group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [mappingId, addGroupId]
       );
-      // Sync members for the newly added group
       const newGroupIds = [...new Set([...oldGroupIds, addGroupId])];
       syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, oldStatus, oldStatus)
         .catch(err => console.warn('[operator] syncMappingMembers (addGroupId) failed:', err.message));

@@ -414,7 +414,6 @@
                 <div class="pm-node-sub">{plan.planType === 'booking_service' ? 'Booking Service' : 'Pricing Plan'}</div>
               </div>
               <div class="pm-node-meta">
-                <span class="pm-pill pm-pill-{plan.status}">{plan.status}</span>
                 {#if connected}
                   <span class="pm-pill pm-pill-connected">{plan.groups.length}×</span>
                 {:else}
@@ -740,8 +739,6 @@
     letter-spacing: 0.04em;
     white-space: nowrap;
   }
-  .pm-pill-active    { background: rgba(74,222,128,0.15);  color: #4ADE80; }
-  .pm-pill-inactive  { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.35); }
   .pm-pill-connected { background: rgba(79,110,247,0.15);  color: #7B96F9; }
   .pm-pill-unmapped  { background: rgba(239,68,68,0.12);   color: #F87171; }
 

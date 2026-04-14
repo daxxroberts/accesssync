@@ -1203,7 +1203,6 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               groups: groups,
-              status: plan.groupIds.length > 0 ? 'active' : 'inactive',
               allow_multiple: plan.isMultiMember,
               max_members: plan.maxMembers,
             })
