@@ -11,6 +11,7 @@
 
 const router  = require('express').Router();
 const db      = require('../../db');
+const { log } = require('../../core/logger');
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../../core/redis-utils');
 
@@ -40,8 +41,7 @@ router.get('/', async (req, res) => {
     const result = await db.query(
       `SELECT eq.*,
               c.name  AS client_name,
-              mi.email        AS member_email,
-              mi.display_name AS member_display_name
+              mi.email        AS member_email
        FROM error_queue eq
        LEFT JOIN clients        c  ON c.id  = eq.client_id
        LEFT JOIN member_identity mi ON mi.id = eq.member_id
@@ -75,7 +75,6 @@ router.get('/:id', async (req, res) => {
       `SELECT eq.*,
               c.name          AS client_name,
               mi.email        AS member_email,
-              mi.display_name AS member_display_name,
               mi.platform_member_id,
               mi.source_platform
        FROM error_queue eq

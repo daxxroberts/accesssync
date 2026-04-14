@@ -10,6 +10,7 @@
  */
 
 const router    = require('express').Router();
+const { log } = require('../../core/logger');
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../../core/redis-utils');
 
