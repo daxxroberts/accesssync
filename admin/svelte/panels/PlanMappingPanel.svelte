@@ -56,7 +56,8 @@
   // ── API ─────────────────────────────────────────────────────────────
   async function apiFetch(url, opts = {}) {
     const res = await fetch(url, { credentials: 'include', ...opts });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // 304 Not Modified is valid — browser returns cached body via res.json()
+    if (!res.ok && res.status !== 304) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }
 

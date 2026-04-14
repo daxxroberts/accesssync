@@ -10,8 +10,10 @@ import PlanMappingPanel from './panels/PlanMappingPanel.svelte';
 import Toast from './components/Toast.svelte';
 
 const target = document.getElementById('svelte-plan-mapping');
+console.log('[PlanMapping] bundle loaded, target:', target ? 'found' : 'NOT FOUND');
 if (target) {
   mount(PlanMappingPanel, { target });
+  console.log('[PlanMapping] mounted');
 }
 
 // Mount toast at body level so it floats above everything
