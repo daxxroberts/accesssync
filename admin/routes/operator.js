@@ -18,8 +18,9 @@ const wixPlansApi = require('../../adapters/wix/wix-plans-api');
 const { requireAuth, requireAuthOrOperator, signOperatorToken } = require('../middleware/auth');
 const hardwareAdapter = require('../../adapters/hardware-adapter');
 
-// Global rate limiter on all operator read endpoints (100 req/min/IP)
-router.use(rateLimit({ windowMs: 60_000, max: 100, standardHeaders: true, legacyHeaders: false }));
+// Global rate limiter on all operator read endpoints (500 req/min/IP)
+// Higher limit needed: plan-mapping page fires N parallel per-mapping requests on load
+router.use(rateLimit({ windowMs: 60_000, max: 500, standardHeaders: true, legacyHeaders: false }));
 
 // Auth gate: require admin JWT on all operator routes EXCEPT onboarding signup.
 // Onboarding endpoints use requireInviteToken middleware (validates token value).

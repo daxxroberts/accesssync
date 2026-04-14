@@ -90,15 +90,17 @@
       const rawMappings = mappingRes.mappings || mappingRes || [];
       groups = groupRes.groups || groupRes || [];
 
-      // Fetch per-mapping groups in parallel
-      plans = await Promise.all(rawMappings.map(async m => {
+      // Fetch per-mapping groups sequentially to avoid rate limit bursts
+      const resolvedPlans = [];
+      for (const m of rawMappings) {
         let mGroups = [];
         try {
           const gd = await apiFetch(`/operator/${CLIENT_ID}/plan-mappings/${m.id}/groups`);
           mGroups = gd.groups || gd || [];
         } catch (_) {}
-        return { ...m, mappingId: m.id, groups: mGroups };
-      }));
+        resolvedPlans.push({ ...m, mappingId: m.id, groups: mGroups });
+      }
+      plans = resolvedPlans;
 
       await tick();
       recalcWires();
