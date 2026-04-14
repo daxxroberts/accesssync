@@ -121,9 +121,9 @@ app.get('/multi-member',   (req, res) => res.render('pages/multi-member'));
 // Serve index.html at both / and /OwnerDashboard — no redirect.
 // Google GIS requires the JS origin to match exactly; a redirect to /OwnerDashboard
 // changes window.location.origin to include the path, breaking postMessage.
-app.get('/',               (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/OwnerDashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('*',               (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/',               allowWixFrame, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/OwnerDashboard', allowWixFrame, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('*',               allowWixFrame, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // ── Global error handler ──────────────────────────────────────
 app.use((err, req, res, _next) => {
