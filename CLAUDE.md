@@ -1,5 +1,5 @@
 # CLAUDE.md — AccessSync
-**Version:** 4.3 | **Updated:** 2026-04-10 | **Author:** Daxx Roberts / KEEPER
+**Version:** 4.4 | **Updated:** 2026-04-14 | **Author:** Daxx Roberts / KEEPER
 
 > **Read this file before writing a single line of code. Then read `open_items.md`. Then read the spec for what you're building.**
 
@@ -85,7 +85,7 @@ When asked about a UI page or to view/open one:
 - `admin/routes/webhooks.js` — ✅ Built. Webhook Inspector — recent + detail.
 - `admin/routes/queue.js` — ✅ Built. Queue Monitor — counts + jobs by state.
 - `admin/routes/clients.js` — ✅ Built. Clients panel — GET / (with member counts), PATCH /:id. GET /:id/api-key/test (validates stored key against Kisi GET /groups?limit=1).
-- `admin/routes/operator.js` — ✅ Built. POST /operator/verify-bypass (owner PIN). Signup endpoints protected by `requireInviteToken` middleware + 5 req/IP/min rate limiter (OB-24). Full operator API: paginated members, config alerts, error summary, location management, hardware API key management, notification email (Sprint 5.3), onboarding, hardware groups, access log, access stats, plan mappings. Invite token middleware on signup endpoints.
+- `admin/routes/operator.js` — ✅ Built. Structured front matter (`@file/@layer/@reads/@writes/@calls/@exports/@dr`). Structured logger (`core/logger.js`) on all paths — no raw `console.*`. Error responses hardened (generic 500s, no `err.message` leaks). POST /operator/verify-bypass (owner PIN). Signup endpoints protected by `requireInviteToken` middleware + 5 req/IP/min rate limiter (OB-24). Full operator API: paginated members, config alerts, error summary, location management, hardware API key management, notification email (Sprint 5.3), onboarding, hardware groups, access log, access stats, plan mappings. Invite token middleware on signup endpoints.
 - `admin/views/pages/dashboard.ejs` — ✅ Live data. Amber "Connect your hardware API key" banner when key missing (OB-26). Hardware platform chip shows amber "No Key" pill.
 - `admin/views/pages/members.ejs` — ✅ Live data. Email search + CSV export (Sprint 5.6). No family grouping code.
 - `admin/views/pages/plan-mapping.ejs` — ✅ Live data. Real hardware groups. Inline amber warning when 2 plans share same group (Sprint 5.4). Multi-group junction table wired.
@@ -545,5 +545,6 @@ REX will not allow build work to begin until this statement is made.
 | v4.1 | 2026-04-06 | Merged v4.0 (repo) with vault state corrections: platform-agnostic product description; DR-029–034 added to locked decisions; OB-19 corrected to REOPENED; G-04 closed; REDIS_URL + CORE_ENGINE_URL added to env vars; new open items OB-25/28/34/39/40/46–49/51/56/RI-01/DEF-01 added; DR-014 color values corrected to match DECISION_LOG (#4F6EF7/#4ADE80); schema count clarified (13 in DB, 14 when OB-46 runs); SPAN/LENS agents added to team table. |
 | v4.2 | 2026-04-06 | Added Pre-Commit / Pre-Push Gate — `npm run test:deploy` required before every commit or push. DEPLOY SAFE / DO NOT DEPLOY verdict gates all code merges. |
 | v4.3 | 2026-04-10 | Pre-HOG code complete. WIRE-G-01 closed (retryPendingHardwareMembers scoped to plan mapping PATCH). U-09 closed (all platform-specific copy removed from operator UI + onboarding + sync-status). Humanizer pass complete — all 6 operator pages + onboarding portal. Graphify rebuilt (262 nodes, 370 edges). HANDOFF_BRIEF + APP_CONTEXT updated to reflect closed gaps. |
+| v4.4 | 2026-04-14 | operator.js code quality cleanup: structured logger migration (~75 console.* → log.*), error response hardening (19 err.message leaks sealed), OB-46 stale catch removed, 6 inline requires hoisted, N+1 INSERT loops batched, front matter added per protocol. 32/32 tests DEPLOY SAFE. |
 
 *Archive of prior versions: `01_Project_Foundation/Claude_Versions/`*

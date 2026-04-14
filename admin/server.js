@@ -85,7 +85,7 @@ app.use('/', multiMemberRoutes);
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'admin-hub' }));
 
 // ── Serve frontend ─────────────────────────────────────────────
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // ── Operator dashboard pages (auth-gated) ─────────────────────
 // Operator pages — accessible by owner (adminToken) or Chad via Wix portal (operatorToken)

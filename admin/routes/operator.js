@@ -1,6 +1,16 @@
 /**
- * admin/routes/operator.js
- * AccessSync Operator Dashboard API
+ * @file operator.js
+ * @layer admin/routes
+ * @role operator-dashboard-api
+ * @reads clients, locations, plan_mappings, plan_mapping_groups, member_identity,
+ *        member_access_state, member_role_assignments, member_access_sources,
+ *        member_access_log, error_queue, config_alert_log, diagnostic_log
+ * @writes clients, locations, plan_mappings, plan_mapping_groups,
+ *         member_role_assignments, member_access_sources, error_queue, config_alert_log
+ * @calls hardware-adapter, kisi-adapter, kisi-connector, wix-plans-api,
+ *        location-lapse, webhook-processor, crypto-utils, logger
+ * @exports router (Express)
+ * @dr DR-022, DR-026, DR-027, DR-028, DR-034, DR-035
  *
  * Operator-facing endpoints — admin JWT required (via router-level middleware).
  * Client identified by UUID in URL path.
@@ -17,6 +27,10 @@ const { encryptApiKey, decryptApiKey: decryptKey } = require('../../core/crypto-
 const wixPlansApi = require('../../adapters/wix/wix-plans-api');
 const { requireAuth, requireAuthOrOperator, signOperatorToken } = require('../middleware/auth');
 const hardwareAdapter = require('../../adapters/hardware-adapter');
+const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
+const kisiConnector = require('../../adapters/kisi/kisi-connector');
+const { suspendLocationMembers } = require('../../core/location-lapse');
+const { log } = require('../../core/logger');
 
 // Global rate limiter on all operator read endpoints (500 req/min/IP)
 // Higher limit needed: plan-mapping page fires N parallel per-mapping requests on load
@@ -88,7 +102,7 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
     const { source_plan_id, location_id, hardware_platform } = mapping.rows[0];
     const apiKey = await resolveApiKey(clientId, location_id);
     if (!apiKey) {
-      console.warn(`[syncMappingMembers] No API key for client ${clientId} — skipping sync`);
+      log.warn('operator.sync.no_api_key', { clientId });
       return;
     }
 
@@ -114,13 +128,13 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
             [m.member_id, m.hardware_group_id, mappingId]
           );
           if (parseInt(otherGrants.rows[0].cnt, 10) > 0) {
-            console.log(`[syncMappingMembers] Skipped Kisi revoke for member ${m.member_id} — group ${m.hardware_group_id} still granted by another mapping`);
+            log.info('operator.sync.revoke_skipped', { memberId: m.member_id, hardwareGroupId: m.hardware_group_id, reason: 'other_mapping_grants' });
           } else {
             await hardwareAdapter.removeRole(hardware_platform, apiKey, m.role_assignment_id);
-            console.log(`[syncMappingMembers] Revoked member ${m.member_id} from group ${m.hardware_group_id} (mapping deactivated)`);
+            log.info('operator.sync.revoked', { memberId: m.member_id, hardwareGroupId: m.hardware_group_id, reason: 'mapping_deactivated' });
           }
         } catch (err) {
-          console.warn(`[syncMappingMembers] Failed to revoke member ${m.member_id}:`, err.message);
+          log.warn('operator.sync.revoke_failed', { memberId: m.member_id }, err);
         }
       }
       return;
@@ -147,9 +161,9 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
               [m.member_id, mappingId, String(roleId), groupId]
             );
-            console.log(`[syncMappingMembers] Granted member ${m.member_id} to group ${groupId} (mapping activated)`);
+            log.info('operator.sync.granted', { memberId: m.member_id, hardwareGroupId: groupId, reason: 'mapping_activated' });
           } catch (err) {
-            console.warn(`[syncMappingMembers] Failed to grant member ${m.member_id} to group ${groupId}:`, err.message);
+            log.warn('operator.sync.grant_failed', { memberId: m.member_id, hardwareGroupId: groupId }, err);
           }
         }
       }
@@ -162,7 +176,6 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
 
     if (!added.length && !removed.length) return;
 
-    // Get all active members currently on this mapping
     const activeMembers = await db.query(
       `SELECT mi.id AS member_id, mi.hardware_user_id, mra.role_assignment_id, mra.hardware_group_id
        FROM member_role_assignments mra
@@ -192,9 +205,9 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
              VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
             [m.member_id, mappingId, String(roleId), groupId]
           );
-          console.log(`[syncMappingMembers] Granted member ${m.member_id} to added group ${groupId}`);
+          log.info('operator.sync.granted', { memberId: m.member_id, hardwareGroupId: groupId, reason: 'group_added' });
         } catch (err) {
-          console.warn(`[syncMappingMembers] Failed to grant member ${m.member_id} to group ${groupId}:`, err.message);
+          log.warn('operator.sync.grant_failed', { memberId: m.member_id, hardwareGroupId: groupId }, err);
         }
       }
     }
@@ -216,18 +229,18 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
           [m.member_id, m.hardware_group_id, mappingId]
         );
         if (parseInt(otherGrants.rows[0].cnt, 10) > 0) {
-          console.log(`[syncMappingMembers] Skipped Kisi revoke for member ${m.member_id} — group ${m.hardware_group_id} still granted by another mapping`);
+          log.info('operator.sync.revoke_skipped', { memberId: m.member_id, hardwareGroupId: m.hardware_group_id, reason: 'other_mapping_grants' });
         } else {
           await hardwareAdapter.removeRole(hardware_platform, apiKey, m.role_assignment_id);
-          console.log(`[syncMappingMembers] Revoked member ${m.member_id} from removed group ${m.hardware_group_id}`);
+          log.info('operator.sync.revoked', { memberId: m.member_id, hardwareGroupId: m.hardware_group_id, reason: 'group_removed' });
         }
       } catch (err) {
-        console.warn(`[syncMappingMembers] Failed to revoke member ${m.member_id} from group ${m.hardware_group_id}:`, err.message);
+        log.warn('operator.sync.revoke_failed', { memberId: m.member_id, hardwareGroupId: m.hardware_group_id }, err);
       }
     }
 
   } catch (err) {
-    console.error('[syncMappingMembers] Unexpected error:', err.message);
+    log.error('operator.sync.unexpected_error', { clientId, mappingId }, err);
   }
 }
 
@@ -251,9 +264,9 @@ async function activateLocationMembers(clientId, locationId) {
       const groupIds = oldGroupsResult.rows.map(r => r.hardware_group_id);
       await syncMappingMembers(clientId, m.id, [], groupIds, 'active', 'inactive');
     }
-    console.log(`[activateLocationMembers] Re-provisioned members for ${mappings.rows.length} mappings at location ${locationId}`);
+    log.info('operator.location.reactivated', { clientId, locationId, mappingCount: mappings.rows.length });
   } catch (err) {
-    console.error('[activateLocationMembers] Error:', err.message);
+    log.error('operator.location.reactivation_failed', { clientId, locationId }, err);
   }
 }
 
@@ -284,13 +297,13 @@ async function validateApiKeyGroups(clientId, apiKey, hardwarePlatform) {
              VALUES ($1, 'api_key_invalid_after_rotation', $2, NOW())`,
             [clientId, hardware_group_id]
           );
-          console.warn(`[validateApiKeyGroups] Key rotation alert: group ${hardware_group_id} unreachable for client ${clientId}`);
+          log.warn('operator.apikey.group_unreachable', { clientId, hardwareGroupId: hardware_group_id });
         }
         break; // One auth failure means all groups will fail — no need to loop
       }
     }
   } catch (err) {
-    console.error('[validateApiKeyGroups] Error:', err.message);
+    log.error('operator.apikey.validation_failed', { clientId }, err);
   }
 }
 
@@ -327,7 +340,7 @@ async function retryPendingHardwareMembers(clientId, planId = null) {
     });
   }
 
-  console.log(`[operator] Re-queued ${result.rows.length} pending_hardware members for client ${clientId}`);
+  log.info('operator.retry.pending_hardware', { clientId, count: result.rows.length });
   return result.rows.length;
 }
 
@@ -348,7 +361,7 @@ router.post('/verify-bypass', (req, res) => {
   if (!expected || !pin || pin !== expected) {
     return res.status(403).json({ error: 'Invalid PIN' });
   }
-  console.log('[operator/setup] Owner bypass PIN accepted');
+  log.info('operator.setup.bypass_accepted');
   res.json({ ok: true });
 });
 
@@ -374,7 +387,7 @@ function requireInviteToken(req, res, next) {
   // Token check — timing-safe comparison to prevent side-channel attacks
   const expected = process.env.OPERATOR_INVITE_TOKEN;
   if (!expected) {
-    console.warn('[operator/auth] OPERATOR_INVITE_TOKEN not configured — blocking signup');
+    log.warn('operator.auth.invite_token_missing');
     return res.status(503).json({ error: 'Signup is not currently available' });
   }
   const token = req.headers['x-invite-token'];
@@ -421,7 +434,7 @@ router.get('/site-id/verify', requireInviteToken, async (req, res) => {
     }
     res.json({ valid: true, message: 'Site ID accepted — full verification happens at the Wix API key step' });
   } catch (err) {
-    console.error('[operator] GET site-id/verify error:', err.message);
+    log.error('operator.onboard.site_verify_failed', {}, err);
     res.status(500).json({ valid: false, error: 'Verification check failed' });
   }
 });
@@ -448,7 +461,7 @@ router.post('/issue-session', requireInviteToken, async (req, res) => {
     });
     res.json({ ok: true });
   } catch (err) {
-    console.error('[operator] POST issue-session error:', err.message);
+    log.error('operator.onboard.session_issue_failed', { clientId }, err);
     res.status(500).json({ error: 'Session issue failed' });
   }
 });
@@ -481,11 +494,11 @@ router.post('/clients', requireInviteToken, async (req, res) => {
        RETURNING id, name, platform, hardware_platform, tier, site_id, wix_instance_id, site_name, notification_email, status, created_at`,
       [name.trim(), platform, derivedHardware, tier || null, site_id || null, wix_instance_id || null, site_name || null, site_url || null, notification_email || null, encryptedWixKey]
     );
-    console.log(`[operator/setup] Upserted client: ${result.rows[0].name} (${result.rows[0].id})`);
+    log.info('operator.setup.client_upserted', { clientId: result.rows[0].id, name: result.rows[0].name });
     res.status(201).json({ ok: true, client: result.rows[0] });
   } catch (err) {
-    console.error('[operator/setup] POST /clients error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.setup.client_create_failed', {}, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -506,11 +519,11 @@ router.post('/clients/:clientId/locations', requireInviteToken, async (req, res)
        RETURNING id, client_id, name, city, state, tier, subscription_status, created_at`,
       [clientId, name.trim(), city || null, state || null, tier || null]
     );
-    console.log(`[operator/setup] Created location ${result.rows[0].name} for client ${clientId}`);
+    log.info('operator.setup.location_created', { clientId, locationName: result.rows[0].name });
     res.status(201).json({ ok: true, location: result.rows[0] });
   } catch (err) {
-    console.error('[operator/setup] POST /clients/:clientId/locations error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.setup.location_create_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -530,15 +543,15 @@ router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) =
       [encrypted, clientId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    console.log(`[operator/setup] API key set for client ${clientId} (${result.rows[0].name})`);
+    log.info('operator.setup.apikey_set', { clientId });
 
     // Wix-first flow: auto-retry any members parked as pending_hardware
     const retried = await retryPendingHardwareMembers(clientId);
 
     res.json({ ok: true, message: 'API key saved', pendingRetried: retried });
   } catch (err) {
-    console.error('[operator/setup] POST /clients/:clientId/api-key error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.setup.apikey_save_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -563,11 +576,11 @@ router.post('/clients/:clientId/locations/:locationId/activate', requireInviteTo
       if (!check.rows.length) return res.status(404).json({ error: 'Location not found' });
       return res.json({ ok: true, location: check.rows[0], already_active: true });
     }
-    console.log(`[operator/setup] Location ${result.rows[0].name} (${locationId}) activated for client ${clientId}`);
+    log.info('operator.setup.location_activated', { clientId, locationId });
     res.json({ ok: true, location: result.rows[0] });
   } catch (err) {
-    console.error('[operator] POST activate error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.onboard.activate_failed', { clientId, locationId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -577,14 +590,11 @@ router.post('/clients/:clientId/locations/:locationId/activate', requireInviteTo
 router.get('/clients/:clientId/kisi-groups', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const { decryptApiKey } = require('../../core/crypto-utils');
-    const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
-
     const clientResult = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
     if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
     if (!clientResult.rows[0].hardware_api_key) return res.status(400).json({ error: 'No API key configured', noKey: true });
 
-    const apiKey = decryptApiKey(clientResult.rows[0].hardware_api_key);
+    const apiKey = decryptKey(clientResult.rows[0].hardware_api_key);
     const groups = await kisiAdapter.getGroups(apiKey);
 
     res.json({
@@ -597,8 +607,8 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
     });
   } catch (err) {
     if (err.statusCode === 401) return res.json({ groups: [], count: 0, error: 'Invalid API key' });
-    console.error('[operator] GET kisi-groups error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.kisi_groups.fetch_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -611,8 +621,8 @@ router.get('/clients/:clientId/api-key/status', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     res.json({ hasKey: !!result.rows[0].hardware_api_key });
   } catch (err) {
-    console.error('[operator] GET api-key/status error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.apikey.status_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -621,20 +631,18 @@ router.get('/clients/:clientId/api-key/status', async (req, res) => {
 router.get('/clients/:clientId/api-key/test', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const { decryptApiKey } = require('../../core/crypto-utils');
-    const kisiConnector = require('../../adapters/kisi/kisi-connector');
     const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     if (!result.rows[0].hardware_api_key) return res.status(400).json({ valid: false, error: 'No API key set' });
 
-    const apiKey = decryptApiKey(result.rows[0].hardware_api_key);
+    const apiKey = decryptKey(result.rows[0].hardware_api_key);
     await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
     res.json({ valid: true });
   } catch (err) {
     if (err.statusCode === 401) return res.json({ valid: false, error: 'Invalid API key' });
     if (err.statusCode === 403) return res.json({ valid: false, error: 'Lacks required permissions' });
-    console.error('[operator] GET api-key/test error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.apikey.test_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -653,7 +661,7 @@ router.put('/clients/:clientId/api-key', async (req, res) => {
       [encrypted, clientId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    console.log(`[operator] API key rotated for client ${clientId}`);
+    log.info('operator.apikey.rotated', { clientId });
 
     // Wix-first flow: auto-retry any members parked as pending_hardware
     const retried = await retryPendingHardwareMembers(clientId);
@@ -663,10 +671,10 @@ router.put('/clients/:clientId/api-key', async (req, res) => {
     // GAP 7: validate new key can reach all active groups — writes config_alert_log on failure
     const clientRow = await db.query('SELECT hardware_platform FROM clients WHERE id = $1', [clientId]);
     validateApiKeyGroups(clientId, apiKey.trim(), clientRow.rows[0]?.hardware_platform)
-      .catch(err => console.warn('[operator] validateApiKeyGroups failed:', err.message));
+      .catch(err => log.warn('operator.apikey.validation_fire_forget_failed', { clientId }, err));
   } catch (err) {
-    console.error('[operator] PUT api-key error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.apikey.update_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -679,8 +687,8 @@ router.get('/clients/:clientId/notification-email', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     res.json({ email: result.rows[0].notification_email || null });
   } catch (err) {
-    console.error('[operator] GET notification-email error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.notification.get_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -703,11 +711,11 @@ router.put('/clients/:clientId/notification-email', async (req, res) => {
       [trimmed, clientId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    console.log(`[operator] Notification email updated for client ${clientId}`);
+    log.info('operator.notification.updated', { clientId });
     res.json({ ok: true, message: 'Notification email updated' });
   } catch (err) {
-    console.error('[operator] PUT notification-email error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.notification.update_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -725,7 +733,7 @@ router.patch('/clients/:clientId', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     res.json({ ok: true, client: result.rows[0] });
   } catch (err) {
-    console.error('[operator] PATCH /clients/:clientId error:', err.message);
+    log.error('operator.client.patch_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -783,7 +791,7 @@ router.get('/:clientId', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[operator] GET /:clientId error:', err.message);
+    log.error('operator.client.get_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -807,7 +815,7 @@ router.get('/:clientId/locations/:locationId/notification-email', async (req, re
       isOverride: !!row.location_email,
     });
   } catch (err) {
-    console.error('[operator] GET location notification-email error:', err.message);
+    log.error('operator.location.notification_get_failed', { clientId, locationId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -826,7 +834,7 @@ router.put('/:clientId/locations/:locationId/notification-email', async (req, re
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
     res.json({ ok: true, email: result.rows[0].notification_email });
   } catch (err) {
-    console.error('[operator] PUT location notification-email error:', err.message);
+    log.error('operator.location.notification_put_failed', { clientId, locationId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -852,7 +860,7 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
       [encrypted, locationId, clientId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
-    console.log(`[operator] Location API key set for ${locationId} (${result.rows[0].name})`);
+    log.info('operator.location.apikey_set', { clientId, locationId });
 
     // Wix-first flow: auto-retry any members parked as pending_hardware
     const retried = await retryPendingHardwareMembers(clientId);
@@ -866,10 +874,10 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
        WHERE l.id = $1`, [locationId]
     );
     validateApiKeyGroups(clientId, apiKey.trim(), locPlatform.rows[0]?.hardware_platform)
-      .catch(err => console.warn('[operator] validateApiKeyGroups (location) failed:', err.message));
+      .catch(err => log.warn('operator.apikey.location_validation_failed', { clientId, locationId }, err));
   } catch (err) {
-    console.error('[operator] POST /:clientId/locations/:locationId/api-key error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.location.apikey_save_failed', { clientId, locationId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -896,8 +904,8 @@ router.patch('/:clientId/locations/:locationId', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
     res.json({ ok: true, location: result.rows[0] });
   } catch (err) {
-    console.error('[operator] PATCH location error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.location.patch_failed', { clientId, locationId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -906,12 +914,11 @@ router.patch('/:clientId/locations/:locationId', async (req, res) => {
 router.post('/:clientId/locations/:locationId/suspend', async (req, res) => {
   const { clientId, locationId } = req.params;
   try {
-    const { suspendLocationMembers } = require('../../core/location-lapse');
     const result = await suspendLocationMembers(locationId, clientId, 'suspended');
     res.json({ ok: true, suspended: result.suspended, skipped: result.skipped, errors: result.errors });
   } catch (err) {
-    console.error('[operator] POST suspend error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.location.suspend_failed', { clientId, locationId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -930,10 +937,10 @@ router.post('/:clientId/locations/:locationId/activate', async (req, res) => {
     res.json({ ok: true, location: result.rows[0] });
     // GAP 3: re-provision all previously active members at this location
     activateLocationMembers(clientId, locationId)
-      .catch(err => console.warn('[operator] activateLocationMembers failed:', err.message));
+      .catch(err => log.warn('operator.location.reactivation_fire_forget_failed', { clientId, locationId }, err));
   } catch (err) {
-    console.error('[operator] POST activate error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.location.activate_failed', { clientId, locationId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -943,9 +950,6 @@ router.post('/:clientId/locations/:locationId/activate', async (req, res) => {
 router.get('/:clientId/locations/:locationId/api-key/test', async (req, res) => {
   const { clientId, locationId } = req.params;
   try {
-    const { decryptApiKey } = require('../../core/crypto-utils');
-    const kisiConnector = require('../../adapters/kisi/kisi-connector');
-
     const [locResult, clientResult] = await Promise.all([
       db.query('SELECT hardware_api_key FROM locations WHERE id = $1 AND client_id = $2', [locationId, clientId]),
       db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]),
@@ -956,15 +960,15 @@ router.get('/:clientId/locations/:locationId/api-key/test', async (req, res) => 
     if (!encryptedKey) return res.status(400).json({ valid: false, error: 'No API key set', source: null });
 
     const source = locResult.rows[0].hardware_api_key ? 'location' : 'client';
-    const apiKey = decryptApiKey(encryptedKey);
+    const apiKey = decryptKey(encryptedKey);
     await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
 
     res.json({ valid: true, source });
   } catch (err) {
     if (err.statusCode === 401) return res.json({ valid: false, error: 'Invalid API key — Kisi rejected it' });
     if (err.statusCode === 403) return res.json({ valid: false, error: 'Authenticated but lacks required permissions' });
-    console.error('[operator] GET /:clientId/locations/:locationId/api-key/test error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.location.apikey_test_failed', { clientId, locationId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1018,7 +1022,7 @@ router.get('/:clientId/locations', async (req, res) => {
       })),
     });
   } catch (err) {
-    console.error('[operator] GET /:clientId/locations error:', err.message);
+    log.error('operator.locations.list_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1086,7 +1090,7 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
       active_members: activeMembers.rows,
     });
   } catch (err) {
-    console.error('[operator] GET /:clientId/locations/:locationId error:', err.message);
+    log.error('operator.location.detail_failed', { clientId, locationId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1120,7 +1124,7 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
       mappings: mappingsResult.rows,
     });
   } catch (err) {
-    console.error('[operator] GET /:clientId/locations/:locationId/mappings error:', err.message);
+    log.error('operator.location.mappings_failed', { clientId, locationId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1139,7 +1143,7 @@ router.post('/:clientId/sync', async (req, res) => {
     }
     res.json({ last_sync_at: result.rows[0].last_sync_at });
   } catch (err) {
-    console.error('[operator] POST /:clientId/sync error:', err.message);
+    log.error('operator.sync.trigger_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1160,7 +1164,7 @@ router.post('/:clientId/errors/:errorId/dismiss', async (req, res) => {
     }
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('[operator] POST errors/:errorId/dismiss error:', err.message);
+    log.error('operator.error.dismiss_failed', { clientId, errorId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1188,7 +1192,7 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
     );
     res.json({ queued: true });
   } catch (err) {
-    console.error('[operator] POST errors/:errorId/retry error:', err.message);
+    log.error('operator.error.retry_failed', { clientId, errorId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1225,7 +1229,7 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
       const locationId = (await db.query('SELECT location_id FROM plan_mappings WHERE id = $1', [mappingId])).rows[0]?.location_id;
       const apiKey = await resolveApiKey(clientId, locationId);
       syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, oldStatus, oldStatus)
-        .catch(err => console.warn('[operator] syncMappingMembers (addGroupId) failed:', err.message));
+        .catch(err => log.warn('operator.sync.add_group_failed', { clientId, mappingId }, err));
       return res.json({
         ok: true,
         warning: apiKey ? null : "Your hardware API key isn't set up yet. New members won't get access until the key is added — you can do this in System Config.",
@@ -1241,14 +1245,14 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
       await db.query(
         'DELETE FROM member_access_sources WHERE hardware_group_id = $1 AND mapping_id = $2',
         [removeGroupId, mappingId]
-      ).catch(() => {}); // Table may not exist yet (OB-46)
+      );
       await db.query(
         `DELETE FROM plan_mapping_groups WHERE mapping_id = $1 AND hardware_group_id = $2`,
         [mappingId, removeGroupId]
       );
       const newGroupIds = oldGroupIds.filter(id => id !== removeGroupId);
       syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, oldStatus, oldStatus)
-        .catch(err => console.warn('[operator] syncMappingMembers (removeGroupId) failed:', err.message));
+        .catch(err => log.warn('operator.sync.remove_group_failed', { clientId, mappingId }, err));
       return res.json({ ok: true });
     }
 
@@ -1289,16 +1293,19 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
 
     // Write multi-group junction table
     if (groups && Array.isArray(groups)) {
-      // Delete existing groups for this mapping, then insert new ones
       await db.query('DELETE FROM plan_mapping_groups WHERE mapping_id = $1', [mappingId]);
-      for (const g of groups) {
-        if (g.hardware_group_id) {
-          await db.query(
-            `INSERT INTO plan_mapping_groups (mapping_id, hardware_group_id, door_name)
-             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-            [mappingId, g.hardware_group_id, g.door_name || null]
-          );
-        }
+      const validGroups = groups.filter(g => g.hardware_group_id);
+      if (validGroups.length > 0) {
+        const values = [];
+        const placeholders = validGroups.map((g, i) => {
+          values.push(mappingId, g.hardware_group_id, g.door_name || null);
+          return `($${i * 3 + 1}, $${i * 3 + 2}, $${i * 3 + 3})`;
+        });
+        await db.query(
+          `INSERT INTO plan_mapping_groups (mapping_id, hardware_group_id, door_name)
+           VALUES ${placeholders.join(', ')} ON CONFLICT DO NOTHING`,
+          values
+        );
       }
     }
 
@@ -1313,15 +1320,15 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
 
     // Sync active members to reflect group/status changes — fire-and-forget
     syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, newStatus, oldStatus)
-      .catch(err => console.warn('[operator] syncMappingMembers failed:', err.message));
+      .catch(err => log.warn('operator.sync.mapping_sync_failed', { clientId, mappingId }, err));
 
     // Re-queue any members parked in pending_hardware for this plan mapping.
     // Scoped by source_plan_id so only members waiting on THIS plan are retried.
     retryPendingHardwareMembers(clientId, mapping.source_plan_id).catch(err =>
-      console.warn('[operator] retryPendingHardwareMembers after plan mapping save failed:', err.message)
+      log.warn('operator.retry.pending_hardware_failed', { clientId, mappingId }, err)
     );
   } catch (err) {
-    console.error('[operator] PATCH plan-mappings/:mappingId error:', err.message);
+    log.error('operator.mapping.patch_failed', { clientId, mappingId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1341,7 +1348,7 @@ router.get('/:clientId/plan-mappings/:mappingId/groups', async (req, res) => {
     );
     res.json({ groups: result.rows });
   } catch (err) {
-    console.error('[operator] GET plan-mappings/:mappingId/groups error:', err.message);
+    log.error('operator.mapping.groups_failed', { clientId, mappingId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1363,7 +1370,7 @@ router.get('/:clientId/plan-mappings/:mappingId/members', async (req, res) => {
     );
     res.json({ count: parseInt(result.rows[0].count, 10) });
   } catch (err) {
-    console.error('[operator] GET plan-mappings/:mappingId/members error:', err.message);
+    log.error('operator.mapping.members_failed', { clientId, mappingId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1385,7 +1392,7 @@ router.get('/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members
     );
     res.json({ count: parseInt(result.rows[0].count, 10) });
   } catch (err) {
-    console.error('[operator] GET groups/:groupId/affected-members error:', err.message);
+    log.error('operator.mapping.affected_members_failed', { clientId, mappingId, groupId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1435,7 +1442,6 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
       [mappingId, oldGroupIds, clientId]
     );
 
-    const hardwareAdapter = require('../../adapters/hardware-adapter');
     let moved = 0;
     const failed = [];
 
@@ -1468,12 +1474,17 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
         const oldMraIds = rows.map(r => r.mra_id);
         await db.query('DELETE FROM member_role_assignments WHERE id = ANY($1::uuid[])', [oldMraIds]);
 
-        for (const assignment of newAssignments) {
+        if (newAssignments.length > 0) {
+          const values = [];
+          const placeholders = newAssignments.map((a, i) => {
+            values.push(memberId, mappingId, a.roleAssignmentId, a.groupId);
+            return `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`;
+          });
           await db.query(
             `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
-             VALUES ($1, $2, $3, $4)
+             VALUES ${placeholders.join(', ')}
              ON CONFLICT (member_id, mapping_id, hardware_group_id) DO UPDATE SET role_assignment_id = EXCLUDED.role_assignment_id`,
-            [memberId, mappingId, assignment.roleAssignmentId, assignment.groupId]
+            values
           );
         }
 
@@ -1485,7 +1496,7 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
 
     res.json({ moved, failed });
   } catch (err) {
-    console.error('[operator] POST plan-mappings/:mappingId/remap error:', err.message);
+    log.error('operator.mapping.remap_failed', { clientId, mappingId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1554,7 +1565,7 @@ router.get('/:clientId/members', async (req, res) => {
       limit:   parseInt(limit),
     });
   } catch (err) {
-    console.error('[operator] GET /:clientId/members error:', err.message);
+    log.error('operator.members.list_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1576,7 +1587,7 @@ router.get('/:clientId/recent-members', async (req, res) => {
     );
     res.json({ members: result.rows });
   } catch (err) {
-    console.error('[operator] GET /:clientId/recent-members error:', err.message);
+    log.error('operator.members.recent_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1598,7 +1609,7 @@ router.get('/:clientId/alerts', async (req, res) => {
     );
     res.json({ alerts: result.rows });
   } catch (err) {
-    console.error('[operator] GET /:clientId/alerts error:', err.message);
+    log.error('operator.alerts.list_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1630,7 +1641,7 @@ router.get('/:clientId/errors', async (req, res) => {
       total:  countResult.rows[0].total,
     });
   } catch (err) {
-    console.error('[operator] GET /:clientId/errors error:', err.message);
+    log.error('operator.errors.list_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1671,7 +1682,7 @@ router.get('/:clientId/errors/summary', async (req, res) => {
       by_location: byLocation.rows,
     });
   } catch (err) {
-    console.error('[operator] GET /:clientId/errors/summary error:', err.message);
+    log.error('operator.errors.summary_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1741,7 +1752,7 @@ router.get('/:clientId/access-log', async (req, res) => {
       limit:  parseInt(limit),
     });
   } catch (err) {
-    console.error('[operator] GET /:clientId/access-log error:', err.message);
+    log.error('operator.access_log.list_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1785,7 +1796,7 @@ router.get('/:clientId/access-stats', async (req, res) => {
 
     res.json({ hourly });
   } catch (err) {
-    console.error('[operator] GET /:clientId/access-stats error:', err.message);
+    log.error('operator.access_stats.failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1808,9 +1819,9 @@ router.get('/:clientId/wix-plans', async (req, res) => {
     }
 
     const apiKey = decryptKey(client.rows[0].wix_api_key);
-    console.log('[wix-plans-diag] clientId:', clientId, '| siteId:', client.rows[0].site_id, '| keyPrefix:', apiKey ? apiKey.slice(0, 10) + '...' : 'NULL');
+    log.debug('operator.wix_plans.fetch_start', { clientId, siteId: client.rows[0].site_id });
     const allPlans = await wixPlansApi.listAllMappable(apiKey, client.rows[0].site_id);
-    console.log('[wix-plans-diag] listAllMappable returned', allPlans.length, 'plans');
+    log.debug('operator.wix_plans.fetch_complete', { clientId, planCount: allPlans.length });
 
     // Auto-accept: create plan_mappings rows for plans not yet in DB
     if (allPlans.length > 0) {
@@ -1830,15 +1841,15 @@ router.get('/:clientId/wix-plans', async (req, res) => {
              VALUES ($1, $2, '', $3, 'inactive', $4, NOW())
              ON CONFLICT DO NOTHING`,
             [clientId, plan.id, plan.name, defaultLocationId]
-          ).catch(e => console.warn('[wix-plans] Auto-insert failed for', plan.id, e.message));
+          ).catch(e => log.warn('operator.wix_plans.auto_insert_failed', { clientId, planId: plan.id }, e));
         }
       }
     }
 
     res.json({ plans: allPlans });
   } catch (err) {
-    console.error('[operator] GET /:clientId/wix-plans error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.wix_plans.fetch_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1852,8 +1863,8 @@ router.get('/clients/:clientId/wix-api-key/status', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     res.json({ hasKey: !!result.rows[0].wix_api_key });
   } catch (err) {
-    console.error('[operator] GET wix-api-key/status error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.wix_apikey.status_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1872,8 +1883,8 @@ router.put('/clients/:clientId/wix-api-key', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     res.json({ ok: true, message: 'Wix API key saved' });
   } catch (err) {
-    console.error('[operator] PUT wix-api-key error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.wix_apikey.save_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1890,8 +1901,8 @@ router.get('/clients/:clientId/wix-api-key/test', async (req, res) => {
     const testResult = await wixPlansApi.testApiKey(apiKey, result.rows[0].site_id);
     res.json(testResult);
   } catch (err) {
-    console.error('[operator] GET wix-api-key/test error:', err.message);
-    res.status(500).json({ error: err.message });
+    log.error('operator.wix_apikey.test_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1919,7 +1930,7 @@ router.get('/:clientId/diagnostics/summary', async (req, res) => {
     );
     rows = result.rows;
   } catch (err) {
-    console.error('[operator] GET diagnostics/summary DB error:', err.message);
+    log.error('operator.diagnostics.db_failed', { clientId }, err);
     return res.status(500).json({ error: 'Failed to fetch diagnostic data' });
   }
 
@@ -1984,7 +1995,7 @@ Rules:
     analysis = JSON.parse(text);
   } catch (err) {
     // AI failure is non-fatal — return raw events with a fallback so the page still renders.
-    console.error('[operator] diagnostics/summary AI error:', err.message);
+    log.error('operator.diagnostics.ai_failed', { clientId }, err);
     analysis = {
       topFailureReason: 'AI analysis unavailable',
       trend: 'unknown',
