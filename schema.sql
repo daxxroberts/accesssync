@@ -83,6 +83,7 @@ CREATE TABLE plan_mappings (
     plan_name           VARCHAR(255),                    -- display label for the plan (operator dashboard)
     door_name           VARCHAR(255),                    -- display label for the hardware group/door
     status              VARCHAR(50)  DEFAULT 'active',   -- 'active', 'excluded' — for "Not managed" display
+    wix_status          VARCHAR(20)  DEFAULT 'active',   -- 'active', 'archived' — tracks Wix plan lifecycle (health check reconciliation)
     access_type         VARCHAR(50)  DEFAULT 'group',    -- Hardware access object type: 'group' (Kisi), 'zone'/'door' (future Seam)
     allow_multiple      BOOLEAN      DEFAULT false,      -- Multi-member: plan allows additional members (deferred post-HOG)
     max_members         INTEGER      DEFAULT 1,          -- Multi-member: max members per plan holder (deferred post-HOG)
@@ -100,6 +101,7 @@ CREATE TABLE plan_mapping_groups (
     mapping_id          UUID NOT NULL REFERENCES plan_mappings(id) ON DELETE CASCADE,
     hardware_group_id   VARCHAR(255) NOT NULL,
     door_name           VARCHAR(255),
+    health_status       VARCHAR(20)  DEFAULT 'ok',        -- 'ok', 'not_found' — per-group health from hardware API reconciliation (K-2)
     created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (mapping_id, hardware_group_id)
 );

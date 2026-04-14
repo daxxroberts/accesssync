@@ -19,6 +19,7 @@
   const CLIENT_ID       = new URLSearchParams(window.location.search).get('clientId');
   const BRAND           = '#4F6EF7';
   const SAGE            = '#4ADE80';
+  const AMBER           = '#F59E0B';
   const WIRE_W          = 2;
   const WIRE_W_HOVER    = 3;
   const PULSE_DUR       = '2.8s';
@@ -100,11 +101,17 @@
           // Normalize: API returns { hardware_group_id, door_name } — map to { id, name }
           // so wire drawing can match against the Kisi groups array by id
           mGroups = (gd.groups || gd || []).map(g => ({
-            id:   g.hardware_group_id,
-            name: g.door_name || groups.find(kg => kg.id === g.hardware_group_id)?.name || g.hardware_group_id,
+            id:           g.hardware_group_id,
+            name:         g.door_name || groups.find(kg => kg.id === g.hardware_group_id)?.name || g.hardware_group_id,
+            healthStatus: g.health_status || 'ok',
           }));
         } catch (_) {}
-        resolvedPlans.push({ ...m, mappingId: m.id, planName: m.plan_name || m.planName || '—', groups: mGroups });
+        resolvedPlans.push({
+          ...m, mappingId: m.id,
+          planName:  m.plan_name || m.planName || '—',
+          wixStatus: m.wix_status || 'active',
+          groups:    mGroups,
+        });
       }
       plans = resolvedPlans;
 
@@ -141,14 +148,15 @@
         const toY = gR.top  - cR.top + gR.height / 2;
 
         next.push({
-          id:        `wire-${plan.mappingId}-${g.id}`,
-          planId:    plan.mappingId,
-          planName:  plan.planName,
-          groupId:   g.id,
-          groupName: g.name,
-          from:      { x: fromX, y: fromY },
-          to:        { x: toX,   y: toY   },
-          status:    plan.status,
+          id:           `wire-${plan.mappingId}-${g.id}`,
+          planId:       plan.mappingId,
+          planName:     plan.planName,
+          groupId:      g.id,
+          groupName:    g.name,
+          from:         { x: fromX, y: fromY },
+          to:           { x: toX,   y: toY   },
+          status:       plan.status,
+          healthStatus: g.healthStatus || 'ok',
         });
       }
     }
@@ -195,13 +203,17 @@
       return;
     }
     try {
-      await apiFetch(`/operator/${CLIENT_ID}/plan-mappings/${mappingId}`, {
+      const result = await apiFetch(`/operator/${CLIENT_ID}/plan-mappings/${mappingId}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ addGroupId: group.id }),
       });
       await loadMappings(activeLocId);
-      showToast(`Connected: ${planName} → ${group.name}`, 'success');
+      if (result.warning) {
+        showToast(result.warning, 'warning');
+      } else {
+        showToast(`Connected: ${planName} → ${group.name}`, 'success');
+      }
     } catch {
       showToast('Failed to connect', 'error');
     }
@@ -211,7 +223,24 @@
 
   // ── Disconnect ───────────────────────────────────────────────────────
   async function disconnectWire(wire) {
-    if (!confirm(`Disconnect "${wire.planName}" from "${wire.groupName}"?`)) return;
+    // M-6: Fetch affected member count before confirming
+    let memberCount = 0;
+    try {
+      const data = await apiFetch(`/operator/${CLIENT_ID}/plan-mappings/${wire.planId}/groups/${wire.groupId}/affected-members`);
+      memberCount = data.count || 0;
+    } catch (_) {}
+
+    // K-2: Dead group gets a different confirmation message
+    let msg;
+    if (wire.healthStatus === 'not_found') {
+      msg = `This group is no longer available in your access control system. Removing it will clear ${memberCount} member assignment(s). You can remap this plan to a different group afterward.`;
+    } else if (memberCount > 0) {
+      msg = `Disconnecting this plan from "${wire.groupName}" will revoke access for ${memberCount} member(s) currently using it.`;
+    } else {
+      msg = `Disconnect this plan from "${wire.groupName}"? No members are currently assigned.`;
+    }
+    if (!confirm(msg)) return;
+
     hoveredWire = null;
     try {
       const res = await fetch(`/operator/${CLIENT_ID}/plan-mappings/${wire.planId}`, {
@@ -316,10 +345,13 @@
 
         <!-- Active wires -->
         {#each wires as wire (wire.id)}
-          {@const hov = hoveredWire === wire.id}
-          {@const d   = bezier(wire.from, wire.to)}
-          {@const mx  = (wire.from.x + wire.to.x) / 2}
-          {@const my  = (wire.from.y + wire.to.y) / 2 - 6}
+          {@const hov   = hoveredWire === wire.id}
+          {@const dead  = wire.healthStatus === 'not_found'}
+          {@const d     = bezier(wire.from, wire.to)}
+          {@const mx    = (wire.from.x + wire.to.x) / 2}
+          {@const my    = (wire.from.y + wire.to.y) / 2 - 6}
+          {@const color = dead ? AMBER : (wire.status === 'active' ? BRAND : '#555')}
+          {@const hovColor = dead ? AMBER : SAGE}
 
           <g class="pm-wire-group" role="presentation"
             on:mouseenter={() => hoveredWire = wire.id}
@@ -331,7 +363,7 @@
 
             <!-- Outer glow -->
             <path {d} fill="none"
-              stroke={hov ? SAGE : (wire.status === 'active' ? BRAND : '#888')}
+              stroke={hov ? hovColor : color}
               stroke-width={hov ? 8 : 5}
               stroke-opacity={hov ? 0.35 : 0.12}
               filter="url(#pmGlowSoft)"
@@ -340,15 +372,15 @@
 
             <!-- Main wire -->
             <path {d} fill="none"
-              stroke={hov ? SAGE : (wire.status === 'active' ? BRAND : '#555')}
+              stroke={hov ? hovColor : color}
               stroke-width={hov ? WIRE_W_HOVER : WIRE_W}
               stroke-opacity={hov ? 1 : 0.65}
-              stroke-dasharray={wire.status === 'active' ? 'none' : '5 4'}
+              stroke-dasharray={dead || wire.status !== 'active' ? '5 4' : 'none'}
               style="pointer-events:none"
             />
 
-            <!-- Animated pulse (active only) -->
-            {#if wire.status === 'active'}
+            <!-- Animated pulse (active + healthy only) -->
+            {#if wire.status === 'active' && !dead}
               <path id="{wire.id}-mpath" {d} fill="none" stroke="none" style="pointer-events:none"/>
               <circle r="3.5" fill={BRAND} filter="url(#pmGlow)" style="pointer-events:none">
                 <animateMotion dur={PULSE_DUR} repeatCount="indefinite">
@@ -363,12 +395,12 @@
               </circle>
             {/if}
 
-            <!-- Midpoint delete button on hover -->
+            <!-- Midpoint actions on hover -->
             {#if hov}
               <g transform="translate({mx},{my})" style="cursor:pointer" role="button" tabindex="0" on:click={() => disconnectWire(wire)} on:keydown={e => e.key === "Enter" && disconnectWire(wire)}>
-                <circle r="11" fill="#12141E" stroke="rgba(255,80,80,0.6)" stroke-width="1.5"/>
+                <circle r="11" fill="#12141E" stroke={dead ? 'rgba(245,158,11,0.6)' : 'rgba(255,80,80,0.6)'} stroke-width="1.5"/>
                 <text x="0" y="4.5" text-anchor="middle" font-size="12"
-                  fill="rgba(255,100,100,0.9)" font-family="sans-serif" style="pointer-events:none">✕</text>
+                  fill={dead ? 'rgba(245,158,11,0.9)' : 'rgba(255,100,100,0.9)'} font-family="sans-serif" style="pointer-events:none">✕</text>
               </g>
             {/if}
           </g>
@@ -394,13 +426,16 @@
         </div>
 
         {#each plans as plan (plan.mappingId)}
-          {@const connected = plan.groups && plan.groups.length > 0}
-          {@const dimmed    = dimmedPlanIds.has(plan.mappingId)}
+          {@const connected  = plan.groups && plan.groups.length > 0}
+          {@const dimmed      = dimmedPlanIds.has(plan.mappingId)}
+          {@const archived    = plan.wixStatus === 'archived'}
+          {@const deadGroups  = (plan.groups || []).filter(g => g.healthStatus === 'not_found').length}
           <div
             class="pm-node"
             class:pm-node-connected={connected}
             class:pm-node-dimmed={dimmed}
             class:pm-node-inactive={plan.status === 'inactive'}
+            class:pm-node-archived={archived}
             bind:this={planEls[plan.mappingId]}
           >
             <div class="pm-node-body">
@@ -411,9 +446,20 @@
               </div>
               <div class="pm-node-info">
                 <div class="pm-node-name">{plan.planName}</div>
-                <div class="pm-node-sub">{plan.planType === 'booking_service' ? 'Booking Service' : 'Pricing Plan'}</div>
+                <div class="pm-node-sub">
+                  {plan.planType === 'booking_service' ? 'Booking Service' : 'Pricing Plan'}
+                </div>
+                {#if archived}
+                  <div class="pm-node-sub pm-sub-archived">Archived on Wix — members keep access until billing ends</div>
+                {/if}
               </div>
               <div class="pm-node-meta">
+                {#if archived}
+                  <span class="pm-pill pm-pill-warning">Archived</span>
+                {/if}
+                {#if deadGroups > 0}
+                  <span class="pm-pill pm-pill-warning">{deadGroups} missing</span>
+                {/if}
                 {#if connected}
                   <span class="pm-pill pm-pill-connected">{plan.groups.length}×</span>
                 {:else}
@@ -448,9 +494,11 @@
 
         {#each groups as group (group.id)}
           {@const connCount = plans.filter(p => p.groups?.some(g => g.id === group.id)).length}
+          {@const isDead = plans.some(p => p.groups?.some(g => g.id === group.id && g.healthStatus === 'not_found'))}
           <div
             class="pm-node"
             class:pm-node-connected={connCount > 0}
+            class:pm-node-warning={isDead}
             class:pm-drop-target={!!drag}
             bind:this={groupEls[group.id]}
             role="button" tabindex="0" on:mouseup={e => dropOnGroup(e, group)}
@@ -465,14 +513,18 @@
               <span class="pm-port-dot"></span>
             </button>
             <div class="pm-node-body">
-              <div class="pm-node-icon pm-icon-hardware">🚪</div>
+              <div class="pm-node-icon pm-icon-hardware">{isDead ? '⚠' : '🏢'}</div>
               <div class="pm-node-info">
                 <div class="pm-node-name">{group.name}</div>
-                <div class="pm-node-sub">Kisi Group</div>
+                <div class="pm-node-sub">{isDead ? 'Group not found' : 'Access Group'}</div>
               </div>
               {#if connCount > 0}
                 <div class="pm-node-meta">
-                  <span class="pm-pill pm-pill-connected">{connCount} plan{connCount !== 1 ? 's' : ''}</span>
+                  {#if isDead}
+                    <span class="pm-pill pm-pill-warning">missing</span>
+                  {:else}
+                    <span class="pm-pill pm-pill-connected">{connCount} plan{connCount !== 1 ? 's' : ''}</span>
+                  {/if}
                 </div>
               {/if}
             </div>
@@ -674,6 +726,22 @@
   .pm-node-inactive {
     opacity: 0.45;
   }
+  .pm-node-warning {
+    border-color: rgba(245,158,11,0.5);
+    background: rgba(245,158,11,0.06);
+  }
+  .pm-node-warning:hover {
+    border-color: rgba(245,158,11,0.7);
+    box-shadow: 0 0 0 1px rgba(245,158,11,0.15), 0 4px 20px rgba(0,0,0,0.3);
+  }
+  .pm-node-archived {
+    border-left: 3px solid rgba(245,158,11,0.5);
+  }
+  .pm-sub-archived {
+    font-size: 10px;
+    color: rgba(245,158,11,0.7);
+    margin-top: 1px;
+  }
 
   /* Drop target highlight during drag */
   .pm-drop-target {
@@ -741,6 +809,8 @@
   }
   .pm-pill-connected { background: rgba(79,110,247,0.15);  color: #7B96F9; }
   .pm-pill-unmapped  { background: rgba(239,68,68,0.12);   color: #F87171; }
+  .pm-pill-warning   { background: rgba(245,158,11,0.15);  color: #D97706; }
+  .pm-pill-archived  { background: rgba(245,158,11,0.15);  color: #D97706; }
 
   /* ── Ports ─────────────────────────────────────────────────────────── */
   .pm-port {

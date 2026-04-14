@@ -143,7 +143,19 @@ html, body {
         </svg>
       </div>
       <h2>Something went wrong</h2>
-      <p>We couldn't activate your access automatically. Your gym has been notified and will sort it out shortly — you don't need to do anything.</p>
+      <p>We couldn't activate your access automatically. Your gym has been notified and will sort it out shortly. If you need immediate access, contact your gym directly.</p>
+    </div>
+
+    <!-- Setup state (plan not yet mapped — not the member's fault) -->
+    <div id="state-setup" class="hidden">
+      <div class="status-icon syncing">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="12" stroke="#F59E0B" stroke-width="2.5"/>
+          <path d="M16 11v6M16 20v1" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2>Your access is being set up</h2>
+      <p>Your purchase was received, but your gym is still finishing the setup for this plan. This usually gets resolved quickly. If you need immediate access, contact your gym directly.</p>
     </div>
 
     <!-- Pending state (member not found yet — webhook hasn't arrived) -->
@@ -177,8 +189,9 @@ let settled = false; // true once we reach a terminal state (active/error/suspen
 let freshnessInterval = null;
 
 function showState(name) {
-  ['syncing', 'active', 'error', 'pending'].forEach(s => {
-    document.getElementById(`state-${s}`).classList.toggle('hidden', s !== name);
+  ['syncing', 'active', 'error', 'setup', 'pending'].forEach(s => {
+    const el = document.getElementById(`state-${s}`);
+    if (el) el.classList.toggle('hidden', s !== name);
   });
 }
 
@@ -236,14 +249,19 @@ async function poll() {
     }
 
     if (data.status === 'failed' || data.status === 'error') {
-      showState('error');
+      // W-1: Check if failure is due to unmapped plan — show amber setup state, not red error
+      if (data.lastEvent?.errorCode === 'PLAN_NOT_MAPPED') {
+        showState('setup');
+      } else {
+        showState('error');
+      }
       return; // stop polling
     }
 
     if (data.status === 'suspended') {
       showState('error');
       document.querySelector('#state-error p').textContent =
-        'Your access has been suspended. Contact your gym for more information.';
+        'Your access has been suspended. Contact your gym directly for more information.';
       return;
     }
 
@@ -260,11 +278,7 @@ async function poll() {
 }
 
 function showTimeoutState() {
-  showState('error');
-  var errEl = document.querySelector('#state-error p');
-  if (errEl) {
-    errEl.textContent = 'This is taking longer than expected. Your access is still being set up — please check back in a few minutes or contact your gym.';
-  }
+  showState('setup');
 }
 
 // OI-05: Freshness tracking — shows amber when data age exceeds threshold
@@ -301,7 +315,11 @@ function startFreshnessCheck() {
             document.querySelector('#state-error p').textContent =
               'Your access has been suspended. Contact your gym for more information.';
           } else if (data.status === 'failed' || data.status === 'error') {
-            showState('error');
+            if (data.lastEvent?.errorCode === 'PLAN_NOT_MAPPED') {
+              showState('setup');
+            } else {
+              showState('error');
+            }
           }
         }).catch(() => {});
     }

@@ -93,6 +93,7 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
     }
 
     // ── Status deactivation: revoke all active members from all groups ──
+    // C-4 safety: only call Kisi removeRole if no OTHER mapping grants the same group
     if (newStatus === 'inactive' && oldStatus === 'active') {
       const members = await db.query(
         `SELECT mi.id AS member_id, mi.hardware_user_id,
@@ -104,10 +105,20 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
       );
       for (const m of members.rows) {
         try {
-          await hardwareAdapter.removeRole(hardware_platform, apiKey, m.role_assignment_id);
           await db.query('DELETE FROM member_role_assignments WHERE mapping_id = $1 AND member_id = $2', [mappingId, m.member_id]);
-          await db.query('DELETE FROM member_access_sources WHERE member_id = $1 AND hardware_group_id = $2', [m.member_id, m.hardware_group_id]);
-          console.log(`[syncMappingMembers] Revoked member ${m.member_id} from group ${m.hardware_group_id} (mapping deactivated)`);
+          await db.query('DELETE FROM member_access_sources WHERE member_id = $1 AND hardware_group_id = $2 AND mapping_id = $3', [m.member_id, m.hardware_group_id, mappingId]);
+
+          const otherGrants = await db.query(
+            `SELECT COUNT(*) AS cnt FROM member_role_assignments
+             WHERE member_id = $1 AND hardware_group_id = $2 AND mapping_id != $3`,
+            [m.member_id, m.hardware_group_id, mappingId]
+          );
+          if (parseInt(otherGrants.rows[0].cnt, 10) > 0) {
+            console.log(`[syncMappingMembers] Skipped Kisi revoke for member ${m.member_id} — group ${m.hardware_group_id} still granted by another mapping`);
+          } else {
+            await hardwareAdapter.removeRole(hardware_platform, apiKey, m.role_assignment_id);
+            console.log(`[syncMappingMembers] Revoked member ${m.member_id} from group ${m.hardware_group_id} (mapping deactivated)`);
+          }
         } catch (err) {
           console.warn(`[syncMappingMembers] Failed to revoke member ${m.member_id}:`, err.message);
         }
@@ -188,14 +199,28 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
       }
     }
 
-    // Revoke removed groups from members who have those assignments
+    // Revoke removed groups — but only call Kisi removeRole if no OTHER mapping
+    // still grants the same group to this member (C-4 multi-source safety)
     for (const m of activeMembers.rows) {
       if (!removed.includes(m.hardware_group_id)) continue;
       try {
-        await hardwareAdapter.removeRole(hardware_platform, apiKey, m.role_assignment_id);
+        // Delete this mapping's MRA row first
         await db.query('DELETE FROM member_role_assignments WHERE mapping_id = $1 AND member_id = $2 AND hardware_group_id = $3', [mappingId, m.member_id, m.hardware_group_id]);
-        await db.query('DELETE FROM member_access_sources WHERE member_id = $1 AND hardware_group_id = $2', [m.member_id, m.hardware_group_id]);
-        console.log(`[syncMappingMembers] Revoked member ${m.member_id} from removed group ${m.hardware_group_id}`);
+        // Delete this mapping's source row only (scoped to this mapping)
+        await db.query('DELETE FROM member_access_sources WHERE member_id = $1 AND hardware_group_id = $2 AND mapping_id = $3', [m.member_id, m.hardware_group_id, mappingId]);
+
+        // Check if ANY other mapping still grants this member the same group
+        const otherGrants = await db.query(
+          `SELECT COUNT(*) AS cnt FROM member_role_assignments
+           WHERE member_id = $1 AND hardware_group_id = $2 AND mapping_id != $3`,
+          [m.member_id, m.hardware_group_id, mappingId]
+        );
+        if (parseInt(otherGrants.rows[0].cnt, 10) > 0) {
+          console.log(`[syncMappingMembers] Skipped Kisi revoke for member ${m.member_id} — group ${m.hardware_group_id} still granted by another mapping`);
+        } else {
+          await hardwareAdapter.removeRole(hardware_platform, apiKey, m.role_assignment_id);
+          console.log(`[syncMappingMembers] Revoked member ${m.member_id} from removed group ${m.hardware_group_id}`);
+        }
       } catch (err) {
         console.warn(`[syncMappingMembers] Failed to revoke member ${m.member_id} from group ${m.hardware_group_id}:`, err.message);
       }
@@ -1081,7 +1106,7 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
         [clientId]
       ),
       db.query(
-        `SELECT id, source_plan_id, plan_name, door_name, hardware_group_id, status, allow_multiple, max_members, created_at
+        `SELECT id, source_plan_id, plan_name, door_name, hardware_group_id, status, wix_status, allow_multiple, max_members, created_at
          FROM plan_mappings
          WHERE client_id = $2 AND (location_id = $1 OR location_id IS NULL)
          ORDER BY plan_name`,
@@ -1190,13 +1215,33 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
         `INSERT INTO plan_mapping_groups (mapping_id, hardware_group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [mappingId, addGroupId]
       );
+      // Reset health_status to 'ok' if re-adding a previously-dead group
+      await db.query(
+        `UPDATE plan_mapping_groups SET health_status = 'ok' WHERE mapping_id = $1 AND hardware_group_id = $2`,
+        [mappingId, addGroupId]
+      );
       const newGroupIds = [...new Set([...oldGroupIds, addGroupId])];
+      // M-4: Check API key and warn if missing
+      const locationId = (await db.query('SELECT location_id FROM plan_mappings WHERE id = $1', [mappingId])).rows[0]?.location_id;
+      const apiKey = await resolveApiKey(clientId, locationId);
       syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, oldStatus, oldStatus)
         .catch(err => console.warn('[operator] syncMappingMembers (addGroupId) failed:', err.message));
-      return res.json({ ok: true });
+      return res.json({
+        ok: true,
+        warning: apiKey ? null : "Your hardware API key isn't set up yet. New members won't get access until the key is added — you can do this in System Config.",
+      });
     }
 
     if (removeGroupId) {
+      // Clean up MRA + source rows for the removed group before deleting junction row
+      await db.query(
+        'DELETE FROM member_role_assignments WHERE mapping_id = $1 AND hardware_group_id = $2',
+        [mappingId, removeGroupId]
+      );
+      await db.query(
+        'DELETE FROM member_access_sources WHERE hardware_group_id = $1 AND mapping_id = $2',
+        [removeGroupId, mappingId]
+      ).catch(() => {}); // Table may not exist yet (OB-46)
       await db.query(
         `DELETE FROM plan_mapping_groups WHERE mapping_id = $1 AND hardware_group_id = $2`,
         [mappingId, removeGroupId]
@@ -1291,7 +1336,7 @@ router.get('/:clientId/plan-mappings/:mappingId/groups', async (req, res) => {
     if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
 
     const result = await db.query(
-      'SELECT id, hardware_group_id, door_name, created_at FROM plan_mapping_groups WHERE mapping_id = $1 ORDER BY created_at',
+      'SELECT id, hardware_group_id, door_name, health_status, created_at FROM plan_mapping_groups WHERE mapping_id = $1 ORDER BY created_at',
       [mappingId]
     );
     res.json({ groups: result.rows });
@@ -1319,6 +1364,28 @@ router.get('/:clientId/plan-mappings/:mappingId/members', async (req, res) => {
     res.json({ count: parseInt(result.rows[0].count, 10) });
   } catch (err) {
     console.error('[operator] GET plan-mappings/:mappingId/members error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /operator/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members ──
+// Returns count of members assigned to a specific group within a mapping.
+// Used by wire graph and classic UI for disconnect confirmation dialogs.
+router.get('/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members', async (req, res) => {
+  try {
+    const { clientId, mappingId, groupId } = req.params;
+    const check = await db.query('SELECT id FROM plan_mappings WHERE id = $1 AND client_id = $2', [mappingId, clientId]);
+    if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+
+    const result = await db.query(
+      `SELECT COUNT(DISTINCT mra.member_id) AS count
+       FROM member_role_assignments mra
+       WHERE mra.mapping_id = $1 AND mra.hardware_group_id = $2`,
+      [mappingId, groupId]
+    );
+    res.json({ count: parseInt(result.rows[0].count, 10) });
+  } catch (err) {
+    console.error('[operator] GET groups/:groupId/affected-members error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

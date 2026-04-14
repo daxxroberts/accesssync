@@ -2,7 +2,7 @@
  * @file plan-mapping-resolver.js
  * @layer core/layer4
  * @role plan-resolution
- * @reads plan_mappings, plan_mapping_groups, locations, clients
+ * @reads plan_mappings, plan_mapping_groups (health_status), locations, clients
  * @writes config_alert_log (on missing group)
  * @exports resolve(tenantId, planId) → Array
  * @dr DR-027, DR-028, DR-035
@@ -54,7 +54,8 @@ class PlanMappingResolver {
          AND pm.source_plan_id = $2
          AND pm.status = 'active'
          AND (l.id IS NULL OR l.subscription_status = 'active')
-         AND COALESCE(pmg.hardware_group_id, pm.hardware_group_id, '') != ''`,
+         AND COALESCE(pmg.hardware_group_id, pm.hardware_group_id, '') != ''
+         AND COALESCE(pmg.health_status, 'ok') = 'ok'`,
       [tenantId, planId]
     );
 

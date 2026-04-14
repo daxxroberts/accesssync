@@ -94,8 +94,14 @@ async function processJob(job) {
       // Step 1: Resolve all active plan mappings for this plan (returns array, null, or empty array)
       const mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
       if (mappings === null) {
+        // W-1: Unknown plan — write to error_queue + notify operator immediately
         logger.warn('queue.grant.plan_unknown', { tenantId, planId: standardEvent.planId, memberId: standardEvent.platformMemberId });
-        return; // Already alerted in resolver via config_alert_log
+        const unmappedErr = new Error(`No mapping for plan ${standardEvent.planId}`);
+        unmappedErr.code = 'PLAN_NOT_MAPPED';
+        unmappedErr.userMessage = "A member just signed up for a plan that hasn't been connected to any access group yet. They won't be able to get in until the plan is mapped.";
+        unmappedErr.action = 'Open Plan Mapping in your AccessSync dashboard and connect this plan to an access group.';
+        await retryEngine.handleFailure({ id: job.id, data: job.data }, unmappedErr);
+        return;
       }
       if (mappings.length === 0) {
         // Plan recognized but no hardware group mapped yet (Wix-first flow) — park member

@@ -3,9 +3,9 @@
  * @layer core/layer4
  * @role cron-6hr
  * @schedule every 6 hours via Railway Cron
- * @reads locations, clients, plan_mappings, plan_mapping_groups
- * @writes locations.hardware_key_last_verified, locations.hardware_key_last_error, plan_mappings.status (orphan deactivation)
- * @calls hardware-adapter (getLocks, getGroups), resend (alerts)
+ * @reads locations, clients, plan_mappings, plan_mapping_groups, member_role_assignments
+ * @writes locations.hardware_key_last_verified, locations.hardware_key_last_error, plan_mapping_groups.health_status, plan_mappings.wix_status
+ * @calls hardware-adapter (getLocks, getGroups), wix-plans-api (listPricingPlans), resend (alerts)
  * @exports runHealthCheck
  * @dr DR-028
  *
@@ -106,11 +106,15 @@ async function _checkLocation(loc) {
   if (!error) {
     await _reconcileGroups(loc, platform, apiKey);
   }
+
+  // Reconcile Wix plan statuses (independent of hardware key check)
+  await _reconcileWixPlans(loc);
 }
 
 /**
  * Cross-check mapped hardware group IDs against live groups from the hardware platform.
- * Deactivates any plan mapping whose group no longer exists. Sends operator email if orphans found.
+ * K-2: Flags specific dead group rows in plan_mapping_groups — does NOT deactivate entire mappings.
+ * Other groups on the same mapping keep working. Sends operator email with affected member counts.
  */
 async function _reconcileGroups(loc, platform, apiKey) {
   let liveGroups;
@@ -121,8 +125,7 @@ async function _reconcileGroups(loc, platform, apiKey) {
     return;
   }
 
-  // Guard: if empty response, skip reconciliation — prevents mass-deactivation on API failure
-  // (kisi-adapter.getGroups swallows errors and returns [])
+  // Guard: if empty response, skip reconciliation — prevents mass-flagging on API failure
   if (!liveGroups || liveGroups.length === 0) {
     log.info('health.groups_skipped', { clientId: loc.client_id, reason: 'empty_response' });
     return;
@@ -132,12 +135,14 @@ async function _reconcileGroups(loc, platform, apiKey) {
 
   // Query all mapped group IDs for this client (junction table + legacy single-group)
   const mappedResult = await db.query(
-    `SELECT DISTINCT pmg.hardware_group_id, pm.id AS mapping_id, pm.plan_name
+    `SELECT DISTINCT pmg.hardware_group_id, pm.id AS mapping_id, pm.plan_name,
+            COALESCE(pmg.health_status, 'ok') AS current_health
      FROM plan_mapping_groups pmg
      JOIN plan_mappings pm ON pmg.mapping_id = pm.id
      WHERE pm.client_id = $1 AND pm.status = 'active'
      UNION
-     SELECT DISTINCT pm.hardware_group_id, pm.id AS mapping_id, pm.plan_name
+     SELECT DISTINCT pm.hardware_group_id, pm.id AS mapping_id, pm.plan_name,
+            'legacy' AS current_health
      FROM plan_mappings pm
      WHERE pm.client_id = $1 AND pm.status = 'active'
        AND pm.hardware_group_id IS NOT NULL
@@ -145,12 +150,42 @@ async function _reconcileGroups(loc, platform, apiKey) {
     [loc.client_id]
   );
 
-  const orphans = mappedResult.rows.filter(r => !liveGroupIdSet.has(String(r.hardware_group_id)));
-  if (orphans.length === 0) return;
+  // Detect orphans (mapped group IDs not in the live set) — skip already-flagged groups
+  const orphans = mappedResult.rows.filter(r =>
+    !liveGroupIdSet.has(String(r.hardware_group_id)) && r.current_health !== 'not_found'
+  );
 
-  // Deactivate orphaned mappings + log
+  // Detect recovered groups (previously not_found but now alive again)
+  const recovered = mappedResult.rows.filter(r =>
+    liveGroupIdSet.has(String(r.hardware_group_id)) && r.current_health === 'not_found'
+  );
+
+  if (orphans.length === 0 && recovered.length === 0) return;
+
+  // Flag orphaned groups at the group level — mapping stays active
   for (const orphan of orphans) {
-    await db.query("UPDATE plan_mappings SET status = 'inactive' WHERE id = $1", [orphan.mapping_id]);
+    if (orphan.current_health === 'legacy') {
+      // Legacy row: create a junction row with not_found status
+      await db.query(
+        `INSERT INTO plan_mapping_groups (mapping_id, hardware_group_id, health_status)
+         VALUES ($1, $2, 'not_found') ON CONFLICT (mapping_id, hardware_group_id) DO UPDATE SET health_status = 'not_found'`,
+        [orphan.mapping_id, orphan.hardware_group_id]
+      );
+    } else {
+      await db.query(
+        `UPDATE plan_mapping_groups SET health_status = 'not_found'
+         WHERE mapping_id = $1 AND hardware_group_id = $2`,
+        [orphan.mapping_id, orphan.hardware_group_id]
+      );
+    }
+
+    // Get affected member count for this group
+    const memberCount = await db.query(
+      `SELECT COUNT(DISTINCT member_id) AS cnt FROM member_role_assignments
+       WHERE mapping_id = $1 AND hardware_group_id = $2`,
+      [orphan.mapping_id, orphan.hardware_group_id]
+    );
+    orphan.affectedMembers = parseInt(memberCount.rows[0].cnt, 10);
 
     const err = new Error(`Group ${orphan.hardware_group_id} no longer exists in ${platform}`);
     err.code = 'HARDWARE_RESOURCE_NOT_FOUND';
@@ -159,11 +194,30 @@ async function _reconcileGroups(loc, platform, apiKey) {
       mappingId: orphan.mapping_id,
       hardwareGroupId: orphan.hardware_group_id,
       planName: orphan.plan_name,
+      affectedMembers: orphan.affectedMembers,
     }, err);
   }
 
-  console.log(`[Hardware Health Check] ${loc.client_name}: ${orphans.length} orphaned group(s) deactivated.`);
-  await _notifyOrphanedGroups(loc, orphans, platform);
+  // Recover groups that are alive again
+  for (const rec of recovered) {
+    await db.query(
+      `UPDATE plan_mapping_groups SET health_status = 'ok'
+       WHERE mapping_id = $1 AND hardware_group_id = $2`,
+      [rec.mapping_id, rec.hardware_group_id]
+    );
+    log.info('health.group_recovered', {
+      clientId: loc.client_id, mappingId: rec.mapping_id,
+      hardwareGroupId: rec.hardware_group_id,
+    });
+  }
+
+  if (orphans.length > 0) {
+    console.log(`[Hardware Health Check] ${loc.client_name}: ${orphans.length} group(s) flagged as not found.`);
+    await _notifyOrphanedGroups(loc, orphans, platform);
+  }
+  if (recovered.length > 0) {
+    console.log(`[Hardware Health Check] ${loc.client_name}: ${recovered.length} group(s) recovered.`);
+  }
 }
 
 async function _notifyOrphanedGroups(loc, orphans, platform) {
@@ -174,16 +228,21 @@ async function _notifyOrphanedGroups(loc, orphans, platform) {
     const { Resend } = require('resend');
     const resend = new Resend(process.env.RESEND_API_KEY);
 
-    const groupList = orphans.map(o =>
-      `  - Group ID: ${o.hardware_group_id} (plan: ${o.plan_name || o.mapping_id})`
-    ).join('\n');
+    const groupList = orphans.map(o => {
+      const memberNote = o.affectedMembers > 0
+        ? ` — ${o.affectedMembers} member(s) affected`
+        : ' — no members currently assigned';
+      return `  - ${o.plan_name || 'Unknown plan'}: Group ${o.hardware_group_id}${memberNote}`;
+    }).join('\n');
+
+    const totalAffected = orphans.reduce((sum, o) => sum + (o.affectedMembers || 0), 0);
 
     await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io',
       to: toEmail,
-      subject: `[AccessSync] ${orphans.length} door group(s) removed from ${platform}`,
+      subject: `[AccessSync] ${orphans.length} access group(s) no longer found in ${platform}`,
       text: [
-        `AccessSync Group Reconciliation Alert — ${new Date().toISOString()}`,
+        `AccessSync Group Alert — ${new Date().toISOString()}`,
         '',
         `Client: ${loc.client_name}`,
         `Location: ${loc.location_name}`,
@@ -192,14 +251,148 @@ async function _notifyOrphanedGroups(loc, orphans, platform) {
         '',
         groupList,
         '',
-        'These plan mappings have been automatically deactivated. New member signups for these plans will not receive access until the plans are re-mapped to a valid group.',
+        totalAffected > 0
+          ? `${totalAffected} member(s) may have lost access and will need to be remapped to a new group.`
+          : 'No members are currently affected.',
         '',
-        'To fix this: log in to the AccessSync dashboard → Plan Mapping → assign a new group to the affected plans.',
+        'These groups have been flagged in your dashboard. Other groups on the same plan continue to work normally.',
+        '',
+        'To fix this: log in to AccessSync → Plan Mapping → remap or remove the affected groups.',
       ].join('\n'),
     });
     console.log(`[Hardware Health Check] Orphaned group alert sent to ${toEmail}`);
   } catch (err) {
     console.error('[Hardware Health Check] Failed to send orphan alert:', err.message);
+  }
+}
+
+/**
+ * Cross-check plan_mappings against live Wix plan statuses.
+ * Detects archived plans and updates plan_mappings.wix_status accordingly.
+ * Informational only — archived plans still function until member subscriptions expire.
+ */
+async function _reconcileWixPlans(loc) {
+  // Load Wix API credentials for this client
+  const clientResult = await db.query(
+    `SELECT wix_api_key, wix_instance_id FROM clients WHERE id = $1`,
+    [loc.client_id]
+  );
+  const client = clientResult.rows[0];
+  if (!client || !client.wix_api_key || !client.wix_instance_id) return;
+
+  let wixApiKey;
+  try {
+    wixApiKey = decryptApiKey(client.wix_api_key);
+  } catch {
+    return; // Can't decrypt — skip silently
+  }
+
+  const wixPlansApi = require('../adapters/wix/wix-plans-api');
+  let wixPlans;
+  try {
+    wixPlans = await wixPlansApi.listPricingPlans(wixApiKey, client.wix_instance_id);
+  } catch (err) {
+    console.warn(`[Hardware Health Check] Wix plans fetch failed for ${loc.client_name}: ${err.message}`);
+    return;
+  }
+
+  if (!wixPlans || wixPlans.length === 0) return;
+
+  // Build lookup: planId → status
+  const wixStatusMap = new Map(wixPlans.map(p => [p.id, p.status]));
+
+  // Get all plan mappings for this client that we're tracking
+  const mappingsResult = await db.query(
+    `SELECT id, source_plan_id, plan_name, wix_status FROM plan_mappings
+     WHERE client_id = $1 AND status = 'active'`,
+    [loc.client_id]
+  );
+
+  const newlyArchived = [];
+
+  for (const mapping of mappingsResult.rows) {
+    const wixStatus = wixStatusMap.get(mapping.source_plan_id);
+    if (!wixStatus) continue; // Plan not found in Wix response — may be a booking service, skip
+
+    const isArchived = wixStatus === 'archived';
+    const wasArchived = mapping.wix_status === 'archived';
+
+    if (isArchived && !wasArchived) {
+      // Newly archived
+      await db.query(
+        `UPDATE plan_mappings SET wix_status = 'archived' WHERE id = $1`,
+        [mapping.id]
+      );
+      // Get affected member count
+      const memberCount = await db.query(
+        `SELECT COUNT(DISTINCT mra.member_id) AS cnt
+         FROM member_role_assignments mra WHERE mra.mapping_id = $1`,
+        [mapping.id]
+      );
+      newlyArchived.push({
+        ...mapping,
+        affectedMembers: parseInt(memberCount.rows[0].cnt, 10),
+      });
+      log.info('health.wix_plan_archived', {
+        clientId: loc.client_id, mappingId: mapping.id,
+        planName: mapping.plan_name, sourcePlanId: mapping.source_plan_id,
+      });
+    } else if (!isArchived && wasArchived) {
+      // Recovered — was archived but now active again (unlikely but safe)
+      await db.query(
+        `UPDATE plan_mappings SET wix_status = 'active' WHERE id = $1`,
+        [mapping.id]
+      );
+      log.info('health.wix_plan_recovered', {
+        clientId: loc.client_id, mappingId: mapping.id,
+        planName: mapping.plan_name,
+      });
+    }
+  }
+
+  if (newlyArchived.length > 0) {
+    console.log(`[Hardware Health Check] ${loc.client_name}: ${newlyArchived.length} Wix plan(s) archived.`);
+    await _notifyArchivedPlans(loc, newlyArchived);
+  }
+}
+
+async function _notifyArchivedPlans(loc, archivedPlans) {
+  const toEmail = loc.notification_email || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
+  if (!toEmail) return;
+
+  try {
+    const { Resend } = require('resend');
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
+    const planList = archivedPlans.map(p => {
+      const memberNote = p.affectedMembers > 0
+        ? `${p.affectedMembers} member(s) still have active access`
+        : 'no members currently assigned';
+      return `  - ${p.plan_name || p.source_plan_id} — ${memberNote}`;
+    }).join('\n');
+
+    await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io',
+      to: toEmail,
+      subject: `[AccessSync] ${archivedPlans.length} plan(s) archived on Wix`,
+      text: [
+        `AccessSync Plan Status Update — ${new Date().toISOString()}`,
+        '',
+        `Client: ${loc.client_name}`,
+        `Location: ${loc.location_name}`,
+        '',
+        'The following Wix plan(s) have been archived:',
+        '',
+        planList,
+        '',
+        'This is informational. Members with active subscriptions keep their access until their billing cycle ends naturally. No action is needed unless you want to remap these members to a different plan.',
+        '',
+        'You can view affected plans in AccessSync → Plan Mapping.',
+      ].join('\n'),
+    });
+    console.log(`[Hardware Health Check] Archived plan alert sent to ${toEmail}`);
+  } catch (err) {
+    console.error('[Hardware Health Check] Failed to send archived plan alert:', err.message);
   }
 }
 

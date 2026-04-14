@@ -3,7 +3,7 @@
  * @layer core/layer4
  * @role provisioning
  * @reads plan_mappings, member_identity, member_access_log, member_role_assignments
- * @writes member_access_log, config_alert_log, plan_mappings (stale-group deactivation), diagnostic_log (via logger)
+ * @writes member_access_log, config_alert_log, plan_mapping_groups (health_status), diagnostic_log (via logger)
  * @calls hardware-adapter
  * @exports processGrant, processRevoke
  * @dr DR-022, DR-026
@@ -42,6 +42,7 @@ class GrantRevokeLogic {
    */
   async processGrant(tenantId, memberId, hardwareUserId, mappings, wixEvent) {
     const assignments = [];
+    const failedGroups = [];
 
     for (const mapping of mappings) {
       const apiKey = mapping.apiKey;
@@ -50,8 +51,8 @@ class GrantRevokeLogic {
         hardwareGroupId: mapping.hardwareGroupId,
         mappingId: mapping.mappingId,
       });
-      // If Kisi returns 404 (group deleted), auto-deactivate this mapping so no
-      // further grants target a ghost group. Re-throw always — queue-worker dead-letters.
+      // K-2: On 404 (group deleted), flag the specific group row and continue the loop.
+      // Other groups on the same mapping still get attempted — member gets partial access.
       // Safe on retry: Kisi assignRole is idempotent and member_role_assignments has ON CONFLICT.
       try {
         const roleId = await hardwareAdapter.assignRole(
@@ -70,14 +71,38 @@ class GrantRevokeLogic {
             tenantId, memberId, mappingId: mapping.mappingId,
             hardwareGroupId: mapping.hardwareGroupId,
           }, err);
-          // Fire-and-forget deactivation (same pattern as logger.js persistToDiagnosticLog)
+          // Flag the specific dead group — mapping stays active, other groups keep working
           setImmediate(() => {
-            db.query("UPDATE plan_mappings SET status = 'inactive' WHERE id = $1", [mapping.mappingId])
-              .catch(() => {});
+            db.query(
+              `UPDATE plan_mapping_groups SET health_status = 'not_found'
+               WHERE mapping_id = $1 AND hardware_group_id = $2`,
+              [mapping.mappingId, mapping.hardwareGroupId]
+            ).catch(() => {});
+            db.query(
+              `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
+               VALUES ($1, 'group_not_found', $2)`,
+              [tenantId, mapping.hardwareGroupId]
+            ).catch(() => {});
           });
+          failedGroups.push({ mapping, err });
+          continue; // Try remaining groups
         }
-        throw err;
+        throw err; // Non-404 errors still throw immediately
       }
+    }
+
+    // If ALL groups failed, dead-letter the job
+    if (failedGroups.length > 0 && assignments.length === 0) {
+      throw failedGroups[0].err;
+    }
+    // If some succeeded and some failed, log warning but return successful assignments
+    if (failedGroups.length > 0) {
+      log.warn('grant.partial_failure', {
+        tenantId, memberId,
+        succeeded: assignments.length,
+        failed: failedGroups.length,
+        failedGroups: failedGroups.map(f => f.mapping.hardwareGroupId),
+      });
     }
 
     await db.query(

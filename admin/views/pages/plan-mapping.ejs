@@ -5,9 +5,9 @@
   @role plan-to-door-mapping
   @data GET /operator/:clientId/locations/:locationId/mappings, GET /operator/:clientId/kisi-groups
   @writes PATCH /operator/:clientId/plan-mappings/:mappingId, POST /operator/:clientId/plan-mappings/:mappingId/remap
-  @reads GET /operator/:clientId/plan-mappings/:mappingId/members (remap modal member count)
+  @reads GET /operator/:clientId/plan-mappings/:mappingId/members (remap modal member count), GET /operator/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members (disconnect count)
   @tab Plan Mapping
-  @features multi-group, multi-member toggle, duplicate-group warning, remap confirmation modal, stale-group detection
+  @features multi-group, multi-member toggle, duplicate-group warning, remap confirmation modal, stale-group detection, dead-group warning with member count, archived-plan badge, disconnect member count confirmation
 %>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
@@ -274,6 +274,17 @@
     }
     .group-tag.stale { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
 
+    /* ── Archived plan badge ── */
+    .plan-badge-archived {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; padding: 4px 10px; border-radius: 6px;
+      background: #FEF3C7; color: #92400E;
+    }
+    .plan-archived-subtitle {
+      font-size: 12px; color: #92400E; line-height: 1.5; margin-bottom: 12px;
+      padding: 10px 14px; background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 8px;
+    }
+
     /* ── Remap modal list ── */
     .remap-list { list-style: none; margin: 0 0 20px; padding: 0; text-align: left; }
     .remap-item {
@@ -442,9 +453,12 @@
     }
 
     function getStaleGroupIds(plan) {
-      if (!PLATFORM_GROUPS.length || !plan.groupIds) return [];
+      if (!plan.groupIds) return [];
       return plan.groupIds.filter(function(gid) {
-        return !PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
+        // Dead if health_status='not_found' from API, OR not in live platform groups list
+        var healthDead = plan._groupHealthMap && plan._groupHealthMap[gid] === 'not_found';
+        var notInPlatform = PLATFORM_GROUPS.length > 0 && !PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
+        return healthDead || notInPlatform;
       });
     }
 
@@ -528,6 +542,8 @@
         headerTags += '</div>';
       }
 
+      var archivedBadge = plan.wixStatus === 'archived' ? '<span class="plan-badge-archived">Archived</span>' : '';
+
       var headerHTML =
         '<div class="plan-card-header">' +
           '<div class="plan-card-left">' +
@@ -538,6 +554,7 @@
             '</div>' +
           '</div>' +
           '<div class="plan-card-right">' +
+            archivedBadge +
             '<span class="plan-type-badge ' + (isUnmapped ? 'unlinked' : typeClass) + '">' + (isUnmapped ? 'Not Mapped' : typeLabel) + '</span>' +
             (plan.activeHolders > 0 ? '<span style="font-size:12px;color:#6b7a8d;">' + plan.activeHolders + ' active</span>' : '') +
             headerTags +
@@ -546,14 +563,23 @@
 
       var bodyHTML = '<div class="plan-card-body">';
 
+      // ── Archived plan notice ──
+      if (plan.wixStatus === 'archived') {
+        bodyHTML += '<div class="plan-archived-subtitle">'
+          + 'This plan has been archived on Wix. Members with active subscriptions keep their access until their billing cycle ends.'
+          + '</div>';
+      }
+
       // ── Stale group warning ──
       var staleIds = getStaleGroupIds(plan);
       if (staleIds.length > 0) {
+        var staleCount = plan._staleAffectedMembers || 0;
+        var countText = staleCount > 0 ? ' (' + staleCount + ' member' + (staleCount !== 1 ? 's' : '') + ' affected)' : '';
         bodyHTML += '<div class="stale-group-warning">'
           + '<span>&#9888;</span> '
           + staleIds.length + ' group' + (staleIds.length > 1 ? 's' : '')
           + ' no longer exist' + (staleIds.length === 1 ? 's' : '')
-          + ' in ' + platformName() + ' &mdash; re-map this plan'
+          + ' in ' + platformName() + countText + ' &mdash; re-map this plan'
           + '</div>';
       }
 
@@ -674,8 +700,6 @@
       } else {
         plan.groupIds.push(groupId);
       }
-      // Set status based on groups
-      plan.status = plan.groupIds.length > 0 ? 'active' : 'inactive';
       markDirty();
       render();
     }
@@ -684,21 +708,38 @@
       evt.stopPropagation();
       var plan = plans.find(function(p) { return p.id === planId; });
       if (!plan.groupIds) return;
-      if (plan.activeHolders > 0) {
-        var g = PLATFORM_GROUPS.find(function(x) { return x.id === groupId; });
-        pendingAction = function() {
-          plan.groupIds = plan.groupIds.filter(function(id) { return id !== groupId; });
-          plan.status = plan.groupIds.length > 0 ? 'active' : 'inactive';
-          markDirty();
-          render();
-        };
-        showModal('warning', 'Remove group?', 'Active members will lose access to "' + (g ? g.name : groupId) + '".', 'Remove', 'danger');
-        return;
-      }
-      plan.groupIds = plan.groupIds.filter(function(id) { return id !== groupId; });
-      plan.status = plan.groupIds.length > 0 ? 'active' : 'inactive';
-      markDirty();
-      render();
+      var g = PLATFORM_GROUPS.find(function(x) { return x.id === groupId; });
+      var groupName = g ? g.name : groupId;
+      var isStale = getStaleGroupIds(plan).indexOf(groupId) >= 0;
+
+      // Fetch affected member count before confirming
+      apiFetch('/operator/' + clientId + '/plan-mappings/' + planId + '/groups/' + groupId + '/affected-members')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { return d.count || 0; })
+        .catch(function() { return 0; })
+        .then(function(count) {
+          var doRemove = function() {
+            plan.groupIds = plan.groupIds.filter(function(id) { return id !== groupId; });
+            markDirty();
+            render();
+          };
+
+          if (count === 0 && !isStale) {
+            // No members affected, not a dead group — just remove
+            doRemove();
+            return;
+          }
+
+          pendingAction = doRemove;
+
+          if (isStale) {
+            var msg = 'This group is no longer available in your access control system. Removing it will clear ' + count + ' member assignment' + (count !== 1 ? 's' : '') + '. You can remap this plan to a different group afterward.';
+            showModal('warning', 'Remove missing group?', msg, 'Remove', 'danger');
+          } else {
+            var msg = 'Disconnecting this plan from \u201c' + esc(groupName) + '\u201d will revoke access for ' + count + ' member' + (count !== 1 ? 's' : '') + ' currently using it.';
+            showModal('warning', 'Remove group?', msg, 'Remove', 'danger');
+          }
+        });
     }
 
     // Close dropdowns on outside click
@@ -1158,6 +1199,14 @@
                   ? mGroups.map(function(g) { return String(g.hardware_group_id); })
                   : (m.hardware_group_id ? [String(m.hardware_group_id)] : []);
 
+                // Build health status map from group data
+                var groupHealthMap = {};
+                var staleAffectedMembers = 0;
+                mGroups.forEach(function(g) {
+                  if (g.health_status) groupHealthMap[String(g.hardware_group_id)] = g.health_status;
+                  if (g.health_status === 'not_found' && g.affected_members) staleAffectedMembers += g.affected_members;
+                });
+
                 var planType = (window._wixPlanTypes && window._wixPlanTypes[m.source_plan_id]) || 'pricing_plan';
 
                 return {
@@ -1169,6 +1218,9 @@
                   maxMembers: m.max_members || 1,
                   groupIds: groupIds,
                   status: m.status || 'inactive',
+                  wixStatus: m.wix_status || 'active',
+                  _groupHealthMap: groupHealthMap,
+                  _staleAffectedMembers: staleAffectedMembers,
                   activeHolders: 0,
                   activeMembers: [],
                 };
