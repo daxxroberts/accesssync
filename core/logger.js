@@ -129,9 +129,13 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId) {
       `INSERT INTO diagnostic_log (client_id, service, level, error_code, message, context)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [clientId, deriveService(event), level, errorCode, message, JSON.stringify(context)]
-    ).catch(() => {
-      // Silent — DB write failure must never propagate into the main request flow.
-      // Railway stdout still has the original JSON log line as the source of truth.
+    ).catch((dbErr) => {
+      // Write to stdout so Railway logs capture the failure — never propagate to caller.
+      process.stdout.write(JSON.stringify({
+        ts: new Date().toISOString(), level: 'error',
+        event: 'logger.diagnostic_log_write_failed',
+        error: { message: dbErr.message, code: dbErr.code },
+      }) + '\n');
     });
   });
 }

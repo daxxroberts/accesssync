@@ -68,7 +68,9 @@ class WebhookProcessor {
       eventType: standardEvent.eventType,
       rawPayload: rawPayload ? (() => { try { return JSON.parse(rawPayload); } catch { return null; } })() : null,
       normalizedPayload: standardEvent
-    }).catch(() => {});
+    }).catch((dbErr) => {
+      log.error('webhook.log_write_failed', { eventId }, dbErr);
+    });
 
     // 4. Resolve tenant from wix_site_id
     const tenantId = await tenantResolver.resolve(standardEvent.wixSiteId);

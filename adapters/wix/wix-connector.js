@@ -49,7 +49,9 @@ class WixConnector {
           hmacStatus: 'rejected',
           rawPayload: req.body || null,
           errorDetail: 'HMAC signature mismatch'
-        }).catch(() => {}); // best-effort — never block on logging
+        }).catch((dbErr) => {
+          log.error('wix.webhook_log_write_failed', {}, dbErr);
+        });
         return res.status(401).send('Unauthorized');
       }
 
