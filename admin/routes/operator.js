@@ -1173,7 +1173,7 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
 // Also accepts legacy single-group fields for backward compat.
 router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
   const { clientId, mappingId } = req.params;
-  const { status, door_name, hardware_group_id, groups, allow_multiple, max_members, location_id } = req.body;
+  const { status, door_name, hardware_group_id, groups, allow_multiple, max_members, location_id, addGroupId, removeGroupId } = req.body;
   try {
     // Snapshot old groups + status BEFORE any changes — needed for member sync diff
     const [oldGroupsResult, oldMappingResult] = await Promise.all([
@@ -1182,6 +1182,31 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     ]);
     const oldGroupIds = oldGroupsResult.rows.map(r => r.hardware_group_id);
     const oldStatus   = oldMappingResult.rows[0]?.status;
+    if (!oldMappingResult.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+
+    // ── Wire-graph single-group add/remove (from PlanMappingPanel) ──────
+    if (addGroupId) {
+      await db.query(
+        `INSERT INTO plan_mapping_groups (mapping_id, hardware_group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [mappingId, addGroupId]
+      );
+      // Sync members for the newly added group
+      const newGroupIds = [...new Set([...oldGroupIds, addGroupId])];
+      syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, oldStatus, oldStatus)
+        .catch(err => console.warn('[operator] syncMappingMembers (addGroupId) failed:', err.message));
+      return res.json({ ok: true });
+    }
+
+    if (removeGroupId) {
+      await db.query(
+        `DELETE FROM plan_mapping_groups WHERE mapping_id = $1 AND hardware_group_id = $2`,
+        [mappingId, removeGroupId]
+      );
+      const newGroupIds = oldGroupIds.filter(id => id !== removeGroupId);
+      syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, oldStatus, oldStatus)
+        .catch(err => console.warn('[operator] syncMappingMembers (removeGroupId) failed:', err.message));
+      return res.json({ ok: true });
+    }
 
     // Update plan_mappings row (legacy fields + status + multi-member config)
     const fields = [], vals = [mappingId, clientId];
