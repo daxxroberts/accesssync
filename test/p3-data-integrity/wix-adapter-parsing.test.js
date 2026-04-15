@@ -128,6 +128,26 @@ describe('[P3] Parsed event always contains the required fields for downstream p
 
 describe('[P3] Wix REST webhook format (data.entity) resolves correctly', () => {
 
+  it('normalizes wixPricingPlans.orderCreated → plan.purchased', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderCreated', 'site-001', wixRestOrderCreatedPayload);
+    expect(result.eventType).toBe('plan.purchased');
+  });
+
+  it('normalizes wixPricingPlans.orderUpdated → plan.purchased', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderUpdated', 'site-001', wixRestOrderCreatedPayload);
+    expect(result.eventType).toBe('plan.purchased');
+  });
+
+  it('normalizes wixPricingPlans.orderCanceled → plan.cancelled', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderCanceled', 'site-001', wixRestOrderCreatedPayload);
+    expect(result.eventType).toBe('plan.cancelled');
+  });
+
+  it('normalizes wixMembers.memberDeleted → member.deleted', () => {
+    const result = wixAdapter.parseEvent('wixMembers.memberDeleted', 'site-001', wixRestMemberDeletedPayload);
+    expect(result.eventType).toBe('member.deleted');
+  });
+
   it('resolves memberId from REST webhook entity.buyer.memberId', () => {
     const result = wixAdapter.parseEvent('wixPricingPlans.orderCreated', 'site-001', wixRestOrderCreatedPayload);
     expect(result.platformMemberId).toBe(WIX_MEMBER_ID);

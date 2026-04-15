@@ -22,7 +22,35 @@ class WixAdapter {
    * @param {Object} body        raw Wix webhook body
    * @returns {Object} standard event
    */
+  /**
+   * Maps Wix REST webhook eventType strings to AccessSync internal event names.
+   * Wix REST webhooks use dot-namespaced types like 'wixPricingPlans.orderCreated'.
+   * Velo events.js sends short types like 'plan.purchased' directly.
+   */
+  _normalizeEventType(eventType) {
+    const map = {
+      'wixPricingPlans.orderCreated':   'plan.purchased',
+      'wixPricingPlans.orderUpdated':   'plan.purchased',  // covers renewals + upgrades
+      'wixPricingPlans.orderCanceled':  'plan.cancelled',
+      'wixPricingPlans.orderCancelled': 'plan.cancelled',  // British spelling variant
+      'wixPricingPlans.orderExpired':   'plan.cancelled',
+      'wixPricingPlans.orderPaused':    'payment.failed',
+      'wixPricingPlans.orderResumed':   'payment.recovered',
+      'wixBookings.bookingCreated':     'booking.confirmed',
+      'wixBookings.bookingCanceled':    'booking.cancelled',
+      'wixBookings.bookingCancelled':   'booking.cancelled',
+      'wixMembers.memberDeleted':       'member.deleted',
+    };
+    return map[eventType] || eventType;
+  }
+
   parseEvent(eventType, wixSiteId, body) {
+    // Normalize Wix REST webhook event type strings to internal names
+    const normalizedEventType = this._normalizeEventType(eventType);
+    if (normalizedEventType !== eventType) {
+      log.info('wix.parse.event_type_normalized', { raw: eventType, normalized: normalizedEventType });
+    }
+
     // P6: Field paths resolved for Wix Velo backend event handlers.
     // events.js sends { eventType, data: event } where event is the Wix handler param.
     // Structure varies by event module:
@@ -79,14 +107,14 @@ class WixAdapter {
       null;
 
     if (!memberId) {
-      log.warn('wix.parse.no_member_id', { eventType, dataKeys: d ? Object.keys(d).join(',') : 'null' });
+      log.warn('wix.parse.no_member_id', { eventType: normalizedEventType, dataKeys: d ? Object.keys(d).join(',') : 'null' });
     }
-    if (!planId && eventType && !eventType.includes('memberDeleted')) {
-      log.warn('wix.parse.no_plan_id', { eventType, dataKeys: d ? Object.keys(d).join(',') : 'null' });
+    if (!planId && normalizedEventType && !normalizedEventType.includes('member.deleted')) {
+      log.warn('wix.parse.no_plan_id', { eventType: normalizedEventType, dataKeys: d ? Object.keys(d).join(',') : 'null' });
     }
 
     return {
-      eventType,
+      eventType: normalizedEventType,
       wixSiteId,
       sourcePlatform: 'wix',         // DR-021
       platformMemberId: memberId,     // DR-021
