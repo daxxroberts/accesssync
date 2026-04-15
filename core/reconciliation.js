@@ -3,11 +3,11 @@
  * @layer core/layer4
  * @role cron-nightly
  * @schedule nightly via Railway Cron
- * @reads member_access_state, error_queue, locations, clients
- * @writes member_access_state, config_alert_log
- * @calls hardware-adapter (getLocks), BullMQ (re-queue), resend (digest)
+ * @reads member_access_state, error_queue, locations, clients (wix_api_key, site_id, reconciliation_interval, last_sync_at), member_identity
+ * @writes member_access_state, config_alert_log, clients (last_sync_at)
+ * @calls hardware-adapter (getLocks), wix-plans-api (listActiveOrders, listConfirmedBookings), BullMQ (re-queue), resend (digest)
  * @exports instance (NightlyReconciliation)
- * @dr DR-003, DR-008, DR-020
+ * @dr DR-003, DR-008, DR-018, DR-020
  *
  * reconciliation.js
  * Core Engine (Layer 4) - Standalone script triggered by cron
@@ -24,6 +24,7 @@ const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const { eventQueue } = require('./webhook-processor');
 const { decryptApiKey } = require('./crypto-utils');
+const { listActiveOrders, listConfirmedBookings } = require('../adapters/wix/wix-plans-api');
 const { log } = require('./logger');
 
 class NightlyReconciliation {
@@ -39,6 +40,23 @@ class NightlyReconciliation {
     log.info('reconciliation.sweep_start', {});
 
     try {
+      // Recurrence gate: skip if not enough time has elapsed since last sweep (DR-018)
+      // Uses the first active client's reconciliation_interval as a global gate (V1: single client).
+      const lastSyncResult = await db.query(
+        `SELECT last_sync_at, COALESCE(reconciliation_interval, 'daily') AS interval
+         FROM clients WHERE status = 'active' LIMIT 1`
+      );
+      const { last_sync_at, interval } = lastSyncResult.rows[0] || {};
+      const intervalMs = { hourly: 3600000, '6h': 21600000, '12h': 43200000, daily: 86400000, weekly: 604800000 };
+      const minMs = intervalMs[interval] || 86400000;
+      if (last_sync_at && (Date.now() - new Date(last_sync_at).getTime()) < minMs) {
+        log.info('reconciliation.skipped', { reason: 'interval_not_elapsed', interval });
+        return;
+      }
+
+      // Step 0: True-source sync — Wix ↔ DB diff, queue corrections for missing/lapsed members
+      await this._syncTrueSources();
+
       // Step 1: Clean up stale in_flight records (crash protection)
       await db.query(
         `UPDATE member_access_state
@@ -64,10 +82,144 @@ class NightlyReconciliation {
       // Step 5: Send Operator Email Digest
       await this._generateAndSendDigest();
 
+      // Update last_sync_at for all active clients (DR-018)
+      await db.query(`UPDATE clients SET last_sync_at = NOW() WHERE status = 'active'`);
+
       log.info('reconciliation.sweep_complete', {});
     } catch (error) {
       log.critical('reconciliation.sweep_failed', {}, error);
     }
+  }
+
+  /**
+   * Step 0: Pull Wix active orders + confirmed bookings, diff against member_identity.
+   * Queue synthetic grant/revoke jobs for any mismatches found.
+   *
+   * Sub-members (platform_member_id containing '###as' or plan_holder_id IS NOT NULL)
+   * are operator-managed — they are excluded from the Wix absence revoke check.
+   */
+  async _syncTrueSources() {
+    log.info('reconciliation.wix_sync_start', {});
+
+    const clientsResult = await db.query(
+      `SELECT id, site_id, wix_api_key, hardware_api_key, hardware_platform
+       FROM clients
+       WHERE status = 'active'
+         AND wix_api_key IS NOT NULL
+         AND site_id IS NOT NULL`
+    );
+
+    for (const client of clientsResult.rows) {
+      try {
+        await this._syncClient(client);
+      } catch (err) {
+        log.error('reconciliation.client_sync_failed', { clientId: client.id }, err);
+        // One client failure must not abort the full sweep
+      }
+    }
+
+    log.info('reconciliation.wix_sync_complete', {});
+  }
+
+  /**
+   * Diff a single client's Wix active members against our DB, queue corrections.
+   */
+  async _syncClient(client) {
+    const wixApiKey = decryptApiKey(client.wix_api_key);
+    const siteId = client.site_id;
+
+    // 1. Pull Wix side — active plan orders + confirmed bookings in parallel
+    const [orders, bookings] = await Promise.all([
+      listActiveOrders(wixApiKey, siteId),
+      listConfirmedBookings(wixApiKey, siteId),
+    ]);
+
+    // Build Map of wixMemberId → { planId, email, name }
+    // Orders take precedence; bookings fill in any member not already seen
+    const wixMembers = new Map();
+    for (const o of orders) {
+      if (o.memberId) wixMembers.set(o.memberId, { planId: o.planId, email: o.email, name: o.name });
+    }
+    for (const b of bookings) {
+      if (b.memberId && !wixMembers.has(b.memberId)) {
+        wixMembers.set(b.memberId, { planId: b.planId, email: b.email, name: b.name });
+      }
+    }
+
+    // 2. Pull our DB — all AccessSync-managed Wix members for this client
+    const dbResult = await db.query(
+      `SELECT platform_member_id, plan_holder_id
+       FROM member_identity
+       WHERE client_id = $1
+         AND source_platform = 'wix'
+         AND source_tag = 'accesssync'`,
+      [client.id]
+    );
+
+    // Map of wixMemberId → { isSubMember }
+    // Sub-members: plan_holder_id IS NOT NULL or '###as' in platform_member_id (DR-029)
+    const dbMembers = new Map();
+    for (const row of dbResult.rows) {
+      dbMembers.set(row.platform_member_id, {
+        isSubMember: row.plan_holder_id !== null || row.platform_member_id.includes('###as'),
+      });
+    }
+
+    let granted = 0;
+    let revoked = 0;
+
+    // 3A. In Wix, not in DB → paid but never provisioned → queue grant
+    for (const [memberId, wixData] of wixMembers) {
+      if (dbMembers.has(memberId)) continue;
+
+      if (!wixData.planId) {
+        log.warn('reconciliation.wix_order_no_plan_id', { clientId: client.id, memberId });
+        continue;
+      }
+
+      const syntheticEvent = {
+        eventType:        'plan.purchased',
+        sourcePlatform:   'wix',
+        platformMemberId: memberId,
+        planId:           wixData.planId,
+        email:            wixData.email,
+        name:             wixData.name,
+        wixSiteId:        siteId,
+        synthetic:        true,
+        syntheticSource:  'reconciliation.true_source_sync',
+      };
+
+      const jobId = `grant-wix-sync-${client.id}-${memberId}-${Date.now()}`;
+      await eventQueue.add('grant', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
+      log.info('reconciliation.grant_queued', { clientId: client.id, memberId, planId: wixData.planId, jobId });
+      granted++;
+    }
+
+    // 3B. In DB (primary only), not in Wix → cancelled/lapsed → queue revoke
+    for (const [memberId, dbData] of dbMembers) {
+      if (dbData.isSubMember) continue;    // Operator-managed — never revoke based on Wix absence
+      if (wixMembers.has(memberId)) continue; // Still active in Wix
+
+      const syntheticEvent = {
+        eventType:        'plan.cancelled',
+        sourcePlatform:   'wix',
+        platformMemberId: memberId,
+        wixSiteId:        siteId,
+        synthetic:        true,
+        syntheticSource:  'reconciliation.true_source_sync',
+      };
+
+      const jobId = `revoke-wix-sync-${client.id}-${memberId}-${Date.now()}`;
+      await eventQueue.add('revoke', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
+      log.info('reconciliation.revoke_queued', { clientId: client.id, memberId, jobId });
+      revoked++;
+    }
+
+    log.info('reconciliation.client_sync_complete', {
+      clientId: client.id, siteId,
+      wixActive: wixMembers.size, dbKnown: dbMembers.size,
+      granted, revoked,
+    });
   }
 
   async _syncDoorLockdownStates() {

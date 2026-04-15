@@ -1,11 +1,13 @@
 /**
  * wix-plans-api.js
- * Outbound Wix API client for fetching pricing plans and booking services.
- * Used by the plan mapping page to show all available plans/services for a client's Wix site.
+ * Outbound Wix API client for fetching pricing plans, booking services, and member identity.
+ * Used by the plan mapping page and the nightly reconciliation correction sweep.
  *
  * Requires: Wix API key stored encrypted in clients.wix_api_key
  * Docs: https://dev.wix.com/docs/rest/api-reference/wix-pricing-plans
  *       https://dev.wix.com/docs/rest/api-reference/wix-bookings
+ *       https://dev.wix.com/docs/rest/api-reference/members
+ *       https://dev.wix.com/docs/rest/api-reference/contacts
  */
 
 const { log } = require('../../core/logger');
@@ -127,6 +129,81 @@ async function listAllMappable(apiKey, siteId) {
 }
 
 /**
+ * List all active pricing plan orders for a Wix site.
+ * Used by nightly reconciliation to discover members who paid but were never provisioned.
+ * Returns normalized order objects — one per active plan holder.
+ */
+async function listActiveOrders(apiKey, siteId) {
+  const allOrders = [];
+  let offset = 0;
+  const limit = 100;
+
+  try {
+    while (true) {
+      const data = await wixFetch('/pricing-plans/v2/orders/query', apiKey, siteId, {
+        method: 'POST',
+        body: { query: { filter: { 'buyer.status': 'ACTIVE' }, paging: { limit, offset } } },
+      });
+      const orders = data.orders || [];
+      for (const o of orders) {
+        allOrders.push({
+          memberId: o.buyer?.memberId || o.buyer?.contactId || null,
+          planId:   o.planId || null,
+          email:    o.buyer?.email    || null,
+          name:     o.buyer?.fullName || null,
+        });
+      }
+      if (orders.length < limit) break;
+      offset += limit;
+    }
+    log.info('wix.active_orders.fetched', { siteId, count: allOrders.length });
+    return allOrders;
+  } catch (err) {
+    log.error('wix.active_orders.fetch_failed', { siteId, httpStatus: err.statusCode }, err);
+    return [];
+  }
+}
+
+/**
+ * List all confirmed bookings for a Wix site.
+ * Used by nightly reconciliation alongside active orders — booking members
+ * don't have pricing plan orders but should have access while their booking is confirmed.
+ * Returns normalized booking objects — serviceId serves as the planId equivalent.
+ */
+async function listConfirmedBookings(apiKey, siteId) {
+  const allBookings = [];
+  let offset = 0;
+  const limit = 100;
+
+  try {
+    while (true) {
+      const data = await wixFetch('/_api/bookings/v2/bookings/query', apiKey, siteId, {
+        method: 'POST',
+        body: { query: { filter: { status: 'CONFIRMED' }, paging: { limit, offset } } },
+      });
+      const bookings = data.bookings || [];
+      for (const b of bookings) {
+        allBookings.push({
+          memberId: b.contactId || null,
+          planId:   b.serviceId  || null,  // serviceId is the plan equivalent for bookings
+          email:    b.contactDetails?.email || null,
+          name:     b.contactDetails?.firstName
+            ? `${b.contactDetails.firstName} ${b.contactDetails.lastName || ''}`.trim()
+            : null,
+        });
+      }
+      if (bookings.length < limit) break;
+      offset += limit;
+    }
+    log.info('wix.confirmed_bookings.fetched', { siteId, count: allBookings.length });
+    return allBookings;
+  } catch (err) {
+    log.error('wix.confirmed_bookings.fetch_failed', { siteId, httpStatus: err.statusCode }, err);
+    return [];
+  }
+}
+
+/**
  * Validate a Wix API key by making a lightweight API call.
  * Returns { valid: true } or { valid: false, error: '...' }
  */
@@ -141,4 +218,4 @@ async function testApiKey(apiKey, siteId) {
   }
 }
 
-module.exports = { listPricingPlans, listBookingServices, listAllMappable, testApiKey };
+module.exports = { listPricingPlans, listBookingServices, listAllMappable, testApiKey, listActiveOrders, listConfirmedBookings };

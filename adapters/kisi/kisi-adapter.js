@@ -127,6 +127,48 @@ class KisiAdapter {
   }
 
   /**
+   * Fetch all role assignments for the org — used by reconciliation._syncClient() to build
+   * the Kisi side of the Wix ↔ Kisi diff. Returns all assignments regardless of source_tag;
+   * the reconciliation filters by joining against member_identity (source_tag = 'accesssync').
+   *
+   * Returns [] on error or missing key.
+   */
+  async getManagedRoleAssignments(apiKey) {
+    if (!apiKey) {
+      log.warn('kisi.get_role_assignments_no_key', {});
+      return [];
+    }
+    const allAssignments = [];
+    let offset = 0;
+    const limit = 100;
+
+    try {
+      while (true) {
+        const data = await kisiConnector.makeRequest(
+          `/role_assignments?limit=${limit}&offset=${offset}`,
+          { method: 'GET' },
+          apiKey
+        );
+        const assignments = Array.isArray(data) ? data : [];
+        for (const a of assignments) {
+          allAssignments.push({
+            userId:           a.user_id || a.user?.id,
+            groupId:          a.group_id || a.group?.id,
+            roleAssignmentId: a.id,
+          });
+        }
+        if (assignments.length < limit) break;
+        offset += limit;
+      }
+      log.info('kisi.managed_assignments.fetched', { count: allAssignments.length });
+      return allAssignments;
+    } catch (err) {
+      log.error('kisi.managed_assignments.fetch_failed', {}, err);
+      return [];
+    }
+  }
+
+  /**
    * Fetch all locks for the org. Used by reconciliation._syncDoorLockdownStates().
    *
    * DR-035: Normalized return shape — { id, name, locked: boolean }.
