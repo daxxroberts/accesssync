@@ -2012,4 +2012,31 @@ Rules:
   });
 });
 
+// ── POST /sync/run ─────────────────────────────────────────────────
+// Manual sync trigger from the dashboard Sync button.
+// Runs _syncClient() for the logged-in client only — bypasses the
+// recurrence gate and nightly digest. Returns { granted, revoked }.
+router.post('/sync/run', requireAuth, async (req, res) => {
+  const clientId = req.clientId;
+  try {
+    const clientResult = await db.query(
+      `SELECT id, site_id, wix_api_key, hardware_api_key, hardware_platform
+       FROM clients WHERE id = $1 AND status = 'active'`,
+      [clientId]
+    );
+    if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    const reconciliation = require('../../core/reconciliation');
+    const { granted, revoked } = await reconciliation._syncClient(clientResult.rows[0]);
+
+    await db.query(`UPDATE clients SET last_sync_at = NOW() WHERE id = $1`, [clientId]);
+
+    log.info('operator.sync.manual_run', { clientId, granted, revoked });
+    res.json({ ok: true, granted, revoked });
+  } catch (err) {
+    log.error('operator.sync.manual_run_failed', { clientId }, err);
+    res.status(500).json({ error: 'Sync failed' });
+  }
+});
+
 module.exports = router;

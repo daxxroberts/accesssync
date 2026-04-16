@@ -83,6 +83,10 @@ class HardwareAdapter {
   async getGroups(hardwarePlatform, apiKey) {
     return this._getAdapter(hardwarePlatform).getGroups(apiKey);
   }
+
+  async getManagedRoleAssignments(hardwarePlatform, apiKey) {
+    return this._getAdapter(hardwarePlatform).getManagedRoleAssignments(apiKey);
+  }
 }
 
 module.exports = new HardwareAdapter();

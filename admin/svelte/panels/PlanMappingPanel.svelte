@@ -263,7 +263,14 @@
   // ── Resize observer ──────────────────────────────────────────────────
   let resizeObs;
 
-  function onPanelVisible() { recalcWires(); }
+  function onPanelVisible() {
+    // Re-fetch data so the New UI reflects any changes made in Classic View
+    if (activeLocId) {
+      loadMappings(activeLocId);
+    } else {
+      recalcWires();
+    }
+  }
 
   onMount(async () => {
     await loadLocations();

@@ -122,11 +122,24 @@ class NightlyReconciliation {
   }
 
   /**
-   * Diff a single client's Wix active members against our DB, queue corrections.
+   * Diff a single client's Wix active members against live Kisi state, queue corrections.
+   * Returns { granted, revoked } so callers (manual sync endpoint) can surface the counts.
+   *
+   * Sources of truth:
+   *   Wix  — who should have access (active orders + confirmed bookings)
+   *   Kisi — who currently has access (live role assignments, filtered to AccessSync users)
+   *
+   * The DB is used only as a bridge: member_identity.hardware_user_id maps Kisi user IDs
+   * back to Wix platform_member_ids, and source_tag = 'accesssync' filters out staff/contractors.
    */
   async _syncClient(client) {
-    const wixApiKey = decryptApiKey(client.wix_api_key);
+    const wixApiKey      = decryptApiKey(client.wix_api_key);
+    const hardwareApiKey = decryptApiKey(client.hardware_api_key);
+    const hardwarePlatform = client.hardware_platform || 'kisi';
     const siteId = client.site_id;
+
+    let granted = 0;
+    let revoked = 0;
 
     // 1. Pull Wix side — active plan orders + confirmed bookings in parallel
     const [orders, bookings] = await Promise.all([
@@ -134,8 +147,8 @@ class NightlyReconciliation {
       listConfirmedBookings(wixApiKey, siteId),
     ]);
 
-    // Build Map of wixMemberId → { planId, email, name }
-    // Orders take precedence; bookings fill in any member not already seen
+    // Map: wixMemberId → { planId, email, name }
+    // Orders take precedence; bookings fill in members not already seen
     const wixMembers = new Map();
     for (const o of orders) {
       if (o.memberId) wixMembers.set(o.memberId, { planId: o.planId, email: o.email, name: o.name });
@@ -146,31 +159,34 @@ class NightlyReconciliation {
       }
     }
 
-    // 2. Pull our DB — all AccessSync-managed Wix members for this client
-    const dbResult = await db.query(
-      `SELECT platform_member_id, plan_holder_id
-       FROM member_identity
-       WHERE client_id = $1
-         AND source_platform = 'wix'
-         AND source_tag = 'accesssync'`,
-      [client.id]
-    );
+    // 2. Pull Kisi side — live role assignments, filtered to AccessSync-managed users via DB join
+    const kisiAssignments = await hardwareAdapter.getManagedRoleAssignments(hardwarePlatform, hardwareApiKey);
+    const kisiUserIds = [...new Set(kisiAssignments.map(a => a.userId).filter(Boolean))];
 
-    // Map of wixMemberId → { isSubMember }
-    // Sub-members: plan_holder_id IS NOT NULL or '###as' in platform_member_id (DR-029)
-    const dbMembers = new Map();
-    for (const row of dbResult.rows) {
-      dbMembers.set(row.platform_member_id, {
-        isSubMember: row.plan_holder_id !== null || row.platform_member_id.includes('###as'),
-      });
+    // Map: platform_member_id (Wix member ID) → { isSubMember }
+    // Only includes users AccessSync created (source_tag = 'accesssync').
+    // Staff, contractors, manually-added Kisi users have no member_identity row and are excluded.
+    const kisiMembers = new Map();
+
+    if (kisiUserIds.length > 0) {
+      const identityResult = await db.query(
+        `SELECT platform_member_id, plan_holder_id
+         FROM member_identity
+         WHERE client_id = $1
+           AND source_tag = 'accesssync'
+           AND hardware_user_id = ANY($2)`,
+        [client.id, kisiUserIds]
+      );
+      for (const row of identityResult.rows) {
+        kisiMembers.set(row.platform_member_id, {
+          isSubMember: row.plan_holder_id !== null || row.platform_member_id.includes('###as'),
+        });
+      }
     }
 
-    let granted = 0;
-    let revoked = 0;
-
-    // 3A. In Wix, not in DB → paid but never provisioned → queue grant
+    // 3A. In Wix, not in Kisi → paid but not provisioned → queue grant
     for (const [memberId, wixData] of wixMembers) {
-      if (dbMembers.has(memberId)) continue;
+      if (kisiMembers.has(memberId)) continue;
 
       if (!wixData.planId) {
         log.warn('reconciliation.wix_order_no_plan_id', { clientId: client.id, memberId });
@@ -195,9 +211,9 @@ class NightlyReconciliation {
       granted++;
     }
 
-    // 3B. In DB (primary only), not in Wix → cancelled/lapsed → queue revoke
-    for (const [memberId, dbData] of dbMembers) {
-      if (dbData.isSubMember) continue;    // Operator-managed — never revoke based on Wix absence
+    // 3B. In Kisi (AccessSync-managed, primary members only), not in Wix → cancelled/lapsed → queue revoke
+    for (const [memberId, kisiData] of kisiMembers) {
+      if (kisiData.isSubMember) continue;     // Operator-managed — never revoke based on Wix absence
       if (wixMembers.has(memberId)) continue; // Still active in Wix
 
       const syntheticEvent = {
@@ -217,9 +233,11 @@ class NightlyReconciliation {
 
     log.info('reconciliation.client_sync_complete', {
       clientId: client.id, siteId,
-      wixActive: wixMembers.size, dbKnown: dbMembers.size,
+      wixActive: wixMembers.size, kisiManaged: kisiMembers.size,
       granted, revoked,
     });
+
+    return { granted, revoked };
   }
 
   async _syncDoorLockdownStates() {

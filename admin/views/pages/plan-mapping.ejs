@@ -1175,6 +1175,20 @@
         loadMappingsForLocation(clientId, locationId);
       }, 500);
 
+      // Expose for toggle refresh — called when switching back to Classic View
+      window.refreshLegacyMappings = function() {
+        if (locationId) {
+          loadMappingsForLocation(clientId, locationId);
+        } else {
+          apiFetch('/operator/' + clientId + '/locations')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              var locs = d.locations || d.data || [];
+              if (locs.length > 0) loadMappingsForLocation(clientId, locs[0].id);
+            }).catch(function() {});
+        }
+      };
+
       function loadMappingsForLocation(cid, lid) {
         apiFetch('/operator/' + cid + '/locations/' + lid + '/mappings')
           .then(function(r) { return r.json(); })
@@ -1306,6 +1320,10 @@
           btn.style.background = 'rgba(79,110,247,0.12)';
           btn.style.color      = '#4F6EF7';
           btn.style.borderColor= 'rgba(79,110,247,0.35)';
+          // Re-fetch legacy data so it reflects any changes made in the New UI
+          if (typeof window.refreshLegacyMappings === 'function') {
+            window.refreshLegacyMappings();
+          }
         }
       }
 
