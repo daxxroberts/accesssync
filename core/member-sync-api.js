@@ -167,7 +167,7 @@ class MemberSyncApi {
    * Public keys are fetched from Wix's dynamic keys endpoint and cached locally.
    *
    * JWT payload includes:
-   *   instanceId  — Wix site identifier (maps to clients.site_id via tenant-resolver)
+   *   instanceId  — Wix site identifier (maps to clients.source_site_id via tenant-resolver)
    *   uid         — Wix member ID (= platformMemberId for Wix platform)
    *   exp         — Expiration timestamp
    *

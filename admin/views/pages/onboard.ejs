@@ -999,7 +999,7 @@ const state = {
   tier:      null,   // 'Base' | 'Pro' | 'Connect'
   hardwarePlatform: null, // 'kisi' | 'seam' — explicit selection from Step 2
   siteId:        null,   // Wix meta-site ID — for Wix REST API calls (wix-site-id header)
-  instanceId:    null,   // Wix app instanceId — for portal auth lookup (wix_instance_id in DB)
+  instanceId:    null,   // Wix app instanceId — for portal auth lookup (platform_instance_id in DB)
   siteIdVerified: false, // true only after Test button returns valid on manual path
   siteName:      null,   // Wix site name (from URL param)
   clientId:      null,   // set after _provisionClient() completes
@@ -1393,8 +1393,8 @@ async function _provisionClient() {
       name:               state.name,
       tier:               state.tier,
       hardware_platform:  state.hardwarePlatform || (state.tier === 'Connect' ? 'kisi' : 'seam'),
-      site_id:            state.siteId      || null,   // Wix meta-site ID (for API calls)
-      wix_instance_id:    state.instanceId  || null,   // Wix app instanceId (for portal auth)
+      source_site_id:         state.siteId      || null,   // Source platform site ID (for API calls + webhook routing)
+      platform_instance_id:   state.instanceId  || null,   // Platform app installation ID (for portal auth)
       site_name:          state.siteName    || null,
       notification_email: state.email       || null,
       wix_api_key:        state.wixApiKey   || null,

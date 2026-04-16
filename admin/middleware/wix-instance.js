@@ -11,19 +11,19 @@
  * Verified using the WIX_APP_SECRET env var (App Secret Key from Wix App Dashboard).
  *
  * Lookup strategy (three-path):
- *   Path A — wix_instance_id match → known client, issue token, go to dashboard
- *   Path B — no instance match, siteId from authorizationCode matches site_id → update wix_instance_id, go to dashboard
+ *   Path A — platform_instance_id match → known client, issue token, go to dashboard
+ *   Path B — no instance match, siteId from authorizationCode matches source_site_id → update platform_instance_id, go to dashboard
  *   Path C — no match on either → redirect to onboarding
  *
  * Payload fields used:
- *   instanceId  — Wix app installation ID (maps to clients.wix_instance_id)
+ *   instanceId  — Wix app installation ID (maps to clients.platform_instance_id)
  *   uid         — Wix User ID of the viewer
  *   siteOwnerId — Wix User ID of the site owner
  *   permissions — 'OWNER' for site owners
  *   aid         — present if anonymous (reject immediately)
  *
  * authorizationCode param: Wix passes a signed JWT in ?authorizationCode= containing
- *   siteId (the Wix meta-site ID, maps to clients.site_id). Used as fallback lookup key.
+ *   siteId (the Wix meta-site ID, maps to clients.source_site_id). Used as fallback lookup key.
  */
 
 'use strict';
@@ -114,8 +114,8 @@ function extractSiteIdFromAuthCode(authCode) {
  * Express middleware — verifies Wix signed instance and resolves clientId.
  *
  * Three-path lookup:
- *   Path A: wix_instance_id match → known client
- *   Path B: site_id match via authorizationCode → update wix_instance_id, known client
+ *   Path A: platform_instance_id match → known client
+ *   Path B: source_site_id match via authorizationCode → update platform_instance_id, known client
  *   Path C: no match → redirect to onboarding
  *
  * Sets req.wixOperator = { clientId, instanceId, siteId, uid } on success.
@@ -134,9 +134,9 @@ async function requireWixInstance(req, res, next) {
       return res.status(401).send('Wix instance missing instanceId');
     }
 
-    // ── Path A: look up by wix_instance_id ───────────────────────
+    // ── Path A: look up by platform_instance_id ───────────────────────
     const byInstance = await db.query(
-      'SELECT id, site_id FROM clients WHERE wix_instance_id = $1 LIMIT 1',
+      'SELECT id, source_site_id FROM clients WHERE platform_instance_id = $1 LIMIT 1',
       [instanceId]
     );
 
@@ -144,28 +144,28 @@ async function requireWixInstance(req, res, next) {
       req.wixOperator = {
         clientId:   byInstance.rows[0].id,
         instanceId,
-        siteId:     byInstance.rows[0].site_id,
+        siteId:     byInstance.rows[0].source_site_id,
         uid:        payload.uid,
       };
       return next();
     }
 
-    // ── Path B: fall back to site_id via authorizationCode ───────
+    // ── Path B: fall back to source_site_id via authorizationCode ───────
     const siteId = req.query.authorizationCode
       ? extractSiteIdFromAuthCode(req.query.authorizationCode)
       : null;
 
     if (siteId) {
       const bySite = await db.query(
-        'SELECT id, site_id FROM clients WHERE site_id = $1 LIMIT 1',
+        'SELECT id, source_site_id FROM clients WHERE source_site_id = $1 LIMIT 1',
         [siteId]
       );
 
       if (bySite.rows.length) {
         const clientId = bySite.rows[0].id;
-        // Wire up wix_instance_id so future loads hit Path A
+        // Wire up platform_instance_id so future loads hit Path A
         await db.query(
-          'UPDATE clients SET wix_instance_id = $1, updated_at = NOW() WHERE id = $2',
+          'UPDATE clients SET platform_instance_id = $1, updated_at = NOW() WHERE id = $2',
           [instanceId, clientId]
         );
         log.info('admin.wix_instance_wired', { clientId });

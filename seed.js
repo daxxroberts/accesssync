@@ -126,7 +126,7 @@ async function seed() {
 
   // ── 1. Client ─────────────────────────────────────────────────
   await db.query(`
-    INSERT INTO clients (id, name, platform, site_id, site_name, hardware_platform, tier, status,
+    INSERT INTO clients (id, name, platform, source_site_id, site_name, hardware_platform, tier, status,
                          notification_email, last_sync_at, site_url, last_wix_webhook_at)
     VALUES ($1, 'House of Gains', 'wix', 'hog-wix-site-001', 'House of Gains', 'kisi', 'Pro', 'active',
             'chad@houseofgains.com', NOW() - INTERVAL '4 minutes', 'houseofgains.com', NOW() - INTERVAL '2 hours')

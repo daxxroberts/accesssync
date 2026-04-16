@@ -79,8 +79,8 @@ class WixConnector {
         req.body?.metadata?.instanceId        ||  // top-level metadata variant
         null;
 
-      // Self-registration: if events.js includes X-AccessSync-Client-Id, wire site_id on
-      // first arrival so future lookups resolve by site_id without DEFAULT_TENANT_ID.
+      // Self-registration: if events.js includes X-AccessSync-Client-Id, wire source_site_id on
+      // first arrival so future lookups resolve by source_site_id without DEFAULT_TENANT_ID.
       const clientIdHint = req.headers['x-accesssync-client-id'] || null;
       if (clientIdHint && wixSiteId) {
         tenantResolver.registerSiteId(clientIdHint, wixSiteId).catch(() => {});

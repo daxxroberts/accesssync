@@ -28,7 +28,7 @@ const { signOperatorToken, requireAuthPageOrOperator } = require('../middleware/
 router.get('/', requireWixInstance, async (req, res) => {
   const { clientId, instanceId } = req.wixOperator;
 
-  // Issue a scoped operator session cookie (8h) — include instanceId so /onboard can auto-wire site_id
+  // Issue a scoped operator session cookie (8h) — include instanceId so /onboard can auto-wire source_site_id
   const token = signOperatorToken(clientId, instanceId);
   res.cookie('operatorToken', token, {
     httpOnly: true,

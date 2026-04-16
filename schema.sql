@@ -10,7 +10,7 @@
 --   multi-member.sql   — sub-member schema (DR-029–032, deferred post-HOG)
 --   multi-group-archive-audit.sql — plan_mapping_groups, admin audit, wix_api_key
 --   per-location-config.sql — locations.hardware_platform + notification_email
---   wix-instance-id.sql — clients.wix_instance_id for portal auth (three-path lookup)
+--   wix-instance-id.sql — clients.platform_instance_id for portal auth (three-path lookup)
 --   dr-036.sql         — client_subscriptions table + tier_subscription_id FK (DR-036, PENDING OB-70)
 
 -- Enable UUID extension
@@ -23,8 +23,8 @@ CREATE TABLE clients (
     id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name                    VARCHAR(255) NOT NULL,                   -- Company name (e.g. "House of Gains")
     platform                VARCHAR(50)  NOT NULL DEFAULT 'wix',     -- Source platform: 'wix', 'squarespace', etc.
-    site_id                 VARCHAR(255) UNIQUE,                     -- Platform meta-site ID — used for webhook routing + Wix API calls
-    wix_instance_id         VARCHAR(255),                            -- Wix app installation ID — used for portal auth (wix-instance.js three-path lookup)
+    source_site_id          VARCHAR(255) UNIQUE,                     -- Source platform site ID — used for webhook routing + platform API calls (DR-021 pattern)
+    platform_instance_id    VARCHAR(255),                            -- Platform app installation ID — used for portal auth (wix-instance.js three-path lookup)
     site_name               VARCHAR(255),                            -- Human-readable site name (e.g. "House of Gains - Main")
     hardware_platform       VARCHAR(50),                             -- 'kisi', 'seam' — which hardware provider this client uses
     tier                    VARCHAR(50),                             -- 'Base', 'Pro', 'Connect' — AccessSync billing tier
@@ -41,10 +41,10 @@ CREATE TABLE clients (
     updated_at              TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Partial unique index: one wix_instance_id per client (NULL allowed for clients not yet portal-authenticated)
-CREATE UNIQUE INDEX clients_wix_instance_id_idx
-    ON clients (wix_instance_id)
-    WHERE wix_instance_id IS NOT NULL;
+-- Partial unique index: one platform_instance_id per client (NULL allowed for clients not yet portal-authenticated)
+CREATE UNIQUE INDEX clients_platform_instance_id_idx
+    ON clients (platform_instance_id)
+    WHERE platform_instance_id IS NOT NULL;
 
 --------------------------------------------------------
 -- 2. Locations (Physical Sites per Client)

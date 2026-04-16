@@ -400,7 +400,7 @@ function requireInviteToken(req, res, next) {
 
 // ── GET /operator/site-id/verify ─────────────────────────────────
 // Onboarding Step 1: validate a Wix site ID before account creation.
-// Checks UUID format and whether the site_id is already registered.
+// Checks UUID format and whether the source_site_id is already registered.
 // Used by the manual-entry path (owner onboarding) when instanceId is
 // not auto-injected from the Wix portal signed instance.
 router.get('/site-id/verify', requireInviteToken, async (req, res) => {
@@ -416,7 +416,7 @@ router.get('/site-id/verify', requireInviteToken, async (req, res) => {
     const existing = await db.query(
       `SELECT id, name, tier, hardware_platform,
               hardware_api_key IS NOT NULL AS has_api_key
-       FROM clients WHERE site_id = $1 LIMIT 1`,
+       FROM clients WHERE source_site_id = $1 LIMIT 1`,
       [siteId.trim()]
     );
     if (existing.rows.length) {
@@ -448,7 +448,7 @@ router.post('/issue-session', requireInviteToken, async (req, res) => {
   if (!clientId || !siteId) return res.status(400).json({ error: 'clientId and siteId are required' });
   try {
     const result = await db.query(
-      'SELECT id FROM clients WHERE id = $1 AND site_id = $2 LIMIT 1',
+      'SELECT id FROM clients WHERE id = $1 AND source_site_id = $2 LIMIT 1',
       [clientId, siteId]
     );
     if (!result.rows.length) return res.status(403).json({ error: 'Client/site mismatch' });
@@ -472,7 +472,7 @@ router.post('/clients', requireInviteToken, async (req, res) => {
   try {
     const {
       name, platform = 'wix', hardware_platform, tier,
-      site_id, wix_instance_id, site_name, site_url, notification_email, wix_api_key,
+      source_site_id, platform_instance_id, site_name, site_url, notification_email, wix_api_key,
     } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
 
@@ -483,16 +483,16 @@ router.post('/clients', requireInviteToken, async (req, res) => {
     // Encrypt Wix API key if provided (same AES-256-GCM pattern as hardware keys)
     const encryptedWixKey = wix_api_key ? encryptApiKey(wix_api_key.trim()) : null;
 
-    // Upsert on site_id — prevents duplicate clients if onboarding is re-run.
-    // On conflict, update wix_instance_id in case it changed (reinstall).
+    // Upsert on source_site_id — prevents duplicate clients if onboarding is re-run.
+    // On conflict, update platform_instance_id in case it changed (reinstall).
     const result = await db.query(
-      `INSERT INTO clients (name, platform, hardware_platform, tier, site_id, wix_instance_id, site_name, site_url, notification_email, wix_api_key, status, created_at, updated_at)
+      `INSERT INTO clients (name, platform, hardware_platform, tier, source_site_id, platform_instance_id, site_name, site_url, notification_email, wix_api_key, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', NOW(), NOW())
-       ON CONFLICT (site_id) DO UPDATE
-         SET wix_instance_id = EXCLUDED.wix_instance_id,
+       ON CONFLICT (source_site_id) DO UPDATE
+         SET platform_instance_id = EXCLUDED.platform_instance_id,
              updated_at      = NOW()
-       RETURNING id, name, platform, hardware_platform, tier, site_id, wix_instance_id, site_name, notification_email, status, created_at`,
-      [name.trim(), platform, derivedHardware, tier || null, site_id || null, wix_instance_id || null, site_name || null, site_url || null, notification_email || null, encryptedWixKey]
+       RETURNING id, name, platform, hardware_platform, tier, source_site_id, platform_instance_id, site_name, notification_email, status, created_at`,
+      [name.trim(), platform, derivedHardware, tier || null, source_site_id || null, platform_instance_id || null, site_name || null, site_url || null, notification_email || null, encryptedWixKey]
     );
     log.info('operator.setup.client_upserted', { clientId: result.rows[0].id, name: result.rows[0].name });
     res.status(201).json({ ok: true, client: result.rows[0] });
@@ -1825,18 +1825,18 @@ router.get('/:clientId/access-stats', async (req, res) => {
 router.get('/:clientId/wix-plans', async (req, res) => {
   try {
     const { clientId } = req.params;
-    const client = await db.query('SELECT id, wix_api_key, site_id FROM clients WHERE id = $1', [clientId]);
+    const client = await db.query('SELECT id, wix_api_key, source_site_id FROM clients WHERE id = $1', [clientId]);
     if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
     if (!client.rows[0].wix_api_key) {
       return res.status(400).json({ error: 'No Wix API key set for this client', plans: [] });
     }
-    if (!client.rows[0].site_id) {
+    if (!client.rows[0].source_site_id) {
       return res.status(400).json({ error: 'No Wix site ID set for this client', plans: [] });
     }
 
     const apiKey = decryptKey(client.rows[0].wix_api_key);
-    log.debug('operator.wix_plans.fetch_start', { clientId, siteId: client.rows[0].site_id });
-    const allPlans = await wixPlansApi.listAllMappable(apiKey, client.rows[0].site_id);
+    log.debug('operator.wix_plans.fetch_start', { clientId, siteId: client.rows[0].source_site_id });
+    const allPlans = await wixPlansApi.listAllMappable(apiKey, client.rows[0].source_site_id);
     log.debug('operator.wix_plans.fetch_complete', { clientId, planCount: allPlans.length });
 
     // Auto-accept: create plan_mappings rows for plans not yet in DB
@@ -1908,13 +1908,13 @@ router.put('/clients/:clientId/wix-api-key', async (req, res) => {
 router.get('/clients/:clientId/wix-api-key/test', async (req, res) => {
   try {
     const { clientId } = req.params;
-    const result = await db.query('SELECT wix_api_key, site_id FROM clients WHERE id = $1', [clientId]);
+    const result = await db.query('SELECT wix_api_key, source_site_id FROM clients WHERE id = $1', [clientId]);
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     if (!result.rows[0].wix_api_key) return res.json({ valid: false, error: 'No Wix API key set' });
-    if (!result.rows[0].site_id) return res.json({ valid: false, error: 'No Wix site ID set for this client' });
+    if (!result.rows[0].source_site_id) return res.json({ valid: false, error: 'No Wix site ID set for this client' });
 
     const apiKey = decryptKey(result.rows[0].wix_api_key);
-    const testResult = await wixPlansApi.testApiKey(apiKey, result.rows[0].site_id);
+    const testResult = await wixPlansApi.testApiKey(apiKey, result.rows[0].source_site_id);
     res.json(testResult);
   } catch (err) {
     log.error('operator.wix_apikey.test_failed', { clientId }, err);
@@ -2036,7 +2036,7 @@ router.post('/sync/run', requireAuth, async (req, res) => {
   const clientId = req.clientId;
   try {
     const clientResult = await db.query(
-      `SELECT id, site_id, wix_api_key, hardware_api_key, hardware_platform
+      `SELECT id, source_site_id, wix_api_key, hardware_api_key, hardware_platform
        FROM clients WHERE id = $1 AND status = 'active'`,
       [clientId]
     );

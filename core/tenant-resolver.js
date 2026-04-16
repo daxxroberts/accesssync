@@ -2,8 +2,8 @@
  * @file tenant-resolver.js
  * @layer core/layer4
  * @role tenant-resolution
- * @reads clients (site_id lookup, 5-min cache)
- * @writes clients.site_id (registerSiteId — idempotent)
+ * @reads clients (source_site_id lookup, 5-min cache)
+ * @writes clients.source_site_id (registerSiteId — idempotent)
  * @exports resolve(siteId), registerSiteId(clientId, siteId)
  * @dr DR-016
  *
@@ -12,7 +12,7 @@
  *
  * Responsibilities:
  * - Single responsibility: resolves a platform site ID to an AccessSync client ID
- * - Looks up the clients table using site_id (platform-agnostic, was wix_site_id)
+ * - Looks up the clients table using source_site_id (platform-agnostic, was wix_source_site_id)
  * - Returns null if no matching client found (unknown site — not our webhook)
  * - Caches resolved mappings in memory to avoid repeated DB reads on high-volume
  *   webhook traffic (cache TTL: 5 minutes)
@@ -40,7 +40,7 @@ class TenantResolver {
    */
   async resolve(wixSiteId) {
     if (!wixSiteId) {
-      log.warn('tenant.no_site_id', {});
+      log.warn('tenant.no_source_site_id', {});
       return null;
     }
 
@@ -53,21 +53,21 @@ class TenantResolver {
     // 2. Look up from DB
     try {
       const result = await db.query(
-        `SELECT id FROM clients WHERE site_id = $1 AND status = 'active' LIMIT 1`,
+        `SELECT id FROM clients WHERE source_site_id = $1 AND status = 'active' LIMIT 1`,
         [wixSiteId]
       );
 
       if (result.rows.length === 0) {
-        // Phase 1 fallback — DEFAULT_TENANT_ID bootstraps HOG before site_id is registered.
-        // On first use, auto-wires the real site_id to that client so future lookups resolve
+        // Phase 1 fallback — DEFAULT_TENANT_ID bootstraps HOG before source_site_id is registered.
+        // On first use, auto-wires the real source_site_id to that client so future lookups resolve
         // normally. Remove DEFAULT_TENANT_ID from env after first successful webhook.
         const fallback = process.env.DEFAULT_TENANT_ID || null;
         if (fallback) {
           log.warn('tenant.fallback_used', { wixSiteId });
-          // Auto-wire: write this site_id to the fallback client row (only if not already set)
+          // Auto-wire: write this source_site_id to the fallback client row (only if not already set)
           try {
             await db.query(
-              `UPDATE clients SET site_id = $1 WHERE id = $2 AND (site_id IS NULL OR site_id = '')`,
+              `UPDATE clients SET source_site_id = $1 WHERE id = $2 AND (source_site_id IS NULL OR source_site_id = '')`,
               [wixSiteId, fallback]
             );
             log.info('tenant.auto_wired', { wixSiteId, clientId: fallback });
@@ -98,7 +98,7 @@ class TenantResolver {
   /**
    * Register a Wix site ID against a client UUID.
    * Called on first webhook from a new client whose events.js includes their CLIENT_ID.
-   * Only writes if site_id is currently NULL — safe to call on every request.
+   * Only writes if source_site_id is currently NULL — safe to call on every request.
    *
    * @param {string} clientId - UUID from the X-AccessSync-Client-Id header
    * @param {string} siteId   - instanceId from the Wix webhook payload
@@ -107,11 +107,11 @@ class TenantResolver {
     if (!clientId || !siteId) return;
     try {
       const result = await db.query(
-        `UPDATE clients SET site_id = $1 WHERE id = $2 AND (site_id IS NULL OR site_id = '') RETURNING id`,
+        `UPDATE clients SET source_site_id = $1 WHERE id = $2 AND (source_site_id IS NULL OR source_site_id = '') RETURNING id`,
         [siteId, clientId]
       );
       if (result.rowCount > 0) {
-        log.info('tenant.site_id_registered', { clientId, siteId });
+        log.info('tenant.source_site_id_registered', { clientId, siteId });
       }
     } catch (err) {
       log.error('tenant.register_failed', { clientId, siteId }, err);

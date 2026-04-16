@@ -30,8 +30,8 @@ router.get('/search', async (req, res) => {
     // OB-13: If searching by email, try to resolve via Wix API first
     if (isEmail && client_id) {
       try {
-        const clientResult = await db.query('SELECT site_id, wix_api_key FROM clients WHERE id = $1', [client_id]);
-        const siteId = clientResult.rows[0]?.site_id;
+        const clientResult = await db.query('SELECT source_site_id, wix_api_key FROM clients WHERE id = $1', [client_id]);
+        const siteId = clientResult.rows[0]?.source_site_id;
         const encWixKey = clientResult.rows[0]?.wix_api_key;
         if (siteId && encWixKey) {
           const wixApiKey = decryptApiKey(encWixKey);

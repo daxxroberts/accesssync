@@ -299,11 +299,11 @@ async function _notifyOrphanedGroups(loc, orphans, platform) {
 async function _reconcileWixPlans(loc) {
   // Load Wix API credentials for this client
   const clientResult = await db.query(
-    `SELECT wix_api_key, wix_instance_id FROM clients WHERE id = $1`,
+    `SELECT wix_api_key, platform_instance_id FROM clients WHERE id = $1`,
     [loc.client_id]
   );
   const client = clientResult.rows[0];
-  if (!client || !client.wix_api_key || !client.wix_instance_id) return;
+  if (!client || !client.wix_api_key || !client.platform_instance_id) return;
 
   let wixApiKey;
   try {
@@ -315,7 +315,7 @@ async function _reconcileWixPlans(loc) {
   const wixPlansApi = require('../adapters/wix/wix-plans-api');
   let wixPlans;
   try {
-    wixPlans = await wixPlansApi.listPricingPlans(wixApiKey, client.wix_instance_id);
+    wixPlans = await wixPlansApi.listPricingPlans(wixApiKey, client.platform_instance_id);
   } catch (err) {
     log.warn('health.wix_plans_fetch_failed', { clientId: loc.client_id }, err);
     return;

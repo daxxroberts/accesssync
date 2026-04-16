@@ -3,7 +3,7 @@
  * @layer core/layer4
  * @role cron-nightly
  * @schedule nightly via Railway Cron
- * @reads member_access_state, error_queue, locations, clients (wix_api_key, site_id, reconciliation_interval, last_sync_at), member_identity
+ * @reads member_access_state, error_queue, locations, clients (wix_api_key, source_site_id, reconciliation_interval, last_sync_at), member_identity
  * @writes member_access_state, config_alert_log, clients (last_sync_at)
  * @calls hardware-adapter (getLocks), wix-plans-api (listActiveOrders, listConfirmedBookings), BullMQ (re-queue), resend (digest)
  * @exports instance (NightlyReconciliation)
@@ -102,11 +102,11 @@ class NightlyReconciliation {
     log.info('reconciliation.wix_sync_start', {});
 
     const clientsResult = await db.query(
-      `SELECT id, site_id, wix_api_key, hardware_api_key, hardware_platform
+      `SELECT id, source_site_id, wix_api_key, hardware_api_key, hardware_platform
        FROM clients
        WHERE status = 'active'
          AND wix_api_key IS NOT NULL
-         AND site_id IS NOT NULL`
+         AND source_site_id IS NOT NULL`
     );
 
     for (const client of clientsResult.rows) {
@@ -136,7 +136,7 @@ class NightlyReconciliation {
     const wixApiKey      = decryptApiKey(client.wix_api_key);
     const hardwareApiKey = decryptApiKey(client.hardware_api_key);
     const hardwarePlatform = client.hardware_platform || 'kisi';
-    const siteId = client.site_id;
+    const siteId = client.source_site_id;
 
     let granted = 0;
     let revoked = 0;
