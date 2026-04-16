@@ -50,3 +50,11 @@ window.mountSveltePanels = function () {
   const clientsTarget = document.getElementById('svelte-clients');
   if (clientsTarget) mount(ClientsPanel, { target: clientsTarget });
 };
+
+// Self-trigger: if app.js already ran showDashboard() before this module loaded
+// (race condition — ES modules are always deferred, plain scripts are not),
+// mount the panels now rather than waiting for a call that already happened.
+const dashboard = document.getElementById('dashboard');
+if (dashboard && !dashboard.classList.contains('hidden')) {
+  window.mountSveltePanels();
+}
