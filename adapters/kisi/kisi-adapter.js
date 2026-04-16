@@ -121,6 +121,8 @@ class KisiAdapter {
       const data = await kisiConnector.makeRequest('/groups', { method: 'GET' }, apiKey);
       return Array.isArray(data) ? data : [];
     } catch (err) {
+      // Propagate auth/permission errors so callers can surface them to the operator
+      if (err.statusCode === 401 || err.statusCode === 403) throw err;
       log.error('kisi.get_groups_failed', {}, err);
       return [];
     }

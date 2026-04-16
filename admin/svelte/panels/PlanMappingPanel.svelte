@@ -31,6 +31,8 @@
   let activeLocId = null;
   let loading     = true;
   let loadError   = null;
+  let hwKeyStatus = 'ok'; // 'ok' | 'missing' | 'invalid' | 'insufficient_permissions' | 'error'
+  let hwKeyMsg    = null; // human-readable description when not ok
 
   // DOM refs
   let canvasEl;
@@ -86,11 +88,15 @@
     try {
       const [mappingRes, groupRes] = await Promise.all([
         apiFetch(`/operator/${CLIENT_ID}/locations/${locId}/mappings`),
-        apiFetch(`/operator/clients/${CLIENT_ID}/kisi-groups`).catch(() => ({ groups: [] })),
+        apiFetch(`/operator/clients/${CLIENT_ID}/kisi-groups`).catch(() => ({ groups: [], keyStatus: 'error' })),
       ]);
 
       const rawMappings = mappingRes.mappings || mappingRes || [];
-      groups = groupRes.groups || groupRes || [];
+      groups = groupRes.groups || [];
+
+      // Track hardware key health so the template can show resolution banners
+      hwKeyStatus = groupRes.keyStatus || (groupRes.noKey ? 'missing' : 'ok');
+      hwKeyMsg    = groupRes.error || null;
 
       // Fetch per-mapping groups sequentially to avoid rate limit bursts
       const resolvedPlans = [];
@@ -539,10 +545,47 @@
         {/each}
 
         {#if groups.length === 0}
-          <div class="pm-empty">
-            No hardware groups.<br>
-            <a href="/locations?clientId={CLIENT_ID}" class="pm-empty-link">Add API key →</a>
-          </div>
+          {#if hwKeyStatus === 'missing'}
+            <div class="pm-hw-alert pm-hw-alert-warn">
+              <span class="pm-hw-alert-icon">⚠️</span>
+              <div>
+                <div class="pm-hw-alert-title">No hardware API key connected</div>
+                <div class="pm-hw-alert-body">AccessSync can't reach your hardware platform. Add your API key to start assigning groups.</div>
+                <a href="/locations?clientId={CLIENT_ID}" class="pm-empty-link">Add API key in System Config →</a>
+              </div>
+            </div>
+          {:else if hwKeyStatus === 'invalid'}
+            <div class="pm-hw-alert pm-hw-alert-error">
+              <span class="pm-hw-alert-icon">❌</span>
+              <div>
+                <div class="pm-hw-alert-title">API key is invalid</div>
+                <div class="pm-hw-alert-body">Your hardware platform rejected the key. Members cannot be provisioned until this is fixed.</div>
+                <a href="/locations?clientId={CLIENT_ID}" class="pm-empty-link">Update API key in System Config →</a>
+              </div>
+            </div>
+          {:else if hwKeyStatus === 'insufficient_permissions'}
+            <div class="pm-hw-alert pm-hw-alert-error">
+              <span class="pm-hw-alert-icon">🔒</span>
+              <div>
+                <div class="pm-hw-alert-title">API key lacks group read permissions</div>
+                <div class="pm-hw-alert-body">The key is valid but can't read access groups. Enable the Groups permission on your hardware API key.</div>
+                <a href="/locations?clientId={CLIENT_ID}" class="pm-empty-link">Update API key in System Config →</a>
+              </div>
+            </div>
+          {:else if hwKeyStatus === 'error'}
+            <div class="pm-hw-alert pm-hw-alert-warn">
+              <span class="pm-hw-alert-icon">⚠️</span>
+              <div>
+                <div class="pm-hw-alert-title">Could not reach hardware platform</div>
+                <div class="pm-hw-alert-body">AccessSync encountered an error fetching groups. Check your API key and try refreshing.</div>
+              </div>
+            </div>
+          {:else}
+            <div class="pm-empty">
+              No groups found in your hardware platform.<br>
+              Create at least one group there first, then refresh.
+            </div>
+          {/if}
         {/if}
       </div>
 
@@ -873,6 +916,40 @@
     color: #4F6EF7;
     text-decoration: none;
     font-weight: 600;
+    font-size: 12px;
+    display: inline-block;
+    margin-top: 8px;
   }
   .pm-empty-link:hover { text-decoration: underline; }
+
+  /* ── Hardware status alerts ────────────────────────────────────────── */
+  .pm-hw-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .pm-hw-alert-warn {
+    background: rgba(245,158,11,0.08);
+    border: 1px solid rgba(245,158,11,0.3);
+  }
+  .pm-hw-alert-error {
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.3);
+  }
+  .pm-hw-alert-icon { font-size: 18px; flex-shrink: 0; line-height: 1.4; }
+  .pm-hw-alert-title {
+    font-weight: 700;
+    color: rgba(255,255,255,0.85);
+    margin-bottom: 4px;
+    font-size: 13px;
+  }
+  .pm-hw-alert-body {
+    color: rgba(255,255,255,0.45);
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
 </style>

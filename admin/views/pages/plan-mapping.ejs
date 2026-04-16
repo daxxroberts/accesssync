@@ -1104,36 +1104,67 @@
       if (!clientId) return;
       document.getElementById('refreshPlansBtn').style.display = '';
 
-      // 1. Load Kisi/Seam groups (may fail if no API key configured — Wix-first flow)
-      var noApiKey = false;
+      // 1. Load hardware groups — handles missing key, invalid key, permission errors, and no groups
       apiFetch('/operator/clients/' + clientId + '/kisi-groups')
-        .then(function(r) {
-          if (r.status === 400) {
-            noApiKey = true;
-            return { groups: [], count: 0 };
-          }
-          return r.json();
-        })
+        .then(function(r) { return r.json().catch(function() { return { groups: [], keyStatus: 'error' }; }); })
         .then(function(d) {
-          if (noApiKey) {
-            // Show banner explaining that groups aren't available yet
+          var keyStatus = d.keyStatus || (d.noKey ? 'missing' : 'ok');
+
+          var bannerCfg = null;
+          if (keyStatus === 'missing') {
+            bannerCfg = {
+              color: 'var(--amber)', bg: 'var(--amber-dim)',
+              icon: '&#9888;',
+              title: 'No hardware API key connected.',
+              body: 'Your plans are listed below, but you can\'t assign door groups until AccessSync can reach your hardware.',
+              link: { href: '/locations?clientId=' + clientId, text: 'Add your API key in System Config \u2192' },
+            };
+          } else if (keyStatus === 'invalid') {
+            bannerCfg = {
+              color: 'var(--red, #DC2626)', bg: 'var(--red-dim, #FEE2E2)',
+              icon: '&#10060;',
+              title: 'Hardware API key is invalid.',
+              body: 'AccessSync tried to reach ' + platformName() + ' but the key was rejected. Members cannot be provisioned until this is fixed.',
+              link: { href: '/locations?clientId=' + clientId, text: 'Update your API key in System Config \u2192' },
+            };
+          } else if (keyStatus === 'insufficient_permissions') {
+            bannerCfg = {
+              color: 'var(--red, #DC2626)', bg: 'var(--red-dim, #FEE2E2)',
+              icon: '&#128274;',
+              title: 'API key lacks group read permissions.',
+              body: 'The key is valid but cannot read access groups. Check that your ' + platformName() + ' API key has the Groups permission enabled.',
+              link: { href: '/locations?clientId=' + clientId, text: 'Update your API key in System Config \u2192' },
+            };
+          } else if (keyStatus === 'ok' && d.noGroups) {
+            bannerCfg = {
+              color: 'var(--amber)', bg: 'var(--amber-dim)',
+              icon: '&#128203;',
+              title: 'No access groups found in ' + platformName() + '.',
+              body: 'AccessSync connected successfully, but your hardware platform has no groups configured. Create at least one group in ' + platformName() + ' first, then refresh this page.',
+              link: null,
+            };
+          }
+
+          if (bannerCfg) {
+            var existingBanner = document.getElementById('hw-status-banner');
+            if (existingBanner) existingBanner.remove();
             var header = document.querySelector('.page-header');
             if (header) {
               var banner = document.createElement('div');
-              banner.style.cssText = 'background:var(--amber-dim);border:1px solid var(--amber);border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;color:var(--text);display:flex;align-items:center;gap:10px;';
-              banner.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="var(--amber)" stroke-width="1.3" fill="none"/><path d="M9 5.5v4M9 12v.5" stroke="var(--amber)" stroke-width="1.5" stroke-linecap="round"/></svg>' +
-                '<div><strong>No API key connected yet.</strong> Your plans are listed below, but you can\'t assign door groups until AccessSync can reach your hardware. <a href="/locations?clientId=' + clientId + '" style="color:var(--brand);font-weight:600;">Add your API key in System Config</a> to continue.</div>';
+              banner.id = 'hw-status-banner';
+              banner.style.cssText = 'background:' + bannerCfg.bg + ';border:1px solid ' + bannerCfg.color + ';border-radius:10px;padding:14px 18px;margin-top:14px;font-size:13px;color:var(--text);display:flex;align-items:flex-start;gap:12px;';
+              banner.innerHTML = '<span style="font-size:18px;flex-shrink:0;">' + bannerCfg.icon + '</span>' +
+                '<div><strong>' + bannerCfg.title + '</strong> ' + bannerCfg.body +
+                (bannerCfg.link ? ' <a href="' + bannerCfg.link.href + '" style="color:var(--brand);font-weight:600;">' + bannerCfg.link.text + '</a>' : '') +
+                '</div>';
               header.parentNode.insertBefore(banner, header.nextSibling);
             }
-            return;
           }
+
           if (d.groups && d.groups.length > 0) {
             PLATFORM_GROUPS = d.groups.map(function(g) {
               return { id: String(g.id), name: g.name };
             });
-          }
-          if (d.count === 0 && !noApiKey) {
-            showToast('warn', 'No access groups found. Create groups in your ' + platformName() + ' dashboard first.');
           }
         }).catch(function(e) { console.error('Groups load error:', e); });
 

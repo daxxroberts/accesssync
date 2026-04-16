@@ -592,21 +592,29 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
   try {
     const clientResult = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
     if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
-    if (!clientResult.rows[0].hardware_api_key) return res.status(400).json({ error: 'No API key configured', noKey: true });
+    if (!clientResult.rows[0].hardware_api_key) {
+      return res.status(400).json({ groups: [], count: 0, noKey: true, keyStatus: 'missing',
+        error: 'No API key configured' });
+    }
 
     const apiKey = decryptKey(clientResult.rows[0].hardware_api_key);
     const groups = await kisiAdapter.getGroups(apiKey);
 
     res.json({
-      groups: groups.map(g => ({
-        id: g.id,
-        name: g.name,
-        description: g.description || null,
-      })),
+      groups: groups.map(g => ({ id: g.id, name: g.name, description: g.description || null })),
       count: groups.length,
+      keyStatus: 'ok',
+      noGroups: groups.length === 0,
     });
   } catch (err) {
-    if (err.statusCode === 401) return res.json({ groups: [], count: 0, error: 'Invalid API key' });
+    if (err.statusCode === 401) {
+      return res.json({ groups: [], count: 0, keyStatus: 'invalid',
+        error: 'API key rejected — update it in System Config' });
+    }
+    if (err.statusCode === 403) {
+      return res.json({ groups: [], count: 0, keyStatus: 'insufficient_permissions',
+        error: 'API key lacks group read permissions — check Kisi key settings' });
+    }
     log.error('operator.kisi_groups.fetch_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
