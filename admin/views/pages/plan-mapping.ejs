@@ -1239,8 +1239,11 @@
           .then(function(d) {
             if (!d.mappings) return;
 
+            // Filter out inactive mappings — they have no operator action available here
+            var activeMappings = d.mappings.filter(function(m) { return m.status !== 'inactive'; });
+
             // Load groups for each mapping in parallel
-            var groupPromises = d.mappings.map(function(m) {
+            var groupPromises = activeMappings.map(function(m) {
               return apiFetch('/operator/' + cid + '/plan-mappings/' + m.id + '/groups')
                 .then(function(r) { return r.json(); })
                 .then(function(gd) { return { mappingId: m.id, groups: gd.groups || [] }; })
@@ -1251,7 +1254,7 @@
               var groupMap = {};
               groupResults.forEach(function(gr) { groupMap[gr.mappingId] = gr.groups; });
 
-              plans = d.mappings.map(function(m) {
+              plans = activeMappings.map(function(m) {
                 var mGroups = groupMap[m.id] || [];
                 var groupIds = mGroups.length > 0
                   ? mGroups.map(function(g) { return String(g.hardware_group_id); })

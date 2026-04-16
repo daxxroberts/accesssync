@@ -91,7 +91,8 @@
         apiFetch(`/operator/clients/${CLIENT_ID}/kisi-groups`).catch(() => ({ groups: [], keyStatus: 'error' })),
       ]);
 
-      const rawMappings = mappingRes.mappings || mappingRes || [];
+      // Filter out inactive mappings — nothing for the operator to do with them here
+      const rawMappings = (mappingRes.mappings || mappingRes || []).filter(m => m.status !== 'inactive');
       groups = (groupRes.groups || []).map(g => ({
         ...g,
         id:           String(g.id),
