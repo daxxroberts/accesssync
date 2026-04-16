@@ -1239,6 +1239,8 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
         [mappingId, addGroupId]
       );
       const newGroupIds = [...new Set([...oldGroupIds, addGroupId])];
+      // Flip status to 'active' — auto-inserted placeholder mappings start as 'inactive'
+      await db.query(`UPDATE plan_mappings SET status = 'active' WHERE id = $1`, [mappingId]);
       // M-4: Check API key and warn if missing
       const locationId = (await db.query('SELECT location_id FROM plan_mappings WHERE id = $1', [mappingId])).rows[0]?.location_id;
       const apiKey = await resolveApiKey(clientId, locationId);

@@ -91,8 +91,7 @@
         apiFetch(`/operator/clients/${CLIENT_ID}/kisi-groups`).catch(() => ({ groups: [], keyStatus: 'error' })),
       ]);
 
-      // Filter out inactive mappings — nothing for the operator to do with them here
-      const rawMappings = (mappingRes.mappings || mappingRes || []).filter(m => m.status !== 'inactive');
+      const rawMappings = mappingRes.mappings || mappingRes || [];
       groups = (groupRes.groups || []).map(g => ({
         ...g,
         id:           String(g.id),
@@ -117,6 +116,15 @@
             name:         g.door_name || groups.find(kg => kg.id === g.hardware_group_id)?.name || g.hardware_group_id,
             healthStatus: g.health_status || 'ok',
           }));
+          // Fallback: plans mapped before multi-group support have hardware_group_id on the
+          // plan_mappings row but no junction rows — mirror Classic View's behaviour
+          if (mGroups.length === 0 && m.hardware_group_id) {
+            mGroups = [{
+              id:           String(m.hardware_group_id),
+              name:         m.door_name || groups.find(kg => kg.id === String(m.hardware_group_id))?.name || String(m.hardware_group_id),
+              healthStatus: 'ok',
+            }];
+          }
         } catch (_) {}
         resolvedPlans.push({
           ...m, mappingId: m.id,
@@ -453,7 +461,6 @@
             class="pm-node"
             class:pm-node-connected={connected}
             class:pm-node-dimmed={dimmed}
-            class:pm-node-inactive={plan.status === 'inactive'}
             class:pm-node-archived={archived}
             bind:this={planEls[plan.mappingId]}
           >
@@ -785,9 +792,6 @@
   .pm-node-dimmed {
     opacity: 0.25;
     pointer-events: none;
-  }
-  .pm-node-inactive {
-    opacity: 0.45;
   }
   .pm-node-warning {
     border-color: rgba(245,158,11,0.5);
