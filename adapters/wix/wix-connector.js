@@ -59,13 +59,25 @@ class WixConnector {
       res.status(200).send('OK');
 
       // 3. Parse event (Layer 2)
-      const eventId = req.headers['x-wix-event-id'] || 'fallback-id';
-      const eventType = req.headers['x-wix-event-type'] || req.body?.eventType;
+      // eventId: Wix REST webhooks send the event UUID in data.metadata.id (confirmed from live payloads).
+      // The x-wix-event-id header is not reliably present — fall back to body field, then synthetic.
+      const eventId =
+        req.headers['x-wix-event-id']        ||  // header (Velo / some REST variants)
+        req.body?.data?.metadata?.id          ||  // REST webhook: data.metadata.id (confirmed live)
+        req.body?.metadata?.id                ||  // top-level metadata variant
+        req.body?.eventId                     ||  // direct field fallback
+        ('fallback-' + Date.now());               // last resort — unique per request to avoid dedup collision
 
-      // OB-03-A RESOLVED (PARSE VERIFIED 2026-03-28): No 'x-wix-site-id' header exists.
-      // instanceId is the site identifier — present in the Wix webhook body.
-      // REST webhooks nest it under data.metadata.instanceId; Velo events.js puts it at top level.
-      const wixSiteId = req.body?.instanceId || req.body?.data?.metadata?.instanceId || null;
+      const eventType = req.headers['x-wix-event-type'] || req.body?.eventType || null;
+
+      // OB-03-A: wixSiteId extraction — Wix REST webhooks confirmed from live payloads.
+      // instanceId (= site ID) lives at data.metadata.instanceId in REST webhooks.
+      // Velo events.js puts it at top-level instanceId or passes it via x-accesssync-client-id.
+      const wixSiteId =
+        req.body?.data?.metadata?.instanceId  ||  // REST webhook: confirmed live payload location
+        req.body?.instanceId                  ||  // Velo events.js top-level
+        req.body?.metadata?.instanceId        ||  // top-level metadata variant
+        null;
 
       // Self-registration: if events.js includes X-AccessSync-Client-Id, wire site_id on
       // first arrival so future lookups resolve by site_id without DEFAULT_TENANT_ID.
