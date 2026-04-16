@@ -601,7 +601,13 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
     const groups = await kisiAdapter.getGroups(apiKey);
 
     res.json({
-      groups: groups.map(g => ({ id: g.id, name: g.name, description: g.description || null })),
+      groups: groups.map(g => ({
+        id:            g.id,
+        name:          g.name,
+        description:   g.description || null,
+        locks_count:   g.locks_count  ?? 0,
+        members_count: g.members_count ?? 0,
+      })),
       count: groups.length,
       keyStatus: 'ok',
       noGroups: groups.length === 0,

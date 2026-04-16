@@ -263,7 +263,8 @@
       font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 6px;
       background: var(--brand-dim); color: var(--brand);
     }
-    .header-group-tag.stale { background: #FEF3C7; color: #92400E; }
+    .header-group-tag.stale    { background: #FEF3C7; color: #92400E; }
+    .header-group-tag.no-locks { background: #FFF7ED; color: #9A3412; }
 
     /* ── Stale group warning ── */
     .stale-group-warning {
@@ -272,7 +273,9 @@
       display: flex; align-items: center; gap: 8px;
       font-size: 12px; color: #92400E;
     }
-    .group-tag.stale { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
+    .group-tag.stale    { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
+    .group-tag.no-locks { background: #FFF7ED; color: #9A3412; border: 1px solid #FDBA74; }
+    .group-tag-no-locks { font-size: 10px; font-weight: 700; color: #D97706; margin-left: 4px; }
 
     /* ── Archived plan badge ── */
     .plan-badge-archived {
@@ -537,7 +540,10 @@
         plan.groupIds.forEach(function(gid) {
           var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
           var isStale = PLATFORM_GROUPS.length > 0 && !g;
-          headerTags += '<span class="header-group-tag' + (isStale ? ' stale' : '') + '">' + (g ? esc(g.name) : gid + ' (not found)') + '</span>';
+          var noLocks = g && g.locksCount === 0;
+          var cls = 'header-group-tag' + (isStale ? ' stale' : (noLocks ? ' no-locks' : ''));
+          var label = isStale ? (gid + ' (not found)') : esc(g.name);
+          headerTags += '<span class="' + cls + '">' + label + (noLocks ? ' &#9888;' : '') + '</span>';
         });
         headerTags += '</div>';
       }
@@ -591,7 +597,11 @@
         plan.groupIds.forEach(function(gid) {
           var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
           var isStale = PLATFORM_GROUPS.length > 0 && !g;
-          bodyHTML += '<span class="group-tag' + (isStale ? ' stale' : '') + '">' + (g ? esc(g.name) : gid + ' (not found)') +
+          var noLocks = g && g.locksCount === 0;
+          var tagClass = 'group-tag' + (isStale ? ' stale' : (noLocks ? ' no-locks' : ''));
+          var tagLabel = isStale ? (gid + ' (not found)') : esc(g.name);
+          var lockBadge = noLocks ? ' <span class="group-tag-no-locks" title="No doors assigned to this group in ' + platformName() + '">&#9888; No doors</span>' : '';
+          bodyHTML += '<span class="' + tagClass + '">' + tagLabel + lockBadge +
             ' <button class="group-tag-remove" onclick="removeGroup(\'' + plan.id + '\', \'' + gid + '\', event)" title="Remove">&times;</button></span>';
         });
       }
@@ -600,9 +610,12 @@
         '<div class="group-dropdown" id="gdd-' + plan.id + '">';
       PLATFORM_GROUPS.forEach(function(g) {
         var isSelected = plan.groupIds && plan.groupIds.indexOf(g.id) >= 0;
+        var locksLabel = g.locksCount === 0
+          ? '<span style="font-size:10px;color:var(--amber);margin-left:auto;">&#9888; 0 doors</span>'
+          : '<span style="font-size:10px;color:var(--muted);margin-left:auto;">' + g.locksCount + ' door' + (g.locksCount !== 1 ? 's' : '') + '</span>';
         bodyHTML += '<div class="group-dropdown-item' + (isSelected ? ' selected' : '') + '" onclick="toggleGroup(\'' + plan.id + '\', \'' + g.id + '\', \'' + esc(g.name) + '\')">' +
           '<div class="group-dropdown-check">' + (isSelected ? '&#10003;' : '') + '</div>' +
-          '<span>' + esc(g.name) + '</span></div>';
+          '<span style="flex:1;">' + esc(g.name) + '</span>' + locksLabel + '</div>';
       });
       bodyHTML += '</div></div>'; // close dropdown + relative wrapper
       bodyHTML += '</div>'; // close group-tags-wrap
@@ -1163,7 +1176,7 @@
 
           if (d.groups && d.groups.length > 0) {
             PLATFORM_GROUPS = d.groups.map(function(g) {
-              return { id: String(g.id), name: g.name };
+              return { id: String(g.id), name: g.name, locksCount: g.locks_count || 0, membersCount: g.members_count || 0 };
             });
           }
         }).catch(function(e) { console.error('Groups load error:', e); });

@@ -92,7 +92,12 @@
       ]);
 
       const rawMappings = mappingRes.mappings || mappingRes || [];
-      groups = groupRes.groups || [];
+      groups = (groupRes.groups || []).map(g => ({
+        ...g,
+        id:           String(g.id),
+        locksCount:   g.locks_count  ?? 0,
+        membersCount: g.members_count ?? 0,
+      }));
 
       // Track hardware key health so the template can show resolution banners
       hwKeyStatus = groupRes.keyStatus || (groupRes.noKey ? 'missing' : 'ok');
@@ -508,10 +513,11 @@
         {#each groups as group (group.id)}
           {@const connCount = plans.filter(p => p.groups?.some(g => g.id === group.id)).length}
           {@const isDead = plans.some(p => p.groups?.some(g => g.id === group.id && g.healthStatus === 'not_found'))}
+          {@const noDoors = group.locksCount === 0}
           <div
             class="pm-node"
             class:pm-node-connected={connCount > 0}
-            class:pm-node-warning={isDead}
+            class:pm-node-warning={isDead || noDoors}
             class:pm-drop-target={!!drag}
             bind:this={groupEls[group.id]}
             role="button" tabindex="0" on:mouseup={e => dropOnGroup(e, group)}
@@ -526,20 +532,26 @@
               <span class="pm-port-dot"></span>
             </button>
             <div class="pm-node-body">
-              <div class="pm-node-icon pm-icon-hardware">{isDead ? '⚠' : '🏢'}</div>
+              <div class="pm-node-icon pm-icon-hardware">{isDead ? '⚠' : (noDoors ? '🚪' : '🏢')}</div>
               <div class="pm-node-info">
                 <div class="pm-node-name">{group.name}</div>
-                <div class="pm-node-sub">{isDead ? 'Group not found' : 'Access Group'}</div>
+                {#if isDead}
+                  <div class="pm-node-sub pm-sub-warn">Group not found in hardware</div>
+                {:else if noDoors}
+                  <div class="pm-node-sub pm-sub-warn">No doors assigned — members can't enter</div>
+                {:else}
+                  <div class="pm-node-sub">{group.locksCount} door{group.locksCount !== 1 ? 's' : ''} · {group.membersCount} member{group.membersCount !== 1 ? 's' : ''}</div>
+                {/if}
               </div>
-              {#if connCount > 0}
-                <div class="pm-node-meta">
-                  {#if isDead}
-                    <span class="pm-pill pm-pill-warning">missing</span>
-                  {:else}
-                    <span class="pm-pill pm-pill-connected">{connCount} plan{connCount !== 1 ? 's' : ''}</span>
-                  {/if}
-                </div>
-              {/if}
+              <div class="pm-node-meta">
+                {#if isDead}
+                  <span class="pm-pill pm-pill-warning">missing</span>
+                {:else if noDoors}
+                  <span class="pm-pill pm-pill-warning">no doors</span>
+                {:else if connCount > 0}
+                  <span class="pm-pill pm-pill-connected">{connCount} plan{connCount !== 1 ? 's' : ''}</span>
+                {/if}
+              </div>
             </div>
           </div>
         {/each}
@@ -838,6 +850,9 @@
     font-size: 10px;
     color: rgba(255,255,255,0.3);
     margin-top: 1px;
+  }
+  .pm-sub-warn {
+    color: rgba(245,158,11,0.8);
   }
 
   .pm-node-meta {
