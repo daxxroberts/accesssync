@@ -132,25 +132,29 @@ async function listAllMappable(apiKey, siteId) {
  * List all active pricing plan orders for a Wix site.
  * Used by nightly reconciliation to discover members who paid but were never provisioned.
  * Returns normalized order objects — one per active plan holder.
+ *
+ * OB-85/87: The v2 /orders/query POST endpoint was removed by Wix (returns 503 FUNCTION_REMOVED).
+ * Replacement is GET /pricing-plans/v2/orders with query-string paging. Client-side filters
+ * for status === 'ACTIVE' since the GET variant doesn't accept a filter parameter.
+ * Throws on failure so reconciliation can abort instead of false-revoking.
  */
 async function listActiveOrders(apiKey, siteId) {
   const allOrders = [];
   let offset = 0;
-  const limit = 100;
+  const limit = 50;
 
   try {
     while (true) {
-      const data = await wixFetch('/pricing-plans/v2/orders/query', apiKey, siteId, {
-        method: 'POST',
-        body: { query: { filter: { 'buyer.status': 'ACTIVE' }, paging: { limit, offset } } },
-      });
+      const path = `/pricing-plans/v2/orders?limit=${limit}&offset=${offset}`;
+      const data = await wixFetch(path, apiKey, siteId);
       const orders = data.orders || [];
       for (const o of orders) {
+        if (o.status !== 'ACTIVE') continue;
         allOrders.push({
           memberId: o.buyer?.memberId || o.buyer?.contactId || null,
           planId:   o.planId || null,
-          email:    o.buyer?.email    || null,
-          name:     o.buyer?.fullName || null,
+          email:    null,
+          name:     null,
         });
       }
       if (orders.length < limit) break;
@@ -160,7 +164,7 @@ async function listActiveOrders(apiKey, siteId) {
     return allOrders;
   } catch (err) {
     log.error('wix.active_orders.fetch_failed', { siteId, httpStatus: err.statusCode }, err);
-    return [];
+    throw err;
   }
 }
 
@@ -172,34 +176,44 @@ async function listActiveOrders(apiKey, siteId) {
  */
 async function listConfirmedBookings(apiKey, siteId) {
   const allBookings = [];
-  let offset = 0;
+  let cursor = null;
   const limit = 100;
 
+  // OB-86/87: Bookings V1 /_api/bookings/v2/bookings/query returned HTML 404
+  // (wrong path). The correct endpoint is the Bookings Reader V2 API at
+  // /_api/bookings-reader/v2/extended-bookings/query. Response key is
+  // `extendedBookings` (not `bookings`) and pagination is cursor-based.
+  // Throws on failure to protect reconciliation from false-revokes.
   try {
     while (true) {
-      const data = await wixFetch('/_api/bookings/v2/bookings/query', apiKey, siteId, {
+      const query = {
+        cursorPaging: cursor ? { limit, cursor } : { limit },
+      };
+      const data = await wixFetch('/_api/bookings-reader/v2/extended-bookings/query', apiKey, siteId, {
         method: 'POST',
-        body: { query: { filter: { status: 'CONFIRMED' }, paging: { limit, offset } } },
+        body: { query },
       });
-      const bookings = data.bookings || [];
+      const bookings = data.extendedBookings || data.bookings || [];
       for (const b of bookings) {
+        const booking = b.booking || b;
+        if (booking.status && booking.status !== 'CONFIRMED') continue;
         allBookings.push({
-          memberId: b.contactId || null,
-          planId:   b.serviceId  || null,  // serviceId is the plan equivalent for bookings
-          email:    b.contactDetails?.email || null,
-          name:     b.contactDetails?.firstName
-            ? `${b.contactDetails.firstName} ${b.contactDetails.lastName || ''}`.trim()
+          memberId: booking.contactId || null,
+          planId:   booking.bookedEntity?.serviceId || booking.serviceId || null,
+          email:    booking.contactDetails?.email || null,
+          name:     booking.contactDetails?.firstName
+            ? `${booking.contactDetails.firstName} ${booking.contactDetails.lastName || ''}`.trim()
             : null,
         });
       }
-      if (bookings.length < limit) break;
-      offset += limit;
+      cursor = data.pagingMetadata?.cursors?.next || null;
+      if (!cursor || bookings.length < limit) break;
     }
     log.info('wix.confirmed_bookings.fetched', { siteId, count: allBookings.length });
     return allBookings;
   } catch (err) {
     log.error('wix.confirmed_bookings.fetch_failed', { siteId, httpStatus: err.statusCode }, err);
-    return [];
+    throw err;
   }
 }
 
