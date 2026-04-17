@@ -2032,8 +2032,9 @@ Rules:
 // Manual sync trigger from the dashboard Sync button.
 // Runs _syncClient() for the logged-in client only — bypasses the
 // recurrence gate and nightly digest. Returns { granted, revoked }.
-router.post('/sync/run', requireAuth, async (req, res) => {
-  const clientId = req.clientId;
+router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
+  const clientId = req.admin?.clientId || req.body?.clientId || req.query?.clientId;
+  if (!clientId) return res.status(400).json({ error: 'clientId required' });
   try {
     const clientResult = await db.query(
       `SELECT id, source_site_id, source_api_key, hardware_api_key, hardware_platform
