@@ -96,6 +96,39 @@ class TenantResolver {
   }
 
   /**
+   * Resolve by client UUID directly — used for Velo webhook path where payload
+   * has no instanceId and tenancy comes from the X-AccessSync-Client-Id header.
+   * Verifies the client row exists and is active before returning.
+   *
+   * @param {string} clientId - UUID from the X-AccessSync-Client-Id header
+   * @returns {string|null}   The client UUID if found + active, otherwise null
+   */
+  async resolveByClientId(clientId) {
+    if (!clientId) return null;
+    const cacheKey = `cid:${clientId}`;
+    const cached = this._cache.get(cacheKey);
+    if (cached && (Date.now() - cached.cachedAt) < this._cacheTtlMs) {
+      return cached.clientId;
+    }
+    try {
+      const result = await db.query(
+        `SELECT id FROM clients WHERE id = $1 AND status = 'active' LIMIT 1`,
+        [clientId]
+      );
+      if (result.rows.length === 0) {
+        log.warn('tenant.client_id_not_found', { clientId });
+        return null;
+      }
+      const resolvedId = result.rows[0].id;
+      this._cache.set(cacheKey, { clientId: resolvedId, cachedAt: Date.now() });
+      return resolvedId;
+    } catch (err) {
+      log.error('tenant.client_id_lookup_failed', { clientId }, err);
+      return null;
+    }
+  }
+
+  /**
    * Register a Wix site ID against a client UUID.
    * Called on first webhook from a new client whose events.js includes their CLIENT_ID.
    * Only writes if source_site_id is currently NULL — safe to call on every request.

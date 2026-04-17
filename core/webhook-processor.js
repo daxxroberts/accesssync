@@ -60,9 +60,22 @@ class WebhookProcessor {
     // 3. Register Event (mark processed before enqueuing — prevents re-entry on crash)
     await this._markEventProcessed(eventId, standardEvent);
 
-    // 3b. Log to webhook_log for Admin Hub Webhook Inspector
+    // 4. Resolve tenant. Two paths:
+    //   REST webhook: wixSiteId (instanceId) → clients.source_site_id lookup.
+    //   Velo forwarder: payload has no instanceId. events.js sends CLIENT_ID via
+    //     X-AccessSync-Client-Id header (HMAC-verified end-to-end) → use it directly.
+    let tenantId = null;
+    if (standardEvent.wixSiteId) {
+      tenantId = await tenantResolver.resolve(standardEvent.wixSiteId);
+    }
+    if (!tenantId && standardEvent.platformClientIdHint) {
+      tenantId = await tenantResolver.resolveByClientId(standardEvent.platformClientIdHint);
+    }
+
+    // 4b. Log to webhook_log for Admin Hub Webhook Inspector (after tenant known)
     await this.logWebhookAttempt({
       eventId,
+      clientId: tenantId,
       hmacStatus: 'accepted',
       dedupStatus: isDuplicate ? 'duplicate' : 'new',
       eventType: standardEvent.eventType,
@@ -72,13 +85,11 @@ class WebhookProcessor {
       log.error('webhook.log_write_failed', { eventId }, dbErr);
     });
 
-    // 4. Resolve tenant from wix_site_id
-    const tenantId = await tenantResolver.resolve(standardEvent.wixSiteId);
     if (!tenantId) {
-      const err = new Error(`Unknown wix_site_id: ${standardEvent.wixSiteId}`);
+      const err = new Error(`Tenant not resolved — wixSiteId=${standardEvent.wixSiteId}, clientIdHint=${standardEvent.platformClientIdHint}`);
       err.code = 'TENANT_NOT_RESOLVED';
-      log.warn('webhook.tenant_not_resolved', { eventId, wixSiteId: standardEvent.wixSiteId }, err);
-      await this._logToAlertLog(eventId, standardEvent, `Unknown wix_site_id: ${standardEvent.wixSiteId}`);
+      log.warn('webhook.tenant_not_resolved', { eventId, wixSiteId: standardEvent.wixSiteId, clientIdHint: standardEvent.platformClientIdHint }, err);
+      await this._logToAlertLog(eventId, standardEvent, err.message);
       return;
     }
 

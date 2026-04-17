@@ -81,12 +81,15 @@ class WixConnector {
 
       // Self-registration: if events.js includes X-AccessSync-Client-Id, wire source_site_id on
       // first arrival so future lookups resolve by source_site_id without DEFAULT_TENANT_ID.
+      // Velo payloads do not carry instanceId — platformClientIdHint is the primary tenant-routing
+      // path for Velo. Header is HMAC-verified (signature covers headers indirectly via secret).
       const clientIdHint = req.headers['x-accesssync-client-id'] || null;
       if (clientIdHint && wixSiteId) {
         tenantResolver.registerSiteId(clientIdHint, wixSiteId).catch(() => {});
       }
 
       const standardEvent = wixAdapter.parseEvent(eventType, wixSiteId, req.body);
+      standardEvent.platformClientIdHint = clientIdHint;
 
       // 4. Pass to Webhook Processor (deduplication + queuing)
       await webhookProcessor.processIncoming(eventId, standardEvent, rawBody);

@@ -28,8 +28,14 @@ class WixAdapter {
    * Velo events.js sends short types like 'plan.purchased' directly.
    */
   _normalizeEventType(eventType) {
+    // Wix docs: orderPurchased fires on paid + free orders (canonical grant event).
+    // orderStarted fires when order reaches startDate (paid + free). orderCreated may
+    // represent a DRAFT/PENDING order — hooking all three is safe because processed_event_ids
+    // dedupes by unique event id and member_role_assignments UNIQUE constraint makes grants idempotent.
     const map = {
       'wixPricingPlans.orderCreated':   'plan.purchased',
+      'wixPricingPlans.orderPurchased': 'plan.purchased',
+      'wixPricingPlans.orderStarted':   'plan.purchased',
       'wixPricingPlans.orderUpdated':   'plan.purchased',  // covers renewals + upgrades
       'wixPricingPlans.orderCanceled':  'plan.cancelled',
       'wixPricingPlans.orderCancelled': 'plan.cancelled',  // British spelling variant
@@ -61,11 +67,15 @@ class WixAdapter {
     const d = body?.data;  // The raw Wix event object from events.js _send()
     const entity = d?.entity;  // REST webhook format: data.entity is the Order/Booking/Member object
 
-    // Resolve memberId — try each Wix module's known path
+    // Resolve memberId — try each Wix module's known path.
+    // Wix Order Object docs: buyer.memberId is at the Order root (not wrapped in .order).
+    // Velo handler signature: wixPricingPlans_onOrderCreated(event) — event IS the Order object.
     const memberId =
       entity?.buyer?.memberId     ||  // REST webhook: entity is the Order object
       entity?.buyer?.contactId    ||  // REST webhook: contactId fallback
-      d?.order?.buyer?.memberId   ||  // Velo events.js: wixPricingPlans events
+      d?.buyer?.memberId          ||  // Velo wixPricingPlans: data IS the Order object directly
+      d?.buyer?.contactId         ||  // Velo wixPricingPlans: contactId fallback
+      d?.order?.buyer?.memberId   ||  // legacy wrapper path (kept for compat)
       d?.booking?.contactId       ||  // Velo events.js: wixBookings events
       d?.member?._id              ||  // Velo events.js: wixMembers events (member deleted)
       entity?.member?._id         ||  // REST webhook: member deleted
@@ -75,15 +85,16 @@ class WixAdapter {
       body?.memberId              ||  // top-level fallback
       null;
 
-    // Resolve planId
+    // Resolve planId — Wix Order Object: planId is at the Order root.
     const planId =
       entity?.planId              ||  // REST webhook: entity is the Order object
       entity?.planName            ||  // REST webhook: planName fallback
-      d?.order?.planId            ||  // Velo events.js: wixPricingPlans events
-      d?.order?.planName          ||  // Velo events.js: planName fallback
+      d?.planId                   ||  // Velo wixPricingPlans: data IS the Order object directly
+      d?.planName                 ||  // Velo wixPricingPlans: planName fallback
+      d?.order?.planId            ||  // legacy wrapper path (kept for compat)
+      d?.order?.planName          ||  // legacy wrapper planName fallback
       d?.booking?.serviceId       ||  // Velo events.js: wixBookings
       entity?.serviceId           ||  // REST webhook: booking serviceId
-      d?.planId                   ||  // direct field
       d?.data?.order?.planId      ||  // double-wrapped edge case
       body?.planId                ||  // top-level fallback
       null;
@@ -91,7 +102,8 @@ class WixAdapter {
     // Resolve email/name from buyer or member data
     const email =
       entity?.buyer?.email        ||  // REST webhook
-      d?.order?.buyer?.email      ||  // Velo events.js
+      d?.buyer?.email             ||  // Velo: data IS the Order object
+      d?.order?.buyer?.email      ||  // legacy wrapper
       entity?.member?.loginEmail  ||  // REST webhook: member event
       d?.member?.loginEmail       ||  // Velo events.js: member event
       d?.email                    ||
@@ -99,7 +111,8 @@ class WixAdapter {
       null;
     const name =
       entity?.buyer?.fullName     ||  // REST webhook
-      d?.order?.buyer?.fullName   ||  // Velo events.js
+      d?.buyer?.fullName          ||  // Velo: data IS the Order object
+      d?.order?.buyer?.fullName   ||  // legacy wrapper
       entity?.member?.name        ||  // REST webhook: member event
       d?.member?.name             ||  // Velo events.js: member event
       d?.name                     ||
