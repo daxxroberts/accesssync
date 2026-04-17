@@ -141,11 +141,33 @@ class NightlyReconciliation {
     let granted = 0;
     let revoked = 0;
 
-    // 1. Pull Wix side — active plan orders + confirmed bookings in parallel
-    const [orders, bookings] = await Promise.all([
-      listActiveOrders(wixApiKey, siteId),
-      listConfirmedBookings(wixApiKey, siteId),
-    ]);
+    // 1. Pull Wix side — active plan orders + confirmed bookings.
+    //
+    // OB-87: FAIL CLOSED. If EITHER Wix fetch throws, we cannot distinguish
+    // "member has no active plan" from "Wix API is broken." An empty-but-valid
+    // response from a broken endpoint would cause a mass revoke of real members.
+    // So: on any fetch error, flag config_alert_log and abort this client's sync
+    // entirely — no grants, no revokes. Nightly digest will surface the alert.
+    let orders, bookings;
+    try {
+      [orders, bookings] = await Promise.all([
+        listActiveOrders(wixApiKey, siteId),
+        listConfirmedBookings(wixApiKey, siteId),
+      ]);
+    } catch (err) {
+      log.error('reconciliation.wix_fetch_failed', {
+        clientId: client.id, siteId,
+        wixStatus: err.status || null,
+        wixCode:   err.code || null,
+      }, err);
+      await db.query(
+        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
+         VALUES ($1, 'wix_api_unavailable', $2)`,
+        [client.id, `status=${err.status || 'unknown'} code=${err.code || 'unknown'}`]
+      ).catch(() => {}); // Fault-tolerant — never block digest
+      // Abort this client's sync. Do NOT fall through to compare/revoke.
+      return { granted: 0, revoked: 0, aborted: true, reason: 'wix_api_unavailable' };
+    }
 
     // Map: wixMemberId → { planId, email, name }
     // Orders take precedence; bookings fill in members not already seen
