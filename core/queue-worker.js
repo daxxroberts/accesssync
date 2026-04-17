@@ -71,12 +71,14 @@ async function processJob(job) {
   });
 
   let memberId = null;
+  let lastStep = 'entry';
 
   try {
     if (job.name === 'grant') {
 
       // payment.recovered: user is suspended — re-enable only (no new role assignments)
       if (standardEvent.eventType === 'payment.recovered') {
+        lastStep = 'grant.recovered.resolve_lock';
         const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null);
         if (!lockResult) {
           logger.warn('queue.grant.recovered.no_identity', { tenantId, memberId: standardEvent.platformMemberId });
@@ -84,15 +86,25 @@ async function processJob(job) {
         }
         const { memberId: resolvedMemberId, hardwareUserId, hardwarePlatform } = lockResult;
         memberId = resolvedMemberId;
+        lastStep = 'grant.recovered.enable_access';
         const apiKey = await getClientApiKey(tenantId);
         await hardwareAdapter.enableAccess(hardwarePlatform, apiKey, hardwareUserId);
+        lastStep = 'grant.recovered.complete_revoke';
         await standardAdapter.completeRevoke(memberId, tenantId, 'active');
         logger.info('queue.grant.recovered.complete', { tenantId, memberId });
         return;
       }
 
       // Step 1: Resolve all active plan mappings for this plan (returns array, null, or empty array)
+      lastStep = 'grant.resolve_mappings';
       const mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
+      logger.info('queue.grant.mappings_resolved', {
+        tenantId,
+        memberId: standardEvent.platformMemberId,
+        planId: standardEvent.planId,
+        mappingCount: mappings === null ? null : mappings.length,
+        hardwareGroupIds: Array.isArray(mappings) ? mappings.map(m => m.hardwareGroupId) : [],
+      });
       if (mappings === null) {
         // W-1: Unknown plan — write to error_queue + notify operator immediately
         logger.warn('queue.grant.plan_unknown', { tenantId, planId: standardEvent.planId, memberId: standardEvent.platformMemberId });
@@ -113,10 +125,17 @@ async function processJob(job) {
       }
 
       // Step 2: Resolve identity + acquire lock (all mappings share same hardwarePlatform)
+      lastStep = 'grant.resolve_and_lock';
       const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, mappings[0].hardwarePlatform);
       memberId = lockResult.memberId;
+      logger.info('queue.grant.lock_acquired', {
+        tenantId, memberId,
+        hardwarePlatform: mappings[0].hardwarePlatform,
+        email: standardEvent.email || null,
+      });
 
       // Step 3: Check for hardware API key — if missing, park as pending_hardware (Wix-first flow)
+      lastStep = 'grant.get_api_key';
       const apiKey = await getClientApiKey(tenantId);
       if (!apiKey) {
         await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
@@ -125,22 +144,32 @@ async function processJob(job) {
       }
 
       // Step 4: Resolve hardware user identity (client-level key — user ops are org-scoped)
+      lastStep = 'grant.resolve_identity';
       const hardwareUserId = await standardAdapter.resolveIdentity(
         memberId, standardEvent.email, standardEvent.name,
         mappings[0].hardwarePlatform, apiKey
       );
+      logger.info('queue.grant.identity_resolved', { tenantId, memberId, hardwareUserId });
 
       // Step 5: Execute hardware grant across all active mappings
+      lastStep = 'grant.process_grant';
       const assignments = await grantRevokeLogic.processGrant(
         tenantId, memberId, hardwareUserId, mappings, standardEvent
       );
+      logger.info('queue.grant.hardware_calls_complete', {
+        tenantId, memberId,
+        assignments: assignments.length,
+        roleAssignmentIds: assignments.map(a => a.roleAssignmentId),
+      });
 
       // Step 6: Record success — writes all assignments to member_role_assignments
+      lastStep = 'grant.complete_grant';
       await standardAdapter.completeGrant(memberId, tenantId, assignments);
       logger.info('queue.grant.complete', { tenantId, memberId, assignments: assignments.length });
 
     } else if (job.name === 'revoke') {
       // Step 1: Resolve identity + acquire lock (reads hardwarePlatform from existing row)
+      lastStep = 'revoke.resolve_and_lock';
       const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null);
 
       if (!lockResult) {
@@ -150,14 +179,21 @@ async function processJob(job) {
 
       const { memberId: resolvedMemberId, hardwareUserId, hardwarePlatform, roleAssignmentIds } = lockResult;
       memberId = resolvedMemberId;
+      logger.info('queue.revoke.lock_acquired', {
+        tenantId, memberId, hardwarePlatform,
+        roleAssignmentCount: roleAssignmentIds?.length || 0,
+      });
 
       // Step 2: Execute hardware revoke across all stored role assignments → returns targetStatus
+      lastStep = 'revoke.process_revoke';
       const targetStatus = await grantRevokeLogic.processRevoke(
         tenantId, memberId, hardwareUserId, roleAssignmentIds, hardwarePlatform,
         standardEvent.eventType, standardEvent
       );
+      logger.info('queue.revoke.hardware_calls_complete', { tenantId, memberId, targetStatus });
 
       // Step 3: Record success
+      lastStep = 'revoke.complete_revoke';
       await standardAdapter.completeRevoke(memberId, tenantId, targetStatus);
       logger.info('queue.revoke.complete', { tenantId, memberId, targetStatus });
 
@@ -170,6 +206,12 @@ async function processJob(job) {
       jobId: job.id, jobName: job.name,
       tenantId, memberId,
       attempt: job.attemptsMade,
+      lastStep,
+      platformMemberId: standardEvent?.platformMemberId || null,
+      planId: standardEvent?.planId || null,
+      eventType: standardEvent?.eventType || null,
+      emailPresent: !!(standardEvent?.email),
+      namePresent: !!(standardEvent?.name),
     }, error);
 
     // Release in_flight lock before BullMQ retries
