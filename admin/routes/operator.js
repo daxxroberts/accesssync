@@ -472,7 +472,7 @@ router.post('/clients', requireInviteToken, async (req, res) => {
   try {
     const {
       name, platform = 'wix', hardware_platform, tier,
-      source_site_id, platform_instance_id, site_name, site_url, notification_email, wix_api_key,
+      source_site_id, platform_instance_id, source_site_name, source_site_url, notification_email, source_api_key,
     } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
 
@@ -480,19 +480,19 @@ router.post('/clients', requireInviteToken, async (req, res) => {
     // Explicit hardware_platform override allowed.
     const derivedHardware = hardware_platform || (tier === 'Connect' ? 'kisi' : tier ? 'seam' : null);
 
-    // Encrypt Wix API key if provided (same AES-256-GCM pattern as hardware keys)
-    const encryptedWixKey = wix_api_key ? encryptApiKey(wix_api_key.trim()) : null;
+    // Encrypt source platform API key if provided (AES-256-GCM pattern, same as hardware keys)
+    const encryptedSourceKey = source_api_key ? encryptApiKey(source_api_key.trim()) : null;
 
     // Upsert on source_site_id — prevents duplicate clients if onboarding is re-run.
     // On conflict, update platform_instance_id in case it changed (reinstall).
     const result = await db.query(
-      `INSERT INTO clients (name, platform, hardware_platform, tier, source_site_id, platform_instance_id, site_name, site_url, notification_email, wix_api_key, status, created_at, updated_at)
+      `INSERT INTO clients (name, platform, hardware_platform, tier, source_site_id, platform_instance_id, source_site_name, source_site_url, notification_email, source_api_key, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', NOW(), NOW())
        ON CONFLICT (source_site_id) DO UPDATE
          SET platform_instance_id = EXCLUDED.platform_instance_id,
              updated_at      = NOW()
-       RETURNING id, name, platform, hardware_platform, tier, source_site_id, platform_instance_id, site_name, notification_email, status, created_at`,
-      [name.trim(), platform, derivedHardware, tier || null, source_site_id || null, platform_instance_id || null, site_name || null, site_url || null, notification_email || null, encryptedWixKey]
+       RETURNING id, name, platform, hardware_platform, tier, source_site_id, platform_instance_id, source_site_name, notification_email, status, created_at`,
+      [name.trim(), platform, derivedHardware, tier || null, source_site_id || null, platform_instance_id || null, source_site_name || null, source_site_url || null, notification_email || null, encryptedSourceKey]
     );
     log.info('operator.setup.client_upserted', { clientId: result.rows[0].id, name: result.rows[0].name });
     res.status(201).json({ ok: true, client: result.rows[0] });
@@ -759,8 +759,8 @@ router.get('/:clientId', async (req, res) => {
   try {
     const [clientResult, errorCount, activeMembers, totalMembers, locationCount, pendingHardware] = await Promise.all([
       db.query(
-        `SELECT id, name, site_url, platform, hardware_platform, tier,
-                last_sync_at, last_wix_webhook_at
+        `SELECT id, name, source_site_url, platform, hardware_platform, tier,
+                last_sync_at, last_webhook_at
          FROM clients WHERE id = $1`,
         [clientId]
       ),
@@ -1124,7 +1124,7 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
         [clientId]
       ),
       db.query(
-        `SELECT id, source_plan_id, plan_name, door_name, hardware_group_id, status, wix_status, allow_multiple, max_members, created_at
+        `SELECT id, source_plan_id, plan_name, door_name, hardware_group_id, status, source_status, allow_multiple, max_members, created_at
          FROM plan_mappings
          WHERE client_id = $2 AND (location_id = $1 OR location_id IS NULL)
          ORDER BY plan_name`,
@@ -1825,16 +1825,16 @@ router.get('/:clientId/access-stats', async (req, res) => {
 router.get('/:clientId/wix-plans', async (req, res) => {
   try {
     const { clientId } = req.params;
-    const client = await db.query('SELECT id, wix_api_key, source_site_id FROM clients WHERE id = $1', [clientId]);
+    const client = await db.query('SELECT id, source_api_key, source_site_id FROM clients WHERE id = $1', [clientId]);
     if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
-    if (!client.rows[0].wix_api_key) {
-      return res.status(400).json({ error: 'No Wix API key set for this client', plans: [] });
+    if (!client.rows[0].source_api_key) {
+      return res.status(400).json({ error: 'No source API key set for this client', plans: [] });
     }
     if (!client.rows[0].source_site_id) {
-      return res.status(400).json({ error: 'No Wix site ID set for this client', plans: [] });
+      return res.status(400).json({ error: 'No source site ID set for this client', plans: [] });
     }
 
-    const apiKey = decryptKey(client.rows[0].wix_api_key);
+    const apiKey = decryptKey(client.rows[0].source_api_key);
     log.debug('operator.wix_plans.fetch_start', { clientId, siteId: client.rows[0].source_site_id });
     const allPlans = await wixPlansApi.listAllMappable(apiKey, client.rows[0].source_site_id);
     log.debug('operator.wix_plans.fetch_complete', { clientId, planCount: allPlans.length });
@@ -1869,15 +1869,15 @@ router.get('/:clientId/wix-plans', async (req, res) => {
   }
 });
 
-// ── Wix API key management ──────────────────────────────────────
+// ── Source API key management ───────────────────────────────────
 
 // GET /operator/clients/:clientId/wix-api-key/status
 router.get('/clients/:clientId/wix-api-key/status', async (req, res) => {
   try {
     const { clientId } = req.params;
-    const result = await db.query('SELECT wix_api_key FROM clients WHERE id = $1', [clientId]);
+    const result = await db.query('SELECT source_api_key FROM clients WHERE id = $1', [clientId]);
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    res.json({ hasKey: !!result.rows[0].wix_api_key });
+    res.json({ hasKey: !!result.rows[0].source_api_key });
   } catch (err) {
     log.error('operator.wix_apikey.status_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -1893,11 +1893,11 @@ router.put('/clients/:clientId/wix-api-key', async (req, res) => {
 
     const encrypted = encryptApiKey(apiKey.trim());
     const result = await db.query(
-      'UPDATE clients SET wix_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name',
+      'UPDATE clients SET source_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name',
       [encrypted, clientId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    res.json({ ok: true, message: 'Wix API key saved' });
+    res.json({ ok: true, message: 'Source API key saved' });
   } catch (err) {
     log.error('operator.wix_apikey.save_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -1908,12 +1908,12 @@ router.put('/clients/:clientId/wix-api-key', async (req, res) => {
 router.get('/clients/:clientId/wix-api-key/test', async (req, res) => {
   try {
     const { clientId } = req.params;
-    const result = await db.query('SELECT wix_api_key, source_site_id FROM clients WHERE id = $1', [clientId]);
+    const result = await db.query('SELECT source_api_key, source_site_id FROM clients WHERE id = $1', [clientId]);
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    if (!result.rows[0].wix_api_key) return res.json({ valid: false, error: 'No Wix API key set' });
-    if (!result.rows[0].source_site_id) return res.json({ valid: false, error: 'No Wix site ID set for this client' });
+    if (!result.rows[0].source_api_key) return res.json({ valid: false, error: 'No source API key set' });
+    if (!result.rows[0].source_site_id) return res.json({ valid: false, error: 'No source site ID set for this client' });
 
-    const apiKey = decryptKey(result.rows[0].wix_api_key);
+    const apiKey = decryptKey(result.rows[0].source_api_key);
     const testResult = await wixPlansApi.testApiKey(apiKey, result.rows[0].source_site_id);
     res.json(testResult);
   } catch (err) {
@@ -2036,7 +2036,7 @@ router.post('/sync/run', requireAuth, async (req, res) => {
   const clientId = req.clientId;
   try {
     const clientResult = await db.query(
-      `SELECT id, source_site_id, wix_api_key, hardware_api_key, hardware_platform
+      `SELECT id, source_site_id, source_api_key, hardware_api_key, hardware_platform
        FROM clients WHERE id = $1 AND status = 'active'`,
       [clientId]
     );

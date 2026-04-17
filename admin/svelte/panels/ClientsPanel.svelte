@@ -63,7 +63,7 @@
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (c.name || '').toLowerCase().includes(q)
-      || (c.site_name || '').toLowerCase().includes(q)
+      || (c.source_site_name || '').toLowerCase().includes(q)
       || (c.source_site_id || '').toLowerCase().includes(q)
       || (c.notification_email || '').toLowerCase().includes(q);
   });
@@ -119,7 +119,7 @@
     editName              = client.name              || '';
     editHardwarePlatform  = client.hardware_platform || '';
     editTier              = client.tier              || '';
-    editSiteName          = client.site_name         || '';
+    editSiteName          = client.source_site_name   || '';
     editSiteId            = client.source_site_id           || '';
     editNotificationEmail = client.notification_email || '';
     editStatus            = client.status            || 'active';
@@ -131,7 +131,7 @@
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editName, hardware_platform: editHardwarePlatform, tier: editTier,
-          site_name: editSiteName, source_site_id: editSiteId,
+          source_site_name: editSiteName, source_site_id: editSiteId,
           notification_email: editNotificationEmail, status: editStatus,
         }),
       });
@@ -272,7 +272,7 @@
       <tr class="clickable-row" on:click={e => { if (!e.target.closest('.actions-cell')) openDetail(c); }}>
         <td>
           <div>{c.name}</div>
-          {#if c.site_name}<div class="cell-sub">{c.site_name}</div>{/if}
+          {#if c.source_site_name}<div class="cell-sub">{c.source_site_name}</div>{/if}
           {#if c.source_site_id}<div class="cell-sub"><CodeChip text={c.source_site_id} /></div>{/if}
         </td>
         <td>{#if c.platform}<PillBadge text={c.platform} type="info" />{:else}<span class="muted">—</span>{/if}</td>
@@ -317,7 +317,7 @@
       <div class="detail-row"><span class="detail-label">Hardware</span><span>{activeClient.hardware_platform || '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Tier</span><span>{activeClient.tier || '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Site ID</span><CodeChip text={activeClient.source_site_id} full={true} /></div>
-      <div class="detail-row"><span class="detail-label">Site Name</span><span>{activeClient.site_name || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Site Name</span><span>{activeClient.source_site_name || '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Notification Email</span><span>{activeClient.notification_email || '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Members</span><span>{activeClient.member_count} total, {activeClient.active_count} active</span></div>
       <div class="detail-row"><span class="detail-label">Last Sync</span><TimeStamp iso={activeClient.last_sync_at} /></div>

@@ -22,7 +22,7 @@ const { log } = require('../../core/logger');
 const hardwareAdapter = require('../../adapters/hardware-adapter');
 
 // hardware_platform is intentionally excluded — blocked once members are provisioned (GAP 1/2)
-const EDITABLE_FIELDS = ['name', 'tier', 'notification_email', 'status', 'source_site_id', 'site_name', 'platform'];
+const EDITABLE_FIELDS = ['name', 'tier', 'notification_email', 'status', 'source_site_id', 'source_site_name', 'platform'];
 
 /**
  * GAP 3 (admin path) — Re-provision members after location reactivation.
@@ -89,7 +89,7 @@ async function activateLocationMembersAdmin(clientId, locationId) {
 // ── POST /admin/clients — Create new client ────────────────────────
 router.post('/', async (req, res) => {
   try {
-    const { name, platform = 'wix', hardware_platform, tier, source_site_id, site_name, notification_email, site_url } = req.body;
+    const { name, platform = 'wix', hardware_platform, tier, source_site_id, source_site_name, notification_email, source_site_url } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
 
     // Business rule: tier determines hardware_platform (DR — Connect=Kisi, Base/Pro=Seam)
@@ -97,10 +97,10 @@ router.post('/', async (req, res) => {
     const derivedHardware = hardware_platform || (tier === 'Connect' ? 'kisi' : tier ? 'seam' : null);
 
     const result = await db.query(
-      `INSERT INTO clients (name, platform, hardware_platform, tier, source_site_id, site_name, site_url, notification_email, status, created_at, updated_at)
+      `INSERT INTO clients (name, platform, hardware_platform, tier, source_site_id, source_site_name, source_site_url, notification_email, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), NOW())
-       RETURNING id, name, platform, hardware_platform, tier, source_site_id, site_name, notification_email, status, created_at`,
-      [name.trim(), platform, derivedHardware, tier || null, source_site_id || null, site_name || null, site_url || null, notification_email || null]
+       RETURNING id, name, platform, hardware_platform, tier, source_site_id, source_site_name, notification_email, status, created_at`,
+      [name.trim(), platform, derivedHardware, tier || null, source_site_id || null, source_site_name || null, source_site_url || null, notification_email || null]
     );
     log.info('admin.client_created', { name: result.rows[0].name, clientId: result.rows[0].id });
     res.status(201).json({ ok: true, client: result.rows[0] });
@@ -133,7 +133,7 @@ router.get('/', async (req, res) => {
               c.name,
               c.platform,
               c.source_site_id,
-              c.site_name,
+              c.source_site_name,
               c.hardware_platform,
               c.tier,
               c.status,
@@ -184,7 +184,7 @@ router.patch('/:id', async (req, res) => {
 
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     // S1: Strip encrypted API key — never return it in responses
-    const { hardware_api_key, wix_api_key, ...safeClient } = result.rows[0];
+    const { hardware_api_key, source_api_key, ...safeClient } = result.rows[0];
     logAdminAction(id, 'client_edited', { fields: Object.keys(updates), values: updates });
     res.json({ ok: true, client: safeClient });
   } catch (err) {

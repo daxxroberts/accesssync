@@ -3,7 +3,7 @@
  * Outbound Wix API client for fetching pricing plans, booking services, and member identity.
  * Used by the plan mapping page and the nightly reconciliation correction sweep.
  *
- * Requires: Wix API key stored encrypted in clients.wix_api_key
+ * Requires: Wix API key stored encrypted in clients.source_api_key
  * Docs: https://dev.wix.com/docs/rest/api-reference/wix-pricing-plans
  *       https://dev.wix.com/docs/rest/api-reference/wix-bookings
  *       https://dev.wix.com/docs/rest/api-reference/members

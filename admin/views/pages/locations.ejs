@@ -444,7 +444,7 @@
       if (!card || !state.client) return;
       var c = state.client;
       document.getElementById('profile-name').textContent = c.name || 'Unnamed';
-      var meta = [c.site_url ? c.site_url.replace(/^https?:\/\//, '') : ''].filter(Boolean).join(' · ');
+      var meta = [c.source_site_url ? c.source_site_url.replace(/^https?:\/\//, '') : ''].filter(Boolean).join(' · ');
       document.getElementById('profile-meta').textContent = meta;
       var pills = '';
       if (c.last_sync_at) {

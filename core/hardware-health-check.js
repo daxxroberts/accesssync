@@ -4,7 +4,7 @@
  * @role cron-6hr
  * @schedule every 6 hours via Railway Cron
  * @reads locations, clients, plan_mappings, plan_mapping_groups, member_role_assignments
- * @writes locations.hardware_key_last_verified, locations.hardware_key_last_error, plan_mapping_groups.health_status, plan_mapping_groups.door_name, plan_mappings.door_name, plan_mappings.wix_status
+ * @writes locations.hardware_key_last_verified, locations.hardware_key_last_error, plan_mapping_groups.health_status, plan_mapping_groups.door_name, plan_mappings.door_name, plan_mappings.source_status
  * @calls hardware-adapter (getLocks, getGroups), wix-plans-api (listPricingPlans), resend (alerts)
  * @exports runHealthCheck
  * @dr DR-028
@@ -292,22 +292,22 @@ async function _notifyOrphanedGroups(loc, orphans, platform) {
 }
 
 /**
- * Cross-check plan_mappings against live Wix plan statuses.
- * Detects archived plans and updates plan_mappings.wix_status accordingly.
+ * Cross-check plan_mappings against live source platform plan statuses.
+ * Detects archived plans and updates plan_mappings.source_status accordingly.
  * Informational only — archived plans still function until member subscriptions expire.
  */
 async function _reconcileWixPlans(loc) {
-  // Load Wix API credentials for this client
+  // Load source platform API credentials for this client
   const clientResult = await db.query(
-    `SELECT wix_api_key, platform_instance_id FROM clients WHERE id = $1`,
+    `SELECT source_api_key, platform_instance_id FROM clients WHERE id = $1`,
     [loc.client_id]
   );
   const client = clientResult.rows[0];
-  if (!client || !client.wix_api_key || !client.platform_instance_id) return;
+  if (!client || !client.source_api_key || !client.platform_instance_id) return;
 
   let wixApiKey;
   try {
-    wixApiKey = decryptApiKey(client.wix_api_key);
+    wixApiKey = decryptApiKey(client.source_api_key);
   } catch {
     return; // Can't decrypt — skip silently
   }
@@ -328,7 +328,7 @@ async function _reconcileWixPlans(loc) {
 
   // Get all plan mappings for this client that we're tracking
   const mappingsResult = await db.query(
-    `SELECT id, source_plan_id, plan_name, wix_status FROM plan_mappings
+    `SELECT id, source_plan_id, plan_name, source_status FROM plan_mappings
      WHERE client_id = $1 AND status = 'active'`,
     [loc.client_id]
   );
@@ -340,12 +340,12 @@ async function _reconcileWixPlans(loc) {
     if (!wixStatus) continue; // Plan not found in Wix response — may be a booking service, skip
 
     const isArchived = wixStatus === 'archived';
-    const wasArchived = mapping.wix_status === 'archived';
+    const wasArchived = mapping.source_status === 'archived';
 
     if (isArchived && !wasArchived) {
       // Newly archived
       await db.query(
-        `UPDATE plan_mappings SET wix_status = 'archived' WHERE id = $1`,
+        `UPDATE plan_mappings SET source_status = 'archived' WHERE id = $1`,
         [mapping.id]
       );
       // Get affected member count
@@ -365,7 +365,7 @@ async function _reconcileWixPlans(loc) {
     } else if (!isArchived && wasArchived) {
       // Recovered — was archived but now active again (unlikely but safe)
       await db.query(
-        `UPDATE plan_mappings SET wix_status = 'active' WHERE id = $1`,
+        `UPDATE plan_mappings SET source_status = 'active' WHERE id = $1`,
         [mapping.id]
       );
       log.info('health.wix_plan_recovered', {

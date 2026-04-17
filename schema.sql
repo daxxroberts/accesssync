@@ -8,7 +8,7 @@
 --   sprint-5.sql       — hardware health check columns + first_grant_sent (Sprint 5.2, 5.5)
 --   wix-first-flow.sql — pending_hardware state + nullable hardware_group_id
 --   multi-member.sql   — sub-member schema (DR-029–032, deferred post-HOG)
---   multi-group-archive-audit.sql — plan_mapping_groups, admin audit, wix_api_key
+--   multi-group-archive-audit.sql — plan_mapping_groups, admin audit, source_api_key
 --   per-location-config.sql — locations.hardware_platform + notification_email
 --   wix-instance-id.sql — clients.platform_instance_id for portal auth (three-path lookup)
 --   dr-036.sql         — client_subscriptions table + tier_subscription_id FK (DR-036, PENDING OB-70)
@@ -25,16 +25,16 @@ CREATE TABLE clients (
     platform                VARCHAR(50)  NOT NULL DEFAULT 'wix',     -- Source platform: 'wix', 'squarespace', etc.
     source_site_id          VARCHAR(255) UNIQUE,                     -- Source platform site ID — used for webhook routing + platform API calls (DR-021 pattern)
     platform_instance_id    VARCHAR(255),                            -- Platform app installation ID — used for portal auth (wix-instance.js three-path lookup)
-    site_name               VARCHAR(255),                            -- Human-readable site name (e.g. "House of Gains - Main")
+    source_site_name        VARCHAR(255),                            -- Human-readable site name (e.g. "House of Gains - Main")
     hardware_platform       VARCHAR(50),                             -- 'kisi', 'seam' — which hardware provider this client uses
     tier                    VARCHAR(50),                             -- 'Base', 'Pro', 'Connect' — AccessSync billing tier
     status                  VARCHAR(50)  DEFAULT 'active',           -- active, cancelled, archived
     notification_email      VARCHAR(255),                            -- DR-020: operator alert destination (Resend)
     last_sync_at            TIMESTAMP WITH TIME ZONE,                -- DR-018: last member sync sweep timestamp
-    site_url                VARCHAR(255),                            -- Operator site URL (e.g. "houseofgains.com") — dashboard header
-    last_wix_webhook_at     TIMESTAMP WITH TIME ZONE,                -- Last webhook received — drives Wix LIVE/WARN/ERROR health status
+    source_site_url         VARCHAR(255),                            -- Operator source platform site URL (e.g. "houseofgains.com") — dashboard header
+    last_webhook_at         TIMESTAMP WITH TIME ZONE,                -- Last webhook received from source platform — drives LIVE/WARN/ERROR health status
     hardware_api_key        TEXT,                                    -- DR-028/DR-035: AES-256-GCM encrypted org-level hardware API key
-    wix_api_key             TEXT,                                    -- AES-256-GCM encrypted Wix API key for outbound plan/bookings API calls
+    source_api_key          TEXT,                                    -- AES-256-GCM encrypted source platform API key for outbound plan/bookings API calls
     archived_at             TIMESTAMP WITH TIME ZONE,                -- NULL when active; set on archive
     first_grant_sent        BOOLEAN      DEFAULT false,              -- Sprint 5.5: tracks whether first grant email has been sent
     created_at              TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -83,7 +83,7 @@ CREATE TABLE plan_mappings (
     plan_name           VARCHAR(255),                    -- display label for the plan (operator dashboard)
     door_name           VARCHAR(255),                    -- display label for the hardware group/door
     status              VARCHAR(50)  DEFAULT 'active',   -- 'active', 'excluded' — for "Not managed" display
-    wix_status          VARCHAR(20)  DEFAULT 'active',   -- 'active', 'archived' — tracks Wix plan lifecycle (health check reconciliation)
+    source_status       VARCHAR(20)  DEFAULT 'active',   -- 'active', 'archived' — tracks source platform plan lifecycle (health check reconciliation)
     access_type         VARCHAR(50)  DEFAULT 'group',    -- Hardware access object type: 'group' (Kisi), 'zone'/'door' (future Seam)
     allow_multiple      BOOLEAN      DEFAULT false,      -- Multi-member: plan allows additional members (deferred post-HOG)
     max_members         INTEGER      DEFAULT 1,          -- Multi-member: max members per plan holder (deferred post-HOG)

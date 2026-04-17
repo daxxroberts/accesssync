@@ -1395,9 +1395,9 @@ async function _provisionClient() {
       hardware_platform:  state.hardwarePlatform || (state.tier === 'Connect' ? 'kisi' : 'seam'),
       source_site_id:         state.siteId      || null,   // Source platform site ID (for API calls + webhook routing)
       platform_instance_id:   state.instanceId  || null,   // Platform app installation ID (for portal auth)
-      site_name:          state.siteName    || null,
+      source_site_name:   state.siteName    || null,
       notification_email: state.email       || null,
-      wix_api_key:        state.wixApiKey   || null,
+      source_api_key:     state.wixApiKey   || null,
     }),
   });
   if (!clientRes.ok) {

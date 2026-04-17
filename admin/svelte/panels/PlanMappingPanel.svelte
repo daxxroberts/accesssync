@@ -129,7 +129,7 @@
         resolvedPlans.push({
           ...m, mappingId: m.id,
           planName:  m.plan_name || m.planName || '—',
-          wixStatus: m.wix_status || 'active',
+          sourceStatus: m.source_status || 'active',
           groups:    mGroups,
         });
       }
@@ -455,7 +455,7 @@
         {#each plans as plan (plan.mappingId)}
           {@const connected  = plan.groups && plan.groups.length > 0}
           {@const dimmed      = dimmedPlanIds.has(plan.mappingId)}
-          {@const archived    = plan.wixStatus === 'archived'}
+          {@const archived    = plan.sourceStatus === 'archived'}
           {@const deadGroups  = (plan.groups || []).filter(g => g.healthStatus === 'not_found').length}
           <div
             class="pm-node"

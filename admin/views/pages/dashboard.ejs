@@ -725,7 +725,7 @@
           } else if (syncN) { syncN.textContent = 'Never'; }
           // Update platform details from live client data
           var wixDetail = document.getElementById('wix-platform-detail');
-          if (wixDetail) wixDetail.textContent = c.site_url ? c.site_url.replace(/^https?:\/\//, '') + ' · Webhooks active' : 'Webhooks active';
+          if (wixDetail) wixDetail.textContent = c.source_site_url ? c.source_site_url.replace(/^https?:\/\//, '') + ' · Webhooks active' : 'Webhooks active';
           var hwDetail = document.getElementById('hardware-platform-detail');
           if (hwDetail) {
             var hwParts = [];

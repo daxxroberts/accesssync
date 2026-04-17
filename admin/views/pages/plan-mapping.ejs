@@ -548,7 +548,7 @@
         headerTags += '</div>';
       }
 
-      var archivedBadge = plan.wixStatus === 'archived' ? '<span class="plan-badge-archived">Archived</span>' : '';
+      var archivedBadge = plan.sourceStatus === 'archived' ? '<span class="plan-badge-archived">Archived</span>' : '';
 
       var headerHTML =
         '<div class="plan-card-header">' +
@@ -570,7 +570,7 @@
       var bodyHTML = '<div class="plan-card-body">';
 
       // ── Archived plan notice ──
-      if (plan.wixStatus === 'archived') {
+      if (plan.sourceStatus === 'archived') {
         bodyHTML += '<div class="plan-archived-subtitle">'
           + 'This plan has been archived on Wix. Members with active subscriptions keep their access until their billing cycle ends.'
           + '</div>';
@@ -1276,7 +1276,7 @@
                   maxMembers: m.max_members || 1,
                   groupIds: groupIds,
                   status: m.status || 'inactive',
-                  wixStatus: m.wix_status || 'active',
+                  sourceStatus: m.source_status || 'active',
                   _groupHealthMap: groupHealthMap,
                   _staleAffectedMembers: staleAffectedMembers,
                   activeHolders: 0,
