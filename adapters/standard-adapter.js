@@ -160,15 +160,20 @@ class StandardAdapter {
    * @param {string} apiKey
    * @returns {string} hardware user ID
    */
-  async resolveIdentity(memberId, email, name, hardwarePlatform, apiKey) {
-    // 1. DB cache check
+  async resolveIdentity(memberId, email, name, hardwarePlatform, apiKey, opts = {}) {
+    // OB-80: caller may force re-resolution after a hardware 404 on the cached ID.
+    // This bypasses the DB cache, looks up by email again, and returns the current Kisi user ID.
+    const { force = false } = opts;
+
+    // 1. DB cache check (skipped when force=true)
     const cached = await db.query(
       'SELECT hardware_user_id FROM member_identity WHERE id = $1',
       [memberId]
     );
-    if (cached.rows[0]?.hardware_user_id) {
+    const priorHardwareUserId = cached.rows[0]?.hardware_user_id || null;
+    if (!force && priorHardwareUserId) {
       log.info('adapter.identity_cache_hit', { memberId });
-      return cached.rows[0].hardware_user_id;
+      return priorHardwareUserId;
     }
 
     // 2. Look up by email in hardware system
@@ -182,13 +187,29 @@ class StandardAdapter {
       hardwareUserId = await hardwareAdapter.createUser(hardwarePlatform, apiKey, email, name);
     }
 
+    const newHardwareUserId = String(hardwareUserId);
+
+    // OB-80: If a prior hardware_user_id existed and we just resolved to a different one,
+    // the original Kisi user was deleted and replaced. The old role_assignment_id and source
+    // rows point at a dead Kisi user — they'll 404 on the next revoke and silently rot.
+    // Purge them so the new grant writes clean rows.
+    if (priorHardwareUserId && priorHardwareUserId !== newHardwareUserId) {
+      log.warn('adapter.identity_replaced', {
+        memberId,
+        priorHardwareUserId,
+        newHardwareUserId,
+      });
+      await db.query(`DELETE FROM member_role_assignments WHERE member_id = $1`, [memberId]);
+      await db.query(`DELETE FROM member_access_sources   WHERE member_id = $1`, [memberId]);
+    }
+
     // Cache hardware user ID to DB
     await db.query(
       `UPDATE member_identity SET hardware_user_id = $1, updated_at = NOW() WHERE id = $2`,
-      [String(hardwareUserId), memberId]
+      [newHardwareUserId, memberId]
     );
 
-    return String(hardwareUserId);
+    return newHardwareUserId;
   }
 
   /**
