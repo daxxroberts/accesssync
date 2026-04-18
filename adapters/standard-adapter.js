@@ -512,7 +512,7 @@ class StandardAdapter {
       return null;
     }
 
-    // Tier 1: Wix Members API
+    // Tier 1: Wix Members API (two-call: Members → Contacts for email/name)
     try {
       const clientRow = (await db.query(
         `SELECT source_api_key, source_site_id FROM clients WHERE id = $1`,
@@ -526,7 +526,41 @@ class StandardAdapter {
           wixApiKey, clientRow.source_site_id, platformMemberId
         );
         if (member && member.email) {
-          return { email: member.email, name: member.name || member.email, source: 'wix_members_api' };
+          // DR-001-A narrow Gate 2 write path — cache the recovered identity on
+          // member_identity so (a) subsequent sync runs don't re-call Wix for the
+          // same member (rate-limit friendliness), (b) the Members page shows a
+          // real name instead of a UUID. Null-coalesce: never overwrite an
+          // existing non-null field with null from a partial Wix response.
+          await db.query(
+            `UPDATE member_identity
+             SET email        = COALESCE($2, email),
+                 first_name   = COALESCE($3, first_name),
+                 last_name    = COALESCE($4, last_name),
+                 display_name = COALESCE($5, display_name),
+                 phone        = COALESCE($6, phone),
+                 updated_at   = NOW()
+             WHERE id = $1`,
+            [
+              memberId,
+              member.email,
+              member.firstName,
+              member.lastName,
+              member.name,
+              member.phone,
+            ]
+          ).catch(err => {
+            log.warn('adapter.identity.gate2_cache_write_failed', { memberId, code: err.code }, err);
+            // Not fatal — caller still gets the recovered data via return value.
+          });
+
+          return {
+            email: member.email,
+            name:  member.name || member.email,
+            firstName: member.firstName || null,
+            lastName:  member.lastName  || null,
+            phone:     member.phone     || null,
+            source: 'wix_members_api',
+          };
         }
         log.warn('adapter.identity.gate2_tier1_no_email', {
           memberId, platformMemberId, memberFound: !!member,

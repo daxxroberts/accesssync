@@ -83,26 +83,121 @@ function _isSyntheticEmail(email) {
   return /@users\.wix\.com$/i.test(email);
 }
 
+/**
+ * Collect all email candidates from a Contacts API contact object.
+ * Returns [] if none present. Filtering of synthetic addresses happens at the caller.
+ */
+function _collectContactEmails(contact) {
+  const primary = contact?.primaryInfo?.email || null;
+  const items   = (contact?.info?.emails?.items || [])
+    .map(item => item?.email)
+    .filter(Boolean);
+  // De-dupe while preserving order (primary first if present).
+  const seen = new Set();
+  const out  = [];
+  for (const candidate of [primary, ...items]) {
+    if (candidate && !seen.has(candidate)) {
+      seen.add(candidate);
+      out.push(candidate);
+    }
+  }
+  return out;
+}
+
+/**
+ * Extract first/last name from a Contacts API contact object.
+ * Falls back through: info.name, extendedFields displayByFirstName, profile nickname.
+ */
+function _extractName(contact, memberProfile) {
+  const first = contact?.info?.name?.first || null;
+  const last  = contact?.info?.name?.last  || null;
+  if (first || last) {
+    return {
+      firstName: first,
+      lastName:  last,
+      name:      [first, last].filter(Boolean).join(' ').trim() || null,
+    };
+  }
+  // Fallback: Contacts extendedFields
+  const displayFirst = contact?.info?.extendedFields?.items?.['contacts.displayByFirstName'] || null;
+  if (displayFirst) {
+    const parts = displayFirst.trim().split(/\s+/);
+    return {
+      firstName: parts[0] || null,
+      lastName:  parts.slice(1).join(' ') || null,
+      name:      displayFirst,
+    };
+  }
+  // Fallback: Members profile nickname (e.g. Google OAuth passes full name here)
+  const nickname = memberProfile?.nickname || null;
+  if (nickname) {
+    const parts = nickname.trim().split(/\s+/);
+    return {
+      firstName: parts[0] || null,
+      lastName:  parts.slice(1).join(' ') || null,
+      name:      nickname,
+    };
+  }
+  return { firstName: null, lastName: null, name: null };
+}
+
+/**
+ * Fetch the Wix Contact record keyed by contactId.
+ * Separate call because Wix's data model separates Members (membership/login state)
+ * from Contacts (CRM/identity — email, phone, name, addresses). A single memberId
+ * always points to exactly one contactId; the contact carries the deliverable fields.
+ * Returns the contact object or null on 404. Throws on other errors.
+ */
+async function _getContactById(apiKey, siteId, contactId) {
+  try {
+    const data = await wixFetch(`/contacts/v4/contacts/${contactId}`, apiKey, siteId);
+    return data.contact || null;
+  } catch (err) {
+    if (err.statusCode === 404) {
+      log.warn('wix.contact.not_found', { contactId });
+      return null;
+    }
+    throw err;
+  }
+}
+
 async function getMemberById(apiKey, siteId, platformMemberId) {
   try {
-    const data = await wixFetch(`/members/v1/members/${platformMemberId}`, apiKey, siteId);
-    const m = data.member;
+    const memberData = await wixFetch(`/members/v1/members/${platformMemberId}`, apiKey, siteId);
+    const m = memberData.member;
     if (!m) {
       log.warn('wix.member.empty_response', { platformMemberId });
       return null;
     }
 
-    const firstName = m.contact?.firstName || null;
-    const lastName  = m.contact?.lastName  || null;
-    const composed  = [firstName, lastName].filter(Boolean).join(' ').trim() || null;
+    // Step 2 — follow the contactId pointer. Wix's Members API returns an
+    // identity stub (id, status, contactId, profile.nickname). The deliverable
+    // fields (email, phone, first/last name) live on the Contacts record.
+    // Confirmed empirically 2026-04-18 against HOG member — Members response
+    // had no email/name/contact fields at all; Contacts response had everything.
+    let contact = null;
+    if (m.contactId) {
+      try {
+        contact = await _getContactById(apiKey, siteId, m.contactId);
+      } catch (err) {
+        // Contact-fetch failure is recoverable — we can still return what the
+        // Members API gave us (id, status, nickname). Caller decides.
+        log.warn('wix.contact.fetch_failed', {
+          platformMemberId,
+          contactId: m.contactId,
+          httpStatus: err.statusCode,
+          code: err.code,
+        });
+      }
+    }
 
-    // Pick the first deliverable email across loginEmail + contact.emails[].
-    // Earlier version used `m.loginEmail || m.contact?.emails?.[0]` — which
-    // short-circuited on a truthy synthetic loginEmail and dropped a real
-    // contact-email fallback. Correct order: filter synthetics FIRST, then
-    // choose. Preserves the social-login escape hatch where the member has
-    // `abc@users.wix.com` as loginEmail but `real@example.com` on the contact.
-    const allCandidates  = [m.loginEmail, ...(m.contact?.emails || [])].filter(Boolean);
+    // Step 3 — collect email candidates from the Contacts record, then filter
+    // synthetic @users.wix.com addresses. Order: Contacts primaryInfo.email,
+    // then Contacts info.emails.items[]. Members API loginEmail field is
+    // absent in the current response shape but kept here as a last-resort
+    // candidate in case a future Wix response includes it.
+    const contactEmails = _collectContactEmails(contact);
+    const allCandidates = [...(m.loginEmail ? [m.loginEmail] : []), ...contactEmails];
     const realCandidates = allCandidates.filter(e => !_isSyntheticEmail(e));
     const email          = realCandidates[0] || null;
     const rejectedCount  = allCandidates.length - realCandidates.length;
@@ -117,19 +212,26 @@ async function getMemberById(apiKey, siteId, platformMemberId) {
       });
     }
 
+    // Step 4 — resolve name from Contacts, with fallbacks.
+    const { firstName, lastName, name } = _extractName(contact, m.profile);
+
     const result = {
       memberId:  m.id || platformMemberId,
+      contactId: m.contactId || null,
       email,
       firstName,
       lastName,
-      name:      composed,
+      name,
+      phone:     contact?.primaryInfo?.phone || contact?.info?.phones?.items?.[0]?.phone || null,
       status:    m.status || null,
     };
 
     log.info('wix.member.resolved', {
       platformMemberId,
+      contactId: result.contactId,
       emailPresent: !!result.email,
       namePresent:  !!result.name,
+      phonePresent: !!result.phone,
       status:       result.status,
     });
 

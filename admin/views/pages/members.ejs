@@ -578,18 +578,26 @@
             return;
           }
           allMembers = d.members.map(function(m) {
-            var parts = (m.platform_member_id || '').split('_');
+            // Use real name/email fields when present. If Wix hasn't yet populated
+            // them (member created by reconciliation synthetic grant, or pending
+            // Gate 2 identity recovery), show a truncated memberId as a readable
+            // placeholder rather than the raw UUID or a fabricated @member address.
+            var shortId = (m.platform_member_id || '').slice(0, 8);
+            var hasRealName = !!(m.first_name || m.last_name || m.display_name);
+            var firstName = m.first_name || (m.display_name ? m.display_name.split(' ')[0] : null) || ('Member ' + shortId);
+            var lastName  = m.last_name  || (m.display_name ? m.display_name.split(' ').slice(1).join(' ') : '') || '';
             return {
               id: m.id,
-              firstName: parts[0] || m.platform_member_id || 'Member',
-              lastName: parts[1] || '',
-              email: m.platform_member_id + '@member',
+              firstName: firstName,
+              lastName: lastName,
+              email: m.email || '(pending identity)',
               phone: '',
               planId: '',
               role: 'holder',
               status: m.access_status || 'pending',
               addedDate: m.provisioned_at ? new Date(m.provisioned_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—',
-              holderId: null
+              holderId: null,
+              pendingIdentity: !hasRealName
             };
           });
           plans = [];

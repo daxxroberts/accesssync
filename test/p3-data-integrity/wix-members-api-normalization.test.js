@@ -1,26 +1,23 @@
 /**
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │  PRIORITY 3 — DATA INTEGRITY                                            │
- * │  Scenario: wix-members-api.getMemberById normalizes synthetic emails    │
+ * │  Scenario: wix-members-api.getMemberById resolves full identity         │
  * │                                                                         │
- * │  Business consequence: Wix issues placeholder <uuid>@users.wix.com      │
- * │  emails to social-login members. These addresses accept no mail. If     │
- * │  AccessSync treats them as real, Kisi creates a user with an            │
- * │  unreachable email and the Kisi onboarding invite goes nowhere — the    │
- * │  member pays and gets no access.                                        │
+ * │  Business consequence: OB-89 Gate 2 depends on this function returning  │
+ * │  real email + name. If it drops fields, members get parked as           │
+ * │  pending_identity even when Wix has their data.                         │
  * │                                                                         │
- * │  Contract: getMemberById normalises any @users.wix.com loginEmail to    │
- * │  null so Gate 2's recovery ladder treats the member as unqualified      │
- * │  and either finds a real email in the DB cache or parks as              │
- * │  pending_identity.                                                      │
+ * │  Wix data model (verified against HOG prod 2026-04-18): Members API     │
+ * │  returns an identity stub with contactId pointer. The deliverable       │
+ * │  fields (email, phone, name) live on the Contacts record. Two API       │
+ * │  calls required.                                                         │
  * │                                                                         │
- * │  Standards register: AccessSync/STANDARDS.md → Best Practices (synthetic │
- * │  email handling is a 2026-04-17 Builder decision).                       │
+ * │  Also enforces: @users.wix.com synthetic addresses are rejected so      │
+ * │  Kisi onboarding invites don't go to unreachable Wix-internal inboxes.  │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
-// Rate limiter would otherwise delay each test 100ms+. Mock it to a no-op so
-// the normalization tests run instantly and don't consume the real window.
+// Rate limiter would delay each test 100ms+. Mock to a no-op for speed.
 jest.mock('../../core/rate-limiter', () => ({
   RateLimiter: class {
     constructor() {}
@@ -31,125 +28,177 @@ jest.mock('../../core/rate-limiter', () => ({
 
 const { getMemberById } = require('../../adapters/wix/wix-members-api');
 
-function stubFetch(responseJson) {
-  global.fetch = jest.fn(async () => ({
-    ok: true,
-    json: async () => responseJson,
-  }));
+/**
+ * Stub global.fetch to route by URL pattern:
+ *   /members/v1/members/{id}  → memberResponse
+ *   /contacts/v4/contacts/{id} → contactResponse (or null for 404)
+ * Pass contactResponse = 404 to simulate a missing contact record.
+ */
+function stubFetchPair(memberResponse, contactResponse) {
+  global.fetch = jest.fn(async (url) => {
+    if (url.includes('/members/v1/members/')) {
+      return {
+        ok: memberResponse !== 404,
+        status: memberResponse === 404 ? 404 : 200,
+        json: async () => memberResponse,
+        text: async () => '',
+      };
+    }
+    if (url.includes('/contacts/v4/contacts/')) {
+      if (contactResponse === 404) {
+        return { ok: false, status: 404, json: async () => ({}), text: async () => 'not found' };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => contactResponse,
+        text: async () => '',
+      };
+    }
+    throw new Error(`unexpected fetch URL in test: ${url}`);
+  });
 }
 
 afterEach(() => {
   delete global.fetch;
+  jest.clearAllMocks();
 });
 
-describe('[P3] wix-members-api — synthetic email normalization', () => {
+describe('[P3] wix-members-api — Members → Contacts two-call pattern', () => {
 
-  test('rejects @users.wix.com loginEmail (lowercase)', async () => {
-    stubFetch({
-      member: {
-        id: 'wix-member-abc',
-        loginEmail: 'abc-uuid@users.wix.com',
-        contact: { firstName: 'Alex', lastName: 'Example' },
-        status: 'ACTIVE',
-      },
-    });
-    const result = await getMemberById('api-key', 'site-id', 'wix-member-abc');
-    expect(result.email).toBeNull();
-    // Name is still preserved even when email is rejected.
-    expect(result.name).toBe('Alex Example');
+  test('resolves full identity from Contacts API when Members returns only a stub', async () => {
+    // Real shape observed in HOG production 2026-04-18 for a Google OAuth member.
+    stubFetchPair(
+      { member: { id: 'm1', status: 'UNKNOWN', contactId: 'c1', profile: { nickname: 'Daxx Roberts' } } },
+      { contact: {
+        id: 'c1',
+        primaryInfo: { email: 'daxxroberts@gmail.com', phone: '4796512096' },
+        info: {
+          name: { first: 'Daxx', last: 'Roberts' },
+          emails: { items: [{ tag: 'UNTAGGED', email: 'daxxroberts@gmail.com', primary: true }] },
+        },
+      } }
+    );
+    const r = await getMemberById('api-key', 'site-id', 'm1');
+    expect(r.email).toBe('daxxroberts@gmail.com');
+    expect(r.firstName).toBe('Daxx');
+    expect(r.lastName).toBe('Roberts');
+    expect(r.name).toBe('Daxx Roberts');
+    expect(r.phone).toBe('4796512096');
+    expect(r.contactId).toBe('c1');
   });
 
-  test('rejects @Users.Wix.Com loginEmail (mixed case — regex is case-insensitive)', async () => {
-    stubFetch({
-      member: {
-        id: 'wix-member-abc',
-        loginEmail: 'SomeUUID@Users.Wix.Com',
-        contact: { firstName: 'Case', lastName: 'Insensitive' },
-        status: 'ACTIVE',
-      },
-    });
-    const result = await getMemberById('api-key', 'site-id', 'wix-member-abc');
-    expect(result.email).toBeNull();
+  test('falls back to Members profile nickname when Contacts has no name fields', async () => {
+    stubFetchPair(
+      { member: { id: 'm2', status: 'ACTIVE', contactId: 'c2', profile: { nickname: 'Jane Smith' } } },
+      { contact: { id: 'c2', primaryInfo: { email: 'jane@example.com' }, info: {} } }
+    );
+    const r = await getMemberById('api-key', 'site-id', 'm2');
+    expect(r.email).toBe('jane@example.com');
+    expect(r.firstName).toBe('Jane');
+    expect(r.lastName).toBe('Smith');
+    expect(r.name).toBe('Jane Smith');
+  });
+
+  test('returns partial result when Contacts API 404s (contact deleted or never created)', async () => {
+    stubFetchPair(
+      { member: { id: 'm3', status: 'ACTIVE', contactId: 'c3', profile: { nickname: 'Solo Member' } } },
+      404
+    );
+    const r = await getMemberById('api-key', 'site-id', 'm3');
+    // Email unresolved but name falls back to nickname; memberId + status preserved.
+    expect(r.email).toBeNull();
+    expect(r.name).toBe('Solo Member');
+    expect(r.contactId).toBe('c3');
+  });
+
+  test('returns partial result when Members API has no contactId pointer at all', async () => {
+    stubFetchPair(
+      { member: { id: 'm4', status: 'ACTIVE', profile: { nickname: 'No Contact' } } },
+      null // never called
+    );
+    const r = await getMemberById('api-key', 'site-id', 'm4');
+    expect(r.email).toBeNull();
+    expect(r.contactId).toBeNull();
+    expect(r.name).toBe('No Contact');
+  });
+});
+
+describe('[P3] wix-members-api — synthetic email rejection', () => {
+
+  test('rejects @users.wix.com primary email, falls through to info.emails[]', async () => {
+    stubFetchPair(
+      { member: { id: 'm5', status: 'ACTIVE', contactId: 'c5' } },
+      { contact: {
+        id: 'c5',
+        primaryInfo: { email: 'uuid@users.wix.com' },
+        info: {
+          name: { first: 'Real', last: 'Fallback' },
+          emails: {
+            items: [
+              { email: 'uuid@users.wix.com', primary: true },
+              { email: 'real@example.com', primary: false },
+            ],
+          },
+        },
+      } }
+    );
+    const r = await getMemberById('api-key', 'site-id', 'm5');
+    expect(r.email).toBe('real@example.com');
+  });
+
+  test('rejects mixed-case @Users.Wix.Com (regex is case-insensitive)', async () => {
+    stubFetchPair(
+      { member: { id: 'm6', status: 'ACTIVE', contactId: 'c6' } },
+      { contact: {
+        id: 'c6',
+        primaryInfo: { email: 'SomeUUID@Users.Wix.Com' },
+        info: { name: { first: 'Case', last: 'Test' } },
+      } }
+    );
+    const r = await getMemberById('api-key', 'site-id', 'm6');
+    expect(r.email).toBeNull();
   });
 
   test('real email passes through unchanged', async () => {
-    stubFetch({
-      member: {
-        id: 'wix-member-xyz',
-        loginEmail: 'real@example.com',
-        contact: { firstName: 'Real', lastName: 'User' },
-        status: 'ACTIVE',
-      },
-    });
-    const result = await getMemberById('api-key', 'site-id', 'wix-member-xyz');
-    expect(result.email).toBe('real@example.com');
+    stubFetchPair(
+      { member: { id: 'm7', status: 'ACTIVE', contactId: 'c7' } },
+      { contact: {
+        id: 'c7',
+        primaryInfo: { email: 'real@example.com' },
+        info: { name: { first: 'Real', last: 'User' } },
+      } }
+    );
+    const r = await getMemberById('api-key', 'site-id', 'm7');
+    expect(r.email).toBe('real@example.com');
   });
 
-  test('email that merely contains "wix.com" elsewhere passes through (not synthetic)', async () => {
-    stubFetch({
-      member: {
-        id: 'wix-member-xyz',
-        loginEmail: 'owner@mywixstore.com',
-        contact: { firstName: 'Owner', lastName: 'Store' },
-        status: 'ACTIVE',
-      },
-    });
-    const result = await getMemberById('api-key', 'site-id', 'wix-member-xyz');
-    // The regex is @users.wix.com$ specifically — random .com TLD is fine.
-    expect(result.email).toBe('owner@mywixstore.com');
+  test('non-synthetic domain that merely contains "wix" passes through', async () => {
+    // The regex is @users.wix.com$ specifically — not any *.wix.* domain.
+    stubFetchPair(
+      { member: { id: 'm8', status: 'ACTIVE', contactId: 'c8' } },
+      { contact: {
+        id: 'c8',
+        primaryInfo: { email: 'owner@mywixstore.com' },
+        info: { name: { first: 'Owner', last: 'Store' } },
+      } }
+    );
+    const r = await getMemberById('api-key', 'site-id', 'm8');
+    expect(r.email).toBe('owner@mywixstore.com');
   });
 
-  test('falls back to contact.emails[0] when loginEmail is missing', async () => {
-    stubFetch({
-      member: {
-        id: 'wix-member-xyz',
-        loginEmail: null,
-        contact: {
-          firstName: 'Contact', lastName: 'Fallback',
-          emails: ['contact-fallback@example.com'],
+  test('all candidates synthetic → returns null email', async () => {
+    stubFetchPair(
+      { member: { id: 'm9', status: 'ACTIVE', contactId: 'c9' } },
+      { contact: {
+        id: 'c9',
+        primaryInfo: { email: 'primary@users.wix.com' },
+        info: {
+          emails: { items: [{ email: 'backup@users.wix.com', primary: false }] },
         },
-        status: 'ACTIVE',
-      },
-    });
-    const result = await getMemberById('api-key', 'site-id', 'wix-member-xyz');
-    expect(result.email).toBe('contact-fallback@example.com');
-  });
-
-  test('synthetic loginEmail + real contact email → picks the real one (not null)', async () => {
-    // Regression guard. Prior ordering — `m.loginEmail || m.contact?.emails?.[0]`
-    // — short-circuited on the truthy synthetic and then got null'd by the
-    // _isSyntheticEmail check, dropping the real fallback entirely. Correct
-    // behaviour: filter synthetics FIRST, then pick the first real candidate.
-    stubFetch({
-      member: {
-        id: 'wix-member-social',
-        loginEmail: 'social-uuid@users.wix.com',       // ← synthetic, ignored
-        contact: {
-          firstName: 'Social', lastName: 'Member',
-          emails: ['real-member@example.com'],          // ← this should win
-        },
-        status: 'ACTIVE',
-      },
-    });
-    const result = await getMemberById('api-key', 'site-id', 'wix-member-social');
-    expect(result.email).toBe('real-member@example.com');
-  });
-
-  test('synthetic loginEmail AND only synthetic contact emails → returns null', async () => {
-    // Edge case: even the contact array is full of Wix-internal placeholders.
-    // Nothing deliverable exists — result.email must be null so Gate 2 parks.
-    stubFetch({
-      member: {
-        id: 'wix-member-all-synthetic',
-        loginEmail: 'primary@users.wix.com',
-        contact: {
-          firstName: 'All', lastName: 'Synthetic',
-          emails: ['backup@users.wix.com'],
-        },
-        status: 'ACTIVE',
-      },
-    });
-    const result = await getMemberById('api-key', 'site-id', 'wix-member-all-synthetic');
-    expect(result.email).toBeNull();
+      } }
+    );
+    const r = await getMemberById('api-key', 'site-id', 'm9');
+    expect(r.email).toBeNull();
   });
 });

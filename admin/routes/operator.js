@@ -1556,6 +1556,10 @@ router.get('/:clientId/members', async (req, res) => {
         `SELECT mi.id,
                 mi.platform_member_id,
                 mi.hardware_platform,
+                mi.display_name,
+                mi.first_name,
+                mi.last_name,
+                mi.email,
                 mas.status          AS access_status,
                 mas.provisioned_at
          FROM   member_identity mi
