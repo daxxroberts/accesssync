@@ -11,14 +11,22 @@
  */
 
 const { log } = require('../../core/logger');
+const { RateLimiter } = require('../../core/rate-limiter');
 
 const WIX_API_BASE = 'https://www.wixapis.com';
+
+// Shared limiter for this file. Wix documents a 10 req/sec REST cap.
+// Module-scoped so every caller of getMemberById contends against the same bucket —
+// critical for reconciliation runs that touch many orphans in rapid succession.
+const limiter = new RateLimiter({ rate: 10, windowMs: 1000, name: 'wix-members' });
 
 /**
  * Authenticated Wix REST request. Mirrors the pattern in wix-plans-api.js so the two
  * files stay independent — no cross-import surface expansion for what's a 5-line helper.
+ * Awaits the shared rate limiter before every call.
  */
 async function wixFetch(path, apiKey, siteId, options = {}) {
+  await limiter.acquire();
   const url = `${WIX_API_BASE}${path}`;
   const res = await fetch(url, {
     method: options.method || 'GET',
@@ -62,10 +70,19 @@ async function wixFetch(path, apiKey, siteId, options = {}) {
  * or throws on API failure. Returns null only if the API returns 200 but the member
  * object is unexpectedly empty (shouldn't happen — but safe guard).
  *
- * Note on synthetic emails: Wix sometimes issues placeholder `<uuid>@users.wix.com`
- * emails for members who signed up via social login. These are technically valid and
- * unique — caller decides whether to treat them as recoverable identity or reject.
+ * Synthetic email handling (Builder decision 2026-04-17): Wix issues placeholder
+ * `<uuid>@users.wix.com` emails for members who signed up via social login. These
+ * are Wix-internal addresses the member cannot receive mail at — Kisi onboarding
+ * invites sent to them would never be read. We treat them as equivalent to null so
+ * Gate 2 falls through to tier 2 (DB cache) and ultimately parks as pending_identity
+ * if no real address is found. The member waits for a future event that carries a
+ * real email rather than getting access with an unreachable inbox.
  */
+function _isSyntheticEmail(email) {
+  if (!email) return false;
+  return /@users\.wix\.com$/i.test(email);
+}
+
 async function getMemberById(apiKey, siteId, platformMemberId) {
   try {
     const data = await wixFetch(`/members/v1/members/${platformMemberId}`, apiKey, siteId);
@@ -79,9 +96,30 @@ async function getMemberById(apiKey, siteId, platformMemberId) {
     const lastName  = m.contact?.lastName  || null;
     const composed  = [firstName, lastName].filter(Boolean).join(' ').trim() || null;
 
+    // Pick the first deliverable email across loginEmail + contact.emails[].
+    // Earlier version used `m.loginEmail || m.contact?.emails?.[0]` — which
+    // short-circuited on a truthy synthetic loginEmail and dropped a real
+    // contact-email fallback. Correct order: filter synthetics FIRST, then
+    // choose. Preserves the social-login escape hatch where the member has
+    // `abc@users.wix.com` as loginEmail but `real@example.com` on the contact.
+    const allCandidates  = [m.loginEmail, ...(m.contact?.emails || [])].filter(Boolean);
+    const realCandidates = allCandidates.filter(e => !_isSyntheticEmail(e));
+    const email          = realCandidates[0] || null;
+    const rejectedCount  = allCandidates.length - realCandidates.length;
+    if (rejectedCount > 0) {
+      log.warn('wix.member.synthetic_email_rejected', {
+        platformMemberId,
+        rejectedCount,
+        rejectedDomains: allCandidates
+          .filter(e => _isSyntheticEmail(e))
+          .map(e => e.split('@')[1] || null),
+        realFallbackUsed: !!email,
+      });
+    }
+
     const result = {
       memberId:  m.id || platformMemberId,
-      email:     m.loginEmail || m.contact?.emails?.[0] || null,
+      email,
       firstName,
       lastName,
       name:      composed,

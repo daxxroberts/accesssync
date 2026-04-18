@@ -11,13 +11,20 @@
  */
 
 const { log } = require('../../core/logger');
+const { RateLimiter } = require('../../core/rate-limiter');
 
 const WIX_API_BASE = 'https://www.wixapis.com';
+
+// Shared limiter for this file. Wix documents a 10 req/sec REST cap.
+// Module-scoped — every caller of listPricingPlans / listBookingServices / etc. contends
+// against the same bucket. Critical for nightly reconciliation which page-walks orders.
+const limiter = new RateLimiter({ rate: 10, windowMs: 1000, name: 'wix-plans' });
 
 /**
  * Make an authenticated request to the Wix REST API.
  */
 async function wixFetch(path, apiKey, siteId, options = {}) {
+  await limiter.acquire();
   const url = `${WIX_API_BASE}${path}`;
   const res = await fetch(url, {
     method: options.method || 'GET',

@@ -186,6 +186,30 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 
 ---
 
+## Standards Register Protocol — MANDATORY
+
+`AccessSync/STANDARDS.md` is the living log of proven patterns across five domains: AI, logging, user experience, authentication, best practices. It is **append-only during capture phase** — distillation into formal specs happens after enough entries accumulate.
+
+**Before any session starts building:** read the sections of STANDARDS.md relevant to what you're about to change. If you're touching a connector, read the Logging and Best Practices sections. If you're touching auth, read Authentication. If you're touching an operator-facing screen, read User Experience. This is non-negotiable — the standards are there specifically so new work doesn't have to re-derive patterns that already exist.
+
+**Before any session closes:** if you shipped a pattern that is worth repeating, add an entry to STANDARDS.md. Entry format is in the file header. Add it under the domain that fits best. If the pattern spans domains, pick the primary one and cross-reference.
+
+**When to add an entry:**
+- A new pattern proved itself in production (at least one real implementation in the repo).
+- You chose a non-obvious path and the reasoning will be forgotten in three months.
+- You made a decision that future work should follow rather than re-decide.
+
+**When NOT to add an entry:**
+- A speculative "here's what we might do." Wait for real code.
+- A minor style preference with no functional impact.
+- A duplicate of an existing entry — extend the existing one instead.
+
+**KEEPER gate:** on session close, if code changed in `core/` or `adapters/` and no corresponding STANDARDS.md entry exists, KEEPER flags the session as incomplete and asks the Builder whether an entry is warranted. Silence is not approval — explicit "no entry needed" is the close condition.
+
+**Enforcement gate:** the patterns marked as enforced in STANDARDS.md have corresponding tests in `test/p3-data-integrity/`. Example: "Never use raw `console.*`" has `no-raw-console.test.js`. When a future pattern becomes enforceable, add the test alongside the entry — mechanical enforcement is what keeps the standard from decaying.
+
+---
+
 ## Front Matter Protocol
 
 Every file in `core/` and `admin/views/` has a front matter comment block at the top. JS files use `/** @tag */`, EJS files use `<%# @tag %>`.
@@ -525,6 +549,7 @@ REX will not allow build work to begin until this statement is made.
 **Vault version:** 2.0.0 (as of 2026-04-03)
 **Start here:** `AccessSync/00_START_HERE.md`
 **Open items:** `AccessSync/open_items.md`
+**Standards register:** `AccessSync/STANDARDS.md` — living log of proven patterns (AI, logging, UX, auth, best practices)
 **Decisions:** `AccessSync/13_Decision_Records/DECISION_LOG.md`
 **Data model:** `AccessSync/04_Data/Data_Model.md`
 **Integration specs:** `AccessSync/05_Integrations/`

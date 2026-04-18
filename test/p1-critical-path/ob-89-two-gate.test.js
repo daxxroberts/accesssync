@@ -244,3 +244,68 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
     expect(lastCall[0]).toMatch(/pending_identity/);
   });
 });
+
+// ─── Follow-up guardrails (standards-register-and-guardrails branch) ────────
+
+describe('[P1] Gate 2 — _parkPendingIdentity clears the in_flight lock', () => {
+
+  test('the park UPDATE sets status=pending_identity AND in_flight=FALSE in one statement', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })           // cache miss
+      .mockResolvedValueOnce({ rows: [{ source_api_key: null, source_site_id: null }] }) // no Wix key
+      .mockResolvedValueOnce({ rows: [{ email: null, display_name: null, first_name: null, last_name: null }] }) // DB cache empty
+      .mockResolvedValueOnce({ rowCount: 1 });                                  // park UPDATE
+
+    const result = await standardAdapter.resolveIdentity(
+      MEMBER_ID, null, null, 'kisi', 'kisi-api-key',
+      { tenantId: TENANT_ID, platformMemberId: PLATFORM_MEMBER_ID }
+    );
+
+    expect(result).toBeNull();
+    const parkCall = db.query.mock.calls[db.query.mock.calls.length - 1];
+    const parkSql  = parkCall[0];
+    // Both clauses must appear in the same UPDATE — regression guard against a future
+    // edit that parks the status but leaves in_flight = TRUE (member would be stuck).
+    expect(parkSql).toMatch(/UPDATE member_access_state/);
+    expect(parkSql).toMatch(/status\s*=\s*'pending_identity'/);
+    expect(parkSql).toMatch(/in_flight\s*=\s*FALSE/);
+  });
+});
+
+describe('[P1] Gate 2 — synthetic @users.wix.com emails are rejected as unqualified', () => {
+
+  test('Wix Members API returning a @users.wix.com email → Gate 2 falls through to DB cache', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })            // cache miss
+      .mockResolvedValueOnce({ rows: [{ source_api_key: 'enc-wix-key', source_site_id: 'site-123' }] })
+      // DB cache has a real email from a prior event
+      .mockResolvedValueOnce({ rows: [{
+        email: 'chad@houseofgains.com', display_name: 'Chad Owner',
+        first_name: 'Chad', last_name: 'Owner',
+      }] })
+      .mockResolvedValueOnce({ rowCount: 1 });                                  // member_identity UPDATE
+
+    // Wix Members API returns a synthetic address — wix-members-api.js normalises it
+    // to null before returning. Gate 2 tier 1 returns null email → falls to Tier 2 DB cache.
+    wixMembersApi.getMemberById.mockResolvedValue({
+      memberId:  PLATFORM_MEMBER_ID,
+      email:     null,                      // ← synthetic was rejected upstream in wix-members-api
+      firstName: null,
+      lastName:  null,
+      name:      null,
+      status:    'ACTIVE',
+    });
+    kisiAdapter.findUserByEmail.mockResolvedValue(null);
+    kisiAdapter.createUser.mockResolvedValue(KISI_USER_ID);
+
+    const hardwareUserId = await standardAdapter.resolveIdentity(
+      MEMBER_ID, null, null, 'kisi', 'kisi-api-key',
+      { tenantId: TENANT_ID, platformMemberId: PLATFORM_MEMBER_ID }
+    );
+
+    expect(hardwareUserId).toBe(String(KISI_USER_ID));
+    expect(kisiAdapter.createUser).toHaveBeenCalledWith(
+      'kisi-api-key', 'chad@houseofgains.com', 'Chad Owner'
+    );
+  });
+});
