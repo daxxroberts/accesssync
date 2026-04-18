@@ -184,7 +184,10 @@ CREATE INDEX idx_member_identity_plan_holder
 -- 7. Member Access State (Provisioning Status)
 --------------------------------------------------------
 -- Status values: pending_sync, in_flight, active, disabled, revoked, failed,
---                skipped_lockdown, pending_hardware
+--                skipped_lockdown, pending_hardware, pending_identity
+-- pending_identity (OB-89 Gate 2): grant parked — identity inputs (email, name) missing
+--   and could not be recovered via Wix Members API or DB cache. Waits for next webhook
+--   that carries the missing data. Not a failure; not a dead-letter.
 CREATE TABLE member_access_state (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     member_id           UUID NOT NULL REFERENCES member_identity(id) ON DELETE CASCADE,

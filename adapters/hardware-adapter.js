@@ -20,6 +20,59 @@
 const kisiAdapter = require('./kisi/kisi-adapter');
 const seamAdapter = require('./seam/seam-adapter');
 
+/**
+ * OB-89 Gate 1 — platform-agnostic required-field validator.
+ * Throws INVALID_HARDWARE_REQUEST before any Layer 6/7 call fires so null/empty
+ * inputs never reach the hardware API. Layer 3 (standard-adapter) catches this
+ * error and runs the recovery orchestrator (_recoverMissingEmail → pending_identity park).
+ *
+ * Per-platform required fields are declared in _requiredFields(). Adding a platform
+ * means adding a new platform key with that platform's input contract.
+ */
+function _requireFields(operation, inputs, requiredFields, hardwarePlatform) {
+  const missing = [];
+  for (const field of requiredFields) {
+    const val = inputs[field];
+    // Empty string, null, undefined all count as missing.
+    // Zero is a legitimate value; do not treat as missing (no zero-valued hardware inputs today).
+    if (val === null || val === undefined || (typeof val === 'string' && val.trim() === '')) {
+      missing.push(field);
+    }
+  }
+  if (missing.length === 0) return;
+
+  const err = new Error(
+    `INVALID_HARDWARE_REQUEST: ${operation} on ${hardwarePlatform} requires ${requiredFields.join(', ')}; missing ${missing.join(', ')}`
+  );
+  err.code = 'INVALID_HARDWARE_REQUEST';
+  err.missingFields = missing;
+  err.attemptedOperation = operation;
+  err.hardwarePlatform = hardwarePlatform;
+  err.inputs = inputs; // Full input map — Gate 2 uses to know what we already have vs need
+  throw err;
+}
+
+/**
+ * Per-platform required-field contract. Kisi today; Seam post-V1 adds its own row.
+ * If a future platform does not require an identifier Gate 2 can recover, do NOT add
+ * that identifier here — the validator only enforces fields Gate 2 or OB-91 can resolve.
+ */
+const _requiredFieldsByPlatform = {
+  kisi: {
+    findUserByEmail: ['email'],
+    createUser:      ['email', 'name'],
+    assignRole:      ['userId', 'groupId'],
+    removeRole:      ['roleAssignmentId'],
+    suspendAccess:   ['userId'],
+    enableAccess:    ['userId'],
+    deleteUser:      ['userId'],
+  },
+  seam: {
+    // TODO: populated when Seam adapter is built (post-V1).
+    // Keep the key present so unknown-platform validation does not accidentally allow calls.
+  },
+};
+
 class HardwareAdapter {
 
   _getAdapter(hardwarePlatform) {
@@ -28,6 +81,26 @@ class HardwareAdapter {
       case 'seam': return seamAdapter;
       default: throw new Error(`Unknown hardware platform: ${hardwarePlatform}`);
     }
+  }
+
+  /**
+   * Gate 1 — called at the top of every Layer 5 method.
+   * Throws INVALID_HARDWARE_REQUEST if any required field for this (platform, operation)
+   * is missing. Never does I/O. Standard adapter (Layer 3) catches and runs recovery.
+   */
+  _validate(hardwarePlatform, operation, inputs) {
+    const platformRules = _requiredFieldsByPlatform[hardwarePlatform];
+    if (!platformRules) {
+      // Unknown platform — _getAdapter will throw a clearer error, let it.
+      return;
+    }
+    const required = platformRules[operation];
+    if (!required) {
+      // No declared required fields for this operation on this platform — skip validation.
+      // This is a legitimate case (e.g. getLocks takes only the apiKey).
+      return;
+    }
+    _requireFields(operation, inputs, required, hardwarePlatform);
   }
 
   /**
@@ -44,10 +117,12 @@ class HardwareAdapter {
   }
 
   async findUserByEmail(hardwarePlatform, apiKey, email) {
+    this._validate(hardwarePlatform, 'findUserByEmail', { email });
     return this._getAdapter(hardwarePlatform).findUserByEmail(apiKey, email);
   }
 
   async createUser(hardwarePlatform, apiKey, email, name) {
+    this._validate(hardwarePlatform, 'createUser', { email, name });
     return this._getAdapter(hardwarePlatform).createUser(apiKey, email, name);
   }
 
@@ -57,22 +132,27 @@ class HardwareAdapter {
    * Adapters that do not support validUntil ignore the option safely.
    */
   async assignRole(hardwarePlatform, apiKey, userId, groupId, options = {}) {
+    this._validate(hardwarePlatform, 'assignRole', { userId, groupId });
     return this._getAdapter(hardwarePlatform).assignRole(apiKey, userId, groupId, options);
   }
 
   async removeRole(hardwarePlatform, apiKey, roleAssignmentId) {
+    this._validate(hardwarePlatform, 'removeRole', { roleAssignmentId });
     return this._getAdapter(hardwarePlatform).removeRole(apiKey, roleAssignmentId);
   }
 
   async suspendAccess(hardwarePlatform, apiKey, userId, contextMessage) {
+    this._validate(hardwarePlatform, 'suspendAccess', { userId });
     return this._getAdapter(hardwarePlatform).suspendAccess(apiKey, userId, contextMessage);
   }
 
   async enableAccess(hardwarePlatform, apiKey, userId) {
+    this._validate(hardwarePlatform, 'enableAccess', { userId });
     return this._getAdapter(hardwarePlatform).enableAccess(apiKey, userId);
   }
 
   async deleteUser(hardwarePlatform, apiKey, userId) {
+    this._validate(hardwarePlatform, 'deleteUser', { userId });
     return this._getAdapter(hardwarePlatform).deleteUser(apiKey, userId);
   }
 

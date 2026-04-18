@@ -148,12 +148,18 @@ describe('[P1] Queue worker grant flow — resolve → lock → provision → co
     );
 
     // Step 3: hardware identity resolved
+    // OB-89 Gate 2: queue-worker now passes { tenantId, platformMemberId } in opts so the
+    // standard adapter can run the Wix Members API recovery ladder on missing-email errors.
     expect(standardAdapter.resolveIdentity).toHaveBeenCalledWith(
       MEMBER_INTERNAL_ID,
       planPurchasedEvent.email,
       planPurchasedEvent.name,
       'kisi',
-      expect.any(String) // decrypted API key
+      expect.any(String), // decrypted API key
+      expect.objectContaining({
+        tenantId: HOG_CLIENT_ID,
+        platformMemberId: planPurchasedEvent.platformMemberId,
+      })
     );
 
     // Step 4: grant executed

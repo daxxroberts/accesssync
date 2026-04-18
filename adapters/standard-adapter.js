@@ -153,17 +153,28 @@ class StandardAdapter {
    *
    * Called only on grant path, after resolveAndLock() returns memberId.
    *
+   * OB-89 Gate 2 — when Layer 5 (hardware-adapter) throws INVALID_HARDWARE_REQUEST because
+   * email is missing, this method catches it and runs the recovery ladder:
+   *   (1) Wix Members API lookup by platformMemberId → pull loginEmail + name → retry.
+   *   (2) DB cache — check member_identity.email from a prior event → retry.
+   *   (3) Park as member_access_state.status='pending_identity', return null.
+   * Callers that receive null must treat the grant as parked (not failed).
+   *
    * @param {string} memberId          member_identity.id (UUID)
    * @param {string} email             fetched from Wix on-demand (not stored — data minimization)
    * @param {string} name
    * @param {string} hardwarePlatform  e.g. 'kisi'
    * @param {string} apiKey
-   * @returns {string} hardware user ID
+   * @param {Object} opts
+   * @param {boolean} [opts.force]     bypass DB cache (OB-80 stale ID purge)
+   * @param {string}  [opts.tenantId]  client UUID — required for Gate 2 recovery via Wix Members API
+   * @param {string}  [opts.platformMemberId]  Wix member ID — required for Gate 2 recovery
+   * @returns {string|null}            hardware user ID, or null if parked as pending_identity
    */
   async resolveIdentity(memberId, email, name, hardwarePlatform, apiKey, opts = {}) {
     // OB-80: caller may force re-resolution after a hardware 404 on the cached ID.
     // This bypasses the DB cache, looks up by email again, and returns the current Kisi user ID.
-    const { force = false } = opts;
+    const { force = false, tenantId = null, platformMemberId = null } = opts;
 
     // 1. DB cache check (skipped when force=true)
     const cached = await db.query(
@@ -176,15 +187,38 @@ class StandardAdapter {
       return priorHardwareUserId;
     }
 
-    // 2. Look up by email in hardware system
-    let hardwareUserId = await hardwareAdapter.findUserByEmail(hardwarePlatform, apiKey, email);
-
-    if (hardwareUserId) {
-      log.info('adapter.identity_found', { hardwarePlatform, hardwareUserId });
-    } else {
-      // 3. Create in hardware system
-      log.info('adapter.identity_creating', { hardwarePlatform, email });
-      hardwareUserId = await hardwareAdapter.createUser(hardwarePlatform, apiKey, email, name);
+    // OB-89 Gate 2: wrap the hardware calls. If Gate 1 (Layer 5 validator) throws
+    // INVALID_HARDWARE_REQUEST because inputs are missing, run the recovery ladder and retry.
+    let hardwareUserId;
+    try {
+      hardwareUserId = await this._callHardwareToResolveIdentity(
+        hardwarePlatform, apiKey, email, name
+      );
+    } catch (err) {
+      if (err.code === 'INVALID_HARDWARE_REQUEST' && err.missingFields?.includes('email')) {
+        // Gate 2 — attempt to recover the missing email.
+        log.warn('adapter.identity.gate2_recovery_triggered', {
+          memberId, platformMemberId, missingFields: err.missingFields,
+        });
+        const recovered = await this._recoverMissingEmail(memberId, tenantId, platformMemberId);
+        if (recovered && recovered.email) {
+          log.info('adapter.identity.gate2_recovered', {
+            memberId, recoveredVia: recovered.source,
+          });
+          hardwareUserId = await this._callHardwareToResolveIdentity(
+            hardwarePlatform, apiKey, recovered.email, recovered.name || name || recovered.email
+          );
+        } else {
+          // Ladder exhausted — park as pending_identity, return null to signal "parked, not failed".
+          log.warn('adapter.identity.parked_pending_identity', {
+            memberId, platformMemberId, reason: 'email_unrecoverable',
+          });
+          await this._parkPendingIdentity(memberId, tenantId, err.missingFields);
+          return null;
+        }
+      } else {
+        throw err;
+      }
     }
 
     const newHardwareUserId = String(hardwareUserId);
@@ -441,6 +475,118 @@ class StandardAdapter {
        DO UPDATE SET ${field} = client_activity_summary.${field} + 1, updated_at = NOW()`,
       [tenantId]
     );
+  }
+
+  // ── OB-89 Gate 2 helpers ────────────────────────────────────────────
+
+  /**
+   * Wrapper around hardware findUserByEmail + createUser. Isolated so Gate 2
+   * can call it twice — first with original inputs, again with recovered inputs.
+   */
+  async _callHardwareToResolveIdentity(hardwarePlatform, apiKey, email, name) {
+    let hardwareUserId = await hardwareAdapter.findUserByEmail(hardwarePlatform, apiKey, email);
+    if (hardwareUserId) {
+      log.info('adapter.identity_found', { hardwarePlatform, hardwareUserId });
+      return hardwareUserId;
+    }
+    log.info('adapter.identity_creating', { hardwarePlatform, email });
+    return hardwareAdapter.createUser(hardwarePlatform, apiKey, email, name);
+  }
+
+  /**
+   * OB-89 Gate 2 — recovery ladder for missing identity inputs (email today).
+   * Returns { email, name, source: 'wix_members_api' | 'db_cache' } on success, or null
+   * when every tier is exhausted. Caller (resolveIdentity) parks as pending_identity on null.
+   *
+   * Tier 1: Wix Members API lookup by platformMemberId. Authoritative — fetches current
+   *         loginEmail and name from Wix. Requires tenantId + platformMemberId in opts.
+   * Tier 2: DB cache — member_identity.email from a prior event (schema already supports
+   *         email; we just haven't been populating it). Fallback for when Members API fails.
+   * Tier 3: None — return null, caller parks.
+   */
+  async _recoverMissingEmail(memberId, tenantId, platformMemberId) {
+    if (!tenantId || !platformMemberId) {
+      log.warn('adapter.identity.gate2_skipped', {
+        memberId, reason: 'missing_tenantId_or_platformMemberId',
+      });
+      return null;
+    }
+
+    // Tier 1: Wix Members API
+    try {
+      const clientRow = (await db.query(
+        `SELECT source_api_key, source_site_id FROM clients WHERE id = $1`,
+        [tenantId]
+      )).rows[0];
+      if (clientRow?.source_api_key && clientRow?.source_site_id) {
+        const { decryptApiKey } = require('../core/crypto-utils');
+        const wixMembersApi    = require('./wix/wix-members-api');
+        const wixApiKey = decryptApiKey(clientRow.source_api_key);
+        const member = await wixMembersApi.getMemberById(
+          wixApiKey, clientRow.source_site_id, platformMemberId
+        );
+        if (member && member.email) {
+          return { email: member.email, name: member.name || member.email, source: 'wix_members_api' };
+        }
+        log.warn('adapter.identity.gate2_tier1_no_email', {
+          memberId, platformMemberId, memberFound: !!member,
+        });
+      } else {
+        log.warn('adapter.identity.gate2_tier1_skipped', {
+          memberId, reason: 'client_missing_source_api_key_or_site_id',
+        });
+      }
+    } catch (err) {
+      // Don't let Tier 1 failure abort Tier 2.
+      log.error('adapter.identity.gate2_tier1_failed', {
+        memberId, platformMemberId, httpStatus: err.statusCode, code: err.code,
+      }, err);
+    }
+
+    // Tier 2: DB cache — prior email stored on member_identity
+    try {
+      const cached = (await db.query(
+        `SELECT email, display_name, first_name, last_name
+         FROM member_identity WHERE id = $1`,
+        [memberId]
+      )).rows[0];
+      if (cached?.email) {
+        const composed = [cached.first_name, cached.last_name].filter(Boolean).join(' ').trim();
+        return {
+          email: cached.email,
+          name: cached.display_name || composed || cached.email,
+          source: 'db_cache',
+        };
+      }
+    } catch (err) {
+      log.error('adapter.identity.gate2_tier2_failed', { memberId }, err);
+    }
+
+    // Tier 3: ladder exhausted
+    return null;
+  }
+
+  /**
+   * OB-89 Gate 2 — park a member whose grant cannot proceed because required identity
+   * inputs cannot be recovered. Releases the in_flight lock and sets status to
+   * 'pending_identity' so the next webhook (which may carry email via the Velo payload)
+   * can retry cleanly. Not a failure — not a dead-letter — a hold pattern.
+   */
+  async _parkPendingIdentity(memberId, tenantId, missingFields) {
+    try {
+      await db.query(
+        `UPDATE member_access_state
+         SET status = 'pending_identity',
+             in_flight = FALSE,
+             updated_at = NOW()
+         WHERE member_id = $1`,
+        [memberId]
+      );
+      log.info('adapter.identity.parked', { memberId, tenantId, missingFields });
+    } catch (err) {
+      log.error('adapter.identity.park_failed', { memberId, tenantId, missingFields }, err);
+      throw err;
+    }
   }
 }
 

@@ -144,11 +144,23 @@ async function processJob(job) {
       }
 
       // Step 4: Resolve hardware user identity (client-level key — user ops are org-scoped)
+      // OB-89 Gate 2: pass tenantId + platformMemberId so standardAdapter can recover
+      // missing email via Wix Members API. If ladder exhausts, resolveIdentity returns
+      // null and the member is parked as pending_identity — we exit cleanly (not a failure).
       lastStep = 'grant.resolve_identity';
       const hardwareUserId = await standardAdapter.resolveIdentity(
         memberId, standardEvent.email, standardEvent.name,
-        mappings[0].hardwarePlatform, apiKey
+        mappings[0].hardwarePlatform, apiKey,
+        { tenantId, platformMemberId: standardEvent.platformMemberId }
       );
+      if (hardwareUserId === null) {
+        logger.warn('queue.grant.parked.pending_identity', {
+          tenantId, memberId,
+          platformMemberId: standardEvent.platformMemberId,
+          planId: standardEvent.planId,
+        });
+        return;
+      }
       logger.info('queue.grant.identity_resolved', { tenantId, memberId, hardwareUserId });
 
       // Step 5: Execute hardware grant across all active mappings
