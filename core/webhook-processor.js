@@ -40,7 +40,7 @@ const eventQueue = new Queue('accesssync-events', {
 
 class WebhookProcessor {
 
-  async processIncoming(eventId, standardEvent, rawPayload) {
+  async processIncoming(eventId, standardEvent, rawPayload, tenantDiagnostic = null) {
     log.info('webhook.received', { eventId, eventType: standardEvent.eventType });
 
     // 1. Validate Structure
@@ -86,10 +86,32 @@ class WebhookProcessor {
     });
 
     if (!tenantId) {
-      const err = new Error(`Tenant not resolved — wixSiteId=${standardEvent.wixSiteId}, clientIdHint=${standardEvent.platformClientIdHint}`);
+      // OB-88: classify the failure so operators can self-diagnose.
+      // (a) HMAC passed + both tenant identifiers missing → events.js is outdated on the Wix side
+      //     (the current template sends x-accesssync-client-id; older forks did not).
+      // (b) wixSiteId present but unknown → client row missing or source_site_id drifted.
+      // (c) clientIdHint present but unknown → client row deleted or hint malformed.
+      const hmacOk = true; // _verifySignature already passed upstream in wix-connector
+      const classification =
+        hmacOk && !standardEvent.wixSiteId && !standardEvent.platformClientIdHint
+          ? 'events_js_outdated'
+          : standardEvent.wixSiteId
+            ? 'unknown_site_id'
+            : 'unknown_client_id';
+
+      const err = new Error(`Tenant not resolved — classification=${classification}`);
       err.code = 'TENANT_NOT_RESOLVED';
-      log.warn('webhook.tenant_not_resolved', { eventId, wixSiteId: standardEvent.wixSiteId, clientIdHint: standardEvent.platformClientIdHint }, err);
-      await this._logToAlertLog(eventId, standardEvent, err.message);
+
+      log.error('webhook.tenant_not_resolved', {
+        eventId,
+        classification,
+        eventType: standardEvent.eventType,
+        wixSiteId: standardEvent.wixSiteId,
+        clientIdHint: standardEvent.platformClientIdHint,
+        diagnostic: tenantDiagnostic,
+      }, err);
+
+      await this._logToAlertLog(eventId, standardEvent, classification);
       return;
     }
 
@@ -133,12 +155,19 @@ class WebhookProcessor {
 
   async _logToAlertLog(eventId, event, reason) {
     try {
+      // OB-88: reason is now the classification string (events_js_outdated, unknown_site_id,
+      // unknown_client_id, or 'missing_required_fields' for structure failures). Used to drive
+      // operator-visible banners + count pills in the Admin Hub.
+      const alertType = reason && ['events_js_outdated', 'unknown_site_id', 'unknown_client_id'].includes(reason)
+        ? reason
+        : 'malformed_payload';
+
       await db.query(
         `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
          VALUES ($1, $2, $3)`,
         [
           process.env.DEFAULT_TENANT_ID || null,
-          'malformed_payload',
+          alertType,
           eventId
         ]
       );

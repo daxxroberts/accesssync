@@ -91,8 +91,19 @@ class WixConnector {
       const standardEvent = wixAdapter.parseEvent(eventType, wixSiteId, req.body);
       standardEvent.platformClientIdHint = clientIdHint;
 
+      // Diagnostic context — used by webhook-processor when tenant resolution fails so
+      // operators can self-diagnose "your events.js is outdated" vs. other failure modes.
+      const tenantDiagnostic = {
+        hasClientIdHeader: !!clientIdHint,
+        hasInstanceId:     !!wixSiteId,
+        payloadTopKeys:    req.body ? Object.keys(req.body) : [],
+        dataKeys:          req.body?.data ? Object.keys(req.body.data) : [],
+        metadataKeys:      req.body?.data?.metadata ? Object.keys(req.body.data.metadata) : [],
+        headerKeys:        Object.keys(req.headers || {}).filter(k => k.startsWith('x-')),
+      };
+
       // 4. Pass to Webhook Processor (deduplication + queuing)
-      await webhookProcessor.processIncoming(eventId, standardEvent, rawBody);
+      await webhookProcessor.processIncoming(eventId, standardEvent, rawBody, tenantDiagnostic);
 
     } catch (error) {
       log.error('wix.webhook.processing_error', {}, error);
