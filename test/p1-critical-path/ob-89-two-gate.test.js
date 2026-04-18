@@ -247,9 +247,14 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
 
 // ─── Follow-up guardrails (standards-register-and-guardrails branch) ────────
 
-describe('[P1] Gate 2 — _parkPendingIdentity clears the in_flight lock', () => {
+describe('[P1] Gate 2 — _parkPendingIdentity releases the in_flight lock via status change', () => {
 
-  test('the park UPDATE sets status=pending_identity AND in_flight=FALSE in one statement', async () => {
+  test('the park UPDATE transitions status out of in_flight to pending_identity', async () => {
+    // DR-011/DR-023: the "in_flight lock" is a sentinel value in the status column,
+    // not a separate boolean column. Setting status='pending_identity' IS the release.
+    // Regression guard: the park UPDATE must write status='pending_identity' and must
+    // NOT reference a non-existent `in_flight` column (production schema has no such
+    // column; an earlier OB-89 commit incorrectly wrote `in_flight = FALSE`).
     db.query
       .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })           // cache miss
       .mockResolvedValueOnce({ rows: [{ source_api_key: null, source_site_id: null }] }) // no Wix key
@@ -264,11 +269,10 @@ describe('[P1] Gate 2 — _parkPendingIdentity clears the in_flight lock', () =>
     expect(result).toBeNull();
     const parkCall = db.query.mock.calls[db.query.mock.calls.length - 1];
     const parkSql  = parkCall[0];
-    // Both clauses must appear in the same UPDATE — regression guard against a future
-    // edit that parks the status but leaves in_flight = TRUE (member would be stuck).
     expect(parkSql).toMatch(/UPDATE member_access_state/);
     expect(parkSql).toMatch(/status\s*=\s*'pending_identity'/);
-    expect(parkSql).toMatch(/in_flight\s*=\s*FALSE/);
+    // Must NOT reference a non-existent in_flight column (schema sentinel).
+    expect(parkSql).not.toMatch(/\bin_flight\s*=/);
   });
 });
 

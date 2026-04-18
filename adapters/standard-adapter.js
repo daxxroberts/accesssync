@@ -568,16 +568,16 @@ class StandardAdapter {
 
   /**
    * OB-89 Gate 2 — park a member whose grant cannot proceed because required identity
-   * inputs cannot be recovered. Releases the in_flight lock and sets status to
-   * 'pending_identity' so the next webhook (which may carry email via the Velo payload)
-   * can retry cleanly. Not a failure — not a dead-letter — a hold pattern.
+   * inputs cannot be recovered. Transitions status out of 'in_flight' to 'pending_identity'
+   * — which IS the lock release (the "in_flight lock" is a sentinel value in the status
+   * column, not a separate boolean column per DR-011/DR-023). Waits for the next webhook
+   * which may carry email via the Velo payload. Not a failure — not a dead-letter.
    */
   async _parkPendingIdentity(memberId, tenantId, missingFields) {
     try {
       await db.query(
         `UPDATE member_access_state
          SET status = 'pending_identity',
-             in_flight = FALSE,
              updated_at = NOW()
          WHERE member_id = $1`,
         [memberId]
