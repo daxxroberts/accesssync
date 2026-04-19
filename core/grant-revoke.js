@@ -46,6 +46,36 @@ class GrantRevokeLogic {
 
     for (const mapping of mappings) {
       const apiKey = mapping.apiKey;
+
+      // Idempotency guard: if a prior attempt of this job already created a
+      // hardware role_assignment for this (member, mapping, group), reuse it
+      // instead of calling the hardware API again. Prevents Kisi 409 on retry
+      // after a downstream crash in completeGrant (e.g. OB-46 table missing).
+      // The hardware-adapter.assignRole is NOT idempotent for most platforms —
+      // Kisi specifically returns 409 on duplicate role_assignment creation.
+      const existing = await db.query(
+        `SELECT role_assignment_id FROM member_role_assignments
+         WHERE member_id = $1 AND mapping_id = $2 AND hardware_group_id = $3`,
+        [memberId, mapping.mappingId, mapping.hardwareGroupId || null]
+      );
+      if (existing.rows.length > 0 && existing.rows[0].role_assignment_id) {
+        const priorId = existing.rows[0].role_assignment_id;
+        log.info('grant.role.reused', {
+          tenantId, memberId,
+          hardwareGroupId: mapping.hardwareGroupId,
+          mappingId: mapping.mappingId,
+          roleAssignmentId: priorId,
+        });
+        assignments.push({
+          mappingId:        mapping.mappingId,
+          roleAssignmentId: String(priorId),
+          hardwareGroupId:  mapping.hardwareGroupId,
+          sourcePlanId:     wixEvent.planId || null,
+          sourceType:       wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
+        });
+        continue; // Skip hardware call for this mapping
+      }
+
       log.info('grant.role.assigning', {
         tenantId, memberId, hardwareUserId,
         hardwareGroupId: mapping.hardwareGroupId,
@@ -53,7 +83,6 @@ class GrantRevokeLogic {
       });
       // K-2: On 404 (group deleted), flag the specific group row and continue the loop.
       // Other groups on the same mapping still get attempted — member gets partial access.
-      // Safe on retry: Kisi assignRole is idempotent and member_role_assignments has ON CONFLICT.
       try {
         const roleId = await hardwareAdapter.assignRole(
           mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId

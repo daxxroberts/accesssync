@@ -50,7 +50,7 @@ When asked about a UI page or to view/open one:
 **All 4 project-plan sprints complete. Business-risk-aware test framework live (Concept #6): 32 tests across P1/P2/P3 tiers, custom Jest reporter + sequencer. `npm run test:deploy` gives DEPLOY SAFE / DO NOT DEPLOY verdict. End-to-end provisioning pipeline working. Member-facing sync status page live. Operator console wired to live data. Onboarding hardened with invite token auth, end-to-end validation step, and location auto-activation. Sprint 5 complete as of 2026-04-02. 6 operator UI screens live. Pre-HOG code gaps closed 2026-04-10: retryPendingHardwareMembers scoped to plan mapping save (WIRE-G-01), all platform-specific "Kisi app" copy replaced (U-09), full Humanizer pass on all 6 operator UI screens + onboarding portal. OB-46 Railway migration complete 2026-04-10 (member_access_sources table live). Business gates closed 2026-04-10: G-03 (Kisi partner), G-08 (Kisi API access), G-09 (Chad bought Kisi). Pending: G-01 (Chad agreement), G-02 (LLC), G-05 (insurance), G-06 (failure runbook), OB-47/48 (multi-source grant/revoke logic).**
 
 **Current status as of 2026-04-10:**
-- `schema.sql` — DR-018 through DR-035 applied. 13 tables in Railway DB today; 14th table (`member_access_sources`, DR-034) pending OB-46 migration. `member_role_assignments` (DR-026), `access_type` on `plan_mappings` (DR-026), `hardware_api_key` columns (DR-035), `source_plan_id` (DR-035), `hardware_key_last_verified` + `hardware_key_last_error` on `locations` (sprint-5), `first_grant_sent` on `clients` (sprint-5).
+- `schema.sql` — DR-018 through DR-035 applied. **14 tables in Railway DB as of 2026-04-18 (OB-46 applied — `member_access_sources` created in prod with 3 indexes).** `member_role_assignments` (DR-026), `access_type` on `plan_mappings` (DR-026), `hardware_api_key` columns (DR-035), `source_plan_id` (DR-035), `hardware_key_last_verified` + `hardware_key_last_error` on `locations` (sprint-5), `first_grant_sent` on `clients` (sprint-5).
 - `db.js` — ✅ Built. pg pool, query helper, `getClient()`, `healthCheck()`, `pool` exported.
 - `adapters/wix/wix-connector.js` — ✅ Layer 1. HTTP handler, HMAC verification (uses `req.rawBody`). Reads `X-AccessSync-Client-Id` header → calls `tenantResolver.registerSiteId()` for self-registration. Calls wix-adapter.parseEvent(). On HMAC rejection: calls `hmacMonitor.recordFailure()` (Sprint 5.1).
 - `adapters/wix/wix-adapter.js` — ✅ Layer 2. Wix payload parsing only. parseEvent() → standard event object. Zero dependencies. Multi-path resolution for memberId + planId across Pricing Plans, Bookings, and Members event structures (P6 fix).
@@ -160,7 +160,7 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 
 ## Schema — 14 Tables
 
-**13 tables in Railway DB today. 14th (`member_access_sources`, DR-034) pending OB-46 migration. All other migrations through DR-035 + sprint-5.sql + multi-group-archive-audit.sql applied. See `04_Data/Data_Model.md` for full schema.**
+**14 tables in Railway DB as of 2026-04-18 (OB-46 applied). All migrations through DR-035 + sprint-5.sql + multi-group-archive-audit.sql + OB-46 `member_access_sources` applied. See `04_Data/Data_Model.md` for full schema.**
 
 | Table | Purpose |
 |---|---|
@@ -169,7 +169,7 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 | `plan_mappings` | Maps `source_plan_id` (DR-035, was `wix_plan_id`) to location. `access_type`, `plan_name`, `door_name`, `status`. Multi-group via junction table. |
 | `member_identity` | Platform-agnostic member record. `platform_member_id`, `source_platform`, `hardware_platform`, `hardware_user_id`. |
 | `member_access_state` | Current access state per member. `in_flight` lock (DR-023). |
-| `member_access_sources` | Multi-source grant/revoke (DR-034). One row per member-per-mapping-per-source. **OB-46 migration pending — table does not exist in Railway DB yet.** |
+| `member_access_sources` | Multi-source grant/revoke (DR-034). One row per member-per-mapping-per-source. **Applied 2026-04-18 (OB-46 closed). Schema + 3 indexes live in Railway DB.** |
 | `member_role_assignments` | One row per member per mapping (DR-026). UNIQUE constraint. Enables multi-door provisioning. |
 | `member_access_log` | Lifecycle audit log. |
 | `processed_event_ids` | Idempotency table (DR-010). |
@@ -294,7 +294,7 @@ Full decision records: `AccessSync/13_Decision_Records/`
 | OB-34 | `member_access_widget.html` — rename "Family Member" → "Additional Member". **DEFERRED post-HOG.** | Terminology |
 | OB-39 | Vault mockups (`12_UI_Mockups/`) vs live EJS templates — mark vault mockups as design reference only. | Vault accuracy |
 | OB-40 | Payment collection + subscription activation. **TABLED — revisit post-HOG.** | Post-launch |
-| OB-46 | **Railway migration: `CREATE TABLE member_access_sources`** (DR-034 schema). Must run before OB-47/48. | Multi-source safety |
+| ~~OB-46~~ | ~~Railway migration: `CREATE TABLE member_access_sources`~~ **CLOSED 2026-04-18** — applied against prod with 3 indexes (uq_member_access_sources_identity, idx_member_access_sources_member_group, idx_member_access_sources_member). Backfilled row for HOG member `7af07f2c`. | ~~Multi-source safety~~ |
 | OB-47 | **Standard Adapter `completeGrant`** — pre-grant source check. Skip hardware call if permanent access exists. Insert source row. | Multi-source safety |
 | OB-48 | **Standard Adapter `completeRevoke`** — delete source row first, check remaining sources, only hardware DELETE if none remain. Wrap in transaction. | Multi-source safety |
 | OB-49 | **Nightly reconciliation** — compare `member_access_sources` against live hardware role assignments. Flag orphans + missing. Clean expired `valid_until` rows. | Reconciliation accuracy |
