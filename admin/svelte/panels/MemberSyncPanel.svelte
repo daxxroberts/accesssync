@@ -20,7 +20,21 @@
   import ConfirmModal  from '../components/ConfirmModal.svelte';
   import { showToast } from '../stores/toast.js';
 
-  const COLUMNS = ['Member ID', 'Platform', 'Hardware', 'Status', 'Provisioned', 'Last Event', 'Actions'];
+  function fmtDuration(seconds) {
+    if (seconds == null) return '—';
+    if (seconds < 60)  return seconds + 's';
+    if (seconds < 3600) return Math.round(seconds / 60) + 'm ' + (seconds % 60) + 's';
+    return Math.round(seconds / 3600) + 'h ' + Math.round((seconds % 3600) / 60) + 'm';
+  }
+
+  function latencyColor(seconds) {
+    if (seconds == null) return '';
+    if (seconds <= 10)  return 'color:var(--success)';
+    if (seconds <= 30)  return 'color:var(--accent)';
+    return 'color:var(--danger)';
+  }
+
+  const COLUMNS = ['Member ID', 'Platform', 'Hardware', 'Status', 'Provisioned', 'Total Time', 'Last Event', 'Actions'];
 
   // ── State ──────────────────────────────────────────────────────────
   let clients      = [];
@@ -198,6 +212,9 @@
         <td>{m.hardware_platform || '—'}</td>
         <td><PillBadge text={m.access_status || 'unknown'} /></td>
         <td><TimeStamp iso={m.provisioned_at} /></td>
+        <td style={latencyColor(m.total_s)} title={m.total_s != null ? `Ingest: ${fmtDuration(m.ingest_s)} · Processing: ${fmtDuration(m.processing_s)}` : 'No timing data'}>
+          {fmtDuration(m.total_s)}
+        </td>
         <td>
           {#if m.last_event_type}
             <span title={m.last_event_at || ''}>{m.last_event_type}</span>
@@ -226,6 +243,44 @@
       <div class="detail-row"><span class="detail-label">Platform</span><span>{timelineMember.source_platform} / {timelineMember.hardware_platform}</span></div>
       <div class="detail-row"><span class="detail-label">Provisioned</span><TimeStamp iso={timelineMember.provisioned_at} /></div>
     </div>
+
+    {#if timelineMember.webhook_received_at}
+      <div class="detail-section">
+        <div class="detail-section-title">Provisioning Latency</div>
+        <div class="latency-timeline">
+          <div class="latency-step">
+            <div class="latency-dot"></div>
+            <div class="latency-info">
+              <span class="latency-label">Purchase received</span>
+              <span class="latency-time"><TimeStamp iso={timelineMember.webhook_received_at} /></span>
+            </div>
+          </div>
+          <div class="latency-gap" title="Webhook → queue">
+            <span class="latency-gap-label">Ingest: {fmtDuration(timelineMember.ingest_s)}</span>
+          </div>
+          <div class="latency-step">
+            <div class="latency-dot"></div>
+            <div class="latency-info">
+              <span class="latency-label">Job enqueued</span>
+              <span class="latency-time"><TimeStamp iso={timelineMember.enqueued_at} /></span>
+            </div>
+          </div>
+          <div class="latency-gap" title="Queue → Kisi confirmed">
+            <span class="latency-gap-label">Processing: {fmtDuration(timelineMember.processing_s)}</span>
+          </div>
+          <div class="latency-step">
+            <div class="latency-dot latency-dot-end"></div>
+            <div class="latency-info">
+              <span class="latency-label">Access confirmed</span>
+              <span class="latency-time"><TimeStamp iso={timelineMember.kisi_confirmed_at} /></span>
+            </div>
+          </div>
+        </div>
+        <div class="latency-total" style={latencyColor(timelineMember.total_s)}>
+          Total: {fmtDuration(timelineMember.total_s)} end-to-end
+        </div>
+      </div>
+    {/if}
     {#if timeline && timeline.length > 0}
       <div class="detail-section">
         <div class="detail-section-title">Event History</div>
@@ -250,6 +305,19 @@
     {/if}
   {/if}
 </Drawer>
+
+<style>
+  .latency-timeline { display: flex; flex-direction: column; gap: 0; margin: 8px 0; }
+  .latency-step { display: flex; align-items: flex-start; gap: 10px; }
+  .latency-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--brand); flex-shrink: 0; margin-top: 3px; }
+  .latency-dot-end { background: var(--success, #22c55e); }
+  .latency-info { display: flex; flex-direction: column; gap: 1px; padding-bottom: 2px; }
+  .latency-label { font-size: 12px; font-weight: 600; color: var(--text); }
+  .latency-time { font-size: 11px; color: var(--muted); }
+  .latency-gap { display: flex; align-items: center; padding: 2px 0 2px 4px; margin-left: 4px; border-left: 2px dashed var(--border); }
+  .latency-gap-label { font-size: 11px; color: var(--muted); margin-left: 10px; font-style: italic; }
+  .latency-total { margin-top: 10px; font-size: 13px; font-weight: 700; padding: 8px 12px; background: var(--surface); border-radius: 8px; border: 1px solid var(--border); }
+</style>
 
 <!-- ── Retry Modal ────────────────────────────────────────────────── -->
 <ConfirmModal

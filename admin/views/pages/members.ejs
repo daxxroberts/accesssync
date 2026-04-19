@@ -438,10 +438,10 @@
             ? '<button class="expand-btn' + (isExpanded ? ' open' : '') + '" onclick="toggleHolderExpand(\'' + m.id + '\', event)">&#9654;</button>'
             : isSub ? '<span class="sub-indent"><span class="sub-connector"></span></span>' : '') +
           '<div class="member-avatar ' + avatarClass + '">' + initials + '</div>' +
-          '<div><div class="member-name">' + m.firstName + ' ' + m.lastName +
+          '<div><div class="member-name" style="cursor:pointer;" onclick="openMemberDetail(\'' + m.id + '\')">' + esc(m.firstName) + ' ' + esc(m.lastName) +
             (isHolder && isMulti ? '<span class="member-tag holder">Holder</span>' : '') +
             (isSub ? '<span class="member-tag sub">Additional</span>' : '') +
-          '</div><div class="member-email">' + m.email + '</div></div>' +
+          '</div><div class="member-email">' + esc(m.email) + '</div></div>' +
           '</div></td>';
 
         // Prefer live-API planDisplay (aggregated plan name from member_role_assignments →
@@ -514,6 +514,63 @@
     function closeDrawer() {
       document.getElementById('drawer').classList.remove('open');
       setTimeout(function() { document.getElementById('drawerOverlay').classList.remove('visible'); }, 250);
+    }
+
+    function openMemberDetail(memberId) {
+      var m = allMembers.find(function(x) { return x.id === memberId; });
+      if (!m) return;
+      var clientId = urlParams.get('clientId');
+
+      document.getElementById('drawerTitle').textContent = m.firstName + ' ' + m.lastName;
+
+      function fmtSec(s) {
+        if (s == null) return null;
+        if (s < 60)   return s + 's';
+        return Math.round(s / 60) + 'm ' + (s % 60) + 's';
+      }
+      function latColor(s) {
+        if (s == null) return 'var(--text)';
+        if (s <= 10)  return 'var(--sage-dark)';
+        if (s <= 30)  return 'var(--brand)';
+        return 'var(--red)';
+      }
+
+      var body =
+        '<div class="drawer-section-label">Member Details</div>' +
+        '<div class="drawer-info-row"><span class="drawer-info-label">Email</span><span class="drawer-info-value">' + esc(m.email) + '</span></div>' +
+        '<div class="drawer-info-row"><span class="drawer-info-label">Plan</span><span class="drawer-info-value">' + esc(m.planDisplay || m.planName || '—') + '</span></div>' +
+        '<div class="drawer-info-row"><span class="drawer-info-label">Status</span><span class="drawer-info-value"><span class="status-pill ' + m.status + '"><span class="status-dot"></span>' + statusLabel(m.status) + '</span></span></div>' +
+        '<div class="drawer-info-row"><span class="drawer-info-label">Added</span><span class="drawer-info-value">' + esc(m.addedDate) + '</span></div>';
+
+      // Latency section — populated from member object if available
+      if (m.total_s != null) {
+        body +=
+          '<div class="drawer-section-label" style="margin-top:18px;">Provisioning Speed</div>' +
+          '<div class="drawer-info-row"><span class="drawer-info-label">Purchase → Door Open</span>' +
+            '<span class="drawer-info-value" style="color:' + latColor(m.total_s) + ';">' + fmtSec(m.total_s) + '</span></div>' +
+          '<div class="drawer-info-row"><span class="drawer-info-label">Ingest lag</span>' +
+            '<span class="drawer-info-value">' + (fmtSec(m.ingest_s) || '—') + '</span></div>' +
+          '<div class="drawer-info-row"><span class="drawer-info-label">Processing time</span>' +
+            '<span class="drawer-info-value">' + (fmtSec(m.processing_s) || '—') + '</span></div>';
+        if (m.webhook_received_at) {
+          body += '<div class="drawer-info-row"><span class="drawer-info-label">Purchase received</span>' +
+            '<span class="drawer-info-value" style="font-size:11px;">' + new Date(m.webhook_received_at).toLocaleString() + '</span></div>';
+        }
+        if (m.kisi_confirmed_at) {
+          body += '<div class="drawer-info-row"><span class="drawer-info-label">Access confirmed</span>' +
+            '<span class="drawer-info-value" style="font-size:11px;">' + new Date(m.kisi_confirmed_at).toLocaleString() + '</span></div>';
+        }
+      } else if (clientId) {
+        body += '<div class="drawer-section-label" style="margin-top:18px;">Provisioning Speed</div>' +
+          '<div style="font-size:12px;color:var(--muted);padding:8px 0;">No timing data — webhook log and provisioning records must both exist for latency to be calculated.</div>';
+      }
+
+      document.getElementById('drawerBody').innerHTML = body;
+      document.getElementById('drawerFooter').innerHTML =
+        '<button class="drawer-btn secondary" onclick="closeDrawer()">Close</button>' +
+        (m.status === 'failed' ? '<button class="drawer-btn primary" onclick="retryMember(\'' + m.id + '\');closeDrawer()">Retry</button>' : '');
+      document.getElementById('drawerOverlay').classList.add('visible');
+      document.getElementById('drawer').classList.add('open');
     }
 
     function retryMember(memberId) {
@@ -605,7 +662,14 @@
               status: m.access_status || 'pending',
               addedDate: m.provisioned_at ? new Date(m.provisioned_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—',
               holderId: null,
-              pendingIdentity: !hasRealName
+              pendingIdentity: !hasRealName,
+              // Latency fields — null when webhook_log / processed_event_ids correlation unavailable
+              webhook_received_at: m.webhook_received_at || null,
+              enqueued_at:         m.enqueued_at         || null,
+              kisi_confirmed_at:   m.kisi_confirmed_at   || null,
+              ingest_s:            m.ingest_s     != null ? m.ingest_s     : null,
+              processing_s:        m.processing_s != null ? m.processing_s : null,
+              total_s:             m.total_s      != null ? m.total_s      : null,
             };
           });
           plans = [];

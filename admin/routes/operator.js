@@ -1579,9 +1579,34 @@ router.get('/:clientId/members', async (req, res) => {
                   WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
                   ORDER BY mra.created_at ASC
                   LIMIT 1
-                )                                AS plan_name
+                )                                AS plan_name,
+                lat.webhook_received_at,
+                lat.enqueued_at,
+                lat.kisi_confirmed_at,
+                lat.ingest_s,
+                lat.processing_s,
+                lat.total_s
          FROM   member_identity mi
          LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+         LEFT JOIN LATERAL (
+           SELECT
+             wl.received_at                                                      AS webhook_received_at,
+             pei.processed_at                                                    AS enqueued_at,
+             mra.created_at                                                      AS kisi_confirmed_at,
+             ROUND(EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)))::int   AS ingest_s,
+             ROUND(EXTRACT(EPOCH FROM (mra.created_at   - pei.processed_at)))::int AS processing_s,
+             ROUND(EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at)))::int   AS total_s
+           FROM webhook_log wl
+           JOIN processed_event_ids pei ON pei.event_id = wl.event_id
+           JOIN member_role_assignments mra ON mra.member_id = mi.id
+           WHERE wl.client_id = mi.client_id
+             AND wl.normalized_payload->>'platformMemberId' = mi.platform_member_id
+             AND wl.hmac_status = 'accepted'
+             AND wl.dedup_status = 'new'
+             AND mra.created_at > wl.received_at
+           ORDER BY wl.received_at DESC
+           LIMIT 1
+         ) lat ON TRUE
          WHERE  ${conditions.join(' AND ')}
          ORDER  BY mas.provisioned_at DESC NULLS LAST
          LIMIT  $${params.length - 1} OFFSET $${params.length}`,
@@ -1853,6 +1878,92 @@ router.get('/:clientId/access-stats', async (req, res) => {
     res.json({ hourly });
   } catch (err) {
     log.error('operator.access_stats.failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ══ Provisioning Latency endpoint ══════════════════════════════════
+// GET /operator/:clientId/latency-stats
+// Computes purchase→provisioned timing from existing tables — no new columns needed.
+// T0 = webhook_log.received_at (purchase webhook received)
+// T1 = processed_event_ids.processed_at (job enqueued)
+// T2 = member_role_assignments.created_at (Kisi confirmed role assigned)
+// Intervals: ingest (T1-T0), processing (T2-T1), total (T2-T0)
+router.get('/:clientId/latency-stats', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    // Aggregate stats over last 30 days
+    const agg = await db.query(
+      `WITH timing AS (
+         SELECT
+           wl.received_at                                          AS t0,
+           pei.processed_at                                        AS t1,
+           mra.created_at                                          AS t2,
+           EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)) AS ingest_s,
+           EXTRACT(EPOCH FROM (mra.created_at   - pei.processed_at)) AS processing_s,
+           EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at))  AS total_s
+         FROM webhook_log wl
+         JOIN processed_event_ids pei ON pei.event_id = wl.event_id
+         JOIN member_identity mi
+           ON mi.client_id = wl.client_id
+           AND mi.platform_member_id = wl.normalized_payload->>'platformMemberId'
+         JOIN member_role_assignments mra ON mra.member_id = mi.id
+         WHERE wl.client_id = $1
+           AND wl.received_at > NOW() - INTERVAL '30 days'
+           AND wl.hmac_status = 'accepted'
+           AND wl.dedup_status = 'new'
+           AND mra.created_at > wl.received_at
+       )
+       SELECT
+         COUNT(*)::int                                                     AS sample_count,
+         ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_s))::int AS total_median_s,
+         ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY total_s))::int AS total_p95_s,
+         ROUND(MAX(total_s))::int                                          AS total_max_s,
+         ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ingest_s))::int AS ingest_median_s,
+         ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY processing_s))::int AS processing_median_s
+       FROM timing`,
+      [clientId]
+    );
+
+    // Per-member rows for recent 50 events
+    const recent = await db.query(
+      `SELECT
+         mi.id                                                              AS member_id,
+         mi.platform_member_id,
+         wl.received_at                                                     AS webhook_received_at,
+         pei.processed_at                                                   AS enqueued_at,
+         mra.created_at                                                     AS kisi_confirmed_at,
+         ROUND(EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)))::int  AS ingest_s,
+         ROUND(EXTRACT(EPOCH FROM (mra.created_at   - pei.processed_at)))::int AS processing_s,
+         ROUND(EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at)))::int   AS total_s
+       FROM webhook_log wl
+       JOIN processed_event_ids pei ON pei.event_id = wl.event_id
+       JOIN member_identity mi
+         ON mi.client_id = wl.client_id
+         AND mi.platform_member_id = wl.normalized_payload->>'platformMemberId'
+       JOIN member_role_assignments mra ON mra.member_id = mi.id
+       WHERE wl.client_id = $1
+         AND wl.received_at > NOW() - INTERVAL '30 days'
+         AND wl.hmac_status = 'accepted'
+         AND wl.dedup_status = 'new'
+         AND mra.created_at > wl.received_at
+       ORDER BY wl.received_at DESC
+       LIMIT 50`,
+      [clientId]
+    );
+
+    const stats = agg.rows[0] || {};
+    res.json({
+      sample_count:       stats.sample_count       || 0,
+      total_median_s:     stats.total_median_s     || null,
+      total_p95_s:        stats.total_p95_s        || null,
+      total_max_s:        stats.total_max_s        || null,
+      ingest_median_s:    stats.ingest_median_s    || null,
+      processing_median_s: stats.processing_median_s || null,
+      recent: recent.rows,
+    });
+  } catch (err) {
+    log.error('operator.latency_stats.failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

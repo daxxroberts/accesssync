@@ -9,31 +9,39 @@
       "source_file": "db.js",
       "source_location": "L1",
       "id": "db",
-      "community": 21
+      "community": 19
+    },
+    {
+      "label": "getLog()",
+      "file_type": "code",
+      "source_file": "db.js",
+      "source_location": "L21",
+      "id": "db_getlog",
+      "community": 19
     },
     {
       "label": "query()",
       "file_type": "code",
       "source_file": "db.js",
-      "source_location": "L63",
+      "source_location": "L70",
       "id": "db_query",
-      "community": 21
+      "community": 19
     },
     {
       "label": "getClient()",
       "file_type": "code",
       "source_file": "db.js",
-      "source_location": "L103",
+      "source_location": "L105",
       "id": "db_getclient",
-      "community": 21
+      "community": 19
     },
     {
       "label": "healthCheck()",
       "file_type": "code",
       "source_file": "db.js",
-      "source_location": "L113",
+      "source_location": "L115",
       "id": "db_healthcheck",
-      "community": 21
+      "community": 19
     },
     {
       "label": "jest.config.js",
@@ -41,7 +49,7 @@
       "source_file": "jest.config.js",
       "source_location": "L1",
       "id": "jest_config",
-      "community": 38
+      "community": 47
     },
     {
       "label": "seed.js",
@@ -49,7 +57,7 @@
       "source_file": "seed.js",
       "source_location": "L1",
       "id": "seed",
-      "community": 32
+      "community": 37
     },
     {
       "label": "seed()",
@@ -57,7 +65,7 @@
       "source_file": "seed.js",
       "source_location": "L100",
       "id": "seed_seed",
-      "community": 32
+      "community": 37
     },
     {
       "label": "server.js",
@@ -65,7 +73,7 @@
       "source_file": "admin\\server.js",
       "source_location": "L1",
       "id": "server",
-      "community": 26
+      "community": 30
     },
     {
       "label": "simulate.js",
@@ -73,7 +81,7 @@
       "source_file": "simulate.js",
       "source_location": "L1",
       "id": "simulate",
-      "community": 33
+      "community": 38
     },
     {
       "label": "runSimulation()",
@@ -81,7 +89,7 @@
       "source_file": "simulate.js",
       "source_location": "L35",
       "id": "simulate_runsimulation",
-      "community": 33
+      "community": 38
     },
     {
       "label": "test-screens.js",
@@ -89,7 +97,7 @@
       "source_file": "test-screens.js",
       "source_location": "L1",
       "id": "test_screens",
-      "community": 39
+      "community": 48
     },
     {
       "label": "hardware-adapter.js",
@@ -100,10 +108,18 @@
       "community": 1
     },
     {
+      "label": "_requireFields()",
+      "file_type": "code",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L32",
+      "id": "hardware_adapter_requirefields",
+      "community": 1
+    },
+    {
       "label": "HardwareAdapter",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L23",
+      "source_location": "L76",
       "id": "hardware_adapter_hardwareadapter",
       "community": 1
     },
@@ -111,15 +127,23 @@
       "label": "._getAdapter()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L25",
+      "source_location": "L78",
       "id": "hardware_adapter_hardwareadapter_getadapter",
+      "community": 1
+    },
+    {
+      "label": "._validate()",
+      "file_type": "code",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L91",
+      "id": "hardware_adapter_hardwareadapter_validate",
       "community": 1
     },
     {
       "label": ".getRateLimit()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L38",
+      "source_location": "L111",
       "id": "hardware_adapter_hardwareadapter_getratelimit",
       "community": 1
     },
@@ -127,7 +151,7 @@
       "label": ".findUserByEmail()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L46",
+      "source_location": "L119",
       "id": "hardware_adapter_hardwareadapter_finduserbyemail",
       "community": 1
     },
@@ -135,7 +159,7 @@
       "label": ".createUser()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L50",
+      "source_location": "L124",
       "id": "hardware_adapter_hardwareadapter_createuser",
       "community": 1
     },
@@ -143,7 +167,7 @@
       "label": ".assignRole()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L59",
+      "source_location": "L134",
       "id": "hardware_adapter_hardwareadapter_assignrole",
       "community": 1
     },
@@ -151,7 +175,7 @@
       "label": ".removeRole()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L63",
+      "source_location": "L139",
       "id": "hardware_adapter_hardwareadapter_removerole",
       "community": 1
     },
@@ -159,7 +183,7 @@
       "label": ".suspendAccess()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L67",
+      "source_location": "L144",
       "id": "hardware_adapter_hardwareadapter_suspendaccess",
       "community": 1
     },
@@ -167,7 +191,7 @@
       "label": ".enableAccess()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L71",
+      "source_location": "L149",
       "id": "hardware_adapter_hardwareadapter_enableaccess",
       "community": 1
     },
@@ -175,7 +199,7 @@
       "label": ".deleteUser()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L75",
+      "source_location": "L154",
       "id": "hardware_adapter_hardwareadapter_deleteuser",
       "community": 1
     },
@@ -183,7 +207,7 @@
       "label": ".getLocks()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L79",
+      "source_location": "L159",
       "id": "hardware_adapter_hardwareadapter_getlocks",
       "community": 1
     },
@@ -191,8 +215,16 @@
       "label": ".getGroups()",
       "file_type": "code",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L83",
+      "source_location": "L163",
       "id": "hardware_adapter_hardwareadapter_getgroups",
+      "community": 1
+    },
+    {
+      "label": ".getManagedRoleAssignments()",
+      "file_type": "code",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L167",
+      "id": "hardware_adapter_hardwareadapter_getmanagedroleassignments",
       "community": 1
     },
     {
@@ -201,7 +233,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L1",
       "id": "kisi_adapter",
-      "community": 3
+      "community": 4
     },
     {
       "label": "seam-adapter.js",
@@ -209,79 +241,103 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L1",
       "id": "seam_adapter",
-      "community": 4
+      "community": 5
     },
     {
       "label": "standard-adapter.js",
       "file_type": "code",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
+      "source_file": "adapters\\standard-adapter.js",
       "source_location": "L1",
       "id": "standard_adapter",
-      "community": 5
+      "community": 3
     },
     {
       "label": "StandardAdapter",
       "file_type": "code",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L18",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L19",
       "id": "standard_adapter_standardadapter",
-      "community": 5
+      "community": 3
     },
     {
       "label": ".resolveAndLock()",
       "file_type": "code",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L39",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L40",
       "id": "standard_adapter_standardadapter_resolveandlock",
-      "community": 5
+      "community": 3
     },
     {
       "label": ".resolveIdentity()",
       "file_type": "code",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L162",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L174",
       "id": "standard_adapter_standardadapter_resolveidentity",
-      "community": 5
+      "community": 3
     },
     {
       "label": ".completeGrant()",
       "file_type": "code",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L203",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L259",
       "id": "standard_adapter_standardadapter_completegrant",
-      "community": 5
+      "community": 3
     },
     {
       "label": "._maybeFireFirstGrantEmail()",
       "file_type": "code",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L248",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L304",
       "id": "standard_adapter_standardadapter_maybefirefirstgrantemail",
-      "community": 5
+      "community": 3
     },
     {
       "label": ".completeRevoke()",
       "file_type": "code",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L307",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L363",
       "id": "standard_adapter_standardadapter_completerevoke",
-      "community": 5
+      "community": 3
     },
     {
       "label": ".releaseLock()",
       "file_type": "code",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L378",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L434",
       "id": "standard_adapter_standardadapter_releaselock",
-      "community": 5
+      "community": 3
     },
     {
       "label": "._incrementActivity()",
       "file_type": "code",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L410",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L466",
       "id": "standard_adapter_standardadapter_incrementactivity",
-      "community": 5
+      "community": 3
+    },
+    {
+      "label": "._callHardwareToResolveIdentity()",
+      "file_type": "code",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L486",
+      "id": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
+      "community": 3
+    },
+    {
+      "label": "._recoverMissingEmail()",
+      "file_type": "code",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L507",
+      "id": "standard_adapter_standardadapter_recovermissingemail",
+      "community": 3
+    },
+    {
+      "label": "._parkPendingIdentity()",
+      "file_type": "code",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L610",
+      "id": "standard_adapter_standardadapter_parkpendingidentity",
+      "community": 3
     },
     {
       "label": "wix-adapter.js",
@@ -289,87 +345,95 @@
       "source_file": "adapters\\wix\\wix-adapter.js",
       "source_location": "L1",
       "id": "wix_adapter",
-      "community": 27
+      "community": 25
     },
     {
       "label": "KisiAdapter",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L14",
+      "source_location": "L15",
       "id": "kisi_adapter_kisiadapter",
-      "community": 3
+      "community": 4
     },
     {
       "label": ".findUserByEmail()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L19",
+      "source_location": "L20",
       "id": "kisi_adapter_kisiadapter_finduserbyemail",
-      "community": 3
+      "community": 4
     },
     {
       "label": ".createUser()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L34",
+      "source_location": "L35",
       "id": "kisi_adapter_kisiadapter_createuser",
-      "community": 3
+      "community": 4
     },
     {
       "label": ".assignRole()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L51",
+      "source_location": "L52",
       "id": "kisi_adapter_kisiadapter_assignrole",
-      "community": 3
+      "community": 4
     },
     {
       "label": ".removeRole()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L70",
+      "source_location": "L71",
       "id": "kisi_adapter_kisiadapter_removerole",
-      "community": 3
+      "community": 4
     },
     {
       "label": ".suspendAccess()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L81",
+      "source_location": "L82",
       "id": "kisi_adapter_kisiadapter_suspendaccess",
-      "community": 3
+      "community": 4
     },
     {
       "label": ".enableAccess()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L93",
+      "source_location": "L94",
       "id": "kisi_adapter_kisiadapter_enableaccess",
-      "community": 3
+      "community": 4
     },
     {
       "label": ".deleteUser()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L105",
+      "source_location": "L106",
       "id": "kisi_adapter_kisiadapter_deleteuser",
-      "community": 3
+      "community": 4
     },
     {
       "label": ".getGroups()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L114",
+      "source_location": "L115",
       "id": "kisi_adapter_kisiadapter_getgroups",
-      "community": 3
+      "community": 4
+    },
+    {
+      "label": ".getManagedRoleAssignments()",
+      "file_type": "code",
+      "source_file": "adapters\\kisi\\kisi-adapter.js",
+      "source_location": "L138",
+      "id": "kisi_adapter_kisiadapter_getmanagedroleassignments",
+      "community": 4
     },
     {
       "label": ".getLocks()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L137",
+      "source_location": "L182",
       "id": "kisi_adapter_kisiadapter_getlocks",
-      "community": 3
+      "community": 4
     },
     {
       "label": "kisi-connector.js",
@@ -377,7 +441,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L1",
       "id": "kisi_connector",
-      "community": 13
+      "community": 15
     },
     {
       "label": "KisiConnector",
@@ -385,7 +449,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L16",
       "id": "kisi_connector_kisiconnector",
-      "community": 13
+      "community": 15
     },
     {
       "label": ".constructor()",
@@ -393,7 +457,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L17",
       "id": "kisi_connector_kisiconnector_constructor",
-      "community": 13
+      "community": 15
     },
     {
       "label": ".getHeaders()",
@@ -401,7 +465,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L24",
       "id": "kisi_connector_kisiconnector_getheaders",
-      "community": 13
+      "community": 15
     },
     {
       "label": ".enforceRateLimit()",
@@ -409,7 +473,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L36",
       "id": "kisi_connector_kisiconnector_enforceratelimit",
-      "community": 13
+      "community": 15
     },
     {
       "label": ".makeRequest()",
@@ -417,7 +481,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L61",
       "id": "kisi_connector_kisiconnector_makerequest",
-      "community": 13
+      "community": 15
     },
     {
       "label": "SeamAdapter",
@@ -425,7 +489,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L10",
       "id": "seam_adapter_seamadapter",
-      "community": 4
+      "community": 5
     },
     {
       "label": ".findUserByEmail()",
@@ -433,7 +497,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L11",
       "id": "seam_adapter_seamadapter_finduserbyemail",
-      "community": 4
+      "community": 5
     },
     {
       "label": ".createUser()",
@@ -441,7 +505,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L15",
       "id": "seam_adapter_seamadapter_createuser",
-      "community": 4
+      "community": 5
     },
     {
       "label": ".assignRole()",
@@ -449,7 +513,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L19",
       "id": "seam_adapter_seamadapter_assignrole",
-      "community": 4
+      "community": 5
     },
     {
       "label": ".removeRole()",
@@ -457,7 +521,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L24",
       "id": "seam_adapter_seamadapter_removerole",
-      "community": 4
+      "community": 5
     },
     {
       "label": ".suspendAccess()",
@@ -465,7 +529,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L28",
       "id": "seam_adapter_seamadapter_suspendaccess",
-      "community": 4
+      "community": 5
     },
     {
       "label": ".enableAccess()",
@@ -473,7 +537,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L32",
       "id": "seam_adapter_seamadapter_enableaccess",
-      "community": 4
+      "community": 5
     },
     {
       "label": ".deleteUser()",
@@ -481,7 +545,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L37",
       "id": "seam_adapter_seamadapter_deleteuser",
-      "community": 4
+      "community": 5
     },
     {
       "label": ".getLocks()",
@@ -489,7 +553,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L41",
       "id": "seam_adapter_seamadapter_getlocks",
-      "community": 4
+      "community": 5
     },
     {
       "label": ".getGroups()",
@@ -497,7 +561,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L47",
       "id": "seam_adapter_seamadapter_getgroups",
-      "community": 4
+      "community": 5
     },
     {
       "label": "seam-connector.js",
@@ -505,7 +569,7 @@
       "source_file": "adapters\\seam\\seam-connector.js",
       "source_location": "L1",
       "id": "seam_connector",
-      "community": 18
+      "community": 20
     },
     {
       "label": "SeamConnector",
@@ -513,7 +577,7 @@
       "source_file": "adapters\\seam\\seam-connector.js",
       "source_location": "L9",
       "id": "seam_connector_seamconnector",
-      "community": 18
+      "community": 20
     },
     {
       "label": ".getHeaders()",
@@ -521,7 +585,7 @@
       "source_file": "adapters\\seam\\seam-connector.js",
       "source_location": "L10",
       "id": "seam_connector_seamconnector_getheaders",
-      "community": 18
+      "community": 20
     },
     {
       "label": ".enforceRateLimit()",
@@ -529,7 +593,7 @@
       "source_file": "adapters\\seam\\seam-connector.js",
       "source_location": "L14",
       "id": "seam_connector_seamconnector_enforceratelimit",
-      "community": 18
+      "community": 20
     },
     {
       "label": ".makeRequest()",
@@ -537,23 +601,31 @@
       "source_file": "adapters\\seam\\seam-connector.js",
       "source_location": "L18",
       "id": "seam_connector_seamconnector_makerequest",
-      "community": 18
+      "community": 20
     },
     {
       "label": "WixAdapter",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-adapter.js",
-      "source_location": "L13",
+      "source_location": "L15",
       "id": "wix_adapter_wixadapter",
-      "community": 27
+      "community": 25
+    },
+    {
+      "label": "._normalizeEventType()",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-adapter.js",
+      "source_location": "L30",
+      "id": "wix_adapter_wixadapter_normalizeeventtype",
+      "community": 25
     },
     {
       "label": ".parseEvent()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-adapter.js",
-      "source_location": "L23",
+      "source_location": "L53",
       "id": "wix_adapter_wixadapter_parseevent",
-      "community": 27
+      "community": 25
     },
     {
       "label": "wix-connector.js",
@@ -561,39 +633,95 @@
       "source_file": "adapters\\wix\\wix-connector.js",
       "source_location": "L1",
       "id": "wix_connector",
-      "community": 19
+      "community": 21
     },
     {
       "label": "WixConnector",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L22",
+      "source_location": "L23",
       "id": "wix_connector_wixconnector",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".constructor()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L23",
+      "source_location": "L24",
       "id": "wix_connector_wixconnector_constructor",
-      "community": 19
+      "community": 21
     },
     {
       "label": ".handleWebhook()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L34",
+      "source_location": "L35",
       "id": "wix_connector_wixconnector_handlewebhook",
-      "community": 19
+      "community": 21
     },
     {
       "label": "._verifySignature()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L93",
+      "source_location": "L123",
       "id": "wix_connector_wixconnector_verifysignature",
-      "community": 19
+      "community": 21
+    },
+    {
+      "label": "wix-members-api.js",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L1",
+      "id": "wix_members_api",
+      "community": 12
+    },
+    {
+      "label": "wixFetch()",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L28",
+      "id": "wix_members_api_wixfetch",
+      "community": 12
+    },
+    {
+      "label": "_isSyntheticEmail()",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L81",
+      "id": "wix_members_api_issyntheticemail",
+      "community": 12
+    },
+    {
+      "label": "_collectContactEmails()",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L90",
+      "id": "wix_members_api_collectcontactemails",
+      "community": 12
+    },
+    {
+      "label": "_extractName()",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L111",
+      "id": "wix_members_api_extractname",
+      "community": 12
+    },
+    {
+      "label": "_getContactById()",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L151",
+      "id": "wix_members_api_getcontactbyid",
+      "community": 12
+    },
+    {
+      "label": "getMemberById()",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L164",
+      "id": "wix_members_api_getmemberbyid",
+      "community": 12
     },
     {
       "label": "wix-plans-api.js",
@@ -601,63 +729,79 @@
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L1",
       "id": "wix_plans_api",
-      "community": 14
+      "community": 8
     },
     {
       "label": "wixFetch()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L18",
+      "source_location": "L26",
       "id": "wix_plans_api_wixfetch",
-      "community": 14
+      "community": 8
     },
     {
       "label": "listPricingPlans()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L71",
+      "source_location": "L80",
       "id": "wix_plans_api_listpricingplans",
-      "community": 14
+      "community": 8
     },
     {
       "label": "listBookingServices()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L95",
+      "source_location": "L104",
       "id": "wix_plans_api_listbookingservices",
-      "community": 14
+      "community": 8
     },
     {
       "label": "listAllMappable()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L121",
+      "source_location": "L130",
       "id": "wix_plans_api_listallmappable",
-      "community": 14
+      "community": 8
+    },
+    {
+      "label": "listActiveOrders()",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-plans-api.js",
+      "source_location": "L148",
+      "id": "wix_plans_api_listactiveorders",
+      "community": 8
+    },
+    {
+      "label": "listConfirmedBookings()",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-plans-api.js",
+      "source_location": "L184",
+      "id": "wix_plans_api_listconfirmedbookings",
+      "community": 8
     },
     {
       "label": "testApiKey()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L133",
+      "source_location": "L231",
       "id": "wix_plans_api_testapikey",
-      "community": 14
+      "community": 8
     },
     {
       "label": "allowWixFrame()",
       "file_type": "code",
       "source_file": "admin\\server.js",
-      "source_location": "L58",
+      "source_location": "L59",
       "id": "server_allowwixframe",
-      "community": 26
+      "community": 30
     },
     {
       "label": "sessionMeta()",
       "file_type": "code",
       "source_file": "admin\\server.js",
-      "source_location": "L93",
+      "source_location": "L94",
       "id": "server_sessionmeta",
-      "community": 26
+      "community": 30
     },
     {
       "label": "audit.js",
@@ -665,15 +809,15 @@
       "source_file": "admin\\middleware\\audit.js",
       "source_location": "L1",
       "id": "audit",
-      "community": 34
+      "community": 39
     },
     {
       "label": "logAdminAction()",
       "file_type": "code",
       "source_file": "admin\\middleware\\audit.js",
-      "source_location": "L18",
+      "source_location": "L19",
       "id": "audit_logadminaction",
-      "community": 34
+      "community": 39
     },
     {
       "label": "auth.js",
@@ -681,7 +825,7 @@
       "source_file": "admin\\routes\\auth.js",
       "source_location": "L1",
       "id": "auth",
-      "community": 10
+      "community": 13
     },
     {
       "label": "requireAuth()",
@@ -689,7 +833,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L21",
       "id": "auth_requireauth",
-      "community": 10
+      "community": 13
     },
     {
       "label": "signToken()",
@@ -697,7 +841,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L37",
       "id": "auth_signtoken",
-      "community": 10
+      "community": 13
     },
     {
       "label": "signOperatorToken()",
@@ -705,7 +849,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L45",
       "id": "auth_signoperatortoken",
-      "community": 10
+      "community": 13
     },
     {
       "label": "requireAuthPage()",
@@ -713,7 +857,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L53",
       "id": "auth_requireauthpage",
-      "community": 10
+      "community": 13
     },
     {
       "label": "requireAuthOrOperator()",
@@ -721,7 +865,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L70",
       "id": "auth_requireauthoroperator",
-      "community": 10
+      "community": 13
     },
     {
       "label": "requireAuthPageOrOperator()",
@@ -729,7 +873,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L92",
       "id": "auth_requireauthpageoroperator",
-      "community": 10
+      "community": 13
     },
     {
       "label": "wix-instance.js",
@@ -737,31 +881,31 @@
       "source_file": "admin\\middleware\\wix-instance.js",
       "source_location": "L1",
       "id": "wix_instance",
-      "community": 22
+      "community": 26
     },
     {
       "label": "verifySignedInstance()",
       "file_type": "code",
       "source_file": "admin\\middleware\\wix-instance.js",
-      "source_location": "L43",
+      "source_location": "L44",
       "id": "wix_instance_verifysignedinstance",
-      "community": 22
+      "community": 26
     },
     {
       "label": "extractSiteIdFromAuthCode()",
       "file_type": "code",
       "source_file": "admin\\middleware\\wix-instance.js",
-      "source_location": "L99",
+      "source_location": "L100",
       "id": "wix_instance_extractsiteidfromauthcode",
-      "community": 22
+      "community": 26
     },
     {
       "label": "requireWixInstance()",
       "file_type": "code",
       "source_file": "admin\\middleware\\wix-instance.js",
-      "source_location": "L122",
+      "source_location": "L123",
       "id": "wix_instance_requirewixinstance",
-      "community": 22
+      "community": 26
     },
     {
       "label": "app.js",
@@ -1073,15 +1217,15 @@
       "source_file": "admin\\routes\\clients.js",
       "source_location": "L1",
       "id": "clients",
-      "community": 35
+      "community": 40
     },
     {
       "label": "activateLocationMembersAdmin()",
       "file_type": "code",
       "source_file": "admin\\routes\\clients.js",
-      "source_location": "L30",
+      "source_location": "L31",
       "id": "clients_activatelocationmembersadmin",
-      "community": 35
+      "community": 40
     },
     {
       "label": "errors.js",
@@ -1089,7 +1233,7 @@
       "source_file": "admin\\routes\\errors.js",
       "source_location": "L1",
       "id": "errors",
-      "community": 40
+      "community": 49
     },
     {
       "label": "members.js",
@@ -1097,7 +1241,7 @@
       "source_file": "admin\\routes\\members.js",
       "source_location": "L1",
       "id": "members",
-      "community": 41
+      "community": 50
     },
     {
       "label": "multi-member.js",
@@ -1105,7 +1249,7 @@
       "source_file": "admin\\routes\\multi-member.js",
       "source_location": "L1",
       "id": "multi_member",
-      "community": 42
+      "community": 51
     },
     {
       "label": "operator.js",
@@ -1113,55 +1257,55 @@
       "source_file": "admin\\routes\\operator.js",
       "source_location": "L1",
       "id": "operator",
-      "community": 11
+      "community": 14
     },
     {
       "label": "resolveApiKey()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L50",
+      "source_location": "L64",
       "id": "operator_resolveapikey",
-      "community": 11
+      "community": 14
     },
     {
       "label": "syncMappingMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L78",
+      "source_location": "L92",
       "id": "operator_syncmappingmembers",
-      "community": 11
+      "community": 14
     },
     {
       "label": "activateLocationMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L215",
+      "source_location": "L253",
       "id": "operator_activatelocationmembers",
-      "community": 11
+      "community": 14
     },
     {
       "label": "validateApiKeyGroups()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L240",
+      "source_location": "L278",
       "id": "operator_validateapikeygroups",
-      "community": 11
+      "community": 14
     },
     {
       "label": "retryPendingHardwareMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L277",
+      "source_location": "L315",
       "id": "operator_retrypendinghardwaremembers",
-      "community": 11
+      "community": 14
     },
     {
       "label": "requireInviteToken()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L336",
+      "source_location": "L374",
       "id": "operator_requireinvitetoken",
-      "community": 11
+      "community": 14
     },
     {
       "label": "portal.js",
@@ -1169,7 +1313,7 @@
       "source_file": "admin\\routes\\portal.js",
       "source_location": "L1",
       "id": "portal",
-      "community": 43
+      "community": 52
     },
     {
       "label": "queue.js",
@@ -1177,7 +1321,7 @@
       "source_file": "admin\\routes\\queue.js",
       "source_location": "L1",
       "id": "queue",
-      "community": 44
+      "community": 53
     },
     {
       "label": "webhooks.js",
@@ -1185,7 +1329,7 @@
       "source_file": "admin\\routes\\webhooks.js",
       "source_location": "L1",
       "id": "webhooks",
-      "community": 45
+      "community": 54
     },
     {
       "label": "main.js",
@@ -1193,7 +1337,7 @@
       "source_file": "admin\\svelte\\main.js",
       "source_location": "L1",
       "id": "main",
-      "community": 46
+      "community": 55
     },
     {
       "label": "plan-mapping-entry.js",
@@ -1201,7 +1345,7 @@
       "source_file": "admin\\svelte\\plan-mapping-entry.js",
       "source_location": "L1",
       "id": "plan_mapping_entry",
-      "community": 47
+      "community": 56
     },
     {
       "label": "toast.js",
@@ -1209,7 +1353,7 @@
       "source_file": "admin\\svelte\\stores\\toast.js",
       "source_location": "L1",
       "id": "toast",
-      "community": 36
+      "community": 41
     },
     {
       "label": "showToast()",
@@ -1217,7 +1361,7 @@
       "source_file": "admin\\svelte\\stores\\toast.js",
       "source_location": "L17",
       "id": "toast_showtoast",
-      "community": 36
+      "community": 41
     },
     {
       "label": "crypto-utils.js",
@@ -1225,7 +1369,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L1",
       "id": "crypto_utils",
-      "community": 23
+      "community": 27
     },
     {
       "label": "_getKey()",
@@ -1233,7 +1377,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L25",
       "id": "crypto_utils_getkey",
-      "community": 23
+      "community": 27
     },
     {
       "label": "encryptApiKey()",
@@ -1241,7 +1385,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L38",
       "id": "crypto_utils_encryptapikey",
-      "community": 23
+      "community": 27
     },
     {
       "label": "decryptApiKey()",
@@ -1249,7 +1393,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L52",
       "id": "crypto_utils_decryptapikey",
-      "community": 23
+      "community": 27
     },
     {
       "label": "grant-revoke.js",
@@ -1257,7 +1401,7 @@
       "source_file": "core\\grant-revoke.js",
       "source_location": "L1",
       "id": "grant_revoke",
-      "community": 20
+      "community": 22
     },
     {
       "label": "GrantRevokeLogic",
@@ -1265,7 +1409,7 @@
       "source_file": "core\\grant-revoke.js",
       "source_location": "L30",
       "id": "grant_revoke_grantrevokelogic",
-      "community": 20
+      "community": 22
     },
     {
       "label": ".processGrant()",
@@ -1273,23 +1417,23 @@
       "source_file": "core\\grant-revoke.js",
       "source_location": "L43",
       "id": "grant_revoke_grantrevokelogic_processgrant",
-      "community": 20
+      "community": 22
     },
     {
       "label": "._getClientApiKey()",
       "file_type": "code",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L95",
+      "source_location": "L149",
       "id": "grant_revoke_grantrevokelogic_getclientapikey",
-      "community": 20
+      "community": 22
     },
     {
       "label": ".processRevoke()",
       "file_type": "code",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L102",
+      "source_location": "L156",
       "id": "grant_revoke_grantrevokelogic_processrevoke",
-      "community": 20
+      "community": 22
     },
     {
       "label": "hardware-health-check.js",
@@ -1319,7 +1463,7 @@
       "label": "_reconcileGroups()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L115",
+      "source_location": "L119",
       "id": "hardware_health_check_reconcilegroups",
       "community": 7
     },
@@ -1327,15 +1471,31 @@
       "label": "_notifyOrphanedGroups()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L169",
+      "source_location": "L248",
       "id": "hardware_health_check_notifyorphanedgroups",
+      "community": 7
+    },
+    {
+      "label": "_reconcileWixPlans()",
+      "file_type": "code",
+      "source_file": "core\\hardware-health-check.js",
+      "source_location": "L299",
+      "id": "hardware_health_check_reconcilewixplans",
+      "community": 7
+    },
+    {
+      "label": "_notifyArchivedPlans()",
+      "file_type": "code",
+      "source_file": "core\\hardware-health-check.js",
+      "source_location": "L384",
+      "id": "hardware_health_check_notifyarchivedplans",
       "community": 7
     },
     {
       "label": "_diagnose()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L206",
+      "source_location": "L424",
       "id": "hardware_health_check_diagnose",
       "community": 7
     },
@@ -1343,7 +1503,7 @@
       "label": "_updateLocationVerification()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L219",
+      "source_location": "L437",
       "id": "hardware_health_check_updatelocationverification",
       "community": 7
     },
@@ -1351,7 +1511,7 @@
       "label": "_notifyFailure()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L229",
+      "source_location": "L447",
       "id": "hardware_health_check_notifyfailure",
       "community": 7
     },
@@ -1361,7 +1521,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L1",
       "id": "hmac_monitor",
-      "community": 28
+      "community": 31
     },
     {
       "label": "recordFailure()",
@@ -1369,7 +1529,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L33",
       "id": "hmac_monitor_recordfailure",
-      "community": 28
+      "community": 31
     },
     {
       "label": "_sendAlert()",
@@ -1377,7 +1537,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L68",
       "id": "hmac_monitor_sendalert",
-      "community": 28
+      "community": 31
     },
     {
       "label": "location-lapse.js",
@@ -1385,23 +1545,23 @@
       "source_file": "core\\location-lapse.js",
       "source_location": "L1",
       "id": "location_lapse",
-      "community": 29
+      "community": 32
     },
     {
       "label": "suspendLocationMembers()",
       "file_type": "code",
       "source_file": "core\\location-lapse.js",
-      "source_location": "L44",
+      "source_location": "L45",
       "id": "location_lapse_suspendlocationmembers",
-      "community": 29
+      "community": 32
     },
     {
       "label": "_setLocationStatus()",
       "file_type": "code",
       "source_file": "core\\location-lapse.js",
-      "source_location": "L144",
+      "source_location": "L143",
       "id": "location_lapse_setlocationstatus",
-      "community": 29
+      "community": 32
     },
     {
       "label": "logger.js",
@@ -1409,7 +1569,7 @@
       "source_file": "core\\logger.js",
       "source_location": "L1",
       "id": "logger",
-      "community": 15
+      "community": 16
     },
     {
       "label": "getDb()",
@@ -1417,7 +1577,7 @@
       "source_file": "core\\logger.js",
       "source_location": "L70",
       "id": "logger_getdb",
-      "community": 15
+      "community": 16
     },
     {
       "label": "deriveService()",
@@ -1425,7 +1585,7 @@
       "source_file": "core\\logger.js",
       "source_location": "L80",
       "id": "logger_deriveservice",
-      "community": 15
+      "community": 16
     },
     {
       "label": "persistToDiagnosticLog()",
@@ -1433,23 +1593,23 @@
       "source_file": "core\\logger.js",
       "source_location": "L103",
       "id": "logger_persisttodiagnosticlog",
-      "community": 15
+      "community": 16
     },
     {
       "label": "emit()",
       "file_type": "code",
       "source_file": "core\\logger.js",
-      "source_location": "L151",
+      "source_location": "L155",
       "id": "logger_emit",
-      "community": 15
+      "community": 16
     },
     {
       "label": "withTrace()",
       "file_type": "code",
       "source_file": "core\\logger.js",
-      "source_location": "L205",
+      "source_location": "L209",
       "id": "logger_withtrace",
-      "community": 15
+      "community": 16
     },
     {
       "label": "member-sync-api.js",
@@ -1457,47 +1617,47 @@
       "source_file": "core\\member-sync-api.js",
       "source_location": "L1",
       "id": "member_sync_api",
-      "community": 16
+      "community": 17
     },
     {
       "label": "MemberSyncApi",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L36",
+      "source_location": "L37",
       "id": "member_sync_api_membersyncapi",
-      "community": 16
+      "community": 17
     },
     {
       "label": ".getAccessStatus()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L47",
+      "source_location": "L48",
       "id": "member_sync_api_membersyncapi_getaccessstatus",
-      "community": 16
+      "community": 17
     },
     {
       "label": "._verifyWixJWT()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L177",
+      "source_location": "L178",
       "id": "member_sync_api_membersyncapi_verifywixjwt",
-      "community": 16
+      "community": 17
     },
     {
       "label": "._getWixPublicKey()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L229",
+      "source_location": "L230",
       "id": "member_sync_api_membersyncapi_getwixpublickey",
-      "community": 16
+      "community": 17
     },
     {
       "label": "._fetchWixJwks()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L244",
+      "source_location": "L245",
       "id": "member_sync_api_membersyncapi_fetchwixjwks",
-      "community": 16
+      "community": 17
     },
     {
       "label": "plan-mapping-resolver.js",
@@ -1505,23 +1665,23 @@
       "source_file": "core\\plan-mapping-resolver.js",
       "source_location": "L1",
       "id": "plan_mapping_resolver",
-      "community": 30
+      "community": 33
     },
     {
       "label": "PlanMappingResolver",
       "file_type": "code",
       "source_file": "core\\plan-mapping-resolver.js",
-      "source_location": "L23",
+      "source_location": "L24",
       "id": "plan_mapping_resolver_planmappingresolver",
-      "community": 30
+      "community": 33
     },
     {
       "label": ".resolve()",
       "file_type": "code",
       "source_file": "core\\plan-mapping-resolver.js",
-      "source_location": "L39",
+      "source_location": "L40",
       "id": "plan_mapping_resolver_planmappingresolver_resolve",
-      "community": 30
+      "community": 33
     },
     {
       "label": "queue-worker.js",
@@ -1529,7 +1689,7 @@
       "source_file": "core\\queue-worker.js",
       "source_location": "L1",
       "id": "queue_worker",
-      "community": 24
+      "community": 28
     },
     {
       "label": "getClientApiKey()",
@@ -1537,7 +1697,7 @@
       "source_file": "core\\queue-worker.js",
       "source_location": "L51",
       "id": "queue_worker_getclientapikey",
-      "community": 24
+      "community": 28
     },
     {
       "label": "processJob()",
@@ -1545,15 +1705,55 @@
       "source_file": "core\\queue-worker.js",
       "source_location": "L62",
       "id": "queue_worker_processjob",
-      "community": 24
+      "community": 28
     },
     {
       "label": "startWorker()",
       "file_type": "code",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L190",
+      "source_location": "L250",
       "id": "queue_worker_startworker",
-      "community": 24
+      "community": 28
+    },
+    {
+      "label": "rate-limiter.js",
+      "file_type": "code",
+      "source_file": "core\\rate-limiter.js",
+      "source_location": "L1",
+      "id": "rate_limiter",
+      "community": 23
+    },
+    {
+      "label": "RateLimiter",
+      "file_type": "code",
+      "source_file": "core\\rate-limiter.js",
+      "source_location": "L26",
+      "id": "rate_limiter_ratelimiter",
+      "community": 23
+    },
+    {
+      "label": ".constructor()",
+      "file_type": "code",
+      "source_file": "core\\rate-limiter.js",
+      "source_location": "L33",
+      "id": "rate_limiter_ratelimiter_constructor",
+      "community": 23
+    },
+    {
+      "label": ".acquire()",
+      "file_type": "code",
+      "source_file": "core\\rate-limiter.js",
+      "source_location": "L50",
+      "id": "rate_limiter_ratelimiter_acquire",
+      "community": 23
+    },
+    {
+      "label": ".currentCount()",
+      "file_type": "code",
+      "source_file": "core\\rate-limiter.js",
+      "source_location": "L75",
+      "id": "rate_limiter_ratelimiter_currentcount",
+      "community": 23
     },
     {
       "label": "reconciliation.js",
@@ -1567,7 +1767,7 @@
       "label": "NightlyReconciliation",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L28",
+      "source_location": "L30",
       "id": "reconciliation_nightlyreconciliation",
       "community": 6
     },
@@ -1575,7 +1775,7 @@
       "label": ".constructor()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L30",
+      "source_location": "L32",
       "id": "reconciliation_nightlyreconciliation_constructor",
       "community": 6
     },
@@ -1583,15 +1783,31 @@
       "label": ".runNightlySweep()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L37",
+      "source_location": "L39",
       "id": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "community": 6
+    },
+    {
+      "label": "._syncTrueSources()",
+      "file_type": "code",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L101",
+      "id": "reconciliation_nightlyreconciliation_synctruesources",
+      "community": 6
+    },
+    {
+      "label": "._syncClient()",
+      "file_type": "code",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L135",
+      "id": "reconciliation_nightlyreconciliation_syncclient",
       "community": 6
     },
     {
       "label": "._syncDoorLockdownStates()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L72",
+      "source_location": "L265",
       "id": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
       "community": 6
     },
@@ -1599,7 +1815,7 @@
       "label": "._fetchActionableRecords()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L104",
+      "source_location": "L297",
       "id": "reconciliation_nightlyreconciliation_fetchactionablerecords",
       "community": 6
     },
@@ -1607,7 +1823,7 @@
       "label": "._processRecordTargeted()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L116",
+      "source_location": "L309",
       "id": "reconciliation_nightlyreconciliation_processrecordtargeted",
       "community": 6
     },
@@ -1615,7 +1831,7 @@
       "label": "._generateAndSendDigest()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L148",
+      "source_location": "L341",
       "id": "reconciliation_nightlyreconciliation_generateandsenddigest",
       "community": 6
     },
@@ -1623,7 +1839,7 @@
       "label": "._sleep()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L208",
+      "source_location": "L401",
       "id": "reconciliation_nightlyreconciliation_sleep",
       "community": 6
     },
@@ -1633,7 +1849,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L1",
       "id": "redis_utils",
-      "community": 31
+      "community": 34
     },
     {
       "label": "parseRedisUrl()",
@@ -1641,7 +1857,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L15",
       "id": "redis_utils_parseredisurl",
-      "community": 31
+      "community": 34
     },
     {
       "label": "getRedisConnection()",
@@ -1649,7 +1865,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L29",
       "id": "redis_utils_getredisconnection",
-      "community": 31
+      "community": 34
     },
     {
       "label": "retry-engine.js",
@@ -1657,7 +1873,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L1",
       "id": "retry_engine",
-      "community": 17
+      "community": 18
     },
     {
       "label": "RetryEngine",
@@ -1665,7 +1881,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L22",
       "id": "retry_engine_retryengine",
-      "community": 17
+      "community": 18
     },
     {
       "label": ".constructor()",
@@ -1673,7 +1889,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L23",
       "id": "retry_engine_retryengine_constructor",
-      "community": 17
+      "community": 18
     },
     {
       "label": ".handleFailure()",
@@ -1681,7 +1897,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L34",
       "id": "retry_engine_retryengine_handlefailure",
-      "community": 17
+      "community": 18
     },
     {
       "label": "._moveToDeadLetter()",
@@ -1689,7 +1905,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L53",
       "id": "retry_engine_retryengine_movetodeadletter",
-      "community": 17
+      "community": 18
     },
     {
       "label": "._notifyOperator()",
@@ -1697,7 +1913,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L160",
       "id": "retry_engine_retryengine_notifyoperator",
-      "community": 17
+      "community": 18
     },
     {
       "label": "tenant-resolver.js",
@@ -1705,55 +1921,63 @@
       "source_file": "core\\tenant-resolver.js",
       "source_location": "L1",
       "id": "tenant_resolver",
-      "community": 12
+      "community": 9
     },
     {
       "label": "TenantResolver",
       "file_type": "code",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L27",
+      "source_location": "L28",
       "id": "tenant_resolver_tenantresolver",
-      "community": 12
+      "community": 9
     },
     {
       "label": ".constructor()",
       "file_type": "code",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L28",
+      "source_location": "L29",
       "id": "tenant_resolver_tenantresolver_constructor",
-      "community": 12
+      "community": 9
     },
     {
       "label": ".resolve()",
       "file_type": "code",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L40",
+      "source_location": "L41",
       "id": "tenant_resolver_tenantresolver_resolve",
-      "community": 12
+      "community": 9
+    },
+    {
+      "label": ".resolveByClientId()",
+      "file_type": "code",
+      "source_file": "core\\tenant-resolver.js",
+      "source_location": "L106",
+      "id": "tenant_resolver_tenantresolver_resolvebyclientid",
+      "community": 9
     },
     {
       "label": ".registerSiteId()",
       "file_type": "code",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L105",
+      "source_location": "L139",
       "id": "tenant_resolver_tenantresolver_registersiteid",
-      "community": 12
+      "community": 9
     },
     {
       "label": ".invalidate()",
       "file_type": "code",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L126",
+      "source_location": "L160",
       "id": "tenant_resolver_tenantresolver_invalidate",
-      "community": 12
+      "community": 9
     },
     {
       "label": ".clearCache()",
       "file_type": "code",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L133",
+      "source_location": "L167",
       "id": "tenant_resolver_tenantresolver_clearcache",
-      "community": 12
+      "community": 9
     },
     {
       "label": "webhook-processor.js",
@@ -1761,7 +1985,7 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L1",
       "id": "webhook_processor",
-      "community": 8
+      "community": 10
     },
     {
       "label": "WebhookProcessor",
@@ -1769,7 +1993,7 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L41",
       "id": "webhook_processor_webhookprocessor",
-      "community": 8
+      "community": 10
     },
     {
       "label": ".processIncoming()",
@@ -1777,47 +2001,103 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L43",
       "id": "webhook_processor_webhookprocessor_processincoming",
-      "community": 8
+      "community": 10
     },
     {
       "label": "._validateStructure()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L97",
+      "source_location": "L132",
       "id": "webhook_processor_webhookprocessor_validatestructure",
-      "community": 8
+      "community": 10
     },
     {
       "label": "._checkIfDuplicate()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L106",
+      "source_location": "L141",
       "id": "webhook_processor_webhookprocessor_checkifduplicate",
-      "community": 8
+      "community": 10
     },
     {
       "label": "._markEventProcessed()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L114",
+      "source_location": "L149",
       "id": "webhook_processor_webhookprocessor_markeventprocessed",
-      "community": 8
+      "community": 10
     },
     {
       "label": "._logToAlertLog()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L121",
+      "source_location": "L156",
       "id": "webhook_processor_webhookprocessor_logtoalertlog",
-      "community": 8
+      "community": 10
     },
     {
       "label": ".logWebhookAttempt()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L133",
+      "source_location": "L179",
       "id": "webhook_processor_webhookprocessor_logwebhookattempt",
-      "community": 8
+      "community": 10
+    },
+    {
+      "label": "audit-by-internal-id.js",
+      "file_type": "code",
+      "source_file": "scripts\\audit-by-internal-id.js",
+      "source_location": "L1",
+      "id": "audit_by_internal_id",
+      "community": 42
+    },
+    {
+      "label": "section()",
+      "file_type": "code",
+      "source_file": "scripts\\audit-by-internal-id.js",
+      "source_location": "L11",
+      "id": "audit_by_internal_id_section",
+      "community": 42
+    },
+    {
+      "label": "audit-kisi.js",
+      "file_type": "code",
+      "source_file": "scripts\\audit-kisi.js",
+      "source_location": "L1",
+      "id": "audit_kisi",
+      "community": 43
+    },
+    {
+      "label": "header()",
+      "file_type": "code",
+      "source_file": "scripts\\audit-kisi.js",
+      "source_location": "L21",
+      "id": "audit_kisi_header",
+      "community": 43
+    },
+    {
+      "label": "audit-member.js",
+      "file_type": "code",
+      "source_file": "scripts\\audit-member.js",
+      "source_location": "L1",
+      "id": "audit_member",
+      "community": 44
+    },
+    {
+      "label": "section()",
+      "file_type": "code",
+      "source_file": "scripts\\audit-member.js",
+      "source_location": "L15",
+      "id": "audit_member_section",
+      "community": 44
+    },
+    {
+      "label": "audit-summary.js",
+      "file_type": "code",
+      "source_file": "scripts\\audit-summary.js",
+      "source_location": "L1",
+      "id": "audit_summary",
+      "community": 57
     },
     {
       "label": "priority-sequencer.js",
@@ -1825,7 +2105,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L1",
       "id": "priority_sequencer",
-      "community": 25
+      "community": 29
     },
     {
       "label": "PrioritySequencer",
@@ -1833,7 +2113,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L11",
       "id": "priority_sequencer_prioritysequencer",
-      "community": 25
+      "community": 29
     },
     {
       "label": ".sort()",
@@ -1841,7 +2121,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L16",
       "id": "priority_sequencer_prioritysequencer_sort",
-      "community": 25
+      "community": 29
     },
     {
       "label": ".cacheResults()",
@@ -1849,7 +2129,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L31",
       "id": "priority_sequencer_prioritysequencer_cacheresults",
-      "community": 25
+      "community": 29
     },
     {
       "label": "fixtures.js",
@@ -1857,7 +2137,15 @@
       "source_file": "test\\helpers\\fixtures.js",
       "source_location": "L1",
       "id": "fixtures",
-      "community": 48
+      "community": 58
+    },
+    {
+      "label": "grant-retry-idempotency.test.js",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\grant-retry-idempotency.test.js",
+      "source_location": "L1",
+      "id": "grant_retry_idempotency_test",
+      "community": 59
     },
     {
       "label": "member-cancels-loses-access.test.js",
@@ -1865,7 +2153,7 @@
       "source_file": "test\\p1-critical-path\\member-cancels-loses-access.test.js",
       "source_location": "L1",
       "id": "member_cancels_loses_access_test",
-      "community": 37
+      "community": 45
     },
     {
       "label": "mockClientApiKey()",
@@ -1873,7 +2161,7 @@
       "source_file": "test\\p1-critical-path\\member-cancels-loses-access.test.js",
       "source_location": "L53",
       "id": "member_cancels_loses_access_test_mockclientapikey",
-      "community": 37
+      "community": 45
     },
     {
       "label": "member-pays-gets-access.test.js",
@@ -1881,7 +2169,39 @@
       "source_file": "test\\p1-critical-path\\member-pays-gets-access.test.js",
       "source_location": "L1",
       "id": "member_pays_gets_access_test",
-      "community": 49
+      "community": 60
+    },
+    {
+      "label": "ob-89-two-gate.test.js",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\ob-89-two-gate.test.js",
+      "source_location": "L1",
+      "id": "ob_89_two_gate_test",
+      "community": 61
+    },
+    {
+      "label": "queue-worker-coordination.test.js",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
+      "source_location": "L1",
+      "id": "queue_worker_coordination_test",
+      "community": 35
+    },
+    {
+      "label": "constructor()",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
+      "source_location": "L20",
+      "id": "queue_worker_coordination_test_constructor",
+      "community": 35
+    },
+    {
+      "label": "makeJob()",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
+      "source_location": "L84",
+      "id": "queue_worker_coordination_test_makejob",
+      "community": 35
     },
     {
       "label": "api-key-encryption.test.js",
@@ -1889,7 +2209,55 @@
       "source_file": "test\\p2-onboarding\\api-key-encryption.test.js",
       "source_location": "L1",
       "id": "api_key_encryption_test",
-      "community": 50
+      "community": 62
+    },
+    {
+      "label": "plan-mapping-resolver.test.js",
+      "file_type": "code",
+      "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
+      "source_location": "L1",
+      "id": "plan_mapping_resolver_test",
+      "community": 46
+    },
+    {
+      "label": "mockMappingRow()",
+      "file_type": "code",
+      "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
+      "source_location": "L43",
+      "id": "plan_mapping_resolver_test_mockmappingrow",
+      "community": 46
+    },
+    {
+      "label": "no-raw-console.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
+      "source_location": "L1",
+      "id": "no_raw_console_test",
+      "community": 36
+    },
+    {
+      "label": "collectJsFiles()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
+      "source_location": "L34",
+      "id": "no_raw_console_test_collectjsfiles",
+      "community": 36
+    },
+    {
+      "label": "findOffenders()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
+      "source_location": "L57",
+      "id": "no_raw_console_test_findoffenders",
+      "community": 36
+    },
+    {
+      "label": "rate-limiter.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\rate-limiter.test.js",
+      "source_location": "L1",
+      "id": "rate_limiter_test",
+      "community": 63
     },
     {
       "label": "wix-adapter-parsing.test.js",
@@ -1897,7 +2265,47 @@
       "source_file": "test\\p3-data-integrity\\wix-adapter-parsing.test.js",
       "source_location": "L1",
       "id": "wix_adapter_parsing_test",
-      "community": 51
+      "community": 64
+    },
+    {
+      "label": "wix-members-api-normalization.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
+      "source_location": "L1",
+      "id": "wix_members_api_normalization_test",
+      "community": 24
+    },
+    {
+      "label": "constructor()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
+      "source_location": "L23",
+      "id": "wix_members_api_normalization_test_constructor",
+      "community": 24
+    },
+    {
+      "label": "acquire()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
+      "source_location": "L24",
+      "id": "wix_members_api_normalization_test_acquire",
+      "community": 24
+    },
+    {
+      "label": "currentCount()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
+      "source_location": "L25",
+      "id": "wix_members_api_normalization_test_currentcount",
+      "community": 24
+    },
+    {
+      "label": "stubFetchPair()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
+      "source_location": "L37",
+      "id": "wix_members_api_normalization_test_stubfetchpair",
+      "community": 24
     },
     {
       "label": "business-risk-reporter.js",
@@ -1905,7 +2313,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L1",
       "id": "business_risk_reporter",
-      "community": 9
+      "community": 11
     },
     {
       "label": "getTierForPath()",
@@ -1913,7 +2321,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L26",
       "id": "business_risk_reporter_gettierforpath",
-      "community": 9
+      "community": 11
     },
     {
       "label": "formatDivider()",
@@ -1921,7 +2329,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L31",
       "id": "business_risk_reporter_formatdivider",
-      "community": 9
+      "community": 11
     },
     {
       "label": "BusinessRiskReporter",
@@ -1929,7 +2337,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L35",
       "id": "business_risk_reporter_businessriskreporter",
-      "community": 9
+      "community": 11
     },
     {
       "label": ".constructor()",
@@ -1937,7 +2345,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L36",
       "id": "business_risk_reporter_businessriskreporter_constructor",
-      "community": 9
+      "community": 11
     },
     {
       "label": ".onTestResult()",
@@ -1945,7 +2353,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L44",
       "id": "business_risk_reporter_businessriskreporter_ontestresult",
-      "community": 9
+      "community": 11
     },
     {
       "label": ".onRunComplete()",
@@ -1953,7 +2361,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L61",
       "id": "business_risk_reporter_businessriskreporter_onruncomplete",
-      "community": 9
+      "community": 11
     },
     {
       "label": "._printAllClear()",
@@ -1961,7 +2369,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L120",
       "id": "business_risk_reporter_businessriskreporter_printallclear",
-      "community": 9
+      "community": 11
     }
   ],
   "links": [
@@ -1969,7 +2377,19 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "db.js",
-      "source_location": "L63",
+      "source_location": "L21",
+      "weight": 1.0,
+      "_src": "db",
+      "_tgt": "db_getlog",
+      "source": "db",
+      "target": "db_getlog",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "db.js",
+      "source_location": "L70",
       "weight": 1.0,
       "_src": "db",
       "_tgt": "db_query",
@@ -1981,7 +2401,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "db.js",
-      "source_location": "L103",
+      "source_location": "L105",
       "weight": 1.0,
       "_src": "db",
       "_tgt": "db_getclient",
@@ -1993,7 +2413,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "db.js",
-      "source_location": "L113",
+      "source_location": "L115",
       "weight": 1.0,
       "_src": "db",
       "_tgt": "db_healthcheck",
@@ -2005,7 +2425,31 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "db.js",
-      "source_location": "L115",
+      "source_location": "L77",
+      "weight": 1.0,
+      "_src": "db_query",
+      "_tgt": "db_getlog",
+      "source": "db_getlog",
+      "target": "db_query",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "db.js",
+      "source_location": "L120",
+      "weight": 1.0,
+      "_src": "db_healthcheck",
+      "_tgt": "db_getlog",
+      "source": "db_getlog",
+      "target": "db_healthcheck",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "db.js",
+      "source_location": "L117",
       "weight": 1.0,
       "_src": "db_healthcheck",
       "_tgt": "db_query",
@@ -2029,7 +2473,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\server.js",
-      "source_location": "L58",
+      "source_location": "L59",
       "weight": 1.0,
       "_src": "server",
       "_tgt": "server_allowwixframe",
@@ -2041,7 +2485,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\server.js",
-      "source_location": "L93",
+      "source_location": "L94",
       "weight": 1.0,
       "_src": "server",
       "_tgt": "server_sessionmeta",
@@ -2065,7 +2509,19 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L23",
+      "source_location": "L32",
+      "weight": 1.0,
+      "_src": "hardware_adapter",
+      "_tgt": "hardware_adapter_requirefields",
+      "source": "hardware_adapter",
+      "target": "hardware_adapter_requirefields",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L76",
       "weight": 1.0,
       "_src": "hardware_adapter",
       "_tgt": "hardware_adapter_hardwareadapter",
@@ -2074,10 +2530,22 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L103",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter_validate",
+      "_tgt": "hardware_adapter_requirefields",
+      "source": "hardware_adapter_requirefields",
+      "target": "hardware_adapter_hardwareadapter_validate",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L25",
+      "source_location": "L78",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_getadapter",
@@ -2089,7 +2557,19 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L38",
+      "source_location": "L91",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter",
+      "_tgt": "hardware_adapter_hardwareadapter_validate",
+      "source": "hardware_adapter_hardwareadapter",
+      "target": "hardware_adapter_hardwareadapter_validate",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L111",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_getratelimit",
@@ -2101,7 +2581,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L46",
+      "source_location": "L119",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_finduserbyemail",
@@ -2113,7 +2593,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L50",
+      "source_location": "L124",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_createuser",
@@ -2125,7 +2605,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L59",
+      "source_location": "L134",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_assignrole",
@@ -2137,7 +2617,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L63",
+      "source_location": "L139",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_removerole",
@@ -2149,7 +2629,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L67",
+      "source_location": "L144",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_suspendaccess",
@@ -2161,7 +2641,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L71",
+      "source_location": "L149",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_enableaccess",
@@ -2173,7 +2653,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L75",
+      "source_location": "L154",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_deleteuser",
@@ -2185,7 +2665,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L79",
+      "source_location": "L159",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_getlocks",
@@ -2197,7 +2677,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L83",
+      "source_location": "L163",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter",
       "_tgt": "hardware_adapter_hardwareadapter_getgroups",
@@ -2206,10 +2686,22 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L167",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter",
+      "_tgt": "hardware_adapter_hardwareadapter_getmanagedroleassignments",
+      "source": "hardware_adapter_hardwareadapter",
+      "target": "hardware_adapter_hardwareadapter_getmanagedroleassignments",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L47",
+      "source_location": "L121",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter_finduserbyemail",
       "_tgt": "hardware_adapter_hardwareadapter_getadapter",
@@ -2221,7 +2713,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L51",
+      "source_location": "L126",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter_createuser",
       "_tgt": "hardware_adapter_hardwareadapter_getadapter",
@@ -2233,7 +2725,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L60",
+      "source_location": "L136",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter_assignrole",
       "_tgt": "hardware_adapter_hardwareadapter_getadapter",
@@ -2245,7 +2737,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L64",
+      "source_location": "L141",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter_removerole",
       "_tgt": "hardware_adapter_hardwareadapter_getadapter",
@@ -2257,7 +2749,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L68",
+      "source_location": "L146",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter_suspendaccess",
       "_tgt": "hardware_adapter_hardwareadapter_getadapter",
@@ -2269,7 +2761,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L72",
+      "source_location": "L151",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter_enableaccess",
       "_tgt": "hardware_adapter_hardwareadapter_getadapter",
@@ -2281,7 +2773,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L76",
+      "source_location": "L156",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter_deleteuser",
       "_tgt": "hardware_adapter_hardwareadapter_getadapter",
@@ -2293,7 +2785,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L80",
+      "source_location": "L160",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter_getlocks",
       "_tgt": "hardware_adapter_hardwareadapter_getadapter",
@@ -2305,7 +2797,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\hardware-adapter.js",
-      "source_location": "L84",
+      "source_location": "L164",
       "weight": 1.0,
       "_src": "hardware_adapter_hardwareadapter_getgroups",
       "_tgt": "hardware_adapter_hardwareadapter_getadapter",
@@ -2314,10 +2806,106 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L168",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter_getmanagedroleassignments",
+      "_tgt": "hardware_adapter_hardwareadapter_getadapter",
+      "source": "hardware_adapter_hardwareadapter_getadapter",
+      "target": "hardware_adapter_hardwareadapter_getmanagedroleassignments",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L120",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter_finduserbyemail",
+      "_tgt": "hardware_adapter_hardwareadapter_validate",
+      "source": "hardware_adapter_hardwareadapter_validate",
+      "target": "hardware_adapter_hardwareadapter_finduserbyemail",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L125",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter_createuser",
+      "_tgt": "hardware_adapter_hardwareadapter_validate",
+      "source": "hardware_adapter_hardwareadapter_validate",
+      "target": "hardware_adapter_hardwareadapter_createuser",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L135",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter_assignrole",
+      "_tgt": "hardware_adapter_hardwareadapter_validate",
+      "source": "hardware_adapter_hardwareadapter_validate",
+      "target": "hardware_adapter_hardwareadapter_assignrole",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L140",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter_removerole",
+      "_tgt": "hardware_adapter_hardwareadapter_validate",
+      "source": "hardware_adapter_hardwareadapter_validate",
+      "target": "hardware_adapter_hardwareadapter_removerole",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L145",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter_suspendaccess",
+      "_tgt": "hardware_adapter_hardwareadapter_validate",
+      "source": "hardware_adapter_hardwareadapter_validate",
+      "target": "hardware_adapter_hardwareadapter_suspendaccess",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L150",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter_enableaccess",
+      "_tgt": "hardware_adapter_hardwareadapter_validate",
+      "source": "hardware_adapter_hardwareadapter_validate",
+      "target": "hardware_adapter_hardwareadapter_enableaccess",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\hardware-adapter.js",
+      "source_location": "L155",
+      "weight": 1.0,
+      "_src": "hardware_adapter_hardwareadapter_deleteuser",
+      "_tgt": "hardware_adapter_hardwareadapter_validate",
+      "source": "hardware_adapter_hardwareadapter_validate",
+      "target": "hardware_adapter_hardwareadapter_deleteuser",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L14",
+      "source_location": "L15",
       "weight": 1.0,
       "_src": "kisi_adapter",
       "_tgt": "kisi_adapter_kisiadapter",
@@ -2340,8 +2928,8 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L18",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L19",
       "weight": 1.0,
       "_src": "standard_adapter",
       "_tgt": "standard_adapter_standardadapter",
@@ -2352,8 +2940,8 @@
     {
       "relation": "method",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L39",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L40",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_resolveandlock",
@@ -2364,8 +2952,8 @@
     {
       "relation": "method",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L162",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L174",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_resolveidentity",
@@ -2376,8 +2964,8 @@
     {
       "relation": "method",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L203",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L259",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_completegrant",
@@ -2388,8 +2976,8 @@
     {
       "relation": "method",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L248",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L304",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_maybefirefirstgrantemail",
@@ -2400,8 +2988,8 @@
     {
       "relation": "method",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L307",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L363",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_completerevoke",
@@ -2412,8 +3000,8 @@
     {
       "relation": "method",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L378",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L434",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_releaselock",
@@ -2424,8 +3012,8 @@
     {
       "relation": "method",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L410",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L466",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -2434,10 +3022,46 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L486",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter",
+      "_tgt": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
+      "source": "standard_adapter_standardadapter",
+      "target": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L507",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter",
+      "_tgt": "standard_adapter_standardadapter_recovermissingemail",
+      "source": "standard_adapter_standardadapter",
+      "target": "standard_adapter_standardadapter_recovermissingemail",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L610",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter",
+      "_tgt": "standard_adapter_standardadapter_parkpendingidentity",
+      "source": "standard_adapter_standardadapter",
+      "target": "standard_adapter_standardadapter_parkpendingidentity",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "calls",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L131",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L132",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_resolveandlock",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -2448,8 +3072,44 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L233",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L194",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter_resolveidentity",
+      "_tgt": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
+      "source": "standard_adapter_standardadapter_resolveidentity",
+      "target": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L203",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter_resolveidentity",
+      "_tgt": "standard_adapter_standardadapter_recovermissingemail",
+      "source": "standard_adapter_standardadapter_resolveidentity",
+      "target": "standard_adapter_standardadapter_recovermissingemail",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L216",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter_resolveidentity",
+      "_tgt": "standard_adapter_standardadapter_parkpendingidentity",
+      "source": "standard_adapter_standardadapter_resolveidentity",
+      "target": "standard_adapter_standardadapter_parkpendingidentity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L289",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completegrant",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -2460,8 +3120,8 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L239",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L295",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completegrant",
       "_tgt": "standard_adapter_standardadapter_maybefirefirstgrantemail",
@@ -2472,8 +3132,8 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L361",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L417",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completerevoke",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -2484,8 +3144,8 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
-      "source_file": "AccessSync GitHub\\accesssync\\adapters\\standard-adapter.js",
-      "source_location": "L397",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L453",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_releaselock",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -2497,7 +3157,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-adapter.js",
-      "source_location": "L13",
+      "source_location": "L15",
       "weight": 1.0,
       "_src": "wix_adapter",
       "_tgt": "wix_adapter_wixadapter",
@@ -2509,7 +3169,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L19",
+      "source_location": "L20",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_finduserbyemail",
@@ -2521,7 +3181,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L34",
+      "source_location": "L35",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_createuser",
@@ -2533,7 +3193,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L51",
+      "source_location": "L52",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_assignrole",
@@ -2545,7 +3205,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L70",
+      "source_location": "L71",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_removerole",
@@ -2557,7 +3217,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L81",
+      "source_location": "L82",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_suspendaccess",
@@ -2569,7 +3229,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L93",
+      "source_location": "L94",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_enableaccess",
@@ -2581,7 +3241,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L105",
+      "source_location": "L106",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_deleteuser",
@@ -2593,7 +3253,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L114",
+      "source_location": "L115",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_getgroups",
@@ -2605,7 +3265,19 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L137",
+      "source_location": "L138",
+      "weight": 1.0,
+      "_src": "kisi_adapter_kisiadapter",
+      "_tgt": "kisi_adapter_kisiadapter_getmanagedroleassignments",
+      "source": "kisi_adapter_kisiadapter",
+      "target": "kisi_adapter_kisiadapter_getmanagedroleassignments",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\kisi\\kisi-adapter.js",
+      "source_location": "L182",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_getlocks",
@@ -2857,7 +3529,19 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-adapter.js",
-      "source_location": "L23",
+      "source_location": "L30",
+      "weight": 1.0,
+      "_src": "wix_adapter_wixadapter",
+      "_tgt": "wix_adapter_wixadapter_normalizeeventtype",
+      "source": "wix_adapter_wixadapter",
+      "target": "wix_adapter_wixadapter_normalizeeventtype",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-adapter.js",
+      "source_location": "L53",
       "weight": 1.0,
       "_src": "wix_adapter_wixadapter",
       "_tgt": "wix_adapter_wixadapter_parseevent",
@@ -2866,10 +3550,22 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-adapter.js",
+      "source_location": "L55",
+      "weight": 1.0,
+      "_src": "wix_adapter_wixadapter_parseevent",
+      "_tgt": "wix_adapter_wixadapter_normalizeeventtype",
+      "source": "wix_adapter_wixadapter_normalizeeventtype",
+      "target": "wix_adapter_wixadapter_parseevent",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L22",
+      "source_location": "L23",
       "weight": 1.0,
       "_src": "wix_connector",
       "_tgt": "wix_connector_wixconnector",
@@ -2881,7 +3577,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L23",
+      "source_location": "L24",
       "weight": 1.0,
       "_src": "wix_connector_wixconnector",
       "_tgt": "wix_connector_wixconnector_constructor",
@@ -2893,7 +3589,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L34",
+      "source_location": "L35",
       "weight": 1.0,
       "_src": "wix_connector_wixconnector",
       "_tgt": "wix_connector_wixconnector_handlewebhook",
@@ -2905,7 +3601,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L93",
+      "source_location": "L123",
       "weight": 1.0,
       "_src": "wix_connector_wixconnector",
       "_tgt": "wix_connector_wixconnector_verifysignature",
@@ -2917,7 +3613,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L42",
+      "source_location": "L43",
       "weight": 1.0,
       "_src": "wix_connector_wixconnector_handlewebhook",
       "_tgt": "wix_connector_wixconnector_verifysignature",
@@ -2928,8 +3624,140 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L28",
+      "weight": 1.0,
+      "_src": "wix_members_api",
+      "_tgt": "wix_members_api_wixfetch",
+      "source": "wix_members_api",
+      "target": "wix_members_api_wixfetch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L81",
+      "weight": 1.0,
+      "_src": "wix_members_api",
+      "_tgt": "wix_members_api_issyntheticemail",
+      "source": "wix_members_api",
+      "target": "wix_members_api_issyntheticemail",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L90",
+      "weight": 1.0,
+      "_src": "wix_members_api",
+      "_tgt": "wix_members_api_collectcontactemails",
+      "source": "wix_members_api",
+      "target": "wix_members_api_collectcontactemails",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L111",
+      "weight": 1.0,
+      "_src": "wix_members_api",
+      "_tgt": "wix_members_api_extractname",
+      "source": "wix_members_api",
+      "target": "wix_members_api_extractname",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L151",
+      "weight": 1.0,
+      "_src": "wix_members_api",
+      "_tgt": "wix_members_api_getcontactbyid",
+      "source": "wix_members_api",
+      "target": "wix_members_api_getcontactbyid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L164",
+      "weight": 1.0,
+      "_src": "wix_members_api",
+      "_tgt": "wix_members_api_getmemberbyid",
+      "source": "wix_members_api",
+      "target": "wix_members_api_getmemberbyid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L153",
+      "weight": 1.0,
+      "_src": "wix_members_api_getcontactbyid",
+      "_tgt": "wix_members_api_wixfetch",
+      "source": "wix_members_api_wixfetch",
+      "target": "wix_members_api_getcontactbyid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L166",
+      "weight": 1.0,
+      "_src": "wix_members_api_getmemberbyid",
+      "_tgt": "wix_members_api_wixfetch",
+      "source": "wix_members_api_wixfetch",
+      "target": "wix_members_api_getmemberbyid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L199",
+      "weight": 1.0,
+      "_src": "wix_members_api_getmemberbyid",
+      "_tgt": "wix_members_api_collectcontactemails",
+      "source": "wix_members_api_collectcontactemails",
+      "target": "wix_members_api_getmemberbyid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L216",
+      "weight": 1.0,
+      "_src": "wix_members_api_getmemberbyid",
+      "_tgt": "wix_members_api_extractname",
+      "source": "wix_members_api_extractname",
+      "target": "wix_members_api_getmemberbyid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-members-api.js",
+      "source_location": "L181",
+      "weight": 1.0,
+      "_src": "wix_members_api_getmemberbyid",
+      "_tgt": "wix_members_api_getcontactbyid",
+      "source": "wix_members_api_getcontactbyid",
+      "target": "wix_members_api_getmemberbyid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L18",
+      "source_location": "L26",
       "weight": 1.0,
       "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_wixfetch",
@@ -2941,7 +3769,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L71",
+      "source_location": "L80",
       "weight": 1.0,
       "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_listpricingplans",
@@ -2953,7 +3781,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L95",
+      "source_location": "L104",
       "weight": 1.0,
       "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_listbookingservices",
@@ -2965,7 +3793,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L121",
+      "source_location": "L130",
       "weight": 1.0,
       "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_listallmappable",
@@ -2977,7 +3805,31 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L133",
+      "source_location": "L148",
+      "weight": 1.0,
+      "_src": "wix_plans_api",
+      "_tgt": "wix_plans_api_listactiveorders",
+      "source": "wix_plans_api",
+      "target": "wix_plans_api_listactiveorders",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-plans-api.js",
+      "source_location": "L184",
+      "weight": 1.0,
+      "_src": "wix_plans_api",
+      "_tgt": "wix_plans_api_listconfirmedbookings",
+      "source": "wix_plans_api",
+      "target": "wix_plans_api_listconfirmedbookings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-plans-api.js",
+      "source_location": "L231",
       "weight": 1.0,
       "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_testapikey",
@@ -2989,7 +3841,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L73",
+      "source_location": "L82",
       "weight": 1.0,
       "_src": "wix_plans_api_listpricingplans",
       "_tgt": "wix_plans_api_wixfetch",
@@ -3001,7 +3853,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L97",
+      "source_location": "L106",
       "weight": 1.0,
       "_src": "wix_plans_api_listbookingservices",
       "_tgt": "wix_plans_api_wixfetch",
@@ -3013,7 +3865,31 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L135",
+      "source_location": "L156",
+      "weight": 1.0,
+      "_src": "wix_plans_api_listactiveorders",
+      "_tgt": "wix_plans_api_wixfetch",
+      "source": "wix_plans_api_wixfetch",
+      "target": "wix_plans_api_listactiveorders",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-plans-api.js",
+      "source_location": "L199",
+      "weight": 1.0,
+      "_src": "wix_plans_api_listconfirmedbookings",
+      "_tgt": "wix_plans_api_wixfetch",
+      "source": "wix_plans_api_wixfetch",
+      "target": "wix_plans_api_listconfirmedbookings",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-plans-api.js",
+      "source_location": "L233",
       "weight": 1.0,
       "_src": "wix_plans_api_testapikey",
       "_tgt": "wix_plans_api_wixfetch",
@@ -3025,7 +3901,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L123",
+      "source_location": "L132",
       "weight": 1.0,
       "_src": "wix_plans_api_listallmappable",
       "_tgt": "wix_plans_api_listpricingplans",
@@ -3037,7 +3913,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L124",
+      "source_location": "L133",
       "weight": 1.0,
       "_src": "wix_plans_api_listallmappable",
       "_tgt": "wix_plans_api_listbookingservices",
@@ -3049,7 +3925,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\middleware\\audit.js",
-      "source_location": "L18",
+      "source_location": "L19",
       "weight": 1.0,
       "_src": "audit",
       "_tgt": "audit_logadminaction",
@@ -3133,7 +4009,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\middleware\\wix-instance.js",
-      "source_location": "L43",
+      "source_location": "L44",
       "weight": 1.0,
       "_src": "wix_instance",
       "_tgt": "wix_instance_verifysignedinstance",
@@ -3145,7 +4021,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\middleware\\wix-instance.js",
-      "source_location": "L99",
+      "source_location": "L100",
       "weight": 1.0,
       "_src": "wix_instance",
       "_tgt": "wix_instance_extractsiteidfromauthcode",
@@ -3157,7 +4033,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\middleware\\wix-instance.js",
-      "source_location": "L122",
+      "source_location": "L123",
       "weight": 1.0,
       "_src": "wix_instance",
       "_tgt": "wix_instance_requirewixinstance",
@@ -3169,7 +4045,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "admin\\middleware\\wix-instance.js",
-      "source_location": "L129",
+      "source_location": "L130",
       "weight": 1.0,
       "_src": "wix_instance_requirewixinstance",
       "_tgt": "wix_instance_verifysignedinstance",
@@ -3181,7 +4057,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "admin\\middleware\\wix-instance.js",
-      "source_location": "L154",
+      "source_location": "L155",
       "weight": 1.0,
       "_src": "wix_instance_requirewixinstance",
       "_tgt": "wix_instance_extractsiteidfromauthcode",
@@ -3865,7 +4741,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\clients.js",
-      "source_location": "L30",
+      "source_location": "L31",
       "weight": 1.0,
       "_src": "clients",
       "_tgt": "clients_activatelocationmembersadmin",
@@ -3877,7 +4753,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L50",
+      "source_location": "L64",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_resolveapikey",
@@ -3889,7 +4765,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L78",
+      "source_location": "L92",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_syncmappingmembers",
@@ -3901,7 +4777,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L215",
+      "source_location": "L253",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_activatelocationmembers",
@@ -3913,7 +4789,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L240",
+      "source_location": "L278",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_validateapikeygroups",
@@ -3925,7 +4801,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L277",
+      "source_location": "L315",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_retrypendinghardwaremembers",
@@ -3937,7 +4813,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L336",
+      "source_location": "L374",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_requireinvitetoken",
@@ -3949,7 +4825,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L89",
+      "source_location": "L103",
       "weight": 1.0,
       "_src": "operator_syncmappingmembers",
       "_tgt": "operator_resolveapikey",
@@ -3961,7 +4837,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L227",
+      "source_location": "L265",
       "weight": 1.0,
       "_src": "operator_activatelocationmembers",
       "_tgt": "operator_syncmappingmembers",
@@ -4069,7 +4945,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L95",
+      "source_location": "L149",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic",
       "_tgt": "grant_revoke_grantrevokelogic_getclientapikey",
@@ -4081,7 +4957,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L102",
+      "source_location": "L156",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic",
       "_tgt": "grant_revoke_grantrevokelogic_processrevoke",
@@ -4093,7 +4969,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L108",
+      "source_location": "L162",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic_processrevoke",
       "_tgt": "grant_revoke_grantrevokelogic_getclientapikey",
@@ -4129,7 +5005,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L115",
+      "source_location": "L119",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_reconcilegroups",
@@ -4141,7 +5017,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L169",
+      "source_location": "L248",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_notifyorphanedgroups",
@@ -4153,7 +5029,31 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L206",
+      "source_location": "L299",
+      "weight": 1.0,
+      "_src": "hardware_health_check",
+      "_tgt": "hardware_health_check_reconcilewixplans",
+      "source": "hardware_health_check",
+      "target": "hardware_health_check_reconcilewixplans",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\hardware-health-check.js",
+      "source_location": "L384",
+      "weight": 1.0,
+      "_src": "hardware_health_check",
+      "_tgt": "hardware_health_check_notifyarchivedplans",
+      "source": "hardware_health_check",
+      "target": "hardware_health_check_notifyarchivedplans",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\hardware-health-check.js",
+      "source_location": "L424",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_diagnose",
@@ -4165,7 +5065,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L219",
+      "source_location": "L437",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_updatelocationverification",
@@ -4177,7 +5077,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L229",
+      "source_location": "L447",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_notifyfailure",
@@ -4249,12 +5149,36 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L166",
+      "source_location": "L111",
+      "weight": 1.0,
+      "_src": "hardware_health_check_checklocation",
+      "_tgt": "hardware_health_check_reconcilewixplans",
+      "source": "hardware_health_check_checklocation",
+      "target": "hardware_health_check_reconcilewixplans",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\hardware-health-check.js",
+      "source_location": "L241",
       "weight": 1.0,
       "_src": "hardware_health_check_reconcilegroups",
       "_tgt": "hardware_health_check_notifyorphanedgroups",
       "source": "hardware_health_check_reconcilegroups",
       "target": "hardware_health_check_notifyorphanedgroups",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\hardware-health-check.js",
+      "source_location": "L380",
+      "weight": 1.0,
+      "_src": "hardware_health_check_reconcilewixplans",
+      "_tgt": "hardware_health_check_notifyarchivedplans",
+      "source": "hardware_health_check_reconcilewixplans",
+      "target": "hardware_health_check_notifyarchivedplans",
       "confidence_score": 1.0
     },
     {
@@ -4297,7 +5221,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\location-lapse.js",
-      "source_location": "L44",
+      "source_location": "L45",
       "weight": 1.0,
       "_src": "location_lapse",
       "_tgt": "location_lapse_suspendlocationmembers",
@@ -4309,7 +5233,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\location-lapse.js",
-      "source_location": "L144",
+      "source_location": "L143",
       "weight": 1.0,
       "_src": "location_lapse",
       "_tgt": "location_lapse_setlocationstatus",
@@ -4321,7 +5245,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\location-lapse.js",
-      "source_location": "L97",
+      "source_location": "L98",
       "weight": 1.0,
       "_src": "location_lapse_suspendlocationmembers",
       "_tgt": "location_lapse_setlocationstatus",
@@ -4369,7 +5293,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\logger.js",
-      "source_location": "L151",
+      "source_location": "L155",
       "weight": 1.0,
       "_src": "logger",
       "_tgt": "logger_emit",
@@ -4381,7 +5305,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\logger.js",
-      "source_location": "L205",
+      "source_location": "L209",
       "weight": 1.0,
       "_src": "logger",
       "_tgt": "logger_withtrace",
@@ -4393,7 +5317,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\logger.js",
-      "source_location": "L181",
+      "source_location": "L185",
       "weight": 1.0,
       "_src": "logger_emit",
       "_tgt": "logger_persisttodiagnosticlog",
@@ -4405,7 +5329,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L36",
+      "source_location": "L37",
       "weight": 1.0,
       "_src": "member_sync_api",
       "_tgt": "member_sync_api_membersyncapi",
@@ -4417,7 +5341,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L47",
+      "source_location": "L48",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_getaccessstatus",
@@ -4429,7 +5353,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L177",
+      "source_location": "L178",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_verifywixjwt",
@@ -4441,7 +5365,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L229",
+      "source_location": "L230",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_getwixpublickey",
@@ -4453,7 +5377,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L244",
+      "source_location": "L245",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_fetchwixjwks",
@@ -4465,7 +5389,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L55",
+      "source_location": "L56",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_getaccessstatus",
       "_tgt": "member_sync_api_membersyncapi_verifywixjwt",
@@ -4477,7 +5401,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L197",
+      "source_location": "L198",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_verifywixjwt",
       "_tgt": "member_sync_api_membersyncapi_getwixpublickey",
@@ -4489,7 +5413,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L232",
+      "source_location": "L233",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_getwixpublickey",
       "_tgt": "member_sync_api_membersyncapi_fetchwixjwks",
@@ -4501,7 +5425,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\plan-mapping-resolver.js",
-      "source_location": "L23",
+      "source_location": "L24",
       "weight": 1.0,
       "_src": "plan_mapping_resolver",
       "_tgt": "plan_mapping_resolver_planmappingresolver",
@@ -4513,7 +5437,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\plan-mapping-resolver.js",
-      "source_location": "L39",
+      "source_location": "L40",
       "weight": 1.0,
       "_src": "plan_mapping_resolver_planmappingresolver",
       "_tgt": "plan_mapping_resolver_planmappingresolver_resolve",
@@ -4549,7 +5473,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L190",
+      "source_location": "L250",
       "weight": 1.0,
       "_src": "queue_worker",
       "_tgt": "queue_worker_startworker",
@@ -4561,7 +5485,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L87",
+      "source_location": "L90",
       "weight": 1.0,
       "_src": "queue_worker_processjob",
       "_tgt": "queue_worker_getclientapikey",
@@ -4572,8 +5496,56 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "core\\rate-limiter.js",
+      "source_location": "L26",
+      "weight": 1.0,
+      "_src": "rate_limiter",
+      "_tgt": "rate_limiter_ratelimiter",
+      "source": "rate_limiter",
+      "target": "rate_limiter_ratelimiter",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\rate-limiter.js",
+      "source_location": "L33",
+      "weight": 1.0,
+      "_src": "rate_limiter_ratelimiter",
+      "_tgt": "rate_limiter_ratelimiter_constructor",
+      "source": "rate_limiter_ratelimiter",
+      "target": "rate_limiter_ratelimiter_constructor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\rate-limiter.js",
+      "source_location": "L50",
+      "weight": 1.0,
+      "_src": "rate_limiter_ratelimiter",
+      "_tgt": "rate_limiter_ratelimiter_acquire",
+      "source": "rate_limiter_ratelimiter",
+      "target": "rate_limiter_ratelimiter_acquire",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\rate-limiter.js",
+      "source_location": "L75",
+      "weight": 1.0,
+      "_src": "rate_limiter_ratelimiter",
+      "_tgt": "rate_limiter_ratelimiter_currentcount",
+      "source": "rate_limiter_ratelimiter",
+      "target": "rate_limiter_ratelimiter_currentcount",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L28",
+      "source_location": "L30",
       "weight": 1.0,
       "_src": "reconciliation",
       "_tgt": "reconciliation_nightlyreconciliation",
@@ -4585,7 +5557,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L30",
+      "source_location": "L32",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_constructor",
@@ -4597,7 +5569,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L37",
+      "source_location": "L39",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_runnightlysweep",
@@ -4609,7 +5581,31 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L72",
+      "source_location": "L101",
+      "weight": 1.0,
+      "_src": "reconciliation_nightlyreconciliation",
+      "_tgt": "reconciliation_nightlyreconciliation_synctruesources",
+      "source": "reconciliation_nightlyreconciliation",
+      "target": "reconciliation_nightlyreconciliation_synctruesources",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L135",
+      "weight": 1.0,
+      "_src": "reconciliation_nightlyreconciliation",
+      "_tgt": "reconciliation_nightlyreconciliation_syncclient",
+      "source": "reconciliation_nightlyreconciliation",
+      "target": "reconciliation_nightlyreconciliation_syncclient",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L265",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
@@ -4621,7 +5617,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L104",
+      "source_location": "L297",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_fetchactionablerecords",
@@ -4633,7 +5629,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L116",
+      "source_location": "L309",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_processrecordtargeted",
@@ -4645,7 +5641,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L148",
+      "source_location": "L341",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_generateandsenddigest",
@@ -4657,7 +5653,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L208",
+      "source_location": "L401",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_sleep",
@@ -4669,7 +5665,19 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L51",
+      "source_location": "L58",
+      "weight": 1.0,
+      "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "_tgt": "reconciliation_nightlyreconciliation_synctruesources",
+      "source": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "target": "reconciliation_nightlyreconciliation_synctruesources",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L70",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
@@ -4681,7 +5689,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L54",
+      "source_location": "L73",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_fetchactionablerecords",
@@ -4693,7 +5701,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L59",
+      "source_location": "L78",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_processrecordtargeted",
@@ -4705,7 +5713,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L60",
+      "source_location": "L79",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_sleep",
@@ -4717,12 +5725,24 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L64",
+      "source_location": "L83",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_generateandsenddigest",
       "source": "reconciliation_nightlyreconciliation_runnightlysweep",
       "target": "reconciliation_nightlyreconciliation_generateandsenddigest",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L114",
+      "weight": 1.0,
+      "_src": "reconciliation_nightlyreconciliation_synctruesources",
+      "_tgt": "reconciliation_nightlyreconciliation_syncclient",
+      "source": "reconciliation_nightlyreconciliation_synctruesources",
+      "target": "reconciliation_nightlyreconciliation_syncclient",
       "confidence_score": 1.0
     },
     {
@@ -4849,7 +5869,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L27",
+      "source_location": "L28",
       "weight": 1.0,
       "_src": "tenant_resolver",
       "_tgt": "tenant_resolver_tenantresolver",
@@ -4861,7 +5881,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L28",
+      "source_location": "L29",
       "weight": 1.0,
       "_src": "tenant_resolver_tenantresolver",
       "_tgt": "tenant_resolver_tenantresolver_constructor",
@@ -4873,7 +5893,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L40",
+      "source_location": "L41",
       "weight": 1.0,
       "_src": "tenant_resolver_tenantresolver",
       "_tgt": "tenant_resolver_tenantresolver_resolve",
@@ -4885,7 +5905,19 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L105",
+      "source_location": "L106",
+      "weight": 1.0,
+      "_src": "tenant_resolver_tenantresolver",
+      "_tgt": "tenant_resolver_tenantresolver_resolvebyclientid",
+      "source": "tenant_resolver_tenantresolver",
+      "target": "tenant_resolver_tenantresolver_resolvebyclientid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\tenant-resolver.js",
+      "source_location": "L139",
       "weight": 1.0,
       "_src": "tenant_resolver_tenantresolver",
       "_tgt": "tenant_resolver_tenantresolver_registersiteid",
@@ -4897,7 +5929,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L126",
+      "source_location": "L160",
       "weight": 1.0,
       "_src": "tenant_resolver_tenantresolver",
       "_tgt": "tenant_resolver_tenantresolver_invalidate",
@@ -4909,7 +5941,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\tenant-resolver.js",
-      "source_location": "L133",
+      "source_location": "L167",
       "weight": 1.0,
       "_src": "tenant_resolver_tenantresolver",
       "_tgt": "tenant_resolver_tenantresolver_clearcache",
@@ -4945,7 +5977,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L97",
+      "source_location": "L132",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_validatestructure",
@@ -4957,7 +5989,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L106",
+      "source_location": "L141",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_checkifduplicate",
@@ -4969,7 +6001,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L114",
+      "source_location": "L149",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_markeventprocessed",
@@ -4981,7 +6013,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L121",
+      "source_location": "L156",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_logtoalertlog",
@@ -4993,7 +6025,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L133",
+      "source_location": "L179",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_logwebhookattempt",
@@ -5053,12 +6085,48 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L64",
+      "source_location": "L76",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor_processincoming",
       "_tgt": "webhook_processor_webhookprocessor_logwebhookattempt",
       "source": "webhook_processor_webhookprocessor_processincoming",
       "target": "webhook_processor_webhookprocessor_logwebhookattempt",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scripts\\audit-by-internal-id.js",
+      "source_location": "L11",
+      "weight": 1.0,
+      "_src": "audit_by_internal_id",
+      "_tgt": "audit_by_internal_id_section",
+      "source": "audit_by_internal_id",
+      "target": "audit_by_internal_id_section",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scripts\\audit-kisi.js",
+      "source_location": "L21",
+      "weight": 1.0,
+      "_src": "audit_kisi",
+      "_tgt": "audit_kisi_header",
+      "source": "audit_kisi",
+      "target": "audit_kisi_header",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "scripts\\audit-member.js",
+      "source_location": "L15",
+      "weight": 1.0,
+      "_src": "audit_member",
+      "_tgt": "audit_member_section",
+      "source": "audit_member",
+      "target": "audit_member_section",
       "confidence_score": 1.0
     },
     {
@@ -5107,6 +6175,114 @@
       "_tgt": "member_cancels_loses_access_test_mockclientapikey",
       "source": "member_cancels_loses_access_test",
       "target": "member_cancels_loses_access_test_mockclientapikey",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
+      "source_location": "L20",
+      "weight": 1.0,
+      "_src": "queue_worker_coordination_test",
+      "_tgt": "queue_worker_coordination_test_constructor",
+      "source": "queue_worker_coordination_test",
+      "target": "queue_worker_coordination_test_constructor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
+      "source_location": "L84",
+      "weight": 1.0,
+      "_src": "queue_worker_coordination_test",
+      "_tgt": "queue_worker_coordination_test_makejob",
+      "source": "queue_worker_coordination_test",
+      "target": "queue_worker_coordination_test_makejob",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
+      "source_location": "L43",
+      "weight": 1.0,
+      "_src": "plan_mapping_resolver_test",
+      "_tgt": "plan_mapping_resolver_test_mockmappingrow",
+      "source": "plan_mapping_resolver_test",
+      "target": "plan_mapping_resolver_test_mockmappingrow",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
+      "source_location": "L34",
+      "weight": 1.0,
+      "_src": "no_raw_console_test",
+      "_tgt": "no_raw_console_test_collectjsfiles",
+      "source": "no_raw_console_test",
+      "target": "no_raw_console_test_collectjsfiles",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
+      "source_location": "L57",
+      "weight": 1.0,
+      "_src": "no_raw_console_test",
+      "_tgt": "no_raw_console_test_findoffenders",
+      "source": "no_raw_console_test",
+      "target": "no_raw_console_test_findoffenders",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
+      "source_location": "L23",
+      "weight": 1.0,
+      "_src": "wix_members_api_normalization_test",
+      "_tgt": "wix_members_api_normalization_test_constructor",
+      "source": "wix_members_api_normalization_test",
+      "target": "wix_members_api_normalization_test_constructor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
+      "source_location": "L24",
+      "weight": 1.0,
+      "_src": "wix_members_api_normalization_test",
+      "_tgt": "wix_members_api_normalization_test_acquire",
+      "source": "wix_members_api_normalization_test",
+      "target": "wix_members_api_normalization_test_acquire",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
+      "source_location": "L25",
+      "weight": 1.0,
+      "_src": "wix_members_api_normalization_test",
+      "_tgt": "wix_members_api_normalization_test_currentcount",
+      "source": "wix_members_api_normalization_test",
+      "target": "wix_members_api_normalization_test_currentcount",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
+      "source_location": "L37",
+      "weight": 1.0,
+      "_src": "wix_members_api_normalization_test",
+      "_tgt": "wix_members_api_normalization_test_stubfetchpair",
+      "source": "wix_members_api_normalization_test",
+      "target": "wix_members_api_normalization_test_stubfetchpair",
       "confidence_score": 1.0
     },
     {

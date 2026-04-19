@@ -159,7 +159,13 @@ router.get('/by-client', async (req, res) => {
                 mas.provisioned_at,
                 mas.updated_at      AS state_updated_at,
                 mal.event_type      AS last_event_type,
-                mal.created_at      AS last_event_at
+                mal.created_at      AS last_event_at,
+                lat.webhook_received_at,
+                lat.enqueued_at,
+                lat.kisi_confirmed_at,
+                lat.ingest_s,
+                lat.processing_s,
+                lat.total_s
          FROM   member_identity mi
          LEFT JOIN member_access_state mas ON mas.member_id = mi.id
          LEFT JOIN LATERAL (
@@ -169,6 +175,25 @@ router.get('/by-client', async (req, res) => {
            ORDER  BY created_at DESC
            LIMIT  1
          ) mal ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT
+             wl.received_at                                                     AS webhook_received_at,
+             pei.processed_at                                                   AS enqueued_at,
+             mra.created_at                                                     AS kisi_confirmed_at,
+             ROUND(EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)))::int  AS ingest_s,
+             ROUND(EXTRACT(EPOCH FROM (mra.created_at   - pei.processed_at)))::int AS processing_s,
+             ROUND(EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at)))::int   AS total_s
+           FROM webhook_log wl
+           JOIN processed_event_ids pei ON pei.event_id = wl.event_id
+           JOIN member_role_assignments mra ON mra.member_id = mi.id
+           WHERE wl.client_id = mi.client_id
+             AND wl.normalized_payload->>'platformMemberId' = mi.platform_member_id
+             AND wl.hmac_status = 'accepted'
+             AND wl.dedup_status = 'new'
+             AND mra.created_at > wl.received_at
+           ORDER BY wl.received_at DESC
+           LIMIT 1
+         ) lat ON TRUE
          WHERE  ${conditions.join(' AND ')}
          ORDER  BY mas.provisioned_at DESC NULLS LAST
          LIMIT  $${params.length - 1} OFFSET $${params.length}`,
@@ -215,12 +240,33 @@ router.get('/:id/timeline', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Verify member exists
+    // Verify member exists — include latency breakdown for timeline drawer
     const memberResult = await db.query(
-      `SELECT mi.*, mas.status AS access_status, mas.provisioned_at, c.name AS client_name
+      `SELECT mi.*, mas.status AS access_status, mas.provisioned_at, c.name AS client_name,
+              lat.webhook_received_at, lat.enqueued_at, lat.kisi_confirmed_at,
+              lat.ingest_s, lat.processing_s, lat.total_s
        FROM member_identity mi
        LEFT JOIN member_access_state mas ON mas.member_id = mi.id
        LEFT JOIN clients c ON c.id = mi.client_id
+       LEFT JOIN LATERAL (
+         SELECT
+           wl.received_at                                                     AS webhook_received_at,
+           pei.processed_at                                                   AS enqueued_at,
+           mra.created_at                                                     AS kisi_confirmed_at,
+           ROUND(EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)))::int  AS ingest_s,
+           ROUND(EXTRACT(EPOCH FROM (mra.created_at   - pei.processed_at)))::int AS processing_s,
+           ROUND(EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at)))::int   AS total_s
+         FROM webhook_log wl
+         JOIN processed_event_ids pei ON pei.event_id = wl.event_id
+         JOIN member_role_assignments mra ON mra.member_id = mi.id
+         WHERE wl.client_id = mi.client_id
+           AND wl.normalized_payload->>'platformMemberId' = mi.platform_member_id
+           AND wl.hmac_status = 'accepted'
+           AND wl.dedup_status = 'new'
+           AND mra.created_at > wl.received_at
+         ORDER BY wl.received_at DESC
+         LIMIT 1
+       ) lat ON TRUE
        WHERE mi.id = $1`,
       [id]
     );
