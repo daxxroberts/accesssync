@@ -153,6 +153,7 @@
     .toast.visible { transform: translateX(-50%) translateY(0); }
 
     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    @keyframes skeleton-pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
 
     @media (max-width: 640px) {
       .topbar { padding: 0 16px; }
@@ -245,35 +246,8 @@
 
   <script src="/operator-nav.js"></script>
   <script>
-    var plans = [
-      { id: 'plan-001', name: 'Individual Monthly',       isMultiMember: false },
-      { id: 'plan-002', name: 'Family Monthly Membership', isMultiMember: true, maxMembers: 5 },
-      { id: 'plan-003', name: 'Couples Premium',           isMultiMember: true, maxMembers: 2 },
-      { id: 'plan-004', name: 'Premium Annual',            isMultiMember: false },
-    ];
-
-    var allMembers = [
-      { id: 'm001', firstName: 'Daxx',   lastName: 'Roberts', email: 'daxx@example.com',   phone: '+1 (555) 100-0001', planId: 'plan-002', role: 'holder', status: 'active',    addedDate: 'Mar 15, 2026', holderId: null },
-      { id: 'm002', firstName: 'Sarah',  lastName: 'Roberts', email: 'sarah@example.com',  phone: '+1 (555) 100-0002', planId: 'plan-002', role: 'sub',    status: 'active',    addedDate: 'Mar 16, 2026', holderId: 'm001' },
-      { id: 'm003', firstName: 'Marcus', lastName: 'Roberts', email: 'marcus@example.com', phone: '+1 (555) 100-0003', planId: 'plan-002', role: 'sub',    status: 'pending',   addedDate: 'Mar 28, 2026', holderId: 'm001' },
-      { id: 'm004', firstName: 'Kim',    lastName: 'Roberts', email: 'kim@example.com',    phone: '+1 (555) 100-0004', planId: 'plan-002', role: 'sub',    status: 'failed',    addedDate: 'Mar 28, 2026', holderId: 'm001' },
-      { id: 'm005', firstName: 'Maria',  lastName: 'Chen',    email: 'maria@example.com',  phone: '+1 (555) 200-0001', planId: 'plan-002', role: 'holder', status: 'active',    addedDate: 'Mar 10, 2026', holderId: null },
-      { id: 'm006', firstName: 'Leo',    lastName: 'Chen',    email: 'leo@example.com',    phone: '+1 (555) 200-0002', planId: 'plan-002', role: 'sub',    status: 'active',    addedDate: 'Mar 11, 2026', holderId: 'm005' },
-      { id: 'm007', firstName: 'Nina',   lastName: 'Chen',    email: 'nina@example.com',   phone: '+1 (555) 200-0003', planId: 'plan-002', role: 'sub',    status: 'active',    addedDate: 'Mar 11, 2026', holderId: 'm005' },
-      { id: 'm008', firstName: 'James',  lastName: 'Wilson',  email: 'james@example.com',  phone: '+1 (555) 300-0001', planId: 'plan-002', role: 'holder', status: 'active',    addedDate: 'Feb 20, 2026', holderId: null },
-      { id: 'm009', firstName: 'Tanya',  lastName: 'Wilson',  email: 'tanya@example.com',  phone: '+1 (555) 300-0002', planId: 'plan-002', role: 'sub',    status: 'active',    addedDate: 'Feb 21, 2026', holderId: 'm008' },
-      { id: 'm010', firstName: 'Jake',   lastName: 'Wilson',  email: 'jake@example.com',   phone: '+1 (555) 300-0003', planId: 'plan-002', role: 'sub',    status: 'active',    addedDate: 'Feb 21, 2026', holderId: 'm008' },
-      { id: 'm011', firstName: 'Ella',   lastName: 'Wilson',  email: 'ella@example.com',   phone: '+1 (555) 300-0004', planId: 'plan-002', role: 'sub',    status: 'active',    addedDate: 'Mar 1, 2026',  holderId: 'm008' },
-      { id: 'm012', firstName: 'Ryan',   lastName: 'Wilson',  email: 'ryan@example.com',   phone: '+1 (555) 300-0005', planId: 'plan-002', role: 'sub',    status: 'suspended', addedDate: 'Mar 5, 2026',  holderId: 'm008' },
-      { id: 'm013', firstName: 'Tony',   lastName: 'Park',    email: 'tony@example.com',   phone: '+1 (555) 400-0001', planId: 'plan-003', role: 'holder', status: 'active',    addedDate: 'Mar 1, 2026',  holderId: null },
-      { id: 'm014', firstName: 'Grace',  lastName: 'Park',    email: 'grace@example.com',  phone: '+1 (555) 400-0002', planId: 'plan-003', role: 'sub',    status: 'active',    addedDate: 'Mar 1, 2026',  holderId: 'm013' },
-      { id: 'm015', firstName: 'Lisa',   lastName: 'Nguyen',  email: 'lisa@example.com',   phone: '+1 (555) 500-0001', planId: 'plan-003', role: 'holder', status: 'active',    addedDate: 'Mar 8, 2026',  holderId: null },
-      { id: 'm016', firstName: 'David',  lastName: 'Tran',    email: 'david@example.com',  phone: '+1 (555) 500-0002', planId: 'plan-003', role: 'sub',    status: 'active',    addedDate: 'Mar 9, 2026',  holderId: 'm015' },
-      { id: 'm017', firstName: 'Alex',   lastName: 'Morgan',  email: 'alex.m@example.com', phone: '+1 (555) 600-0001', planId: 'plan-001', role: 'holder', status: 'active',    addedDate: 'Jan 15, 2026', holderId: null },
-      { id: 'm018', firstName: 'Jordan', lastName: 'Blake',   email: 'jordan@example.com', phone: '+1 (555) 600-0002', planId: 'plan-001', role: 'holder', status: 'active',    addedDate: 'Feb 1, 2026',  holderId: null },
-      { id: 'm019', firstName: 'Amber',  lastName: 'Knox',    email: 'amber@example.com',  phone: '+1 (555) 600-0003', planId: 'plan-001', role: 'holder', status: 'failed',    addedDate: 'Mar 27, 2026', holderId: null },
-      { id: 'm020', firstName: 'Chris',  lastName: 'Martin',  email: 'chris@example.com',  phone: '+1 (555) 700-0001', planId: 'plan-004', role: 'holder', status: 'active',    addedDate: 'Jan 5, 2026',  holderId: null },
-    ];
+    var plans = [];
+    var allMembers = [];
 
     var expandedHolders = {};
     var urlParams = new URLSearchParams(window.location.search);
@@ -563,6 +537,22 @@
       var h = allMembers.find(function(m) { return m.id === prefilterHolder; });
       if (h) { document.getElementById('filterPlan').value = h.planId; expandedHolders[prefilterHolder] = true; }
     }
+
+    // Show loading skeleton when clientId is present; empty state when not
+    (function initLoadState() {
+      var clientId = urlParams.get('clientId');
+      var tbody = document.getElementById('membersBody');
+      if (!tbody) return;
+      if (!clientId) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:48px 20px;color:var(--muted);font-size:13px;">' +
+          '<strong style="display:block;color:var(--text2);margin-bottom:6px;">No session active</strong>' +
+          'Navigate here from the Dashboard to load your members.</td></tr>';
+        return;
+      }
+      var skeletonRow = '<tr>' + Array(6).fill('<td><div style="height:14px;border-radius:4px;background:var(--border);animation:skeleton-pulse 1.2s ease-in-out infinite;"></div></td>').join('') + '</tr>';
+      tbody.innerHTML = Array(5).fill(skeletonRow).join('');
+    })();
+
     applyFilters();
     if (prefilterHolder) setTimeout(function() { openDrawer(prefilterHolder); }, 400);
 

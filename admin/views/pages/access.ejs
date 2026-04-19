@@ -180,19 +180,19 @@
     <div class="stats-strip">
       <div class="stat-card">
         <div class="stat-label">Total Events</div>
-        <div class="stat-value">1,247</div>
+        <div class="stat-value" id="stat-total">—</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Daily Average</div>
-        <div class="stat-value">42</div>
+        <div class="stat-value" id="stat-daily">—</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Peak Hour</div>
-        <div class="stat-value">6:00 PM</div>
+        <div class="stat-value" id="stat-peak">—</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Error Rate</div>
-        <div class="stat-value">2.1%</div>
+        <div class="stat-value" id="stat-error-rate">—</div>
       </div>
     </div>
 
@@ -313,13 +313,14 @@
       var dailyAverage = Math.round(totalEvents / 30);
       var errorCount = filtered.filter(function(act) { return act.event === 'error'; }).length;
       var errorRate = totalEvents > 0 ? ((errorCount / totalEvents) * 100).toFixed(1) : '0';
-      document.querySelectorAll('.stat-value')[0].textContent = totalEvents.toLocaleString();
-      document.querySelectorAll('.stat-value')[1].textContent = dailyAverage;
-      document.querySelectorAll('.stat-value')[3].textContent = errorRate + '%';
+      document.getElementById('stat-total').textContent = totalEvents.toLocaleString();
+      document.getElementById('stat-daily').textContent = dailyAverage;
+      document.getElementById('stat-error-rate').textContent = errorRate + '%';
     }
 
     function initChart() {
-      var maxValue = Math.max.apply(null, chartData) || 1; // avoid division by zero
+      var maxValue = Math.max.apply(null, chartData) || 1;
+      var peakIdx = chartData.indexOf(maxValue);
       var chartHtml = '';
       var labelsHtml = '';
       chartData.forEach(function(val, idx) {
@@ -330,6 +331,10 @@
       });
       document.getElementById('chart-container').innerHTML = chartHtml;
       document.getElementById('chart-labels').innerHTML = labelsHtml;
+      if (maxValue > 0 && peakIdx >= 0) {
+        var peakLabel = peakIdx === 0 ? '12 AM' : peakIdx < 12 ? peakIdx + ' AM' : peakIdx === 12 ? '12 PM' : (peakIdx - 12) + ' PM';
+        document.getElementById('stat-peak').textContent = peakLabel;
+      }
     }
 
     function initFilterTags() {
