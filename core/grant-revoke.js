@@ -47,25 +47,52 @@ class GrantRevokeLogic {
     for (const mapping of mappings) {
       const apiKey = mapping.apiKey;
 
-      // Idempotency guard: if a prior attempt of this job already created a
-      // hardware role_assignment for this (member, mapping, group), reuse it
-      // instead of calling the hardware API again. Prevents Kisi 409 on retry
-      // after a downstream crash in completeGrant (e.g. OB-46 table missing).
-      // The hardware-adapter.assignRole is NOT idempotent for most platforms —
-      // Kisi specifically returns 409 on duplicate role_assignment creation.
+      // Idempotency guard: if any prior grant already created a hardware
+      // role_assignment for this member on this group, reuse it.
+      // Two separate checks:
+      //   1. Exact match (member, mapping, group) — retry of the same job
+      //   2. Group-only match (member, group, any mapping) — second plan that
+      //      shares the same Kisi group as a previously-granted plan. Kisi
+      //      returns 409 in both cases; the member already has the door open.
+      // We intentionally still INSERT a new member_role_assignments row in
+      // completeGrant with this mapping_id so the source is correctly tracked.
       const existing = await db.query(
-        `SELECT role_assignment_id FROM member_role_assignments
-         WHERE member_id = $1 AND mapping_id = $2 AND hardware_group_id = $3`,
-        [memberId, mapping.mappingId, mapping.hardwareGroupId || null]
+        `SELECT role_assignment_id, mapping_id FROM member_role_assignments
+         WHERE member_id = $1
+           AND hardware_group_id = $2
+           AND role_assignment_id IS NOT NULL
+         ORDER BY created_at ASC
+         LIMIT 1`,
+        [memberId, mapping.hardwareGroupId || null]
       );
       if (existing.rows.length > 0 && existing.rows[0].role_assignment_id) {
         const priorId = existing.rows[0].role_assignment_id;
+        const samePlan = existing.rows[0].mapping_id === mapping.mappingId;
+        const newIsTimeLimited = mapping.accessType === 'time_limited';
+
         log.info('grant.role.reused', {
           tenantId, memberId,
           hardwareGroupId: mapping.hardwareGroupId,
           mappingId: mapping.mappingId,
+          priorMappingId: existing.rows[0].mapping_id,
           roleAssignmentId: priorId,
+          reason: samePlan ? 'retry' : 'shared_group',
+          newAccessType: mapping.accessType || 'permanent',
         });
+
+        // Kisi enforces one role per group — can't create a second assignment with a
+        // different valid_until. Source tracking in member_access_sources handles revoke
+        // safety: this plan's source row is still recorded via completeGrant, so
+        // cancelling the other plan won't revoke hardware access until all sources gone.
+        if (!samePlan && newIsTimeLimited) {
+          log.warn('grant.role.time_limit_not_applied', {
+            tenantId, memberId,
+            hardwareGroupId: mapping.hardwareGroupId,
+            mappingId: mapping.mappingId,
+            note: 'New plan is time-limited but group already has a role assignment. Member retains existing access; source row still recorded for revoke tracking.',
+          });
+        }
+
         assignments.push({
           mappingId:        mapping.mappingId,
           roleAssignmentId: String(priorId),
