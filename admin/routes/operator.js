@@ -1767,7 +1767,25 @@ router.get('/:clientId/access-log', async (req, res) => {
     const [rows, countRow] = await Promise.all([
       db.query(
         `SELECT mal.id, mal.event_type, mal.credential_type, mal.error_code,
-                mal.created_at, mi.platform_member_id
+                mal.created_at, mi.platform_member_id,
+                COALESCE(mi.display_name,
+                  NULLIF(TRIM(COALESCE(mi.first_name,'') || ' ' || COALESCE(mi.last_name,'')), ''),
+                  mi.email) AS member_name,
+                (SELECT pm.plan_name
+                   FROM member_role_assignments mra
+                   JOIN plan_mappings pm ON pm.id = mra.mapping_id
+                  WHERE mra.member_id = mal.member_id
+                  ORDER BY mra.created_at ASC LIMIT 1) AS plan_name,
+                (SELECT l.name
+                   FROM member_role_assignments mra
+                   JOIN plan_mappings pm ON pm.id = mra.mapping_id
+                   JOIN locations l ON l.id = pm.location_id
+                  WHERE mra.member_id = mal.member_id
+                  ORDER BY mra.created_at ASC LIMIT 1) AS location_name,
+                (SELECT mra.hardware_group_id
+                   FROM member_role_assignments mra
+                  WHERE mra.member_id = mal.member_id
+                  ORDER BY mra.created_at ASC LIMIT 1) AS hardware_group_id
          FROM member_access_log mal
          JOIN member_identity mi ON mi.id = mal.member_id
          WHERE ${conditions.join(' AND ')}

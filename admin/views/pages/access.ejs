@@ -127,6 +127,34 @@
       .grid-table th, .grid-table td { padding: 8px 10px; font-size: 11px; }
       .page-title { font-size: 20px; }
     }
+    .details-link {
+      background: none; border: none; color: var(--brand); font-size: 12px; font-weight: 600;
+      cursor: pointer; padding: 0; font-family: inherit; text-decoration: underline;
+      text-decoration-style: dotted; text-underline-offset: 2px;
+    }
+    .details-link:hover { color: var(--brand-dark); }
+
+    /* Details modal */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      z-index: 1000; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-box {
+      background: var(--card); border-radius: 16px; width: 100%; max-width: 480px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.25); overflow: hidden;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 20px; border-bottom: 1px solid var(--border);
+    }
+    .modal-title { font-size: 15px; font-weight: 700; color: var(--text); }
+    .modal-close {
+      background: none; border: none; font-size: 20px; cursor: pointer;
+      color: var(--muted); padding: 0 4px; line-height: 1;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 8px 0 16px; }
+
     @media print {
       .topbar, .sub-nav, .breadcrumb, .chart-card, .filter-row, .btn, #load-more-btn { display: none !important; }
       .page-content { padding: 0 !important; }
@@ -208,16 +236,51 @@
 
   <div class="toast" id="toast"></div>
 
+  <!-- Details modal -->
+  <div class="modal-overlay" id="details-modal" onclick="if(event.target===this)closeDetailsModal()">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title" id="details-modal-title">Event Details</span>
+        <button class="modal-close" onclick="closeDetailsModal()">&#10005;</button>
+      </div>
+      <div class="modal-body" id="details-modal-body"></div>
+    </div>
+  </div>
+
   <script src="/operator-nav.js"></script>
   <script>
     var chartData = new Array(24).fill(0);
 
     var allActivities = [];
+    var activityMap = {}; // id → raw event for modal
 
     var currentFilter = 'all';
     var currentLocation = 'all';
     var itemsPerPage = 15;
     var currentPage = 1;
+
+    var eventLabelMap = {
+      grant_success: 'granted', revoke_success: 'revoked',
+      grant_failed: 'error', revoke_failed: 'error'
+    };
+
+    function mapEvent(evt) {
+      var dt = new Date(evt.created_at);
+      var shortId = (evt.platform_member_id || '').slice(0, 8);
+      var name = evt.member_name || ('Member ' + shortId);
+      activityMap[evt.id] = evt;
+      return {
+        id:         evt.id,
+        date:       dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        time:       dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+        member:     name,
+        event:      eventLabelMap[evt.event_type] || evt.event_type || 'unknown',
+        plan:       evt.plan_name || evt.credential_type || 'Membership',
+        location:   evt.location_name || 'All Locations',
+        locationId: 'all',
+        errorCode:  evt.error_code || ''
+      };
+    }
 
     function initLocationFilter(locations) {
       var items = [{ label: 'All Locations', value: 'all' }].concat(
@@ -322,6 +385,44 @@
       URL.revokeObjectURL(a.href);
     }
 
+    function esc(val) {
+      return String(val == null ? '' : val)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function openDetailsModal(id) {
+      var evt = activityMap[id];
+      if (!evt) return;
+      var dt = new Date(evt.created_at);
+      var rows = [
+        ['Member', evt.member_name || evt.platform_member_id || 'Unknown'],
+        ['Member ID', evt.platform_member_id || '—'],
+        ['Event', evt.event_type || '—'],
+        ['Plan', evt.plan_name || evt.credential_type || '—'],
+        ['Location', evt.location_name || '—'],
+        ['Hardware Group', evt.hardware_group_id || '—'],
+        ['Error Code', evt.error_code || '—'],
+        ['Date/Time', dt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })],
+        ['Log ID', evt.id],
+      ];
+      var bodyHtml = rows.map(function(r) {
+        return '<tr><td style="font-weight:600;color:var(--muted);white-space:nowrap;padding:7px 12px;font-size:12px;">' +
+          esc(r[0]) + '</td><td style="padding:7px 12px;font-size:13px;word-break:break-all;">' + esc(r[1]) + '</td></tr>';
+      }).join('');
+      document.getElementById('details-modal-title').textContent =
+        capitalize((eventLabelMap[evt.event_type] || evt.event_type || 'event').replace(/_/g, ' ')) + ' — ' + (evt.member_name || 'Member');
+      document.getElementById('details-modal-body').innerHTML = '<table style="width:100%;border-collapse:collapse;">' + bodyHtml + '</table>';
+      document.getElementById('details-modal').style.display = 'flex';
+    }
+
+    function closeDetailsModal() {
+      document.getElementById('details-modal').style.display = 'none';
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeDetailsModal();
+    });
+
     function csvEsc(val) {
       var s = String(val == null ? '' : val);
       if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
@@ -351,17 +452,13 @@
       }
       var html = '';
       page.forEach(function(act) {
-        var rowTitle = '';
-        if (act.event === 'error' || act.event === 'denied') {
-          rowTitle = ' title="Check the error queue for full details. Common causes: invalid API key, member not found in door system, or rate limit exceeded."';
-        }
-        html += '<tr' + rowTitle + '>' +
+        html += '<tr>' +
           '<td>' + act.date + ', ' + act.time + '</td>' +
-          '<td>' + act.member + '</td>' +
+          '<td style="font-weight:600;">' + esc(act.member) + '</td>' +
           '<td><span class="event-tag ' + act.event + '">' + capitalize(act.event.replace(/_/g, ' ')) + '</span></td>' +
-          '<td>' + act.plan + '</td>' +
-          '<td><span class="location-text">' + act.location + '</span></td>' +
-          '<td>' + act.details + '</td>' +
+          '<td>' + esc(act.plan) + '</td>' +
+          '<td><span class="location-text">' + esc(act.location) + '</span></td>' +
+          '<td><button class="details-link" onclick="openDetailsModal(\'' + act.id + '\')">Details</button></td>' +
           '</tr>';
       });
       document.getElementById('activity-tbody').innerHTML = html;
@@ -407,20 +504,7 @@
             renderActivityGrid();
             return;
           }
-          allActivities = d.events.map(function(evt) {
-            var dt = new Date(evt.created_at);
-            var eventMap = { grant_success: 'granted', revoke_success: 'revoked', grant_failed: 'error', revoke_failed: 'error' };
-            return {
-              date: dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-              time: dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-              member: evt.platform_member_id || 'Unknown',
-              event: eventMap[evt.event_type] || evt.event_type || 'unknown',
-              plan: evt.credential_type || 'Membership',
-              location: 'All Locations',
-              locationId: 'all',
-              details: evt.error_code || evt.event_type || ''
-            };
-          });
+          allActivities = d.events.map(mapEvent);
           currentPage = 1;
           updateStats();
           renderActivityGrid();
@@ -450,19 +534,7 @@
         .then(function(d) {
           if (!d.events || !d.events.length) { allActivities = []; }
           else {
-            allActivities = d.events.map(function(evt) {
-              var dt = new Date(evt.created_at);
-              var eventMap = { grant_success: 'granted', revoke_success: 'revoked', grant_failed: 'error', revoke_failed: 'error' };
-              return {
-                date: dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                time: dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-                member: evt.platform_member_id || 'Unknown',
-                event: eventMap[evt.event_type] || evt.event_type || 'unknown',
-                plan: evt.credential_type || 'Membership',
-                location: 'All Locations', locationId: 'all',
-                details: evt.error_code || evt.event_type || ''
-              };
-            });
+            allActivities = d.events.map(mapEvent);
           }
           currentPage = 1;
           updateStats();
