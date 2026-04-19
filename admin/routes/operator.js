@@ -1561,7 +1561,25 @@ router.get('/:clientId/members', async (req, res) => {
                 mi.last_name,
                 mi.email,
                 mas.status          AS access_status,
-                mas.provisioned_at
+                mas.provisioned_at,
+                -- Plan(s) this member is in, aggregated. Members can be on multiple mappings
+                -- (multi-door support, DR-026). plan_names[] is the full list; plan_name is
+                -- the first for list-view display. Null when the member has no mappings yet
+                -- (e.g. reconciliation synthetic grant that parked before completeGrant).
+                (
+                  SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
+                  FROM member_role_assignments mra
+                  JOIN plan_mappings pm ON pm.id = mra.mapping_id
+                  WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
+                )                                AS plan_names,
+                (
+                  SELECT pm.plan_name
+                  FROM member_role_assignments mra
+                  JOIN plan_mappings pm ON pm.id = mra.mapping_id
+                  WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
+                  ORDER BY mra.created_at ASC
+                  LIMIT 1
+                )                                AS plan_name
          FROM   member_identity mi
          LEFT JOIN member_access_state mas ON mas.member_id = mi.id
          WHERE  ${conditions.join(' AND ')}

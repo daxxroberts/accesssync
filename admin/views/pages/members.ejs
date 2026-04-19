@@ -470,8 +470,13 @@
           '</div><div class="member-email">' + m.email + '</div></div>' +
           '</div></td>';
 
+        // Prefer live-API planDisplay (aggregated plan name from member_role_assignments →
+        // plan_mappings.plan_name) over the legacy `plans` lookup by planId which only
+        // populated for mock fixtures. Multi-member holders still render the sub-count
+        // from the legacy `plan.maxMembers` when present; otherwise omit.
+        var livePlanLabel = m.planDisplay || (plan ? plan.name : null);
         var planCell = '<td>' +
-          (isHolder ? '<div class="plan-badge">' + (plan ? plan.name : '—') + '</div>' +
+          (isHolder ? '<div class="plan-badge">' + (livePlanLabel || '—') + '</div>' +
             (isMulti ? '<div class="plan-badge-sub">' + subCount + ' of ' + (plan.maxMembers - 1) + ' members</div>' : '') : '') + '</td>';
 
         var roleCell   = '<td>' + (isHolder ? 'Plan Holder' : 'Additional Member') + '</td>';
@@ -586,6 +591,16 @@
             var hasRealName = !!(m.first_name || m.last_name || m.display_name);
             var firstName = m.first_name || (m.display_name ? m.display_name.split(' ')[0] : null) || ('Member ' + shortId);
             var lastName  = m.last_name  || (m.display_name ? m.display_name.split(' ').slice(1).join(' ') : '') || '';
+
+            // Plan(s) the member is on. API returns plan_name (first) + plan_names[] (all).
+            // Multi-mapping members show "Plan A + N more" to fit the column; full list
+            // available on the detail drawer.
+            var planNames = Array.isArray(m.plan_names) ? m.plan_names.filter(Boolean) : [];
+            var primaryPlan = m.plan_name || planNames[0] || null;
+            var planDisplay = !primaryPlan
+              ? '—'
+              : (planNames.length > 1 ? primaryPlan + ' + ' + (planNames.length - 1) + ' more' : primaryPlan);
+
             return {
               id: m.id,
               firstName: firstName,
@@ -593,6 +608,9 @@
               email: m.email || '(pending identity)',
               phone: '',
               planId: '',
+              planName: primaryPlan,    // for filter grouping
+              planDisplay: planDisplay, // for row rendering
+              planNames: planNames,     // full list for drawer/modal
               role: 'holder',
               status: m.access_status || 'pending',
               addedDate: m.provisioned_at ? new Date(m.provisioned_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—',
