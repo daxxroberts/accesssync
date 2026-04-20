@@ -1,9 +1,11 @@
 # CLAUDE.md — AccessSync
-**Version:** 4.4 | **Updated:** 2026-04-14 | **Author:** Daxx Roberts / KEEPER
+**Version:** 4.5 | **Updated:** 2026-04-20 | **Author:** Daxx Roberts / KEEPER
 
 > **Read this file before writing a single line of code. Then read `open_items.md`. Then read the spec for what you're building.**
 
 > **API/Platform Research Rule:** If a question requires knowledge of Wix APIs, Kisi APIs, or any external platform behavior — route to PARSE and the BOT team first. Do not answer from training data or search independently until PARSE has weighed in. After PARSE delivers findings, you may supplement with web search or additional context.
+
+> **SAGE Approval Rule:** Before implementing any non-trivial change — new feature, architecture decision, schema change, UI redesign, or anything with cross-cutting impact — invoke the business-operating-team skill and pull SAGE for approval. SAGE determines which additional agents are needed to best vet the change (NOVA for engineering, ORION for schema, ATLAS for architecture, FAULT for risk, etc.). If SAGE determines the change is UX or UI in nature, bring in FORGE, LENS, PIXEL, REAM, and any other relevant design agents without hesitation. Do not proceed with implementation until SAGE has explicitly approved. Bug fixes and purely mechanical changes (typos, config values, log message wording) are exempt.
 
 ---
 
@@ -573,5 +575,6 @@ REX will not allow build work to begin until this statement is made.
 | v4.2 | 2026-04-06 | Added Pre-Commit / Pre-Push Gate — `npm run test:deploy` required before every commit or push. DEPLOY SAFE / DO NOT DEPLOY verdict gates all code merges. |
 | v4.3 | 2026-04-10 | Pre-HOG code complete. WIRE-G-01 closed (retryPendingHardwareMembers scoped to plan mapping PATCH). U-09 closed (all platform-specific copy removed from operator UI + onboarding + sync-status). Humanizer pass complete — all 6 operator pages + onboarding portal. Graphify rebuilt (262 nodes, 370 edges). HANDOFF_BRIEF + APP_CONTEXT updated to reflect closed gaps. |
 | v4.4 | 2026-04-14 | operator.js code quality cleanup: structured logger migration (~75 console.* → log.*), error response hardening (19 err.message leaks sealed), OB-46 stale catch removed, 6 inline requires hoisted, N+1 INSERT loops batched, front matter added per protocol. 32/32 tests DEPLOY SAFE. |
+| v4.5 | 2026-04-20 | Added SAGE Approval Rule — all non-trivial changes require SAGE review before implementation. SAGE pulls in supporting agents as needed; UX/UI changes automatically include FORGE, LENS, PIXEL, REAM. |
 
 *Archive of prior versions: `01_Project_Foundation/Claude_Versions/`*
