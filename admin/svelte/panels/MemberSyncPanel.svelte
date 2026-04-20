@@ -34,7 +34,7 @@
     return 'color:var(--danger)';
   }
 
-  const COLUMNS = ['Member', 'Platform', 'Hardware', 'Status', 'Provisioned', 'Total Time', 'Last Event', 'Actions'];
+  const COLUMNS = ['Member', 'Platform', 'Hardware', 'Status', 'Plans', 'Provisioned', 'Total Time', 'Last Event', 'Actions'];
 
   // ── State ──────────────────────────────────────────────────────────
   let clients      = [];
@@ -53,10 +53,11 @@
   let drawerOpen    = false;
   let drawerTitle   = '';
   let drawerLoading = false;
-  let drawerMode    = 'timeline'; // 'timeline' | 'diagnose'
+  let drawerMode    = 'timeline'; // 'timeline' | 'diagnose' | 'plans'
   let timeline      = null;
   let timelineMember = null;
   let diagnose      = null;
+  let plans         = null;
 
   let modalOpen     = false;
   let retryMemberId = null;
@@ -134,6 +135,27 @@
       timelineMember = json.member;
     } catch {
       showToast('Failed to load timeline', 'error');
+      drawerOpen = false;
+    } finally {
+      drawerLoading = false;
+    }
+  }
+
+  async function openPlans(member) {
+    drawerMode     = 'plans';
+    drawerTitle    = `Plans: ${memberLabel(member)}`;
+    drawerLoading  = true;
+    drawerOpen     = true;
+    plans          = null;
+    timeline       = null;
+    timelineMember = null;
+    diagnose       = null;
+    try {
+      const res  = await apiFetch(`/admin/members/${member.id}/plans`);
+      const json = await res.json();
+      plans = json.plans || [];
+    } catch {
+      showToast('Failed to load plans', 'error');
       drawerOpen = false;
     } finally {
       drawerLoading = false;
@@ -247,6 +269,15 @@
         <td>{m.source_platform   || '—'}</td>
         <td>{m.hardware_platform || '—'}</td>
         <td><PillBadge text={m.access_status || 'unknown'} /></td>
+        <td>
+          {#if m.plan_count > 0}
+            <button class="plan-count-badge" on:click={() => openPlans(m)}>
+              {m.plan_count} {m.plan_count === 1 ? 'plan' : 'plans'}
+            </button>
+          {:else}
+            <span style="color:var(--muted);font-size:12px;">—</span>
+          {/if}
+        </td>
         <td><TimeStamp iso={m.provisioned_at} /></td>
         <td style={latencyColor(m.total_s)} title={m.total_s != null ? `Ingest: ${fmtDuration(m.ingest_s)} · Processing: ${fmtDuration(m.processing_s)}` : 'No timing data'}>
           {fmtDuration(m.total_s)}
@@ -303,6 +334,29 @@
         {#if diagnose.member.provisioned_at}
           <div class="detail-row"><span class="detail-label">Provisioned</span><TimeStamp iso={diagnose.member.provisioned_at} /></div>
         {/if}
+      </div>
+    {/if}
+
+  {:else if drawerMode === 'plans' && plans}
+    {#if plans.length === 0}
+      <EmptyState message="No active plan assignments found for this member" />
+    {:else}
+      <div class="detail-section">
+        <div class="detail-section-title">Active Plans ({plans.length})</div>
+        {#each plans as p}
+          <div class="plan-row">
+            <div class="plan-row-main">
+              <span class="plan-name">{p.plan_name || '—'}</span>
+              <PillBadge text={p.status || 'unknown'} />
+            </div>
+            <div class="plan-row-meta">
+              {#if p.door_name}<span class="plan-meta-item">Door: {p.door_name}</span>{/if}
+              {#if p.location_name}<span class="plan-meta-item">Location: {p.location_name}</span>{/if}
+              {#if p.access_type}<span class="plan-meta-item">{p.access_type}</span>{/if}
+              {#if p.granted_at}<span class="plan-meta-item">Granted <TimeStamp iso={p.granted_at} /></span>{/if}
+            </div>
+          </div>
+        {/each}
       </div>
     {/if}
 
@@ -377,6 +431,14 @@
 </Drawer>
 
 <style>
+  .plan-count-badge { background: rgba(79,110,247,0.12); color: var(--brand, #4F6EF7); border: 1px solid rgba(79,110,247,0.25); border-radius: 12px; padding: 2px 10px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .plan-count-badge:hover { background: rgba(79,110,247,0.2); }
+  .plan-row { padding: 10px 0; border-bottom: 1px solid var(--border, #e5e7eb); }
+  .plan-row:last-child { border-bottom: none; }
+  .plan-row-main { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .plan-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .plan-row-meta { display: flex; flex-wrap: wrap; gap: 8px; }
+  .plan-meta-item { font-size: 11px; color: var(--muted); }
   .verdict-banner { border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; font-weight: 600; }
   .verdict-healthy  { background: rgba(74,222,128,0.12); color: var(--success, #16a34a); border: 1px solid rgba(74,222,128,0.3); }
   .verdict-degraded { background: rgba(245,158,11,0.12); color: var(--accent,  #d97706); border: 1px solid rgba(245,158,11,0.3); }

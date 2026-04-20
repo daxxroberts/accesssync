@@ -207,7 +207,11 @@ router.get('/by-client', async (req, res) => {
                 lat.kisi_confirmed_at,
                 lat.ingest_s,
                 lat.processing_s,
-                lat.total_s
+                lat.total_s,
+                (SELECT COUNT(DISTINCT mra.mapping_id)::int
+                 FROM member_role_assignments mra
+                 JOIN plan_mappings pm ON pm.id = mra.mapping_id AND pm.status = 'active'
+                 WHERE mra.member_id = mi.id) AS plan_count
          FROM   member_identity mi
          LEFT JOIN member_access_state mas ON mas.member_id = mi.id
          LEFT JOIN LATERAL (
@@ -297,6 +301,38 @@ router.get('/:id/timeline', async (req, res) => {
   } catch (err) {
     if (err.statusCode === 404) return res.status(404).json({ error: 'Member not found' });
     log.error('admin.members_timeline_error', {}, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /admin/members/:id/plans ──────────────────────────────
+// Returns active plan mappings assigned to this member.
+router.get('/:id/plans', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const memberCheck = await db.query('SELECT id FROM member_identity WHERE id = $1', [id]);
+    if (!memberCheck.rows.length) return res.status(404).json({ error: 'Member not found' });
+
+    const result = await db.query(
+      `SELECT pm.id          AS mapping_id,
+              pm.plan_name,
+              pm.door_name,
+              pm.access_type,
+              pm.status,
+              pm.source_plan_id,
+              l.name         AS location_name,
+              mra.created_at AS granted_at
+       FROM member_role_assignments mra
+       JOIN plan_mappings pm ON pm.id = mra.mapping_id
+       LEFT JOIN locations l ON l.id = pm.location_id
+       WHERE mra.member_id = $1
+       ORDER BY pm.status DESC, mra.created_at DESC`,
+      [id]
+    );
+
+    res.json({ plans: result.rows });
+  } catch (err) {
+    log.error('admin.members_plans_error', {}, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
