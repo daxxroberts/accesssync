@@ -71,7 +71,13 @@ router.get('/search', async (req, res) => {
       conditions.push(`mi.platform_member_id = ANY($${params.length})`);
     } else {
       params.push(`%${q.trim()}%`);
-      conditions.push(`mi.platform_member_id ILIKE $${params.length}`);
+      conditions.push(
+        `(mi.platform_member_id ILIKE $${params.length}
+          OR mi.email ILIKE $${params.length}
+          OR mi.display_name ILIKE $${params.length}
+          OR mi.first_name ILIKE $${params.length}
+          OR mi.last_name ILIKE $${params.length})`
+      );
     }
 
     if (client_id) {
@@ -85,6 +91,10 @@ router.get('/search', async (req, res) => {
       `SELECT mi.id,
               mi.client_id,
               mi.platform_member_id,
+              mi.display_name,
+              mi.email,
+              mi.first_name,
+              mi.last_name,
               mi.source_platform,
               mi.hardware_platform,
               mi.hardware_user_id,
@@ -272,12 +282,14 @@ router.get('/:id/timeline', async (req, res) => {
     );
     if (!memberResult.rows.length) return res.status(404).json({ error: 'Member not found' });
 
-    // Unified timeline from 3 sources
+    // Unified timeline from 4 sources
     const timeline = await db.query(
       `SELECT 'access_log'      AS source,
               mal.id::text,
               mal.event_type,
               mal.error_code     AS detail,
+              NULL::text         AS error_code,
+              NULL::jsonb        AS context,
               mal.created_at
        FROM member_access_log mal
        WHERE mal.member_id = $1
@@ -288,6 +300,8 @@ router.get('/:id/timeline', async (req, res) => {
               eq.id::text,
               eq.event_type,
               eq.error_reason    AS detail,
+              eq.error_code,
+              NULL::jsonb        AS context,
               eq.created_at
        FROM error_queue eq
        WHERE eq.member_id = $1
@@ -298,6 +312,8 @@ router.get('/:id/timeline', async (req, res) => {
               aal.id::text,
               aal.event_type,
               aal.result         AS detail,
+              NULL::text         AS error_code,
+              NULL::jsonb        AS context,
               aal.created_at
        FROM adapter_admin_log aal
        WHERE aal.platform_member_id = (
@@ -306,8 +322,21 @@ router.get('/:id/timeline', async (req, res) => {
          SELECT client_id FROM member_identity WHERE id = $1
        )
 
+       UNION ALL
+
+       SELECT 'diagnostic_log'  AS source,
+              dl.id::text,
+              dl.error_code      AS event_type,
+              dl.message         AS detail,
+              dl.error_code,
+              dl.context,
+              dl.created_at
+       FROM diagnostic_log dl
+       WHERE dl.context->>'memberId' = (SELECT id::text FROM member_identity WHERE id = $1)
+          OR dl.context->>'platformMemberId' = (SELECT platform_member_id FROM member_identity WHERE id = $1)
+
        ORDER BY created_at DESC
-       LIMIT 100`,
+       LIMIT 200`,
       [id]
     );
 
@@ -368,5 +397,4 @@ router.post('/:id/retry', async (req, res) => {
   }
 });
 
-module.exports = router;
 module.exports = router;

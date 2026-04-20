@@ -183,6 +183,12 @@
                 {#if ev.detail}
                   <div class="timeline-detail">{ev.detail}</div>
                 {/if}
+                {#if ev.context && ev.source === 'diagnostic_log'}
+                  <details class="timeline-context">
+                    <summary>Context</summary>
+                    <pre>{JSON.stringify(ev.context, null, 2)}</pre>
+                  </details>
+                {/if}
               </div>
             </div>
           {/each}
