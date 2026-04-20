@@ -70,7 +70,10 @@ class StandardAdapter {
 
         if (identityResult.rows.length === 0) {
           await dbClient.query('ROLLBACK');
-          log.warn('adapter.no_identity', { platformMemberId: event.platformMemberId });
+          log.warn('adapter.no_identity', {
+            platformMemberId: event.platformMemberId,
+            stage: 'resolve', result: 'skipped',
+          });
           return null;
         }
 
@@ -89,7 +92,7 @@ class StandardAdapter {
         const { status, role_assignment_id } = stateResult.rows[0];
 
         if (status === 'in_flight') {
-          throw new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId}`);
+          throw new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId} (clientId=${tenantId})`);
         }
 
         // Read all role assignment IDs from member_role_assignments (multi-door)
@@ -113,7 +116,10 @@ class StandardAdapter {
         if (hardwarePlatform === null) {
           // Revoke with no state row — nothing to revoke
           await dbClient.query('ROLLBACK');
-          log.warn('adapter.no_access_state', { platformMemberId: event.platformMemberId });
+          log.warn('adapter.no_access_state', {
+            platformMemberId: event.platformMemberId,
+            stage: 'resolve', result: 'skipped',
+          });
           return null;
         }
 
@@ -183,7 +189,10 @@ class StandardAdapter {
     );
     const priorHardwareUserId = cached.rows[0]?.hardware_user_id || null;
     if (!force && priorHardwareUserId) {
-      log.info('adapter.identity_cache_hit', { memberId });
+      log.info('adapter.identity_cache_hit', {
+        memberId, clientId: tenantId, platformMemberId,
+        stage: 'identity', result: 'success',
+      });
       return priorHardwareUserId;
     }
 
@@ -198,12 +207,16 @@ class StandardAdapter {
       if (err.code === 'INVALID_HARDWARE_REQUEST' && err.missingFields?.includes('email')) {
         // Gate 2 — attempt to recover the missing email.
         log.warn('adapter.identity.gate2_recovery_triggered', {
-          memberId, platformMemberId, missingFields: err.missingFields,
+          memberId, platformMemberId, clientId: tenantId,
+          missingFields: err.missingFields,
+          stage: 'identity', result: 'retry',
         });
         const recovered = await this._recoverMissingEmail(memberId, tenantId, platformMemberId);
         if (recovered && recovered.email) {
           log.info('adapter.identity.gate2_recovered', {
-            memberId, recoveredVia: recovered.source,
+            memberId, platformMemberId, clientId: tenantId,
+            recoveredVia: recovered.source,
+            stage: 'identity', result: 'success',
           });
           hardwareUserId = await this._callHardwareToResolveIdentity(
             hardwarePlatform, apiKey, recovered.email, recovered.name || name || recovered.email
@@ -211,7 +224,9 @@ class StandardAdapter {
         } else {
           // Ladder exhausted — park as pending_identity, return null to signal "parked, not failed".
           log.warn('adapter.identity.parked_pending_identity', {
-            memberId, platformMemberId, reason: 'email_unrecoverable',
+            memberId, platformMemberId, clientId: tenantId,
+            reason: 'email_unrecoverable',
+            stage: 'identity', result: 'skipped',
           });
           await this._parkPendingIdentity(memberId, tenantId, err.missingFields);
           return null;

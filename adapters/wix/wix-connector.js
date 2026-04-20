@@ -33,24 +33,31 @@ class WixConnector {
    * @param {Object} res
    */
   async handleWebhook(req, res) {
+    // Hoist traceId so the catch block can include it in the error log.
+    const traceId = crypto.randomUUID();
     try {
       // Use raw body captured by server.js middleware for HMAC verification (P1 fix).
       // Re-serializing req.body risks field ordering differences that break signature checks.
       const rawBody = req.rawBody || (typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
       const signature = req.headers['x-wix-signature'];
 
+      // Generate traceId at ingress — threaded through all downstream log events and DB writes.
+      // traceId is hoisted above the try block so the catch block can log it on any failure.
+
       // 1. Verify Signature (DR-009)
       if (!this._verifySignature(rawBody, signature)) {
         const clientHint = req.headers['x-accesssync-client-id'] || 'unknown';
-        log.warn('wix.hmac.rejected', { clientHint });
+        const rejectedEventId = req.headers['x-wix-event-id'] || null;
+        log.warn('wix.hmac.rejected', { traceId, clientId: null, eventId: rejectedEventId, stage: 'ingress', result: 'failed', clientHint });
         hmacMonitor.recordFailure(clientHint).catch(() => {}); // Sprint 5.1 — non-blocking
         await webhookProcessor.logWebhookAttempt({
-          eventId: req.headers['x-wix-event-id'] || null,
+          eventId:   rejectedEventId,
           hmacStatus: 'rejected',
           rawPayload: req.body || null,
-          errorDetail: 'HMAC signature mismatch'
+          errorDetail: 'HMAC signature mismatch',
+          traceId,
         }).catch((dbErr) => {
-          log.error('wix.webhook_log_write_failed', {}, dbErr);
+          log.error('wix.webhook_log_write_failed', { traceId }, dbErr);
         });
         return res.status(401).send('Unauthorized');
       }
@@ -90,6 +97,8 @@ class WixConnector {
 
       const standardEvent = wixAdapter.parseEvent(eventType, wixSiteId, req.body);
       standardEvent.platformClientIdHint = clientIdHint;
+      standardEvent.traceId  = traceId;
+      standardEvent.eventId  = eventId;
 
       // Diagnostic context — used by webhook-processor when tenant resolution fails so
       // operators can self-diagnose "your events.js is outdated" vs. other failure modes.
@@ -106,7 +115,7 @@ class WixConnector {
       await webhookProcessor.processIncoming(eventId, standardEvent, rawBody, tenantDiagnostic);
 
     } catch (error) {
-      log.error('wix.webhook.processing_error', {}, error);
+      log.error('wix.webhook.processing_error', { traceId: traceId || null, stage: 'ingress', result: 'failed' }, error);
       if (!res.headersSent) {
         res.status(500).send('Internal Server Error');
       }

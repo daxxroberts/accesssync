@@ -335,8 +335,45 @@ CREATE TABLE webhook_log (
     event_type          VARCHAR(100),
     raw_payload         JSONB,
     normalized_payload  JSONB,
-    error_detail        TEXT
+    error_detail        TEXT,
+    trace_id            VARCHAR(36)                     -- end-to-end correlation UUID (observability-trace-id.sql)
 );
+
+CREATE INDEX IF NOT EXISTS idx_webhook_log_trace_id
+    ON webhook_log (trace_id) WHERE trace_id IS NOT NULL;
+
+--------------------------------------------------------
+-- 14b. Diagnostic Log (Structured observability — warn/error/critical)
+--------------------------------------------------------
+-- Populated by logger.js persistToDiagnosticLog() for every warn/error/critical event.
+-- Powers Admin Hub error analysis and AI-assisted diagnostics.
+-- Originally created by migrations/diagnostic-log.sql; trace_id added by observability-trace-id.sql.
+CREATE TABLE IF NOT EXISTS diagnostic_log (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    client_id   UUID REFERENCES clients(id) ON DELETE CASCADE,
+    service     VARCHAR(100) NOT NULL,
+    level       VARCHAR(20) NOT NULL CHECK (level IN ('warn', 'error', 'critical')),
+    error_code  VARCHAR(100) NOT NULL,
+    message     TEXT NOT NULL,
+    context     JSONB DEFAULT '{}',
+    resolved_at TIMESTAMPTZ,
+    trace_id    VARCHAR(36)                             -- end-to-end correlation UUID (observability-trace-id.sql)
+);
+
+CREATE INDEX IF NOT EXISTS idx_diagnostic_log_client_created
+    ON diagnostic_log (client_id, created_at DESC)
+    WHERE resolved_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_diagnostic_log_client_code
+    ON diagnostic_log (client_id, error_code, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_diagnostic_log_platform
+    ON diagnostic_log (created_at DESC)
+    WHERE client_id IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_diagnostic_log_trace_id
+    ON diagnostic_log (trace_id) WHERE trace_id IS NOT NULL;
 
 --------------------------------------------------------
 -- 14. Client Subscriptions (DR-036 — PENDING OB-70 MIGRATION)

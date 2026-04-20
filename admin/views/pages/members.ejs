@@ -79,12 +79,14 @@
     .status-pill.active           { background: var(--sage-dim);  color: var(--sage-dark); }
     .status-pill.pending          { background: var(--amber-dim); color: var(--amber); }
     .status-pill.pending_hardware { background: var(--amber-dim); color: var(--amber); }
+    .status-pill.partial          { background: var(--amber-dim); color: var(--amber); }
     .status-pill.failed           { background: var(--red-dim);   color: var(--red); }
     .status-pill.suspended        { background: var(--surface);   color: var(--muted); }
     .status-dot { width: 6px; height: 6px; border-radius: 50%; }
     .status-pill.active .status-dot           { background: var(--sage-dark); }
     .status-pill.pending .status-dot          { background: var(--amber); animation: pulse 1.4s ease-in-out infinite; }
     .status-pill.pending_hardware .status-dot { background: var(--amber); animation: pulse 1.4s ease-in-out infinite; }
+    .status-pill.partial .status-dot          { background: var(--amber); }
     .status-pill.failed .status-dot           { background: var(--red); }
     .status-pill.suspended .status-dot        { background: var(--muted); }
 
@@ -148,6 +150,44 @@
     .drawer-btn.secondary { background: var(--surface); color: var(--text2); }
     .drawer-btn.secondary:hover { background: var(--border); }
 
+    /* Drawer tabs */
+    .drawer-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); padding: 0 24px; }
+    .drawer-tab { padding: 12px 14px; font-size: 13px; font-weight: 600; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.12s; }
+    .drawer-tab:hover { color: var(--text); }
+    .drawer-tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+    .drawer-tab-content { display: none; }
+    .drawer-tab-content.active { display: block; }
+
+    /* Verdict banner */
+    .verdict-banner { border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; font-weight: 600; }
+    .verdict-banner.healthy  { background: rgba(74,222,128,0.12); color: var(--sage-dark); border: 1px solid rgba(74,222,128,0.3); }
+    .verdict-banner.degraded { background: rgba(245,158,11,0.12); color: var(--amber);    border: 1px solid rgba(245,158,11,0.3); }
+    .verdict-banner.failed   { background: rgba(239,68,68,0.12);  color: var(--red);      border: 1px solid rgba(239,68,68,0.3); }
+    .verdict-banner.mismatch { background: rgba(239,68,68,0.12);  color: var(--red);      border: 1px solid rgba(239,68,68,0.3); }
+
+    /* Finding items */
+    .finding-item { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .finding-item:last-child { border-bottom: none; }
+    .finding-level { flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.04em; }
+    .finding-level.error { background: rgba(239,68,68,0.12); color: var(--red); }
+    .finding-level.warn  { background: rgba(245,158,11,0.12); color: var(--amber); }
+    .finding-level.ok    { background: rgba(74,222,128,0.12); color: var(--sage-dark); }
+    .finding-msg  { color: var(--text); line-height: 1.5; }
+    .finding-code { font-weight: 700; color: var(--text2); margin-right: 4px; }
+
+    /* Timeline items */
+    .tl-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .tl-item:last-child { border-bottom: none; }
+    .tl-source { flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.04em; background: var(--surface); color: var(--text2); }
+    .tl-source.access_log     { background: rgba(79,110,247,0.12); color: var(--brand); }
+    .tl-source.error_queue    { background: rgba(239,68,68,0.12); color: var(--red); }
+    .tl-source.adapter_log   { background: rgba(245,158,11,0.12); color: var(--amber); }
+    .tl-source.diagnostic_log { background: rgba(100,100,100,0.1); color: var(--text2); }
+    .tl-body { flex: 1; }
+    .tl-event { font-weight: 600; color: var(--text); }
+    .tl-detail { color: var(--muted); margin-top: 2px; }
+    .tl-ts { font-size: 11px; color: var(--muted); flex-shrink: 0; text-align: right; }
+
     /* Toast override (members uses bottom: 24px) */
     .toast { bottom: 24px; transform: translateX(-50%) translateY(60px); font-family: 'Sora', sans-serif; }
     .toast.visible { transform: translateX(-50%) translateY(0); }
@@ -196,6 +236,7 @@
         <option value="active">Active</option>
         <option value="pending">Pending</option>
         <option value="pending_hardware">Needs Setup</option>
+        <option value="partial">Partial Access</option>
         <option value="failed">Action Needed</option>
         <option value="suspended">Paused</option>
       </select>
@@ -259,6 +300,7 @@
       var active          = allMembers.filter(function(m) { return m.status === 'active'; }).length;
       var pending         = allMembers.filter(function(m) { return m.status === 'pending'; }).length;
       var pendingHardware = allMembers.filter(function(m) { return m.status === 'pending_hardware'; }).length;
+      var partial         = allMembers.filter(function(m) { return m.status === 'partial'; }).length;
       var failed          = allMembers.filter(function(m) { return m.status === 'failed'; }).length;
       var strip = document.getElementById('statsStrip');
       strip.innerHTML =
@@ -266,6 +308,7 @@
         '<div class="stat-card" data-filter="active" onclick="filterByStatus(this)"><div class="stat-value">' + active + '</div><div class="stat-label">Active</div></div>' +
         '<div class="stat-card" data-filter="pending" onclick="filterByStatus(this)"><div class="stat-value">' + pending + '</div><div class="stat-label">Pending</div></div>' +
         (pendingHardware > 0 ? '<div class="stat-card" data-filter="pending_hardware" onclick="filterByStatus(this)" style="border-left:3px solid var(--amber);"><div class="stat-value">' + pendingHardware + '</div><div class="stat-label">Needs Setup</div></div>' : '') +
+        (partial > 0 ? '<div class="stat-card" data-filter="partial" onclick="filterByStatus(this)" style="border-left:3px solid var(--amber);"><div class="stat-value">' + partial + '</div><div class="stat-label">Partial Access</div></div>' : '') +
         (failed > 0 ? '<div class="stat-card alert" data-filter="failed" onclick="filterByStatus(this)"><div class="stat-value">' + failed + '</div><div class="stat-label">Action Needed</div></div>' : '');
       syncStatCards();
     }
@@ -298,11 +341,12 @@
       active: 'Member has door access.',
       pending: 'Access is being set up now.',
       pending_hardware: 'Plan purchased but door system not connected. Add your API key in Locations.',
+      partial: 'Some plans provisioned successfully — one or more plans had an issue. Check the error queue.',
       failed: 'Something went wrong — check the error queue for details and next steps.',
       suspended: 'Access paused — plan cancelled or payment lapsed.'
     };
     function statusLabel(s) {
-      var labels = { active: 'Active', pending: 'Processing', pending_hardware: 'Needs Setup', failed: 'Action Needed', suspended: 'Paused' };
+      var labels = { active: 'Active', pending: 'Processing', pending_hardware: 'Needs Setup', partial: 'Partial Access', failed: 'Action Needed', suspended: 'Paused' };
       return labels[s] || (s.charAt(0).toUpperCase() + s.slice(1));
     }
     function statusTooltip(s) { return STATUS_TOOLTIPS[s] || ''; }
@@ -516,10 +560,18 @@
       setTimeout(function() { document.getElementById('drawerOverlay').classList.remove('visible'); }, 250);
     }
 
+    var _drawerMemberId = null;
+    var _drawerClientId = null;
+    var _diagLoaded     = false;
+    var _timelineLoaded = false;
+
     function openMemberDetail(memberId) {
       var m = allMembers.find(function(x) { return x.id === memberId; });
       if (!m) return;
-      var clientId = urlParams.get('clientId');
+      _drawerMemberId = memberId;
+      _drawerClientId = urlParams.get('clientId') || null;
+      _diagLoaded     = false;
+      _timelineLoaded = false;
 
       document.getElementById('drawerTitle').textContent = m.firstName + ' ' + m.lastName;
 
@@ -535,16 +587,21 @@
         return 'var(--red)';
       }
 
-      var body =
+      var planNamesArr = Array.isArray(m.planNames) && m.planNames.length > 0 ? m.planNames : (m.planName ? [m.planName] : []);
+      var planValue = planNamesArr.length > 1
+        ? planNamesArr.map(function(p) { return esc(p); }).join('<br>')
+        : esc(planNamesArr[0] || '—');
+
+      var detailsHtml =
         '<div class="drawer-section-label">Member Details</div>' +
         '<div class="drawer-info-row"><span class="drawer-info-label">Email</span><span class="drawer-info-value">' + esc(m.email) + '</span></div>' +
-        '<div class="drawer-info-row"><span class="drawer-info-label">Plan</span><span class="drawer-info-value">' + esc(m.planDisplay || m.planName || '—') + '</span></div>' +
+        '<div class="drawer-info-row" style="align-items:flex-start;"><span class="drawer-info-label">Plan' + (planNamesArr.length > 1 ? 's' : '') + '</span><span class="drawer-info-value" style="text-align:right;">' + planValue + '</span></div>' +
         '<div class="drawer-info-row"><span class="drawer-info-label">Status</span><span class="drawer-info-value"><span class="status-pill ' + m.status + '"><span class="status-dot"></span>' + statusLabel(m.status) + '</span></span></div>' +
+        (m.status === 'partial' ? '<div style="font-size:12px;color:var(--amber);padding:6px 0 2px;">One or more plans had a provisioning issue. Check the error queue for details.</div>' : '') +
         '<div class="drawer-info-row"><span class="drawer-info-label">Added</span><span class="drawer-info-value">' + esc(m.addedDate) + '</span></div>';
 
-      // Latency section — populated from member object if available
       if (m.total_s != null) {
-        body +=
+        detailsHtml +=
           '<div class="drawer-section-label" style="margin-top:18px;">Provisioning Speed</div>' +
           '<div class="drawer-info-row"><span class="drawer-info-label">Purchase → Door Open</span>' +
             '<span class="drawer-info-value" style="color:' + latColor(m.total_s) + ';">' + fmtSec(m.total_s) + '</span></div>' +
@@ -553,24 +610,103 @@
           '<div class="drawer-info-row"><span class="drawer-info-label">Processing time</span>' +
             '<span class="drawer-info-value">' + (fmtSec(m.processing_s) || '—') + '</span></div>';
         if (m.webhook_received_at) {
-          body += '<div class="drawer-info-row"><span class="drawer-info-label">Purchase received</span>' +
+          detailsHtml += '<div class="drawer-info-row"><span class="drawer-info-label">Purchase received</span>' +
             '<span class="drawer-info-value" style="font-size:11px;">' + new Date(m.webhook_received_at).toLocaleString() + '</span></div>';
         }
         if (m.kisi_confirmed_at) {
-          body += '<div class="drawer-info-row"><span class="drawer-info-label">Access confirmed</span>' +
+          detailsHtml += '<div class="drawer-info-row"><span class="drawer-info-label">Access confirmed</span>' +
             '<span class="drawer-info-value" style="font-size:11px;">' + new Date(m.kisi_confirmed_at).toLocaleString() + '</span></div>';
         }
-      } else if (clientId) {
-        body += '<div class="drawer-section-label" style="margin-top:18px;">Provisioning Speed</div>' +
+      } else if (_drawerClientId) {
+        detailsHtml += '<div class="drawer-section-label" style="margin-top:18px;">Provisioning Speed</div>' +
           '<div style="font-size:12px;color:var(--muted);padding:8px 0;">No timing data — webhook log and provisioning records must both exist for latency to be calculated.</div>';
       }
 
-      document.getElementById('drawerBody').innerHTML = body;
+      var tabsHtml = _drawerClientId
+        ? '<div class="drawer-tabs">' +
+            '<div class="drawer-tab active" onclick="switchMemberTab(\'details\')">Details</div>' +
+            '<div class="drawer-tab" onclick="switchMemberTab(\'diagnose\')">Diagnose</div>' +
+            '<div class="drawer-tab" onclick="switchMemberTab(\'timeline\')">Timeline</div>' +
+          '</div>'
+        : '';
+
+      document.getElementById('drawerBody').innerHTML =
+        tabsHtml +
+        '<div id="drawerTabDetails" class="drawer-tab-content active">' + detailsHtml + '</div>' +
+        '<div id="drawerTabDiagnose" class="drawer-tab-content"><div style="color:var(--muted);font-size:13px;padding:16px 0;">Click Diagnose to run checks.</div></div>' +
+        '<div id="drawerTabTimeline" class="drawer-tab-content"><div style="color:var(--muted);font-size:13px;padding:16px 0;">Click Timeline to load events.</div></div>';
+
       document.getElementById('drawerFooter').innerHTML =
         '<button class="drawer-btn secondary" onclick="closeDrawer()">Close</button>' +
         (m.status === 'failed' ? '<button class="drawer-btn primary" onclick="retryMember(\'' + m.id + '\');closeDrawer()">Retry</button>' : '');
+
       document.getElementById('drawerOverlay').classList.add('visible');
       document.getElementById('drawer').classList.add('open');
+    }
+
+    function switchMemberTab(tab) {
+      document.querySelectorAll('.drawer-tab').forEach(function(el) { el.classList.remove('active'); });
+      document.querySelectorAll('.drawer-tab-content').forEach(function(el) { el.classList.remove('active'); });
+
+      var tabMap = { details: 'drawerTabDetails', diagnose: 'drawerTabDiagnose', timeline: 'drawerTabTimeline' };
+      document.getElementById(tabMap[tab]).classList.add('active');
+      document.querySelectorAll('.drawer-tab')[['details','diagnose','timeline'].indexOf(tab)].classList.add('active');
+
+      if (tab === 'diagnose' && !_diagLoaded) {
+        _diagLoaded = true;
+        var el = document.getElementById('drawerTabDiagnose');
+        el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:16px 0;">Running checks…</div>';
+        var url = '/operator/' + _drawerClientId + '/members/' + _drawerMemberId + '/diagnose';
+        apiFetch(url).then(function(res) { return res.json(); }).then(function(data) {
+          var verdictLabel = { healthy: '✓ Healthy', degraded: '⚠ Degraded', failed: '✗ Failed', mismatch: '⚠ Mismatch' };
+          var html = '<div class="verdict-banner ' + esc(data.verdict) + '">' + esc(verdictLabel[data.verdict] || data.verdict) + '</div>';
+          html += '<div>';
+          (data.findings || []).forEach(function(f) {
+            html += '<div class="finding-item"><span class="finding-level ' + esc(f.level) + '">' + esc(f.level) + '</span>' +
+              '<span class="finding-msg"><span class="finding-code">' + esc(f.code) + '</span>' + esc(f.message) + '</span></div>';
+          });
+          html += '</div>';
+          if (data.member) {
+            html += '<div class="drawer-section-label" style="margin-top:16px;">State Summary</div>' +
+              '<div class="drawer-info-row"><span class="drawer-info-label">Access status</span><span class="drawer-info-value">' + esc(data.member.access_status || '—') + '</span></div>' +
+              '<div class="drawer-info-row"><span class="drawer-info-label">Role assignments</span><span class="drawer-info-value">' + (data.roles ? data.roles.length : 0) + '</span></div>' +
+              '<div class="drawer-info-row"><span class="drawer-info-label">Access sources</span><span class="drawer-info-value">' + (data.sources ? data.sources.length : 0) + '</span></div>';
+          }
+          el.innerHTML = html;
+        }).catch(function(err) {
+          el.innerHTML = '<div style="color:var(--red);font-size:13px;padding:16px 0;">Failed to load diagnostic data.</div>';
+        });
+      }
+
+      if (tab === 'timeline' && !_timelineLoaded) {
+        _timelineLoaded = true;
+        var el2 = document.getElementById('drawerTabTimeline');
+        el2.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:16px 0;">Loading events…</div>';
+        var url2 = '/operator/' + _drawerClientId + '/members/' + _drawerMemberId + '/timeline';
+        apiFetch(url2).then(function(res) { return res.json(); }).then(function(data) {
+          if (!data.timeline || data.timeline.length === 0) {
+            el2.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:16px 0;">No timeline events found.</div>';
+            return;
+          }
+          var html = '<div>';
+          data.timeline.forEach(function(ev) {
+            var srcClass = esc(ev.source || 'unknown');
+            var ts = ev.created_at ? new Date(ev.created_at).toLocaleString() : '—';
+            html += '<div class="tl-item">' +
+              '<span class="tl-source ' + srcClass + '">' + esc(ev.source) + '</span>' +
+              '<div class="tl-body">' +
+                '<div class="tl-event">' + esc(ev.event_type || ev.error_code || '—') + '</div>' +
+                (ev.detail ? '<div class="tl-detail">' + esc(ev.detail) + '</div>' : '') +
+              '</div>' +
+              '<div class="tl-ts">' + esc(ts) + '</div>' +
+            '</div>';
+          });
+          html += '</div>';
+          el2.innerHTML = html;
+        }).catch(function(err) {
+          el2.innerHTML = '<div style="color:var(--red);font-size:13px;padding:16px 0;">Failed to load timeline.</div>';
+        });
+      }
     }
 
     function retryMember(memberId) {
@@ -659,7 +795,7 @@
               planDisplay: planDisplay, // for row rendering
               planNames: planNames,     // full list for drawer/modal
               role: 'holder',
-              status: m.access_status || 'pending',
+              status: m.effective_status || m.access_status || 'pending',
               addedDate: m.provisioned_at ? new Date(m.provisioned_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—',
               holderId: null,
               pendingIdentity: !hasRealName,

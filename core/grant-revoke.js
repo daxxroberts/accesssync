@@ -71,13 +71,15 @@ class GrantRevokeLogic {
         const newIsTimeLimited = mapping.accessType === 'time_limited';
 
         log.info('grant.role.reused', {
-          tenantId, memberId,
+          clientId: tenantId, memberId,
+          platformMemberId: wixEvent.platformMemberId,
           hardwareGroupId: mapping.hardwareGroupId,
           mappingId: mapping.mappingId,
           priorMappingId: existing.rows[0].mapping_id,
           roleAssignmentId: priorId,
           reason: samePlan ? 'retry' : 'shared_group',
           newAccessType: mapping.accessType || 'permanent',
+          stage: 'grant', result: 'skipped',
         });
 
         // Kisi enforces one role per group — can't create a second assignment with a
@@ -86,10 +88,12 @@ class GrantRevokeLogic {
         // cancelling the other plan won't revoke hardware access until all sources gone.
         if (!samePlan && newIsTimeLimited) {
           log.warn('grant.role.time_limit_not_applied', {
-            tenantId, memberId,
+            clientId: tenantId, memberId,
+            platformMemberId: wixEvent.platformMemberId,
             hardwareGroupId: mapping.hardwareGroupId,
             mappingId: mapping.mappingId,
             note: 'New plan is time-limited but group already has a role assignment. Member retains existing access; source row still recorded for revoke tracking.',
+            stage: 'grant', result: 'skipped',
           });
         }
 
@@ -104,9 +108,11 @@ class GrantRevokeLogic {
       }
 
       log.info('grant.role.assigning', {
-        tenantId, memberId, hardwareUserId,
+        clientId: tenantId, memberId, hardwareUserId,
+        platformMemberId: wixEvent.platformMemberId,
         hardwareGroupId: mapping.hardwareGroupId,
         mappingId: mapping.mappingId,
+        stage: 'grant', result: 'start',
       });
       // K-2: On 404 (group deleted), flag the specific group row and continue the loop.
       // Other groups on the same mapping still get attempted — member gets partial access.
@@ -124,8 +130,11 @@ class GrantRevokeLogic {
       } catch (err) {
         if (err.code === 'HARDWARE_RESOURCE_NOT_FOUND') {
           log.warn('grant.group_not_found', {
-            tenantId, memberId, mappingId: mapping.mappingId,
+            clientId: tenantId, memberId,
+            platformMemberId: wixEvent.platformMemberId,
+            mappingId: mapping.mappingId,
             hardwareGroupId: mapping.hardwareGroupId,
+            stage: 'grant', result: 'failed',
           }, err);
           // Flag the specific dead group — mapping stays active, other groups keep working
           setImmediate(() => {
@@ -154,10 +163,12 @@ class GrantRevokeLogic {
     // If some succeeded and some failed, log warning but return successful assignments
     if (failedGroups.length > 0) {
       log.warn('grant.partial_failure', {
-        tenantId, memberId,
+        clientId: tenantId, memberId,
+        platformMemberId: wixEvent.platformMemberId,
         succeeded: assignments.length,
         failed: failedGroups.length,
         failedGroups: failedGroups.map(f => f.mapping.hardwareGroupId),
+        stage: 'grant', result: 'failed',
       });
     }
 
@@ -182,8 +193,9 @@ class GrantRevokeLogic {
 
   async processRevoke(tenantId, memberId, hardwareUserId, roleAssignmentIds, hardwarePlatform, eventType, wixEvent) {
     log.info('revoke.start', {
-      tenantId, memberId, eventType,
+      clientId: tenantId, memberId, eventType,
       platformMemberId: wixEvent.platformMemberId,
+      stage: 'revoke', result: 'start',
     });
 
     const apiKey = await this._getClientApiKey(tenantId);
@@ -233,7 +245,10 @@ class GrantRevokeLogic {
           const remainingCount = parseInt(remaining.rows[0].cnt, 10);
           if (remainingCount > 0) {
             log.info('revoke.group.skipped', {
-              tenantId, memberId, hardwareGroupId: groupId, remainingSources: remainingCount,
+              clientId: tenantId, memberId,
+              platformMemberId: wixEvent.platformMemberId,
+              hardwareGroupId: groupId, remainingSources: remainingCount,
+              stage: 'revoke', result: 'skipped', reason: 'other_sources_active',
             });
           } else {
             await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
@@ -243,7 +258,10 @@ class GrantRevokeLogic {
         // Fallback: legacy member with no member_role_assignments rows
         if (raWithGroups.rows.length === 0 && roleAssignmentIds.length > 0) {
           log.warn('revoke.legacy_fallback', {
-            tenantId, memberId, roleAssignmentCount: roleAssignmentIds.length,
+            clientId: tenantId, memberId,
+            platformMemberId: wixEvent.platformMemberId,
+            roleAssignmentCount: roleAssignmentIds.length,
+            stage: 'revoke', result: 'retry',
           });
           for (const raId of roleAssignmentIds) {
             await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
@@ -276,7 +294,12 @@ class GrantRevokeLogic {
       default: {
         const err = new Error(`Unknown revoke event type: ${eventType}`);
         err.code = 'REVOKE_UNKNOWN_EVENT';
-        log.error('revoke.unknown_event_type', { tenantId, memberId, eventType }, err);
+        log.error('revoke.unknown_event_type', {
+          clientId: tenantId, memberId,
+          platformMemberId: wixEvent.platformMemberId,
+          eventType,
+          stage: 'revoke', result: 'failed',
+        }, err);
         throw err;
       }
     }

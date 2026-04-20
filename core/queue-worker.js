@@ -61,13 +61,20 @@ async function getClientApiKey(tenantId) {
  */
 async function processJob(job) {
   const { tenantId, standardEvent } = job.data;
-  const traceId = standardEvent.traceId || null;
-  const logger = traceId ? withTrace(traceId) : log;
+  const traceId  = standardEvent.traceId  || null;
+  const clientId = tenantId;               // canonical field name — tenantId kept internally
+  const eventId  = standardEvent.eventId  || null;
+  const logger   = traceId ? withTrace(traceId) : log;
+  const jobStart = Date.now();
 
   logger.info('queue.job.start', {
+    traceId, clientId, eventId,
     jobId: job.id, jobName: job.name,
-    tenantId, memberId: standardEvent.platformMemberId,
-    eventType: standardEvent.eventType, planId: standardEvent.planId,
+    attempt: (job.attemptsMade || 0) + 1,
+    platformMemberId: standardEvent.platformMemberId,
+    eventType: standardEvent.eventType,
+    planId: standardEvent.planId,
+    stage: 'queue', result: 'start',
   });
 
   let memberId = null;
@@ -81,7 +88,11 @@ async function processJob(job) {
         lastStep = 'grant.recovered.resolve_lock';
         const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null);
         if (!lockResult) {
-          logger.warn('queue.grant.recovered.no_identity', { tenantId, memberId: standardEvent.platformMemberId });
+          logger.warn('queue.grant.recovered.no_identity', {
+            clientId, eventId,
+            platformMemberId: standardEvent.platformMemberId,
+            stage: 'grant', result: 'skipped',
+          });
           return;
         }
         const { memberId: resolvedMemberId, hardwareUserId, hardwarePlatform } = lockResult;
@@ -91,7 +102,12 @@ async function processJob(job) {
         await hardwareAdapter.enableAccess(hardwarePlatform, apiKey, hardwareUserId);
         lastStep = 'grant.recovered.complete_revoke';
         await standardAdapter.completeRevoke(memberId, tenantId, 'active');
-        logger.info('queue.grant.recovered.complete', { tenantId, memberId });
+        logger.info('queue.grant.recovered.complete', {
+          clientId, memberId, eventId,
+          platformMemberId: standardEvent.platformMemberId,
+          durationMs: Date.now() - jobStart,
+          stage: 'grant', result: 'success',
+        });
         return;
       }
 
@@ -99,15 +115,21 @@ async function processJob(job) {
       lastStep = 'grant.resolve_mappings';
       const mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
       logger.info('queue.grant.mappings_resolved', {
-        tenantId,
-        memberId: standardEvent.platformMemberId,
+        clientId, eventId,
+        platformMemberId: standardEvent.platformMemberId,
         planId: standardEvent.planId,
         mappingCount: mappings === null ? null : mappings.length,
         hardwareGroupIds: Array.isArray(mappings) ? mappings.map(m => m.hardwareGroupId) : [],
+        stage: 'grant', result: 'success',
       });
       if (mappings === null) {
         // W-1: Unknown plan — write to error_queue + notify operator immediately
-        logger.warn('queue.grant.plan_unknown', { tenantId, planId: standardEvent.planId, memberId: standardEvent.platformMemberId });
+        logger.warn('queue.grant.plan_unknown', {
+          clientId, eventId,
+          planId: standardEvent.planId,
+          platformMemberId: standardEvent.platformMemberId,
+          stage: 'grant', result: 'failed',
+        });
         const unmappedErr = new Error(`No mapping for plan ${standardEvent.planId}`);
         unmappedErr.code = 'PLAN_NOT_MAPPED';
         unmappedErr.userMessage = "A member just signed up for a plan that hasn't been connected to any access group yet. They won't be able to get in until the plan is mapped.";
@@ -120,7 +142,12 @@ async function processJob(job) {
         const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, 'kisi');
         memberId = lockResult.memberId;
         await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
-        logger.info('queue.grant.parked.no_mapping', { tenantId, memberId, planId: standardEvent.planId });
+        logger.info('queue.grant.parked.no_mapping', {
+          clientId, memberId, eventId,
+          platformMemberId: standardEvent.platformMemberId,
+          planId: standardEvent.planId,
+          stage: 'grant', result: 'skipped',
+        });
         return;
       }
 
@@ -129,9 +156,11 @@ async function processJob(job) {
       const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, mappings[0].hardwarePlatform);
       memberId = lockResult.memberId;
       logger.info('queue.grant.lock_acquired', {
-        tenantId, memberId,
+        clientId, memberId, eventId,
+        platformMemberId: standardEvent.platformMemberId,
         hardwarePlatform: mappings[0].hardwarePlatform,
         email: standardEvent.email || null,
+        stage: 'grant', result: 'start',
       });
 
       // Step 3: Check for hardware API key — if missing, park as pending_hardware (Wix-first flow)
@@ -139,7 +168,12 @@ async function processJob(job) {
       const apiKey = await getClientApiKey(tenantId);
       if (!apiKey) {
         await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
-        logger.info('queue.grant.parked.no_api_key', { tenantId, memberId, planId: standardEvent.planId });
+        logger.info('queue.grant.parked.no_api_key', {
+          clientId, memberId, eventId,
+          platformMemberId: standardEvent.platformMemberId,
+          planId: standardEvent.planId,
+          stage: 'grant', result: 'skipped',
+        });
         return;
       }
 
@@ -155,29 +189,42 @@ async function processJob(job) {
       );
       if (hardwareUserId === null) {
         logger.warn('queue.grant.parked.pending_identity', {
-          tenantId, memberId,
+          clientId, memberId, eventId,
           platformMemberId: standardEvent.platformMemberId,
           planId: standardEvent.planId,
+          stage: 'identity', result: 'skipped',
         });
         return;
       }
-      logger.info('queue.grant.identity_resolved', { tenantId, memberId, hardwareUserId });
-
+      logger.info('queue.grant.identity_resolved', {
+        clientId, memberId, eventId, hardwareUserId,
+        platformMemberId: standardEvent.platformMemberId,
+        stage: 'identity', result: 'success',
+      });
       // Step 5: Execute hardware grant across all active mappings
       lastStep = 'grant.process_grant';
       const assignments = await grantRevokeLogic.processGrant(
         tenantId, memberId, hardwareUserId, mappings, standardEvent
       );
       logger.info('queue.grant.hardware_calls_complete', {
-        tenantId, memberId,
+        clientId, memberId, eventId,
+        platformMemberId: standardEvent.platformMemberId,
         assignments: assignments.length,
         roleAssignmentIds: assignments.map(a => a.roleAssignmentId),
+        durationMs: Date.now() - jobStart,
+        stage: 'grant', result: 'success',
       });
 
       // Step 6: Record success — writes all assignments to member_role_assignments
       lastStep = 'grant.complete_grant';
       await standardAdapter.completeGrant(memberId, tenantId, assignments);
-      logger.info('queue.grant.complete', { tenantId, memberId, assignments: assignments.length });
+      logger.info('queue.grant.complete', {
+        clientId, memberId, eventId,
+        platformMemberId: standardEvent.platformMemberId,
+        assignments: assignments.length,
+        durationMs: Date.now() - jobStart,
+        stage: 'grant', result: 'success',
+      });
 
     } else if (job.name === 'revoke') {
       // Step 1: Resolve identity + acquire lock (reads hardwarePlatform from existing row)
@@ -185,15 +232,23 @@ async function processJob(job) {
       const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null);
 
       if (!lockResult) {
-        logger.warn('queue.revoke.no_identity', { tenantId, memberId: standardEvent.platformMemberId, eventType: standardEvent.eventType });
+        logger.warn('queue.revoke.no_identity', {
+          clientId, eventId,
+          platformMemberId: standardEvent.platformMemberId,
+          eventType: standardEvent.eventType,
+          stage: 'revoke', result: 'skipped',
+        });
         return; // Member never existed — skip silently
       }
 
       const { memberId: resolvedMemberId, hardwareUserId, hardwarePlatform, roleAssignmentIds } = lockResult;
       memberId = resolvedMemberId;
       logger.info('queue.revoke.lock_acquired', {
-        tenantId, memberId, hardwarePlatform,
+        clientId, memberId, eventId,
+        platformMemberId: standardEvent.platformMemberId,
+        hardwarePlatform,
         roleAssignmentCount: roleAssignmentIds?.length || 0,
+        stage: 'revoke', result: 'start',
       });
 
       // Step 2: Execute hardware revoke across all stored role assignments → returns targetStatus
@@ -202,21 +257,33 @@ async function processJob(job) {
         tenantId, memberId, hardwareUserId, roleAssignmentIds, hardwarePlatform,
         standardEvent.eventType, standardEvent
       );
-      logger.info('queue.revoke.hardware_calls_complete', { tenantId, memberId, targetStatus });
+      logger.info('queue.revoke.hardware_calls_complete', {
+        clientId, memberId, eventId,
+        platformMemberId: standardEvent.platformMemberId,
+        targetStatus,
+        durationMs: Date.now() - jobStart,
+        stage: 'revoke', result: 'success',
+      });
 
       // Step 3: Record success
       lastStep = 'revoke.complete_revoke';
       await standardAdapter.completeRevoke(memberId, tenantId, targetStatus);
-      logger.info('queue.revoke.complete', { tenantId, memberId, targetStatus });
+      logger.info('queue.revoke.complete', {
+        clientId, memberId, eventId,
+        platformMemberId: standardEvent.platformMemberId,
+        targetStatus,
+        durationMs: Date.now() - jobStart,
+        stage: 'revoke', result: 'success',
+      });
 
     } else {
-      logger.warn('queue.job.unknown_name', { jobId: job.id, jobName: job.name });
+      logger.warn('queue.job.unknown_name', { jobId: job.id, jobName: job.name, clientId, eventId });
     }
 
   } catch (error) {
     logger.error('queue.job.failed', {
       jobId: job.id, jobName: job.name,
-      tenantId, memberId,
+      clientId, memberId, eventId,
       attempt: job.attemptsMade,
       lastStep,
       platformMemberId: standardEvent?.platformMemberId || null,
@@ -224,6 +291,8 @@ async function processJob(job) {
       eventType: standardEvent?.eventType || null,
       emailPresent: !!(standardEvent?.email),
       namePresent: !!(standardEvent?.name),
+      durationMs: Date.now() - jobStart,
+      stage: lastStep.split('.')[0], result: 'failed',
     }, error);
 
     // Release in_flight lock before BullMQ retries
@@ -257,7 +326,13 @@ function startWorker() {
   worker.on('completed', (job) => {
     const traceId = job.data?.standardEvent?.traceId || null;
     const logger = traceId ? withTrace(traceId) : log;
-    logger.info('queue.job.completed', { jobId: job.id, jobName: job.name });
+    logger.info('queue.job.completed', {
+      jobId: job.id, jobName: job.name,
+      clientId: job.data?.tenantId || null,
+      eventId: job.data?.standardEvent?.eventId || null,
+      platformMemberId: job.data?.standardEvent?.platformMemberId || null,
+      stage: 'queue', result: 'success',
+    });
   });
 
   worker.on('failed', async (job, err) => {
@@ -265,7 +340,11 @@ function startWorker() {
     const logger = traceId ? withTrace(traceId) : log;
     logger.error('queue.job.exhausted', {
       jobId: job.id, jobName: job.name,
+      clientId: job.data?.tenantId || null,
+      eventId: job.data?.standardEvent?.eventId || null,
+      platformMemberId: job.data?.standardEvent?.platformMemberId || null,
       attempt: job.attemptsMade, maxAttempts: job.opts.attempts,
+      stage: 'queue', result: 'failed',
     }, err);
 
     if (job.attemptsMade >= job.opts.attempts) {

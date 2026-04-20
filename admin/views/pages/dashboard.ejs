@@ -529,17 +529,29 @@
         return;
       } else {
         lbl.innerHTML = '<span style="display:flex;align-items:center;gap:5px;">' + spinSvg + ' Syncing…</span>';
+        fetch('/operator/sync/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: _clientId }) })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            btn.disabled = false; btn.classList.remove('syncing');
+            var isShort = btnId === 'sync-wix' || btnId === 'sync-kisi';
+            lbl.textContent = isShort ? 'Sync' : 'Sync now';
+            var resultText = (data.granted || data.revoked)
+              ? (data.granted || 0) + ' granted · ' + (data.revoked || 0) + ' revoked'
+              : 'Up to date';
+            showToast('success', 'Sync complete — ' + resultText);
+            var syncLabel = document.getElementById('sync-label');
+            if (syncLabel) syncLabel.textContent = 'Just now';
+            var syncTs = document.getElementById('sync-compare-ts');
+            if (syncTs) syncTs.textContent = 'As of last sync · just now';
+            loadLiveData();
+          })
+          .catch(function() {
+            btn.disabled = false; btn.classList.remove('syncing');
+            lbl.textContent = 'Sync failed';
+            showToast('error', 'Sync failed — check logs');
+          });
+        return;
       }
-      setTimeout(function() {
-        btn.disabled = false; btn.classList.remove('syncing');
-        var isShort = btnId === 'sync-wix' || btnId === 'sync-kisi';
-        lbl.textContent = isShort ? 'Sync' : 'Sync now';
-        showToast('success', 'Sync complete');
-        var syncLabel = document.getElementById('sync-label');
-        if (syncLabel) syncLabel.textContent = 'Just now';
-        var syncTs = document.getElementById('sync-compare-ts');
-        if (syncTs) syncTs.textContent = 'As of last sync · just now';
-      }, 2500);
     }
 
     // ── Load location detail sub-sections ──
@@ -574,7 +586,7 @@
               var dt = m.updated_at ? new Date(m.updated_at).toLocaleDateString('en-US', {month:'short',day:'numeric'}) : '';
               var color = statusMap[m.status] || 'muted';
               return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid var(--border);">' +
-                '<span style="font-size:12px;font-weight:500;color:var(--text);">' + esc(m.platform_member_id) + '</span>' +
+                '<span style="font-size:12px;font-weight:500;color:var(--text);">' + esc(m.member_name || m.platform_member_id) + '</span>' +
                 '<div style="display:flex;align-items:center;gap:8px;">' +
                   '<span style="font-size:11px;color:var(--' + color + ');">' + (labelMap[m.status] || m.status) + '</span>' +
                   '<span style="font-size:11px;color:var(--muted);">' + dt + '</span>' +

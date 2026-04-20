@@ -34,7 +34,7 @@
     return 'color:var(--danger)';
   }
 
-  const COLUMNS = ['Member ID', 'Platform', 'Hardware', 'Status', 'Provisioned', 'Total Time', 'Last Event', 'Actions'];
+  const COLUMNS = ['Member', 'Platform', 'Hardware', 'Status', 'Provisioned', 'Total Time', 'Last Event', 'Actions'];
 
   // ── State ──────────────────────────────────────────────────────────
   let clients      = [];
@@ -53,8 +53,10 @@
   let drawerOpen    = false;
   let drawerTitle   = '';
   let drawerLoading = false;
+  let drawerMode    = 'timeline'; // 'timeline' | 'diagnose'
   let timeline      = null;
   let timelineMember = null;
+  let diagnose      = null;
 
   let modalOpen     = false;
   let retryMemberId = null;
@@ -113,12 +115,18 @@
     }
   }
 
+  function memberLabel(m) {
+    return m.display_name || [m.first_name, m.last_name].filter(Boolean).join(' ') || m.platform_member_id;
+  }
+
   async function openTimeline(member) {
-    drawerTitle    = `Timeline: ${member.platform_member_id}`;
+    drawerMode     = 'timeline';
+    drawerTitle    = `Timeline: ${memberLabel(member)}`;
     drawerLoading  = true;
     drawerOpen     = true;
     timeline       = null;
     timelineMember = null;
+    diagnose       = null;
     try {
       const res  = await apiFetch(`/admin/members/${member.id}/timeline`);
       const json = await res.json();
@@ -126,6 +134,25 @@
       timelineMember = json.member;
     } catch {
       showToast('Failed to load timeline', 'error');
+      drawerOpen = false;
+    } finally {
+      drawerLoading = false;
+    }
+  }
+
+  async function openDiagnose(member) {
+    drawerMode     = 'diagnose';
+    drawerTitle    = `Diagnose: ${memberLabel(member)}`;
+    drawerLoading  = true;
+    drawerOpen     = true;
+    diagnose       = null;
+    timeline       = null;
+    timelineMember = null;
+    try {
+      const res  = await apiFetch(`/admin/members/${member.id}/diagnose`);
+      diagnose = await res.json();
+    } catch {
+      showToast('Failed to load diagnostic data', 'error');
       drawerOpen = false;
     } finally {
       drawerLoading = false;
@@ -207,7 +234,16 @@
   <DataTable columns={COLUMNS}>
     {#each rows as m (m.id)}
       <tr>
-        <td><CodeChip text={m.platform_member_id} full={true} /></td>
+        <td>
+          {#if m.display_name || m.first_name}
+            <div style="font-weight:600;font-size:13px;">{m.display_name || [m.first_name, m.last_name].filter(Boolean).join(' ')}</div>
+            {#if m.email}<div class="cell-sub">{m.email}</div>{/if}
+            <div class="cell-sub"><CodeChip text={m.platform_member_id} full={true} /></div>
+          {:else}
+            <CodeChip text={m.platform_member_id} full={true} />
+            {#if m.email}<div class="cell-sub">{m.email}</div>{/if}
+          {/if}
+        </td>
         <td>{m.source_platform   || '—'}</td>
         <td>{m.hardware_platform || '—'}</td>
         <td><PillBadge text={m.access_status || 'unknown'} /></td>
@@ -222,6 +258,7 @@
         </td>
         <td class="actions-cell">
           <button class="btn btn-sm btn-secondary" on:click={() => openTimeline(m)}>Timeline</button>
+          <button class="btn btn-sm btn-secondary" on:click={() => openDiagnose(m)}>Diagnose</button>
           {#if m.access_status === 'failed' || m.access_status === 'disabled'}
             <button class="btn btn-sm btn-accent" on:click={() => openRetryModal(m.id)}>Retry</button>
           {/if}
@@ -232,11 +269,44 @@
   <Pagination {offset} {limit} {total} on:change={onPageChange} />
 {/if}
 
-<!-- ── Timeline Drawer ───────────────────────────────────────────── -->
+<!-- ── Timeline / Diagnose Drawer ────────────────────────────────── -->
 <Drawer bind:open={drawerOpen} title={drawerTitle}>
   {#if drawerLoading}
-    <LoadingState message="Loading timeline…" />
-  {:else if timelineMember}
+    <LoadingState message="Loading…" />
+  {:else if drawerMode === 'diagnose' && diagnose}
+    <!-- Verdict banner -->
+    <div class="verdict-banner verdict-{diagnose.verdict}">
+      {#if diagnose.verdict === 'healthy'}✓ Healthy
+      {:else if diagnose.verdict === 'degraded'}⚠ Degraded
+      {:else if diagnose.verdict === 'failed'}✗ Failed
+      {:else}⚠ Mismatch{/if}
+    </div>
+
+    <!-- Findings -->
+    <div class="detail-section">
+      <div class="detail-section-title">Findings</div>
+      {#each diagnose.findings as f}
+        <div class="finding-row">
+          <span class="finding-level finding-level-{f.level}">{f.level}</span>
+          <span class="finding-msg"><strong>{f.code}</strong> — {f.message}</span>
+        </div>
+      {/each}
+    </div>
+
+    <!-- State summary -->
+    {#if diagnose.member}
+      <div class="detail-section">
+        <div class="detail-section-title">State Summary</div>
+        <div class="detail-row"><span class="detail-label">Access status</span><PillBadge text={diagnose.member.access_status || 'unknown'} /></div>
+        <div class="detail-row"><span class="detail-label">Role assignments</span><span>{diagnose.roles?.length ?? 0}</span></div>
+        <div class="detail-row"><span class="detail-label">Access sources</span><span>{diagnose.sources?.length ?? 0}</span></div>
+        {#if diagnose.member.provisioned_at}
+          <div class="detail-row"><span class="detail-label">Provisioned</span><TimeStamp iso={diagnose.member.provisioned_at} /></div>
+        {/if}
+      </div>
+    {/if}
+
+  {:else if drawerMode === 'timeline' && timelineMember}
     <div class="detail-section">
       <div class="detail-row"><span class="detail-label">Client</span><span>{timelineMember.client_name || '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Access Status</span><PillBadge text={timelineMember.access_status || 'unknown'} /></div>
@@ -307,6 +377,18 @@
 </Drawer>
 
 <style>
+  .verdict-banner { border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; font-weight: 600; }
+  .verdict-healthy  { background: rgba(74,222,128,0.12); color: var(--success, #16a34a); border: 1px solid rgba(74,222,128,0.3); }
+  .verdict-degraded { background: rgba(245,158,11,0.12); color: var(--accent,  #d97706); border: 1px solid rgba(245,158,11,0.3); }
+  .verdict-failed   { background: rgba(239,68,68,0.12);  color: var(--danger,  #dc2626); border: 1px solid rgba(239,68,68,0.3); }
+  .verdict-mismatch { background: rgba(239,68,68,0.12);  color: var(--danger,  #dc2626); border: 1px solid rgba(239,68,68,0.3); }
+  .finding-row { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border, #e5e7eb); font-size: 12px; }
+  .finding-row:last-child { border-bottom: none; }
+  .finding-level { flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.04em; }
+  .finding-level-error { background: rgba(239,68,68,0.12); color: var(--danger, #dc2626); }
+  .finding-level-warn  { background: rgba(245,158,11,0.12); color: var(--accent, #d97706); }
+  .finding-level-ok    { background: rgba(74,222,128,0.12); color: var(--success, #16a34a); }
+  .finding-msg { color: var(--text, #111); line-height: 1.5; }
   .latency-timeline { display: flex; flex-direction: column; gap: 0; margin: 8px 0; }
   .latency-step { display: flex; align-items: flex-start; gap: 10px; }
   .latency-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--brand); flex-shrink: 0; margin-top: 3px; }

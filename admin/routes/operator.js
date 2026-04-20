@@ -30,6 +30,7 @@ const hardwareAdapter = require('../../adapters/hardware-adapter');
 const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { suspendLocationMembers } = require('../../core/location-lapse');
+const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
 
 // Global rate limiter on all operator read endpoints (500 req/min/IP)
@@ -1078,7 +1079,10 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
         [clientId, locationId]
       ),
       db.query(
-        `SELECT DISTINCT mi.id, mi.platform_member_id, mas.status, mas.provisioned_at, mas.updated_at
+        `SELECT DISTINCT mi.id, mi.platform_member_id, mas.status, mas.provisioned_at, mas.updated_at,
+                COALESCE(mi.display_name,
+                  NULLIF(TRIM(COALESCE(mi.first_name,'') || ' ' || COALESCE(mi.last_name,'')), ''),
+                  mi.email) AS member_name
          FROM member_identity mi
          JOIN member_access_state mas ON mas.member_id = mi.id
          LEFT JOIN member_role_assignments mra ON mra.member_id = mi.id
@@ -1580,6 +1584,14 @@ router.get('/:clientId/members', async (req, res) => {
                   ORDER BY mra.created_at ASC
                   LIMIT 1
                 )                                AS plan_name,
+                -- Count of successful hardware role assignments. When mas.status = 'failed'
+                -- but assignment_count > 0, the member has partial access (some plans provisioned,
+                -- some failed). The UI uses this to show 'partial' rather than blanket 'failed'.
+                (
+                  SELECT COUNT(*)::int
+                  FROM member_role_assignments mra
+                  WHERE mra.member_id = mi.id
+                )                                AS assignment_count,
                 lat.webhook_received_at,
                 lat.enqueued_at,
                 lat.kisi_confirmed_at,
@@ -1621,14 +1633,62 @@ router.get('/:clientId/members', async (req, res) => {
       ),
     ]);
 
+    // Derive effective_status: if mas.status is 'failed' but the member has at least one
+    // successful role assignment, they have partial access — don't show blanket failure.
+    const members = rows.rows.map(m => {
+      let effectiveStatus = m.access_status;
+      if (m.access_status === 'failed' && m.assignment_count > 0) {
+        effectiveStatus = 'partial';
+      }
+      return { ...m, effective_status: effectiveStatus };
+    });
+
     res.json({
-      members: rows.rows,
+      members,
       total:   countRow.rows[0].total,
       page:    parseInt(page),
       limit:   parseInt(limit),
     });
   } catch (err) {
     log.error('operator.members.list_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /operator/:clientId/members/:memberId/diagnose ──────────
+// Client-scoped diagnostic — same checks as admin diagnose, but scope-checked to clientId.
+router.get('/:clientId/members/:memberId/diagnose', async (req, res) => {
+  const { clientId, memberId } = req.params;
+  try {
+    const scope = await db.query(
+      'SELECT id FROM member_identity WHERE id = $1 AND client_id = $2',
+      [memberId, clientId]
+    );
+    if (!scope.rows.length) return res.status(404).json({ error: 'Member not found' });
+    const result = await diagnoseMember(memberId);
+    res.json(result);
+  } catch (err) {
+    if (err.statusCode === 404) return res.status(404).json({ error: 'Member not found' });
+    log.error('operator.members.diagnose_failed', { clientId, memberId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /operator/:clientId/members/:memberId/timeline ──────────
+// Client-scoped lifecycle timeline — same UNION query as admin timeline.
+router.get('/:clientId/members/:memberId/timeline', async (req, res) => {
+  const { clientId, memberId } = req.params;
+  try {
+    const scope = await db.query(
+      'SELECT id FROM member_identity WHERE id = $1 AND client_id = $2',
+      [memberId, clientId]
+    );
+    if (!scope.rows.length) return res.status(404).json({ error: 'Member not found' });
+    const result = await getTimeline(memberId);
+    res.json(result);
+  } catch (err) {
+    if (err.statusCode === 404) return res.status(404).json({ error: 'Member not found' });
+    log.error('operator.members.timeline_failed', { clientId, memberId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

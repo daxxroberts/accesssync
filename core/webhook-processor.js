@@ -41,11 +41,18 @@ const eventQueue = new Queue('accesssync-events', {
 class WebhookProcessor {
 
   async processIncoming(eventId, standardEvent, rawPayload, tenantDiagnostic = null) {
-    log.info('webhook.received', { eventId, eventType: standardEvent.eventType });
+    const traceId        = standardEvent.traceId  || null;
+    const platformMemberId = standardEvent.platformMemberId || null;
+    const planId         = standardEvent.planId   || null;
+    log.info('webhook.received', {
+      traceId, eventId, eventType: standardEvent.eventType,
+      sourcePlatform: 'wix', platformMemberId, planId,
+      stage: 'ingress', result: 'start',
+    });
 
     // 1. Validate Structure
     if (!this._validateStructure(standardEvent)) {
-      log.warn('webhook.invalid_structure', { eventId, eventType: standardEvent.eventType });
+      log.warn('webhook.invalid_structure', { traceId, eventId, eventType: standardEvent.eventType, stage: 'ingress', result: 'failed' });
       await this._logToAlertLog(eventId, standardEvent, 'Missing required fields: platformMemberId or eventType');
       return;
     }
@@ -53,7 +60,7 @@ class WebhookProcessor {
     // 2. Deduplication check (Idempotency — DR-010)
     const isDuplicate = await this._checkIfDuplicate(eventId);
     if (isDuplicate) {
-      log.info('webhook.duplicate', { eventId, eventType: standardEvent.eventType });
+      log.info('webhook.duplicate', { traceId, eventId, eventType: standardEvent.eventType, stage: 'ingress', result: 'skipped' });
       return;
     }
 
@@ -80,9 +87,10 @@ class WebhookProcessor {
       dedupStatus: isDuplicate ? 'duplicate' : 'new',
       eventType: standardEvent.eventType,
       rawPayload: rawPayload ? (() => { try { return JSON.parse(rawPayload); } catch { return null; } })() : null,
-      normalizedPayload: standardEvent
+      normalizedPayload: standardEvent,
+      traceId,
     }).catch((dbErr) => {
-      log.error('webhook.log_write_failed', { eventId }, dbErr);
+      log.error('webhook.log_write_failed', { traceId, eventId, clientId: tenantId, eventType: standardEvent.eventType, stage: 'ingress', result: 'failed' }, dbErr);
     });
 
     if (!tenantId) {
@@ -103,12 +111,15 @@ class WebhookProcessor {
       err.code = 'TENANT_NOT_RESOLVED';
 
       log.error('webhook.tenant_not_resolved', {
-        eventId,
+        traceId, eventId,
         classification,
         eventType: standardEvent.eventType,
+        sourcePlatform: 'wix',
+        platformMemberId,
         wixSiteId: standardEvent.wixSiteId,
         clientIdHint: standardEvent.platformClientIdHint,
         diagnostic: tenantDiagnostic,
+        stage: 'resolve', result: 'failed',
       }, err);
 
       await this._logToAlertLog(eventId, standardEvent, classification);
@@ -118,14 +129,24 @@ class WebhookProcessor {
     // 5. Classify and enqueue (DR-012)
     if (['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(standardEvent.eventType)) {
       await eventQueue.add('grant', { tenantId, standardEvent }, { jobId: `grant-${eventId}` });
-      log.info('webhook.enqueued', { eventId, eventType: standardEvent.eventType, jobType: 'grant', tenantId });
+      log.info('webhook.enqueued', {
+        traceId, eventId, eventType: standardEvent.eventType,
+        clientId: tenantId, platformMemberId, planId,
+        jobId: `grant-${eventId}`, jobType: 'grant',
+        stage: 'queue', result: 'success',
+      });
 
     } else if (['plan.cancelled', 'payment.failed', 'booking.cancelled', 'member.deleted'].includes(standardEvent.eventType)) {
       await eventQueue.add('revoke', { tenantId, standardEvent }, { jobId: `revoke-${eventId}` });
-      log.info('webhook.enqueued', { eventId, eventType: standardEvent.eventType, jobType: 'revoke', tenantId });
+      log.info('webhook.enqueued', {
+        traceId, eventId, eventType: standardEvent.eventType,
+        clientId: tenantId, platformMemberId, planId,
+        jobId: `revoke-${eventId}`, jobType: 'revoke',
+        stage: 'queue', result: 'success',
+      });
 
     } else {
-      log.info('webhook.unrecognised_type', { eventId, eventType: standardEvent.eventType });
+      log.info('webhook.unrecognised_type', { traceId, eventId, eventType: standardEvent.eventType, stage: 'ingress', result: 'skipped' });
     }
   }
 
@@ -178,17 +199,18 @@ class WebhookProcessor {
 
   async logWebhookAttempt({
     eventId = null, clientId = null, hmacStatus, dedupStatus = null,
-    eventType = null, rawPayload = null, normalizedPayload = null, errorDetail = null
+    eventType = null, rawPayload = null, normalizedPayload = null,
+    errorDetail = null, traceId = null
   }) {
     await db.query(
       `INSERT INTO webhook_log
-       (event_id, client_id, hmac_status, dedup_status, event_type, raw_payload, normalized_payload, error_detail)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+       (event_id, client_id, hmac_status, dedup_status, event_type, raw_payload, normalized_payload, error_detail, trace_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         eventId, clientId, hmacStatus, dedupStatus, eventType,
         rawPayload        ? JSON.stringify(rawPayload)        : null,
         normalizedPayload ? JSON.stringify(normalizedPayload) : null,
-        errorDetail
+        errorDetail, traceId
       ]
     );
   }

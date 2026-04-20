@@ -15,6 +15,7 @@
   import DataTable    from '../components/DataTable.svelte';
   import Drawer       from '../components/Drawer.svelte';
   import ConfirmModal from '../components/ConfirmModal.svelte';
+  import { onMount }    from 'svelte';
   import { showToast } from '../stores/toast.js';
 
   const COLUMNS = ['Member', 'Client', 'Platform', 'Access Status', 'Last Updated', 'Actions'];
@@ -24,6 +25,7 @@
   let results      = [];
   let loading      = false;
   let searched     = false;
+  let isRecent     = false; // true when showing auto-loaded recent results
 
   let drawerOpen    = false;
   let drawerTitle   = '';
@@ -43,23 +45,39 @@
     return res;
   }
 
-  async function doSearch({ detail }) {
-    query = detail.query;
-    if (!query) { results = []; searched = false; return; }
-
+  async function loadResults(q = '') {
     loading  = true;
-    searched = true;
     results  = [];
     try {
-      const res  = await apiFetch(`/admin/members/search?q=${encodeURIComponent(query)}`);
+      const url = q ? `/admin/members/search?q=${encodeURIComponent(q)}` : '/admin/members/search';
+      const res  = await apiFetch(url);
       const json = await res.json();
-      results = json.data || [];
+      results  = json.data || [];
+      isRecent = json.searchType === 'recent';
     } catch (err) {
       if (err.message !== 'Unauthorized') showToast('Search failed', 'error');
     } finally {
       loading = false;
     }
   }
+
+  async function doSearch({ detail }) {
+    query    = detail.query;
+    searched = true;
+    isRecent = false;
+    if (!query) {
+      isRecent = true;
+      await loadResults('');
+      return;
+    }
+    await loadResults(query);
+  }
+
+  onMount(() => {
+    isRecent = true;
+    searched = true;
+    loadResults('');
+  });
 
   async function openTimeline(member) {
     drawerTitle    = `Timeline: ${member.display_name || member.platform_member_id}`;
@@ -134,18 +152,8 @@
 <LoadingState message="Searching…" hidden={!loading} />
 
 <!-- ── Empty States ──────────────────────────────────────────────── -->
-{#if !loading && !searched}
-  <EmptyState message="Enter a search term to find members">
-    <svelte:fragment slot="icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      </svg>
-    </svelte:fragment>
-  </EmptyState>
-{/if}
-
 {#if !loading && searched && results.length === 0}
-  <EmptyState message={`No members found for "${query}"`}>
+  <EmptyState message={isRecent ? 'No members found' : `No members found for "${query}"`}>
     <svelte:fragment slot="icon">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -155,6 +163,10 @@
 {/if}
 
 <!-- ── Results Table ─────────────────────────────────────────────── -->
+{#if !loading && isRecent && results.length > 0}
+  <div style="font-size:12px;color:var(--muted,#888);margin-bottom:8px;">Showing last 25 members — search to filter</div>
+{/if}
+
 {#if !loading && results.length > 0}
   <DataTable columns={COLUMNS}>
     {#each results as m (m.id)}

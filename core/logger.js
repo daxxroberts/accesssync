@@ -126,9 +126,9 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId) {
     const db = getDb();
     if (!db || typeof db.query !== 'function') return;
     db.query(
-      `INSERT INTO diagnostic_log (client_id, service, level, error_code, message, context)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [clientId, deriveService(event), level, errorCode, message, JSON.stringify(context)]
+      `INSERT INTO diagnostic_log (client_id, service, level, error_code, message, context, trace_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [clientId, deriveService(event), level, errorCode, message, JSON.stringify(context), traceId || null]
     ).catch((dbErr) => {
       // Write to stdout so Railway logs capture the failure — never propagate to caller.
       process.stdout.write(JSON.stringify({

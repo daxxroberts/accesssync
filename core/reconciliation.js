@@ -20,12 +20,13 @@
  * - Packages unresolved errors into a nightly digest (Resend, DR-020)
  */
 
+const crypto = require('crypto');
 const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const { eventQueue } = require('./webhook-processor');
 const { decryptApiKey } = require('./crypto-utils');
 const { listActiveOrders, listConfirmedBookings } = require('../adapters/wix/wix-plans-api');
-const { log } = require('./logger');
+const { log, withTrace } = require('./logger');
 
 class NightlyReconciliation {
 
@@ -37,7 +38,11 @@ class NightlyReconciliation {
    * Main entry point for the Railway Cron Job
    */
   async runNightlySweep() {
-    log.info('reconciliation.sweep_start', {});
+    const sweepTraceId = crypto.randomUUID();
+    const sweepLogger = withTrace(sweepTraceId);
+    this._sweepTraceId = sweepTraceId;
+    this._sweepLogger = sweepLogger;
+    sweepLogger.info('reconciliation.sweep_start', { stage: 'cron', result: 'start' });
 
     try {
       // Recurrence gate: skip if not enough time has elapsed since last sweep (DR-018)
@@ -50,7 +55,7 @@ class NightlyReconciliation {
       const intervalMs = { hourly: 3600000, '6h': 21600000, '12h': 43200000, daily: 86400000, weekly: 604800000 };
       const minMs = intervalMs[interval] || 86400000;
       if (last_sync_at && (Date.now() - new Date(last_sync_at).getTime()) < minMs) {
-        log.info('reconciliation.skipped', { reason: 'interval_not_elapsed', interval });
+        sweepLogger.info('reconciliation.skipped', { reason: 'interval_not_elapsed', interval, stage: 'cron', result: 'skipped' });
         return;
       }
 
@@ -64,14 +69,14 @@ class NightlyReconciliation {
          WHERE status = 'in_flight'
            AND updated_at < NOW() - INTERVAL '${this.staleThresholdMinutes} minutes'`
       );
-      log.info('reconciliation.stale_reset', {});
+      sweepLogger.info('reconciliation.stale_reset', { stage: 'cron', result: 'success' });
 
       // Step 2: Sync Door Lockdown States
       await this._syncDoorLockdownStates();
 
       // Step 3: Fetch Actionable Records
       const recordsToProcess = await this._fetchActionableRecords();
-      log.info('reconciliation.actionable_records', { count: recordsToProcess.length });
+      sweepLogger.info('reconciliation.actionable_records', { count: recordsToProcess.length, stage: 'cron', result: 'success' });
 
       // Step 4: Re-process records with rate limit compliance
       for (const record of recordsToProcess) {
@@ -85,9 +90,9 @@ class NightlyReconciliation {
       // Update last_sync_at for all active clients (DR-018)
       await db.query(`UPDATE clients SET last_sync_at = NOW() WHERE status = 'active'`);
 
-      log.info('reconciliation.sweep_complete', {});
+      sweepLogger.info('reconciliation.sweep_complete', { stage: 'cron', result: 'success' });
     } catch (error) {
-      log.critical('reconciliation.sweep_failed', {}, error);
+      sweepLogger.critical('reconciliation.sweep_failed', { stage: 'cron', result: 'failed' }, error);
     }
   }
 
@@ -99,7 +104,9 @@ class NightlyReconciliation {
    * are operator-managed — they are excluded from the Wix absence revoke check.
    */
   async _syncTrueSources() {
-    log.info('reconciliation.wix_sync_start', {});
+    const sweepLogger = this._sweepLogger || log;
+    const sweepTraceId = this._sweepTraceId || null;
+    sweepLogger.info('reconciliation.wix_sync_start', { traceId: sweepTraceId, stage: 'cron', result: 'start' });
 
     const clientsResult = await db.query(
       `SELECT id, source_site_id, source_api_key, hardware_api_key, hardware_platform
@@ -118,7 +125,7 @@ class NightlyReconciliation {
       }
     }
 
-    log.info('reconciliation.wix_sync_complete', {});
+    sweepLogger.info('reconciliation.wix_sync_complete', { traceId: sweepTraceId, stage: 'cron', result: 'success' });
   }
 
   /**
@@ -215,6 +222,7 @@ class NightlyReconciliation {
         continue;
       }
 
+      const recoEventId = `recon-${client.id}-${memberId}-${Date.now()}`;
       const syntheticEvent = {
         eventType:        'plan.purchased',
         sourcePlatform:   'wix',
@@ -225,11 +233,19 @@ class NightlyReconciliation {
         wixSiteId:        siteId,
         synthetic:        true,
         syntheticSource:  'reconciliation.true_source_sync',
+        traceId:          this._sweepTraceId,
+        eventId:          recoEventId,
       };
 
       const jobId = `grant-wix-sync-${client.id}-${memberId}-${Date.now()}`;
       await eventQueue.add('grant', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
-      log.info('reconciliation.grant_queued', { clientId: client.id, memberId, planId: wixData.planId, jobId });
+      log.info('reconciliation.grant_queued', {
+        clientId: client.id, memberId: wixData.memberId || null,
+        platformMemberId: memberId,
+        planId: wixData.planId, jobId, eventId: recoEventId,
+        traceId: this._sweepTraceId,
+        sourceType: 'cron', stage: 'cron', result: 'success',
+      });
       granted++;
     }
 
@@ -238,6 +254,7 @@ class NightlyReconciliation {
       if (kisiData.isSubMember) continue;     // Operator-managed — never revoke based on Wix absence
       if (wixMembers.has(memberId)) continue; // Still active in Wix
 
+      const recoEventId = `recon-${client.id}-${memberId}-${Date.now()}`;
       const syntheticEvent = {
         eventType:        'plan.cancelled',
         sourcePlatform:   'wix',
@@ -245,11 +262,18 @@ class NightlyReconciliation {
         wixSiteId:        siteId,
         synthetic:        true,
         syntheticSource:  'reconciliation.true_source_sync',
+        traceId:          this._sweepTraceId,
+        eventId:          recoEventId,
       };
 
       const jobId = `revoke-wix-sync-${client.id}-${memberId}-${Date.now()}`;
       await eventQueue.add('revoke', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
-      log.info('reconciliation.revoke_queued', { clientId: client.id, memberId, jobId });
+      log.info('reconciliation.revoke_queued', {
+        clientId: client.id, platformMemberId: memberId,
+        jobId, eventId: recoEventId,
+        traceId: this._sweepTraceId,
+        sourceType: 'cron', stage: 'cron', result: 'success',
+      });
       revoked++;
     }
 
@@ -339,6 +363,9 @@ class NightlyReconciliation {
   }
 
   async _generateAndSendDigest() {
+    const sweepLogger = this._sweepLogger || log;
+    const sweepTraceId = this._sweepTraceId || null;
+
     // Query both failure categories — operator needs both (NOVA spec)
     const configAlertsResult = await db.query(
       `SELECT client_id, alert_type, hardware_ref, created_at
@@ -360,10 +387,10 @@ class NightlyReconciliation {
       failedJobs: failedJobsResult.rows,
     };
 
-    log.info('reconciliation.digest', { configAlerts: digest.configAlerts.length, failedJobs: digest.failedJobs.length });
+    sweepLogger.info('reconciliation.digest', { traceId: sweepTraceId, configAlerts: digest.configAlerts.length, failedJobs: digest.failedJobs.length, stage: 'cron', result: 'success' });
 
     if (configAlertsResult.rows.length === 0 && failedJobsResult.rows.length === 0) {
-      log.info('reconciliation.digest_empty', {});
+      sweepLogger.info('reconciliation.digest_empty', { traceId: sweepTraceId, stage: 'cron', result: 'skipped' });
       return;
     }
 
@@ -392,9 +419,9 @@ class NightlyReconciliation {
         subject: '[AccessSync] Nightly digest',
         text: lines.join('\n'),
       });
-      log.info('reconciliation.digest_sent', { toEmail });
+      sweepLogger.info('reconciliation.digest_sent', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'success' });
     } catch (err) {
-      log.error('reconciliation.digest_send_failed', { toEmail }, err);
+      sweepLogger.error('reconciliation.digest_send_failed', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'failed' }, err);
     }
   }
 
