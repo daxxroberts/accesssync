@@ -245,6 +245,123 @@ router.get('/by-client', async (req, res) => {
   }
 });
 
+// ── GET /admin/members/:id/diagnose ───────────────────────────
+// Structured diagnostic: runs all checks, returns a verdict + findings list.
+// Checks: identity, state, sources vs mappings, roles, recent errors.
+// Verdict: 'healthy' | 'degraded' | 'failed' | 'mismatch'
+router.get('/:id/diagnose', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const findings = [];
+    let verdict = 'healthy';
+
+    // 1. Identity + state
+    const memberResult = await db.query(
+      `SELECT mi.*, mas.status AS access_status, mas.provisioned_at
+       FROM member_identity mi
+       LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+       WHERE mi.id = $1`,
+      [id]
+    );
+    if (!memberResult.rows.length) return res.status(404).json({ error: 'Member not found' });
+    const member = memberResult.rows[0];
+
+    if (member.access_status === 'failed') {
+      verdict = 'failed';
+      findings.push({ level: 'error', code: 'STATUS_FAILED', message: 'Member access_state is failed — grant job exhausted retries or was never completed.' });
+    } else if (member.access_status !== 'active') {
+      verdict = 'degraded';
+      findings.push({ level: 'warn', code: 'STATUS_NOT_ACTIVE', message: `Access status is "${member.access_status}" — expected "active".` });
+    }
+
+    // 2. Hardware role assignments
+    const rolesResult = await db.query(
+      `SELECT mra.*, pm.plan_name, pm.door_name, pm.hardware_group_id AS mapping_group_id
+       FROM member_role_assignments mra
+       LEFT JOIN plan_mappings pm ON pm.id = mra.mapping_id
+       WHERE mra.member_id = $1`,
+      [id]
+    );
+    const roles = rolesResult.rows;
+    if (roles.length === 0) {
+      if (verdict === 'healthy') verdict = 'degraded';
+      findings.push({ level: 'warn', code: 'NO_ROLE_ASSIGNMENTS', message: 'No hardware role assignments found — member has no door access provisioned in DB.' });
+    }
+
+    // 3. Access sources vs active plan mappings
+    const sourcesResult = await db.query(
+      `SELECT mas2.*, pm.plan_name, pm.status AS mapping_status
+       FROM member_access_sources mas2
+       LEFT JOIN plan_mappings pm ON pm.id = mas2.mapping_id
+       WHERE mas2.member_id = $1`,
+      [id]
+    );
+    const sources = sourcesResult.rows;
+    if (sources.length === 0 && roles.length > 0) {
+      verdict = 'mismatch';
+      findings.push({ level: 'error', code: 'SOURCES_MISSING', message: 'Hardware role exists but no member_access_sources rows found — revoke logic will not fire correctly.' });
+    }
+
+    // Check for inactive mapping references
+    for (const src of sources) {
+      if (src.mapping_status === 'inactive') {
+        findings.push({ level: 'warn', code: 'SOURCE_INACTIVE_MAPPING', message: `Source row references inactive mapping "${src.plan_name}" — plan was disabled but source row was not cleaned up.` });
+        if (verdict === 'healthy') verdict = 'degraded';
+      }
+    }
+
+    // Check for role assignments without a matching source row (orphaned role)
+    for (const role of roles) {
+      const matchingSource = sources.find(s => s.mapping_id === role.mapping_id);
+      if (!matchingSource) {
+        verdict = 'mismatch';
+        findings.push({ level: 'error', code: 'ORPHANED_ROLE', message: `Role assignment for "${role.plan_name || role.mapping_id}" has no matching source row — revoke will not clean up this hardware role.` });
+      }
+    }
+
+    // 4. Recent diagnostic_log errors (last 24h)
+    const recentErrors = await db.query(
+      `SELECT error_code, message, created_at, context
+       FROM diagnostic_log
+       WHERE (context->>'memberId' = $1 OR context->>'platformMemberId' = $2)
+         AND level = 'error'
+         AND created_at > NOW() - INTERVAL '24 hours'
+       ORDER BY created_at DESC
+       LIMIT 10`,
+      [id, member.platform_member_id]
+    );
+    for (const err of recentErrors.rows) {
+      const alreadyFlagged = findings.some(f => f.code === err.error_code);
+      if (!alreadyFlagged) {
+        findings.push({ level: 'error', code: err.error_code, message: err.message, at: err.created_at, context: err.context });
+        if (verdict === 'healthy') verdict = 'degraded';
+      }
+    }
+
+    if (findings.length === 0) {
+      findings.push({ level: 'ok', code: 'ALL_CHECKS_PASSED', message: `${roles.length} role(s), ${sources.length} source(s) — all consistent.` });
+    }
+
+    res.json({
+      verdict,
+      member: {
+        id:               member.id,
+        display_name:     member.display_name,
+        email:            member.email,
+        access_status:    member.access_status,
+        hardware_user_id: member.hardware_user_id,
+        provisioned_at:   member.provisioned_at,
+      },
+      roles,
+      sources,
+      findings,
+    });
+  } catch (err) {
+    log.error('admin.members_diagnose_error', {}, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /admin/members/:id/timeline ───────────────────────────
 router.get('/:id/timeline', async (req, res) => {
   try {

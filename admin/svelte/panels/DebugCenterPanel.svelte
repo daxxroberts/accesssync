@@ -30,6 +30,8 @@
   let drawerLoading = false;
   let timeline      = null;
   let timelineMember = null;
+  let drawerMode    = 'timeline'; // 'timeline' | 'diagnose'
+  let diagnosis     = null;
 
   let modalOpen    = false;
   let retryMemberId = null;
@@ -78,6 +80,25 @@
     }
   }
 
+  async function openDiagnose(member) {
+    drawerTitle    = `Diagnose: ${member.display_name || member.platform_member_id}`;
+    drawerMode     = 'diagnose';
+    drawerLoading  = true;
+    drawerOpen     = true;
+    diagnosis      = null;
+    timeline       = null;
+    timelineMember = null;
+    try {
+      const res  = await apiFetch(`/admin/members/${member.id}/diagnose`);
+      diagnosis  = await res.json();
+    } catch {
+      showToast('Failed to load diagnosis', 'error');
+      drawerOpen = false;
+    } finally {
+      drawerLoading = false;
+    }
+  }
+
   function openRetryModal(id) {
     retryMemberId = id;
     modalOpen     = true;
@@ -96,6 +117,10 @@
       showToast('Retry failed', 'error');
     }
   }
+
+  const VERDICT_LABEL = { healthy: 'Healthy', degraded: 'Degraded', failed: 'Failed', mismatch: 'Mismatch' };
+  const VERDICT_COLOR = { healthy: 'green', degraded: 'amber', failed: 'red', mismatch: 'red' };
+  const FINDING_COLOR = { ok: 'green', warn: 'amber', error: 'red' };
 </script>
 
 <!-- ── Search Bar ─────────────────────────────────────────────────── -->
@@ -148,6 +173,7 @@
         <td><TimeStamp iso={m.updated_at} /></td>
         <td class="actions-cell">
           <button class="btn btn-sm btn-secondary" on:click={() => openTimeline(m)}>Timeline</button>
+          <button class="btn btn-sm btn-secondary" on:click={() => openDiagnose(m)}>Diagnose</button>
           <button class="btn btn-sm btn-accent"     on:click={() => openRetryModal(m.id)}>Retry</button>
         </td>
       </tr>
@@ -155,11 +181,74 @@
   </DataTable>
 {/if}
 
-<!-- ── Timeline Drawer ───────────────────────────────────────────── -->
+<!-- ── Drawer (Timeline or Diagnose) ─────────────────────────────── -->
 <Drawer bind:open={drawerOpen} title={drawerTitle}>
   {#if drawerLoading}
-    <LoadingState message="Loading timeline…" />
-  {:else if timelineMember}
+    <LoadingState message="Loading…" />
+
+  {:else if drawerMode === 'diagnose' && diagnosis}
+    <!-- ── Verdict banner ── -->
+    <div class="detail-section">
+      <div class="verdict-banner verdict-{VERDICT_COLOR[diagnosis.verdict]}">
+        <strong>{VERDICT_LABEL[diagnosis.verdict]}</strong>
+        — {diagnosis.findings.length} finding{diagnosis.findings.length !== 1 ? 's' : ''}
+      </div>
+    </div>
+
+    <!-- ── Member summary ── -->
+    <div class="detail-section">
+      <div class="detail-row"><span class="detail-label">Name</span><span>{diagnosis.member.display_name || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Email</span><span>{diagnosis.member.email || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Access Status</span><PillBadge text={diagnosis.member.access_status || 'unknown'} /></div>
+      <div class="detail-row"><span class="detail-label">Hardware User</span><CodeChip text={diagnosis.member.hardware_user_id || '—'} full={true} /></div>
+      <div class="detail-row"><span class="detail-label">Provisioned</span><TimeStamp iso={diagnosis.member.provisioned_at} /></div>
+    </div>
+
+    <!-- ── Findings ── -->
+    <div class="detail-section">
+      <div class="detail-section-title">Findings</div>
+      {#each diagnosis.findings as f}
+        <div class="finding finding-{FINDING_COLOR[f.level]}">
+          <CodeChip text={f.code} full={true} />
+          <div class="finding-msg">{f.message}</div>
+          {#if f.at}<div class="finding-time"><TimeStamp iso={f.at} /></div>{/if}
+          {#if f.context}
+            <details class="timeline-context">
+              <summary>Context</summary>
+              <pre>{JSON.stringify(f.context, null, 2)}</pre>
+            </details>
+          {/if}
+        </div>
+      {/each}
+    </div>
+
+    <!-- ── Sources ── -->
+    {#if diagnosis.sources.length > 0}
+      <div class="detail-section">
+        <div class="detail-section-title">Access Sources ({diagnosis.sources.length})</div>
+        {#each diagnosis.sources as src}
+          <div class="detail-row">
+            <span class="detail-label">{src.plan_name || src.source_plan_id}</span>
+            <span><PillBadge text={src.mapping_status || 'ok'} /></span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- ── Roles ── -->
+    {#if diagnosis.roles.length > 0}
+      <div class="detail-section">
+        <div class="detail-section-title">Hardware Roles ({diagnosis.roles.length})</div>
+        {#each diagnosis.roles as role}
+          <div class="detail-row">
+            <span class="detail-label">{role.plan_name || role.mapping_id}</span>
+            <CodeChip text={role.role_assignment_id} full={true} />
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+  {:else if drawerMode === 'timeline' && timelineMember}
     <div class="detail-section">
       <div class="detail-row"><span class="detail-label">Client</span><span>{timelineMember.client_name || '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Access Status</span><PillBadge text={timelineMember.access_status || 'unknown'} /></div>

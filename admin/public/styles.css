@@ -869,6 +869,33 @@ code, .code-sm {
   margin-top: 4px;
 }
 
+.timeline-context { margin-top: 6px; }
+.timeline-context summary { font-size: 11px; color: var(--muted); cursor: pointer; }
+.timeline-context pre { font-size: 11px; white-space: pre-wrap; word-break: break-all; margin-top: 4px; background: var(--bg); padding: 8px; border-radius: 6px; }
+
+/* ── Diagnose Drawer ─────────────────────────────────────────────── */
+.verdict-banner {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid transparent;
+}
+.verdict-green  { background: var(--sage-dim);   border-color: var(--sage-border); color: var(--sage-dark); }
+.verdict-amber  { background: var(--amber-dim);  border-color: rgba(245,166,35,.3); color: var(--amber); }
+.verdict-red    { background: var(--red-dim);    border-color: rgba(255,77,106,.3); color: var(--red); }
+
+.finding {
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border-left: 3px solid transparent;
+}
+.finding-green { background: var(--sage-dim);  border-color: var(--sage-dark); }
+.finding-amber { background: var(--amber-dim); border-color: var(--amber); }
+.finding-red   { background: var(--red-dim);   border-color: var(--red); }
+.finding-msg   { font-size: 13px; margin-top: 5px; line-height: 1.5; }
+.finding-time  { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
 /* ── Confirm Modal ───────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0;
