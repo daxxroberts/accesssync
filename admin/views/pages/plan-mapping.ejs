@@ -7,7 +7,7 @@
   @writes PATCH /operator/:clientId/plan-mappings/:mappingId, POST /operator/:clientId/plan-mappings/:mappingId/remap
   @reads GET /operator/:clientId/plan-mappings/:mappingId/members (remap modal member count), GET /operator/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members (disconnect count)
   @tab Plan Mapping
-  @features multi-group, multi-member toggle, duplicate-group warning, remap confirmation modal, stale-group detection, dead-group warning with member count, archived-plan badge, disconnect member count confirmation
+  @features multi-group, multi-member toggle, duplicate-group warning, remap confirmation modal, stale-group detection, dead-group warning with member count, archived-plan badge, disconnect member count confirmation, collapsed plan summary rows (group count, member count, Wix price), expand/collapse per plan card
 %>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
@@ -38,11 +38,18 @@
       letter-spacing: 0.06em; color: var(--muted);
     }
     .section-count {
-      font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px;
+      font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+      letter-spacing: 0.03em; border: 1.5px solid transparent;
     }
-    .section-count.unmapped { background: var(--red-dim, #FEE2E2); color: var(--red, #DC2626); }
-    .section-count.mapped   { background: var(--brand-dim); color: var(--brand); }
-    .section-count.service  { background: #F3E8FF; color: #7C3AED; }
+    .section-count.unmapped {
+      background: #FEF2F2; color: #DC2626; border-color: #FECACA;
+    }
+    .section-count.mapped {
+      background: var(--brand-dim); color: var(--brand); border-color: rgba(79,110,247,0.25);
+    }
+    .section-count.service {
+      background: #F3E8FF; color: #7C3AED; border-color: #DDD6FE;
+    }
 
     /* ── Unmapped alert ── */
     .unmapped-alert {
@@ -63,24 +70,16 @@
     }
     .plan-card:hover { box-shadow: var(--shadow-md); }
     .plan-card.unmapped { border-color: #FECACA; }
-    .plan-card-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 18px 24px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-    }
-    .plan-card-left { display: flex; align-items: center; gap: 14px; }
     .plan-icon {
       width: 42px; height: 42px; border-radius: 10px;
       display: flex; align-items: center; justify-content: center; font-size: 20px;
+      flex-shrink: 0;
     }
     .plan-icon.single { background: var(--brand-dim); }
     .plan-icon.multi  { background: var(--sage-dim); }
     .plan-icon.unlinked { background: #FEE2E2; }
     .plan-icon.service { background: #F3E8FF; }
     .plan-name { font-size: 16px; font-weight: 700; color: var(--text); }
-    .plan-wix-id { font-size: 11px; color: var(--muted); font-family: 'Courier New', monospace; margin-top: 2px; }
-    .plan-card-right { display: flex; align-items: center; gap: 10px; }
     .plan-type-badge {
       font-size: 10px; font-weight: 700; text-transform: uppercase;
       letter-spacing: 0.06em; padding: 4px 10px; border-radius: 6px;
@@ -89,6 +88,53 @@
     .plan-type-badge.booking_service { background: #F3E8FF; color: #7C3AED; }
     .plan-type-badge.unlinked { background: #FEE2E2; color: #DC2626; }
     .plan-card-body { padding: 20px 24px; }
+
+    /* ── Plan card summary row (collapsed header) ── */
+    .plan-card-summary {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; padding: 16px 20px;
+      background: var(--surface); border: none; cursor: pointer;
+      font-family: inherit; text-align: left;
+      border-bottom: 1px solid transparent;
+      transition: background 0.12s, border-color 0.12s;
+      gap: 12px;
+    }
+    .plan-card-summary:hover { background: var(--card); }
+    .plan-card-collapse-wrap.open + * { border-top: 1px solid var(--border); }
+    .plan-card-summary.open-btn { border-bottom-color: var(--border); }
+    .plan-summary-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+    .plan-summary-text { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+    .plan-summary-text .plan-name {
+      font-size: 15px; font-weight: 700; color: var(--text);
+      display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+    }
+    .plan-summary-stale { font-size: 14px; color: var(--amber, #F59E0B); }
+    .plan-summary-chips {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    }
+    .plan-summary-stat {
+      font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px;
+      background: var(--surface); color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .plan-summary-stat.price { background: #F0FDF4; color: #16A34A; border-color: #BBF7D0; }
+    .plan-summary-stat.unmapped-stat { color: #DC2626; background: #FEF2F2; border-color: #FECACA; }
+    .plan-summary-chevron {
+      font-size: 11px; color: var(--muted); flex-shrink: 0;
+      transition: transform 0.2s; display: inline-block;
+    }
+    .plan-summary-chevron.open { transform: rotate(180deg); }
+
+    /* ── Plan body collapse ── */
+    .plan-card-collapse-wrap {
+      max-height: 0; overflow: hidden;
+      transition: max-height 0.3s ease;
+      border-top: 0px solid var(--border);
+    }
+    .plan-card-collapse-wrap.open {
+      max-height: 2000px;
+      border-top: 1px solid var(--border);
+    }
 
     /* ── Group tags (multi-select) ── */
     .group-tags-wrap { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
@@ -301,7 +347,7 @@
 
     @media (max-width: 640px) {
       .config-grid { grid-template-columns: 1fr; }
-      .plan-card-header { flex-wrap: wrap; gap: 10px; }
+      .plan-card-summary { flex-wrap: wrap; gap: 10px; }
       .members-table { font-size: 12px; }
     }
   </style>
@@ -533,41 +579,44 @@
       var icon = isUnmapped ? '&#128279;' : (typeClass === 'booking_service' ? '&#128197;' : (plan.isMultiMember ? '&#128101;' : '&#128100;'));
       var iconClass = isUnmapped ? 'unlinked' : (typeClass === 'booking_service' ? 'service' : (plan.isMultiMember ? 'multi' : 'single'));
 
-      // Header group mini-tags
-      var headerTags = '';
-      if (plan.groupIds && plan.groupIds.length > 0) {
-        headerTags = '<div class="header-group-tags">';
-        plan.groupIds.forEach(function(gid) {
-          var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
-          var isStale = PLATFORM_GROUPS.length > 0 && !g;
-          var noLocks = g && g.locksCount === 0;
-          var cls = 'header-group-tag' + (isStale ? ' stale' : (noLocks ? ' no-locks' : ''));
-          var label = isStale ? (gid + ' (not found)') : esc(g.name);
-          headerTags += '<span class="' + cls + '">' + label + (noLocks ? ' &#9888;' : '') + '</span>';
-        });
-        headerTags += '</div>';
-      }
-
       var archivedBadge = plan.sourceStatus === 'archived' ? '<span class="plan-badge-archived">Archived</span>' : '';
+      var staleWarning = getStaleGroupIds(plan).length > 0 ? '<span class="plan-summary-stale" title="Stale group detected">&#9888;</span>' : '';
+
+      // Summary stat pills
+      var groupCount = plan.groupIds ? plan.groupIds.length : 0;
+      var memberCount = plan.memberCount || 0;
+      var groupStatLabel = groupCount === 1 ? '1 group' : groupCount + ' groups';
+      var memberStatLabel = memberCount === 1 ? '1 member' : memberCount + ' members';
+      var priceChip = plan.wixPrice
+        ? '<span class="plan-summary-stat price">' + esc(plan.wixPrice) + '</span>'
+        : '';
+      var groupChip = isUnmapped
+        ? '<span class="plan-summary-stat unmapped-stat">No groups assigned</span>'
+        : '<span class="plan-summary-stat">' + groupStatLabel + '</span>';
+      var memberChip = '<span class="plan-summary-stat">' + memberStatLabel + '</span>';
+
+      var summaryId = 'body-' + plan.id;
+      var chevronId = 'chevron-summary-' + plan.id;
 
       var headerHTML =
-        '<div class="plan-card-header">' +
-          '<div class="plan-card-left">' +
-            '<div class="plan-icon ' + iconClass + '">' + icon + '</div>' +
-            '<div>' +
-              '<div class="plan-name">' + esc(plan.name) + '</div>' +
-              '<div class="plan-wix-id">ID: ' + esc(plan.wixPlanId) + '</div>' +
+        '<button class="plan-card-summary" onclick="togglePlanBody(\'' + plan.id + '\')" aria-expanded="false">' +
+          '<div class="plan-summary-left">' +
+            '<div class="plan-icon ' + iconClass + '" style="width:36px;height:36px;font-size:17px;">' + icon + '</div>' +
+            '<div class="plan-summary-text">' +
+              '<div class="plan-name">' + esc(plan.name) + archivedBadge + staleWarning + '</div>' +
+              '<div class="plan-summary-chips">' +
+                '<span class="plan-type-badge ' + (isUnmapped ? 'unlinked' : typeClass) + '">' + (isUnmapped ? 'Not Mapped' : typeLabel) + '</span>' +
+                groupChip +
+                memberChip +
+                priceChip +
+              '</div>' +
             '</div>' +
           '</div>' +
-          '<div class="plan-card-right">' +
-            archivedBadge +
-            '<span class="plan-type-badge ' + (isUnmapped ? 'unlinked' : typeClass) + '">' + (isUnmapped ? 'Not Mapped' : typeLabel) + '</span>' +
-            (plan.activeHolders > 0 ? '<span style="font-size:12px;color:#6b7a8d;">' + plan.activeHolders + ' active</span>' : '') +
-            headerTags +
-          '</div>' +
-        '</div>';
+          '<span class="plan-summary-chevron" id="' + chevronId + '">&#9660;</span>' +
+        '</button>';
 
-      var bodyHTML = '<div class="plan-card-body">';
+      var bodyHTML = '<div class="plan-card-collapse-wrap" id="' + summaryId + '">' +
+        '<div class="plan-card-body">';
 
       // ── Archived plan notice ──
       if (plan.sourceStatus === 'archived') {
@@ -687,6 +736,7 @@
       }
 
       bodyHTML += '</div>'; // close plan-card-body
+      bodyHTML += '</div>'; // close plan-card-collapse-wrap
 
       card.innerHTML = headerHTML + bodyHTML;
       return card;
@@ -767,6 +817,17 @@
     function toggleCollapse(id) {
       document.getElementById(id).classList.toggle('open');
       document.getElementById('chevron-' + id).classList.toggle('open');
+    }
+
+    function togglePlanBody(planId) {
+      var wrap = document.getElementById('body-' + planId);
+      var chevron = document.getElementById('chevron-summary-' + planId);
+      var btn = wrap && wrap.previousElementSibling;
+      var isOpen = wrap && wrap.classList.contains('open');
+      if (!wrap) return;
+      wrap.classList.toggle('open');
+      if (chevron) chevron.classList.toggle('open');
+      if (btn) btn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
     }
 
     // ═══════════════════════════════════════
@@ -1187,9 +1248,13 @@
         .then(function(r) { return r.json(); })
         .then(function(d) {
           var wixPlans = d.plans || [];
-          // Store Wix plan type info for later use
+          // Store Wix plan type + price info for later use
           window._wixPlanTypes = {};
-          wixPlans.forEach(function(p) { window._wixPlanTypes[p.id] = p.type; });
+          window._wixPlanPrices = {};
+          wixPlans.forEach(function(p) {
+            window._wixPlanTypes[p.id] = p.type;
+            if (p.wixPrice) window._wixPlanPrices[p.id] = p.wixPrice;
+          });
         }).catch(function(e) { console.error('Wix plans load error:', e); });
 
       // 3. Load existing mappings for this location (or all if no locationId)
@@ -1281,6 +1346,8 @@
                   _staleAffectedMembers: staleAffectedMembers,
                   activeHolders: 0,
                   activeMembers: [],
+                  memberCount: m.member_count || 0,
+                  wixPrice: (window._wixPlanPrices && window._wixPlanPrices[m.source_plan_id]) || null,
                 };
               });
               originalState = JSON.stringify(plans);

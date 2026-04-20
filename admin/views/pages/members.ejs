@@ -93,6 +93,67 @@
     .plan-badge     { font-size: 11px; font-weight: 600; color: var(--text); }
     .plan-badge-sub { font-size: 11px; color: var(--muted); }
 
+    /* Plan details inline dropdown */
+    .plan-cell-wrap { display: flex; flex-direction: column; gap: 4px; }
+    .plan-detail-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10px; font-weight: 700; color: var(--brand);
+      background: var(--brand-dim); border: none; border-radius: 5px;
+      padding: 2px 7px; cursor: pointer; font-family: inherit;
+      transition: background 0.12s; width: fit-content; margin-top: 2px;
+    }
+    .plan-detail-btn:hover { background: rgba(79,110,247,0.18); }
+    .plan-detail-btn .pdb-chevron { font-size: 8px; transition: transform 0.15s; display: inline-block; }
+    .plan-detail-btn.open .pdb-chevron { transform: rotate(180deg); }
+    .plan-detail-panel {
+      display: none; margin-top: 6px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 12px;
+      font-size: 12px; color: var(--text2); line-height: 1.6;
+    }
+    .plan-detail-panel.open { display: block; }
+    .plan-detail-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+    .plan-detail-row:last-child { border-bottom: none; }
+    .plan-detail-label { color: var(--muted); font-size: 11px; }
+    .plan-detail-value { font-weight: 600; color: var(--text); font-size: 11px; text-align: right; }
+    .plan-detail-section { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 8px 0 4px; }
+
+    /* View additional members button */
+    .view-members-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10px; font-weight: 700; color: #7C3AED;
+      background: #F3E8FF; border: none; border-radius: 5px;
+      padding: 2px 7px; cursor: pointer; font-family: inherit;
+      transition: background 0.12s; white-space: nowrap;
+    }
+    .view-members-btn:hover { background: #EDE9FE; }
+    .view-members-btn .vmb-chevron { font-size: 8px; transition: transform 0.15s; display: inline-block; }
+    .view-members-btn.open .vmb-chevron { transform: rotate(180deg); }
+    .submember-panel {
+      display: none; margin-top: 6px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; overflow: hidden;
+    }
+    .submember-panel.open { display: block; }
+    .submember-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .submember-row:last-child { border-bottom: none; }
+    .submember-avatar {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+    .submember-avatar.active    { background: linear-gradient(135deg, var(--sage-dark), #22c55e); }
+    .submember-avatar.pending,
+    .submember-avatar.pending_hardware { background: linear-gradient(135deg, #d97706, #f59e0b); }
+    .submember-avatar.failed    { background: linear-gradient(135deg, var(--red), #ef4444); }
+    .submember-avatar.suspended { background: linear-gradient(135deg, #6b7280, #9ca3af); }
+    .submember-name { font-weight: 600; color: var(--text); }
+    .submember-email { font-size: 11px; color: var(--muted); }
+
     /* Action buttons */
     .tbl-action-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--muted); font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.12s; margin-left: 4px; }
     .tbl-action-btn:hover       { border-color: var(--brand); color: var(--brand); background: var(--brand-dim); }
@@ -289,6 +350,7 @@
   <script>
     var plans = [];
     var allMembers = [];
+    var wixPlanDetails = {}; // source_plan_id → { name, wixPrice, type, status }
 
     var expandedHolders = {};
     var urlParams = new URLSearchParams(window.location.search);
@@ -469,18 +531,15 @@
 
         var tr = document.createElement('tr');
         if (isHolder) tr.className = 'is-holder';
-        if (isSub && m.holderId && !expandedHolders[m.holderId]) {
+        // Sub-members are shown inline in the holder's panel, not as table rows
+        if (isSub && m.holderId) {
           tr.style.display = 'none';
-          tr.setAttribute('data-holder', m.holderId);
-        } else if (isSub && m.holderId) {
           tr.setAttribute('data-holder', m.holderId);
         }
 
         var memberCell =
           '<td><div class="member-cell">' +
-          (isHolder && isMulti && subCount > 0
-            ? '<button class="expand-btn' + (isExpanded ? ' open' : '') + '" onclick="toggleHolderExpand(\'' + m.id + '\', event)">&#9654;</button>'
-            : isSub ? '<span class="sub-indent"><span class="sub-connector"></span></span>' : '') +
+          (isSub ? '<span class="sub-indent"><span class="sub-connector"></span></span>' : '') +
           '<div class="member-avatar ' + avatarClass + '">' + initials + '</div>' +
           '<div><div class="member-name" style="cursor:pointer;" onclick="openMemberDetail(\'' + m.id + '\')">' + esc(m.firstName) + ' ' + esc(m.lastName) +
             (isHolder && isMulti ? '<span class="member-tag holder">Holder</span>' : '') +
@@ -488,20 +547,35 @@
           '</div><div class="member-email">' + esc(m.email) + '</div></div>' +
           '</div></td>';
 
-        // Prefer live-API planDisplay (aggregated plan name from member_role_assignments →
-        // plan_mappings.plan_name) over the legacy `plans` lookup by planId which only
-        // populated for mock fixtures. Multi-member holders still render the sub-count
-        // from the legacy `plan.maxMembers` when present; otherwise omit.
+        // Plan cell: name + "View plan details" dropdown + "View additional members" for multi-member holders
         var livePlanLabel = m.planDisplay || (plan ? plan.name : null);
-        var planCell = '<td>' +
-          (isHolder ? '<div class="plan-badge">' + (livePlanLabel || '—') + '</div>' +
-            (isMulti ? '<div class="plan-badge-sub">' + subCount + ' of ' + (plan.maxMembers - 1) + ' members</div>' : '') : '') + '</td>';
+        var planDetailBtnId = 'pdb-' + m.id;
+        var planDetailPanelId = 'pdp-' + m.id;
+        var viewMembersBtnId = 'vmb-' + m.id;
+        var subMemberPanelId = 'smp-' + m.id;
+
+        var planCell = '<td><div class="plan-cell-wrap">';
+        if (isHolder) {
+          planCell += '<div class="plan-badge">' + esc(livePlanLabel || '—') + '</div>';
+          if (livePlanLabel && livePlanLabel !== '—') {
+            planCell += '<button class="plan-detail-btn" id="' + planDetailBtnId + '" onclick="togglePlanDetail(\'' + m.id + '\')">' +
+              'View plan details <span class="pdb-chevron">&#9660;</span></button>' +
+              '<div class="plan-detail-panel" id="' + planDetailPanelId + '"></div>';
+          }
+          if (isMulti && subCount > 0) {
+            planCell += '<button class="view-members-btn" id="' + viewMembersBtnId + '" onclick="toggleSubMembers(\'' + m.id + '\')">' +
+              '&#128101; View additional members <span class="vmb-chevron">&#9660;</span></button>' +
+              '<div class="submember-panel" id="' + subMemberPanelId + '"></div>';
+          }
+        } else {
+          planCell += '<div class="plan-badge" style="color:var(--muted);">Additional member</div>';
+        }
+        planCell += '</div></td>';
 
         var roleCell   = '<td>' + (isHolder ? 'Plan Holder' : 'Additional Member') + '</td>';
         var statusCell = '<td><span class="status-pill ' + m.status + '" title="' + esc(statusTooltip(m.status)) + '"><span class="status-dot"></span>' + statusLabel(m.status) + '</span></td>';
         var dateCell   = '<td style="font-size:12px;color:#9aa5b4;">' + m.addedDate + '</td>';
         var actionsCell = '<td style="text-align:right;">' +
-          (isHolder && isMulti ? '<button class="tbl-action-btn" onclick="openDrawer(\'' + m.id + '\')" title="Edit members">&#9998;</button>' : '') +
           (m.status === 'failed' ? '<button class="tbl-action-btn retry" onclick="retryMember(\'' + m.id + '\')" title="Retry">&#8635;</button>' : '') +
           '</td>';
 
@@ -519,6 +593,79 @@
       });
       var btn = event.target.closest('.expand-btn');
       if (btn) btn.classList.toggle('open');
+    }
+
+    function togglePlanDetail(memberId) {
+      var btn = document.getElementById('pdb-' + memberId);
+      var panel = document.getElementById('pdp-' + memberId);
+      if (!btn || !panel) return;
+      var isOpen = btn.classList.contains('open');
+      btn.classList.toggle('open');
+      panel.classList.toggle('open');
+
+      if (!isOpen && panel.innerHTML === '') {
+        var m = allMembers.find(function(x) { return x.id === memberId; });
+        if (!m) { panel.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:4px 0;">No plan data available.</div>'; return; }
+
+        var planNames = m.planNames && m.planNames.length > 0 ? m.planNames : (m.planName ? [m.planName] : []);
+        var planIds   = m.planIds   || [];
+        var html = '';
+
+        planNames.forEach(function(pName, idx) {
+          var pid = planIds[idx] || null;
+          var detail = pid ? wixPlanDetails[pid] : null;
+
+          if (planNames.length > 1) {
+            html += '<div class="plan-detail-section">' + esc(pName) + '</div>';
+          }
+
+          if (detail) {
+            html += '<div class="plan-detail-row"><span class="plan-detail-label">Plan name</span><span class="plan-detail-value">' + esc(detail.name) + '</span></div>';
+            if (detail.wixPrice) {
+              html += '<div class="plan-detail-row"><span class="plan-detail-label">Price</span><span class="plan-detail-value" style="color:#16A34A;">' + esc(detail.wixPrice) + '</span></div>';
+            }
+            html += '<div class="plan-detail-row"><span class="plan-detail-label">Type</span><span class="plan-detail-value">' + (detail.type === 'booking_service' ? 'Booking Service' : 'Pricing Plan') + '</span></div>';
+            html += '<div class="plan-detail-row"><span class="plan-detail-label">Plan status</span><span class="plan-detail-value">' + esc(detail.status || '—') + '</span></div>';
+          } else {
+            html += '<div class="plan-detail-row"><span class="plan-detail-label">Plan name</span><span class="plan-detail-value">' + esc(pName) + '</span></div>';
+            html += '<div class="plan-detail-row"><span class="plan-detail-label">Price</span><span class="plan-detail-value" style="color:var(--muted);">—</span></div>';
+          }
+          html += '<div class="plan-detail-row"><span class="plan-detail-label">Member since</span><span class="plan-detail-value">' + esc(m.addedDate) + '</span></div>';
+        });
+
+        if (!html) html = '<div style="color:var(--muted);font-size:11px;padding:4px 0;">No plan data available.</div>';
+        panel.innerHTML = html;
+      }
+    }
+
+    function toggleSubMembers(holderId) {
+      var btn = document.getElementById('vmb-' + holderId);
+      var panel = document.getElementById('smp-' + holderId);
+      if (!btn || !panel) return;
+      var isOpen = btn.classList.contains('open');
+      btn.classList.toggle('open');
+      panel.classList.toggle('open');
+
+      if (!isOpen && panel.innerHTML === '') {
+        var subs = allMembers.filter(function(m) { return m.holderId === holderId; });
+        if (subs.length === 0) {
+          panel.innerHTML = '<div class="submember-row" style="color:var(--muted);font-size:12px;">No additional members added yet.</div>';
+          return;
+        }
+        var html = '';
+        subs.forEach(function(s) {
+          var initials = (s.firstName[0] || '?') + (s.lastName[0] || '');
+          html += '<div class="submember-row">' +
+            '<div class="submember-avatar ' + s.status + '">' + initials + '</div>' +
+            '<div style="flex:1;min-width:0;">' +
+              '<div class="submember-name">' + esc(s.firstName) + ' ' + esc(s.lastName) + '</div>' +
+              '<div class="submember-email">' + esc(s.email) + '</div>' +
+            '</div>' +
+            '<span class="status-pill ' + s.status + '" style="font-size:10px;padding:2px 6px;"><span class="status-dot"></span>' + statusLabel(s.status) + '</span>' +
+          '</div>';
+        });
+        panel.innerHTML = html;
+      }
     }
 
     function openDrawer(holderId) {
@@ -754,6 +901,15 @@
       var clientId = urlParams.get('clientId');
       if (!clientId) return;
 
+      // Pre-fetch Wix plan details for plan detail dropdowns
+      apiFetch('/operator/' + clientId + '/wix-plans')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          (d.plans || []).forEach(function(p) {
+            wixPlanDetails[p.id] = p;
+          });
+        }).catch(function() {});
+
       apiFetch('/operator/' + clientId + '/members?limit=100')
         .then(function(r) { return r.json(); })
         .then(function(d) {
@@ -794,6 +950,7 @@
               planName: primaryPlan,    // for filter grouping
               planDisplay: planDisplay, // for row rendering
               planNames: planNames,     // full list for drawer/modal
+              planIds: Array.isArray(m.plan_ids) ? m.plan_ids.filter(Boolean) : [],
               role: 'holder',
               status: m.effective_status || m.access_status || 'pending',
               addedDate: m.provisioned_at ? new Date(m.provisioned_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—',

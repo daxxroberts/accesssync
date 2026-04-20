@@ -77,6 +77,55 @@ async function wixFetch(path, apiKey, siteId, options = {}) {
  * List all pricing plans for a Wix site.
  * Returns normalized plan objects.
  */
+function extractWixPrice(p) {
+  try {
+    const pricing = p.pricing;
+    if (!pricing) return null;
+
+    // Subscription plan
+    if (pricing.subscription) {
+      const sub = pricing.subscription;
+      const fee = sub.price?.value || sub.cyclePrice?.value;
+      const currency = sub.price?.currency || sub.cyclePrice?.currency || 'USD';
+      const dur = sub.cycleDuration;
+      if (fee != null && dur) {
+        const amount = parseFloat(fee);
+        const symbol = currency === 'USD' ? '$' : currency;
+        const count = dur.count || 1;
+        const unit = (dur.unit || 'MONTH').toLowerCase();
+        const period = count === 1
+          ? (unit.startsWith('year') ? 'yr' : unit.startsWith('week') ? 'wk' : 'mo')
+          : `${count} ${unit}s`;
+        return `${symbol}${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)}/${period}`;
+      }
+    }
+
+    // One-time / single payment
+    if (pricing.oneTimeFee) {
+      const fee = pricing.oneTimeFee?.price?.value;
+      const currency = pricing.oneTimeFee?.price?.currency || 'USD';
+      if (fee != null) {
+        const amount = parseFloat(fee);
+        const symbol = currency === 'USD' ? '$' : currency;
+        return `${symbol}${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)} one-time`;
+      }
+    }
+
+    // Singleplan / singlePaymentForDuration
+    if (pricing.singlePaymentForDuration || pricing.singlePayment) {
+      const block = pricing.singlePaymentForDuration || pricing.singlePayment;
+      const fee = block?.price?.value;
+      const currency = block?.price?.currency || 'USD';
+      if (fee != null) {
+        const amount = parseFloat(fee);
+        const symbol = currency === 'USD' ? '$' : currency;
+        return `${symbol}${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)} one-time`;
+      }
+    }
+  } catch (_) { /* non-blocking */ }
+  return null;
+}
+
 async function listPricingPlans(apiKey, siteId) {
   try {
     const data = await wixFetch('/pricing-plans/v2/plans', apiKey, siteId);
@@ -89,6 +138,7 @@ async function listPricingPlans(apiKey, siteId) {
       description: p.description || '',
       status: p.archived ? 'archived' : (p.primary ? 'primary' : 'active'),
       slug: p.slug || null,
+      wixPrice: extractWixPrice(p),
     }));
   } catch (err) {
     log.error('wix.pricing_plans.fetch_failed', { siteId, httpStatus: err.statusCode }, err);

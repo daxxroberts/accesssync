@@ -49,7 +49,7 @@
       "source_file": "jest.config.js",
       "source_location": "L1",
       "id": "jest_config",
-      "community": 47
+      "community": 48
     },
     {
       "label": "seed.js",
@@ -57,7 +57,7 @@
       "source_file": "seed.js",
       "source_location": "L1",
       "id": "seed",
-      "community": 37
+      "community": 38
     },
     {
       "label": "seed()",
@@ -65,7 +65,7 @@
       "source_file": "seed.js",
       "source_location": "L100",
       "id": "seed_seed",
-      "community": 37
+      "community": 38
     },
     {
       "label": "server.js",
@@ -81,7 +81,7 @@
       "source_file": "simulate.js",
       "source_location": "L1",
       "id": "simulate",
-      "community": 38
+      "community": 39
     },
     {
       "label": "runSimulation()",
@@ -89,7 +89,7 @@
       "source_file": "simulate.js",
       "source_location": "L35",
       "id": "simulate_runsimulation",
-      "community": 38
+      "community": 39
     },
     {
       "label": "test-screens.js",
@@ -97,7 +97,7 @@
       "source_file": "test-screens.js",
       "source_location": "L1",
       "id": "test_screens",
-      "community": 48
+      "community": 49
     },
     {
       "label": "hardware-adapter.js",
@@ -271,7 +271,7 @@
       "label": ".resolveIdentity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L174",
+      "source_location": "L180",
       "id": "standard_adapter_standardadapter_resolveidentity",
       "community": 3
     },
@@ -279,7 +279,7 @@
       "label": ".completeGrant()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L259",
+      "source_location": "L274",
       "id": "standard_adapter_standardadapter_completegrant",
       "community": 3
     },
@@ -287,7 +287,7 @@
       "label": "._maybeFireFirstGrantEmail()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L304",
+      "source_location": "L319",
       "id": "standard_adapter_standardadapter_maybefirefirstgrantemail",
       "community": 3
     },
@@ -295,7 +295,7 @@
       "label": ".completeRevoke()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L363",
+      "source_location": "L378",
       "id": "standard_adapter_standardadapter_completerevoke",
       "community": 3
     },
@@ -303,7 +303,7 @@
       "label": ".releaseLock()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L434",
+      "source_location": "L449",
       "id": "standard_adapter_standardadapter_releaselock",
       "community": 3
     },
@@ -311,7 +311,7 @@
       "label": "._incrementActivity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L466",
+      "source_location": "L481",
       "id": "standard_adapter_standardadapter_incrementactivity",
       "community": 3
     },
@@ -319,7 +319,7 @@
       "label": "._callHardwareToResolveIdentity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L486",
+      "source_location": "L501",
       "id": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
       "community": 3
     },
@@ -327,7 +327,7 @@
       "label": "._recoverMissingEmail()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L507",
+      "source_location": "L522",
       "id": "standard_adapter_standardadapter_recovermissingemail",
       "community": 3
     },
@@ -335,7 +335,7 @@
       "label": "._parkPendingIdentity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L610",
+      "source_location": "L625",
       "id": "standard_adapter_standardadapter_parkpendingidentity",
       "community": 3
     },
@@ -663,7 +663,7 @@
       "label": "._verifySignature()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L123",
+      "source_location": "L132",
       "id": "wix_connector_wixconnector_verifysignature",
       "community": 21
     },
@@ -740,10 +740,18 @@
       "community": 8
     },
     {
-      "label": "listPricingPlans()",
+      "label": "extractWixPrice()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L80",
+      "id": "wix_plans_api_extractwixprice",
+      "community": 8
+    },
+    {
+      "label": "listPricingPlans()",
+      "file_type": "code",
+      "source_file": "adapters\\wix\\wix-plans-api.js",
+      "source_location": "L129",
       "id": "wix_plans_api_listpricingplans",
       "community": 8
     },
@@ -751,7 +759,7 @@
       "label": "listBookingServices()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L104",
+      "source_location": "L154",
       "id": "wix_plans_api_listbookingservices",
       "community": 8
     },
@@ -759,7 +767,7 @@
       "label": "listAllMappable()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L130",
+      "source_location": "L180",
       "id": "wix_plans_api_listallmappable",
       "community": 8
     },
@@ -767,7 +775,7 @@
       "label": "listActiveOrders()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L148",
+      "source_location": "L198",
       "id": "wix_plans_api_listactiveorders",
       "community": 8
     },
@@ -775,7 +783,7 @@
       "label": "listConfirmedBookings()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L184",
+      "source_location": "L234",
       "id": "wix_plans_api_listconfirmedbookings",
       "community": 8
     },
@@ -783,7 +791,7 @@
       "label": "testApiKey()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L231",
+      "source_location": "L281",
       "id": "wix_plans_api_testapikey",
       "community": 8
     },
@@ -809,7 +817,7 @@
       "source_file": "admin\\middleware\\audit.js",
       "source_location": "L1",
       "id": "audit",
-      "community": 39
+      "community": 40
     },
     {
       "label": "logAdminAction()",
@@ -817,7 +825,7 @@
       "source_file": "admin\\middleware\\audit.js",
       "source_location": "L19",
       "id": "audit_logadminaction",
-      "community": 39
+      "community": 40
     },
     {
       "label": "auth.js",
@@ -1217,7 +1225,7 @@
       "source_file": "admin\\routes\\clients.js",
       "source_location": "L1",
       "id": "clients",
-      "community": 40
+      "community": 41
     },
     {
       "label": "activateLocationMembersAdmin()",
@@ -1225,7 +1233,7 @@
       "source_file": "admin\\routes\\clients.js",
       "source_location": "L31",
       "id": "clients_activatelocationmembersadmin",
-      "community": 40
+      "community": 41
     },
     {
       "label": "errors.js",
@@ -1233,7 +1241,7 @@
       "source_file": "admin\\routes\\errors.js",
       "source_location": "L1",
       "id": "errors",
-      "community": 49
+      "community": 50
     },
     {
       "label": "members.js",
@@ -1241,7 +1249,7 @@
       "source_file": "admin\\routes\\members.js",
       "source_location": "L1",
       "id": "members",
-      "community": 50
+      "community": 51
     },
     {
       "label": "multi-member.js",
@@ -1249,7 +1257,7 @@
       "source_file": "admin\\routes\\multi-member.js",
       "source_location": "L1",
       "id": "multi_member",
-      "community": 51
+      "community": 52
     },
     {
       "label": "operator.js",
@@ -1263,7 +1271,7 @@
       "label": "resolveApiKey()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L64",
+      "source_location": "L65",
       "id": "operator_resolveapikey",
       "community": 14
     },
@@ -1271,7 +1279,7 @@
       "label": "syncMappingMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L92",
+      "source_location": "L93",
       "id": "operator_syncmappingmembers",
       "community": 14
     },
@@ -1279,7 +1287,7 @@
       "label": "activateLocationMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L253",
+      "source_location": "L254",
       "id": "operator_activatelocationmembers",
       "community": 14
     },
@@ -1287,7 +1295,7 @@
       "label": "validateApiKeyGroups()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L278",
+      "source_location": "L279",
       "id": "operator_validateapikeygroups",
       "community": 14
     },
@@ -1295,7 +1303,7 @@
       "label": "retryPendingHardwareMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L315",
+      "source_location": "L317",
       "id": "operator_retrypendinghardwaremembers",
       "community": 14
     },
@@ -1303,7 +1311,7 @@
       "label": "requireInviteToken()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L374",
+      "source_location": "L376",
       "id": "operator_requireinvitetoken",
       "community": 14
     },
@@ -1313,7 +1321,7 @@
       "source_file": "admin\\routes\\portal.js",
       "source_location": "L1",
       "id": "portal",
-      "community": 52
+      "community": 53
     },
     {
       "label": "queue.js",
@@ -1321,7 +1329,7 @@
       "source_file": "admin\\routes\\queue.js",
       "source_location": "L1",
       "id": "queue",
-      "community": 53
+      "community": 54
     },
     {
       "label": "webhooks.js",
@@ -1329,7 +1337,7 @@
       "source_file": "admin\\routes\\webhooks.js",
       "source_location": "L1",
       "id": "webhooks",
-      "community": 54
+      "community": 55
     },
     {
       "label": "main.js",
@@ -1337,7 +1345,7 @@
       "source_file": "admin\\svelte\\main.js",
       "source_location": "L1",
       "id": "main",
-      "community": 55
+      "community": 56
     },
     {
       "label": "plan-mapping-entry.js",
@@ -1345,7 +1353,7 @@
       "source_file": "admin\\svelte\\plan-mapping-entry.js",
       "source_location": "L1",
       "id": "plan_mapping_entry",
-      "community": 56
+      "community": 57
     },
     {
       "label": "toast.js",
@@ -1353,7 +1361,7 @@
       "source_file": "admin\\svelte\\stores\\toast.js",
       "source_location": "L1",
       "id": "toast",
-      "community": 41
+      "community": 42
     },
     {
       "label": "showToast()",
@@ -1361,7 +1369,7 @@
       "source_file": "admin\\svelte\\stores\\toast.js",
       "source_location": "L17",
       "id": "toast_showtoast",
-      "community": 41
+      "community": 42
     },
     {
       "label": "crypto-utils.js",
@@ -1396,6 +1404,30 @@
       "community": 27
     },
     {
+      "label": "diagnostics.js",
+      "file_type": "code",
+      "source_file": "core\\diagnostics.js",
+      "source_location": "L1",
+      "id": "diagnostics",
+      "community": 31
+    },
+    {
+      "label": "diagnoseMember()",
+      "file_type": "code",
+      "source_file": "core\\diagnostics.js",
+      "source_location": "L20",
+      "id": "diagnostics_diagnosemember",
+      "community": 31
+    },
+    {
+      "label": "getTimeline()",
+      "file_type": "code",
+      "source_file": "core\\diagnostics.js",
+      "source_location": "L136",
+      "id": "diagnostics_gettimeline",
+      "community": 31
+    },
+    {
       "label": "grant-revoke.js",
       "file_type": "code",
       "source_file": "core\\grant-revoke.js",
@@ -1423,7 +1455,7 @@
       "label": "._getClientApiKey()",
       "file_type": "code",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L149",
+      "source_location": "L187",
       "id": "grant_revoke_grantrevokelogic_getclientapikey",
       "community": 22
     },
@@ -1431,7 +1463,7 @@
       "label": ".processRevoke()",
       "file_type": "code",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L156",
+      "source_location": "L194",
       "id": "grant_revoke_grantrevokelogic_processrevoke",
       "community": 22
     },
@@ -1521,7 +1553,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L1",
       "id": "hmac_monitor",
-      "community": 31
+      "community": 32
     },
     {
       "label": "recordFailure()",
@@ -1529,7 +1561,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L33",
       "id": "hmac_monitor_recordfailure",
-      "community": 31
+      "community": 32
     },
     {
       "label": "_sendAlert()",
@@ -1537,7 +1569,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L68",
       "id": "hmac_monitor_sendalert",
-      "community": 31
+      "community": 32
     },
     {
       "label": "location-lapse.js",
@@ -1545,7 +1577,7 @@
       "source_file": "core\\location-lapse.js",
       "source_location": "L1",
       "id": "location_lapse",
-      "community": 32
+      "community": 33
     },
     {
       "label": "suspendLocationMembers()",
@@ -1553,7 +1585,7 @@
       "source_file": "core\\location-lapse.js",
       "source_location": "L45",
       "id": "location_lapse_suspendlocationmembers",
-      "community": 32
+      "community": 33
     },
     {
       "label": "_setLocationStatus()",
@@ -1561,7 +1593,7 @@
       "source_file": "core\\location-lapse.js",
       "source_location": "L143",
       "id": "location_lapse_setlocationstatus",
-      "community": 32
+      "community": 33
     },
     {
       "label": "logger.js",
@@ -1665,7 +1697,7 @@
       "source_file": "core\\plan-mapping-resolver.js",
       "source_location": "L1",
       "id": "plan_mapping_resolver",
-      "community": 33
+      "community": 34
     },
     {
       "label": "PlanMappingResolver",
@@ -1673,7 +1705,7 @@
       "source_file": "core\\plan-mapping-resolver.js",
       "source_location": "L24",
       "id": "plan_mapping_resolver_planmappingresolver",
-      "community": 33
+      "community": 34
     },
     {
       "label": ".resolve()",
@@ -1681,7 +1713,7 @@
       "source_file": "core\\plan-mapping-resolver.js",
       "source_location": "L40",
       "id": "plan_mapping_resolver_planmappingresolver_resolve",
-      "community": 33
+      "community": 34
     },
     {
       "label": "queue-worker.js",
@@ -1711,7 +1743,7 @@
       "label": "startWorker()",
       "file_type": "code",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L250",
+      "source_location": "L319",
       "id": "queue_worker_startworker",
       "community": 28
     },
@@ -1767,7 +1799,7 @@
       "label": "NightlyReconciliation",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L30",
+      "source_location": "L31",
       "id": "reconciliation_nightlyreconciliation",
       "community": 6
     },
@@ -1775,7 +1807,7 @@
       "label": ".constructor()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L32",
+      "source_location": "L33",
       "id": "reconciliation_nightlyreconciliation_constructor",
       "community": 6
     },
@@ -1783,7 +1815,7 @@
       "label": ".runNightlySweep()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L39",
+      "source_location": "L40",
       "id": "reconciliation_nightlyreconciliation_runnightlysweep",
       "community": 6
     },
@@ -1791,7 +1823,7 @@
       "label": "._syncTrueSources()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L101",
+      "source_location": "L106",
       "id": "reconciliation_nightlyreconciliation_synctruesources",
       "community": 6
     },
@@ -1799,7 +1831,7 @@
       "label": "._syncClient()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L135",
+      "source_location": "L142",
       "id": "reconciliation_nightlyreconciliation_syncclient",
       "community": 6
     },
@@ -1807,7 +1839,7 @@
       "label": "._syncDoorLockdownStates()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L265",
+      "source_location": "L289",
       "id": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
       "community": 6
     },
@@ -1815,7 +1847,7 @@
       "label": "._fetchActionableRecords()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L297",
+      "source_location": "L321",
       "id": "reconciliation_nightlyreconciliation_fetchactionablerecords",
       "community": 6
     },
@@ -1823,7 +1855,7 @@
       "label": "._processRecordTargeted()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L309",
+      "source_location": "L333",
       "id": "reconciliation_nightlyreconciliation_processrecordtargeted",
       "community": 6
     },
@@ -1831,7 +1863,7 @@
       "label": "._generateAndSendDigest()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L341",
+      "source_location": "L365",
       "id": "reconciliation_nightlyreconciliation_generateandsenddigest",
       "community": 6
     },
@@ -1839,7 +1871,7 @@
       "label": "._sleep()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L401",
+      "source_location": "L428",
       "id": "reconciliation_nightlyreconciliation_sleep",
       "community": 6
     },
@@ -1849,7 +1881,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L1",
       "id": "redis_utils",
-      "community": 34
+      "community": 35
     },
     {
       "label": "parseRedisUrl()",
@@ -1857,7 +1889,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L15",
       "id": "redis_utils_parseredisurl",
-      "community": 34
+      "community": 35
     },
     {
       "label": "getRedisConnection()",
@@ -1865,7 +1897,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L29",
       "id": "redis_utils_getredisconnection",
-      "community": 34
+      "community": 35
     },
     {
       "label": "retry-engine.js",
@@ -2007,7 +2039,7 @@
       "label": "._validateStructure()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L132",
+      "source_location": "L153",
       "id": "webhook_processor_webhookprocessor_validatestructure",
       "community": 10
     },
@@ -2015,7 +2047,7 @@
       "label": "._checkIfDuplicate()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L141",
+      "source_location": "L162",
       "id": "webhook_processor_webhookprocessor_checkifduplicate",
       "community": 10
     },
@@ -2023,7 +2055,7 @@
       "label": "._markEventProcessed()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L149",
+      "source_location": "L170",
       "id": "webhook_processor_webhookprocessor_markeventprocessed",
       "community": 10
     },
@@ -2031,7 +2063,7 @@
       "label": "._logToAlertLog()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L156",
+      "source_location": "L177",
       "id": "webhook_processor_webhookprocessor_logtoalertlog",
       "community": 10
     },
@@ -2039,7 +2071,7 @@
       "label": ".logWebhookAttempt()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L179",
+      "source_location": "L200",
       "id": "webhook_processor_webhookprocessor_logwebhookattempt",
       "community": 10
     },
@@ -2049,7 +2081,7 @@
       "source_file": "scripts\\audit-by-internal-id.js",
       "source_location": "L1",
       "id": "audit_by_internal_id",
-      "community": 42
+      "community": 43
     },
     {
       "label": "section()",
@@ -2057,7 +2089,7 @@
       "source_file": "scripts\\audit-by-internal-id.js",
       "source_location": "L11",
       "id": "audit_by_internal_id_section",
-      "community": 42
+      "community": 43
     },
     {
       "label": "audit-kisi.js",
@@ -2065,7 +2097,7 @@
       "source_file": "scripts\\audit-kisi.js",
       "source_location": "L1",
       "id": "audit_kisi",
-      "community": 43
+      "community": 44
     },
     {
       "label": "header()",
@@ -2073,7 +2105,7 @@
       "source_file": "scripts\\audit-kisi.js",
       "source_location": "L21",
       "id": "audit_kisi_header",
-      "community": 43
+      "community": 44
     },
     {
       "label": "audit-member.js",
@@ -2081,7 +2113,7 @@
       "source_file": "scripts\\audit-member.js",
       "source_location": "L1",
       "id": "audit_member",
-      "community": 44
+      "community": 45
     },
     {
       "label": "section()",
@@ -2089,7 +2121,7 @@
       "source_file": "scripts\\audit-member.js",
       "source_location": "L15",
       "id": "audit_member_section",
-      "community": 44
+      "community": 45
     },
     {
       "label": "audit-summary.js",
@@ -2097,7 +2129,7 @@
       "source_file": "scripts\\audit-summary.js",
       "source_location": "L1",
       "id": "audit_summary",
-      "community": 57
+      "community": 58
     },
     {
       "label": "priority-sequencer.js",
@@ -2137,7 +2169,7 @@
       "source_file": "test\\helpers\\fixtures.js",
       "source_location": "L1",
       "id": "fixtures",
-      "community": 58
+      "community": 59
     },
     {
       "label": "grant-retry-idempotency.test.js",
@@ -2145,7 +2177,7 @@
       "source_file": "test\\p1-critical-path\\grant-retry-idempotency.test.js",
       "source_location": "L1",
       "id": "grant_retry_idempotency_test",
-      "community": 59
+      "community": 60
     },
     {
       "label": "member-cancels-loses-access.test.js",
@@ -2153,7 +2185,7 @@
       "source_file": "test\\p1-critical-path\\member-cancels-loses-access.test.js",
       "source_location": "L1",
       "id": "member_cancels_loses_access_test",
-      "community": 45
+      "community": 46
     },
     {
       "label": "mockClientApiKey()",
@@ -2161,7 +2193,7 @@
       "source_file": "test\\p1-critical-path\\member-cancels-loses-access.test.js",
       "source_location": "L53",
       "id": "member_cancels_loses_access_test_mockclientapikey",
-      "community": 45
+      "community": 46
     },
     {
       "label": "member-pays-gets-access.test.js",
@@ -2169,7 +2201,7 @@
       "source_file": "test\\p1-critical-path\\member-pays-gets-access.test.js",
       "source_location": "L1",
       "id": "member_pays_gets_access_test",
-      "community": 60
+      "community": 61
     },
     {
       "label": "ob-89-two-gate.test.js",
@@ -2177,7 +2209,7 @@
       "source_file": "test\\p1-critical-path\\ob-89-two-gate.test.js",
       "source_location": "L1",
       "id": "ob_89_two_gate_test",
-      "community": 61
+      "community": 62
     },
     {
       "label": "queue-worker-coordination.test.js",
@@ -2185,7 +2217,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
       "source_location": "L1",
       "id": "queue_worker_coordination_test",
-      "community": 35
+      "community": 36
     },
     {
       "label": "constructor()",
@@ -2193,7 +2225,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
       "source_location": "L20",
       "id": "queue_worker_coordination_test_constructor",
-      "community": 35
+      "community": 36
     },
     {
       "label": "makeJob()",
@@ -2201,7 +2233,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
       "source_location": "L84",
       "id": "queue_worker_coordination_test_makejob",
-      "community": 35
+      "community": 36
     },
     {
       "label": "api-key-encryption.test.js",
@@ -2209,7 +2241,7 @@
       "source_file": "test\\p2-onboarding\\api-key-encryption.test.js",
       "source_location": "L1",
       "id": "api_key_encryption_test",
-      "community": 62
+      "community": 63
     },
     {
       "label": "plan-mapping-resolver.test.js",
@@ -2217,7 +2249,7 @@
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
       "source_location": "L1",
       "id": "plan_mapping_resolver_test",
-      "community": 46
+      "community": 47
     },
     {
       "label": "mockMappingRow()",
@@ -2225,7 +2257,7 @@
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
       "source_location": "L43",
       "id": "plan_mapping_resolver_test_mockmappingrow",
-      "community": 46
+      "community": 47
     },
     {
       "label": "no-raw-console.test.js",
@@ -2233,7 +2265,7 @@
       "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
       "source_location": "L1",
       "id": "no_raw_console_test",
-      "community": 36
+      "community": 37
     },
     {
       "label": "collectJsFiles()",
@@ -2241,7 +2273,7 @@
       "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
       "source_location": "L34",
       "id": "no_raw_console_test_collectjsfiles",
-      "community": 36
+      "community": 37
     },
     {
       "label": "findOffenders()",
@@ -2249,7 +2281,7 @@
       "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
       "source_location": "L57",
       "id": "no_raw_console_test_findoffenders",
-      "community": 36
+      "community": 37
     },
     {
       "label": "rate-limiter.test.js",
@@ -2257,7 +2289,7 @@
       "source_file": "test\\p3-data-integrity\\rate-limiter.test.js",
       "source_location": "L1",
       "id": "rate_limiter_test",
-      "community": 63
+      "community": 64
     },
     {
       "label": "wix-adapter-parsing.test.js",
@@ -2265,7 +2297,7 @@
       "source_file": "test\\p3-data-integrity\\wix-adapter-parsing.test.js",
       "source_location": "L1",
       "id": "wix_adapter_parsing_test",
-      "community": 64
+      "community": 65
     },
     {
       "label": "wix-members-api-normalization.test.js",
@@ -2953,7 +2985,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L174",
+      "source_location": "L180",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_resolveidentity",
@@ -2965,7 +2997,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L259",
+      "source_location": "L274",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_completegrant",
@@ -2977,7 +3009,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L304",
+      "source_location": "L319",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_maybefirefirstgrantemail",
@@ -2989,7 +3021,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L363",
+      "source_location": "L378",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_completerevoke",
@@ -3001,7 +3033,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L434",
+      "source_location": "L449",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_releaselock",
@@ -3013,7 +3045,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L466",
+      "source_location": "L481",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3025,7 +3057,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L486",
+      "source_location": "L501",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
@@ -3037,7 +3069,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L507",
+      "source_location": "L522",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_recovermissingemail",
@@ -3049,7 +3081,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L610",
+      "source_location": "L625",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_parkpendingidentity",
@@ -3061,7 +3093,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L132",
+      "source_location": "L138",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_resolveandlock",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3073,7 +3105,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L194",
+      "source_location": "L203",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_resolveidentity",
       "_tgt": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
@@ -3085,7 +3117,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L203",
+      "source_location": "L214",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_resolveidentity",
       "_tgt": "standard_adapter_standardadapter_recovermissingemail",
@@ -3097,7 +3129,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L216",
+      "source_location": "L231",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_resolveidentity",
       "_tgt": "standard_adapter_standardadapter_parkpendingidentity",
@@ -3109,7 +3141,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L289",
+      "source_location": "L304",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completegrant",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3121,7 +3153,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L295",
+      "source_location": "L310",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completegrant",
       "_tgt": "standard_adapter_standardadapter_maybefirefirstgrantemail",
@@ -3133,7 +3165,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L417",
+      "source_location": "L432",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completerevoke",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3145,7 +3177,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L453",
+      "source_location": "L468",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_releaselock",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3601,7 +3633,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L123",
+      "source_location": "L132",
       "weight": 1.0,
       "_src": "wix_connector_wixconnector",
       "_tgt": "wix_connector_wixconnector_verifysignature",
@@ -3613,7 +3645,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-connector.js",
-      "source_location": "L43",
+      "source_location": "L48",
       "weight": 1.0,
       "_src": "wix_connector_wixconnector_handlewebhook",
       "_tgt": "wix_connector_wixconnector_verifysignature",
@@ -3772,6 +3804,18 @@
       "source_location": "L80",
       "weight": 1.0,
       "_src": "wix_plans_api",
+      "_tgt": "wix_plans_api_extractwixprice",
+      "source": "wix_plans_api",
+      "target": "wix_plans_api_extractwixprice",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\wix\\wix-plans-api.js",
+      "source_location": "L129",
+      "weight": 1.0,
+      "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_listpricingplans",
       "source": "wix_plans_api",
       "target": "wix_plans_api_listpricingplans",
@@ -3781,7 +3825,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L104",
+      "source_location": "L154",
       "weight": 1.0,
       "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_listbookingservices",
@@ -3793,7 +3837,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L130",
+      "source_location": "L180",
       "weight": 1.0,
       "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_listallmappable",
@@ -3805,7 +3849,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L148",
+      "source_location": "L198",
       "weight": 1.0,
       "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_listactiveorders",
@@ -3817,7 +3861,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L184",
+      "source_location": "L234",
       "weight": 1.0,
       "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_listconfirmedbookings",
@@ -3829,7 +3873,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L231",
+      "source_location": "L281",
       "weight": 1.0,
       "_src": "wix_plans_api",
       "_tgt": "wix_plans_api_testapikey",
@@ -3841,7 +3885,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L82",
+      "source_location": "L131",
       "weight": 1.0,
       "_src": "wix_plans_api_listpricingplans",
       "_tgt": "wix_plans_api_wixfetch",
@@ -3853,7 +3897,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L106",
+      "source_location": "L156",
       "weight": 1.0,
       "_src": "wix_plans_api_listbookingservices",
       "_tgt": "wix_plans_api_wixfetch",
@@ -3865,7 +3909,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L156",
+      "source_location": "L206",
       "weight": 1.0,
       "_src": "wix_plans_api_listactiveorders",
       "_tgt": "wix_plans_api_wixfetch",
@@ -3877,7 +3921,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L199",
+      "source_location": "L249",
       "weight": 1.0,
       "_src": "wix_plans_api_listconfirmedbookings",
       "_tgt": "wix_plans_api_wixfetch",
@@ -3889,7 +3933,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L233",
+      "source_location": "L283",
       "weight": 1.0,
       "_src": "wix_plans_api_testapikey",
       "_tgt": "wix_plans_api_wixfetch",
@@ -3901,7 +3945,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L132",
+      "source_location": "L182",
       "weight": 1.0,
       "_src": "wix_plans_api_listallmappable",
       "_tgt": "wix_plans_api_listpricingplans",
@@ -3913,7 +3957,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-plans-api.js",
-      "source_location": "L133",
+      "source_location": "L183",
       "weight": 1.0,
       "_src": "wix_plans_api_listallmappable",
       "_tgt": "wix_plans_api_listbookingservices",
@@ -4753,7 +4797,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L64",
+      "source_location": "L65",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_resolveapikey",
@@ -4765,7 +4809,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L92",
+      "source_location": "L93",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_syncmappingmembers",
@@ -4777,7 +4821,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L253",
+      "source_location": "L254",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_activatelocationmembers",
@@ -4789,7 +4833,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L278",
+      "source_location": "L279",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_validateapikeygroups",
@@ -4801,7 +4845,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L315",
+      "source_location": "L317",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_retrypendinghardwaremembers",
@@ -4813,7 +4857,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L374",
+      "source_location": "L376",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_requireinvitetoken",
@@ -4825,7 +4869,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L103",
+      "source_location": "L104",
       "weight": 1.0,
       "_src": "operator_syncmappingmembers",
       "_tgt": "operator_resolveapikey",
@@ -4837,7 +4881,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L265",
+      "source_location": "L266",
       "weight": 1.0,
       "_src": "operator_activatelocationmembers",
       "_tgt": "operator_syncmappingmembers",
@@ -4920,6 +4964,30 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "core\\diagnostics.js",
+      "source_location": "L20",
+      "weight": 1.0,
+      "_src": "diagnostics",
+      "_tgt": "diagnostics_diagnosemember",
+      "source": "diagnostics",
+      "target": "diagnostics_diagnosemember",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\diagnostics.js",
+      "source_location": "L136",
+      "weight": 1.0,
+      "_src": "diagnostics",
+      "_tgt": "diagnostics_gettimeline",
+      "source": "diagnostics",
+      "target": "diagnostics_gettimeline",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
       "source_location": "L30",
       "weight": 1.0,
@@ -4945,7 +5013,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L149",
+      "source_location": "L187",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic",
       "_tgt": "grant_revoke_grantrevokelogic_getclientapikey",
@@ -4957,7 +5025,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L156",
+      "source_location": "L194",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic",
       "_tgt": "grant_revoke_grantrevokelogic_processrevoke",
@@ -4969,7 +5037,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L162",
+      "source_location": "L201",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic_processrevoke",
       "_tgt": "grant_revoke_grantrevokelogic_getclientapikey",
@@ -5473,7 +5541,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L250",
+      "source_location": "L319",
       "weight": 1.0,
       "_src": "queue_worker",
       "_tgt": "queue_worker_startworker",
@@ -5485,7 +5553,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L90",
+      "source_location": "L101",
       "weight": 1.0,
       "_src": "queue_worker_processjob",
       "_tgt": "queue_worker_getclientapikey",
@@ -5545,7 +5613,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L30",
+      "source_location": "L31",
       "weight": 1.0,
       "_src": "reconciliation",
       "_tgt": "reconciliation_nightlyreconciliation",
@@ -5557,7 +5625,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L32",
+      "source_location": "L33",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_constructor",
@@ -5569,7 +5637,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L39",
+      "source_location": "L40",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_runnightlysweep",
@@ -5581,7 +5649,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L101",
+      "source_location": "L106",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_synctruesources",
@@ -5593,7 +5661,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L135",
+      "source_location": "L142",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_syncclient",
@@ -5605,7 +5673,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L265",
+      "source_location": "L289",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
@@ -5617,7 +5685,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L297",
+      "source_location": "L321",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_fetchactionablerecords",
@@ -5629,7 +5697,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L309",
+      "source_location": "L333",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_processrecordtargeted",
@@ -5641,7 +5709,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L341",
+      "source_location": "L365",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_generateandsenddigest",
@@ -5653,7 +5721,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L401",
+      "source_location": "L428",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_sleep",
@@ -5665,7 +5733,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L58",
+      "source_location": "L63",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_synctruesources",
@@ -5677,7 +5745,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L70",
+      "source_location": "L75",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
@@ -5689,7 +5757,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L73",
+      "source_location": "L78",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_fetchactionablerecords",
@@ -5701,7 +5769,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L78",
+      "source_location": "L83",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_processrecordtargeted",
@@ -5713,7 +5781,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L79",
+      "source_location": "L84",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_sleep",
@@ -5725,7 +5793,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L83",
+      "source_location": "L88",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_generateandsenddigest",
@@ -5737,7 +5805,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L114",
+      "source_location": "L121",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_synctruesources",
       "_tgt": "reconciliation_nightlyreconciliation_syncclient",
@@ -5977,7 +6045,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L132",
+      "source_location": "L153",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_validatestructure",
@@ -5989,7 +6057,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L141",
+      "source_location": "L162",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_checkifduplicate",
@@ -6001,7 +6069,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L149",
+      "source_location": "L170",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_markeventprocessed",
@@ -6013,7 +6081,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L156",
+      "source_location": "L177",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_logtoalertlog",
@@ -6025,7 +6093,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L179",
+      "source_location": "L200",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_logwebhookattempt",
@@ -6037,7 +6105,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L47",
+      "source_location": "L54",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor_processincoming",
       "_tgt": "webhook_processor_webhookprocessor_validatestructure",
@@ -6049,7 +6117,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L49",
+      "source_location": "L56",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor_processincoming",
       "_tgt": "webhook_processor_webhookprocessor_logtoalertlog",
@@ -6061,7 +6129,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L54",
+      "source_location": "L61",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor_processincoming",
       "_tgt": "webhook_processor_webhookprocessor_checkifduplicate",
@@ -6073,7 +6141,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L61",
+      "source_location": "L68",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor_processincoming",
       "_tgt": "webhook_processor_webhookprocessor_markeventprocessed",
@@ -6085,7 +6153,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L76",
+      "source_location": "L83",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor_processincoming",
       "_tgt": "webhook_processor_webhookprocessor_logwebhookattempt",
