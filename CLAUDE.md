@@ -3,6 +3,8 @@
 
 > **Read this file before writing a single line of code. Then read `open_items.md`. Then read the spec for what you're building.**
 
+> **API/Platform Research Rule:** If a question requires knowledge of Wix APIs, Kisi APIs, or any external platform behavior — route to PARSE and the BOT team first. Do not answer from training data or search independently until PARSE has weighed in. After PARSE delivers findings, you may supplement with web search or additional context.
+
 ---
 
 ## What This Is
