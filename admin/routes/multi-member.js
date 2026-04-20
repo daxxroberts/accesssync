@@ -17,6 +17,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
+const { log } = require('../../core/logger');
 
 // ── GET /member/:memberId/widget-data ──────────────────────────────
 // Returns everything the multi-member editor needs:
@@ -98,7 +99,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
     });
   } catch (err) {
     log.error('admin.multi_member_widget_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -140,7 +141,6 @@ router.post('/api/multi-member/members', async (req, res) => {
     }
 
     // Generate sub-member platform ID (DR-029): {holderPlatformId}###as{NNN}
-    const holderPlatformId = holderCheck.rows[0].id;
     const nextNum = currentCount.rows[0].cnt + 1;
     const holderPlatformMemberId = await db.query(
       `SELECT platform_member_id FROM member_identity WHERE id = $1`, [holderId]
@@ -175,7 +175,7 @@ router.post('/api/multi-member/members', async (req, res) => {
       return res.status(409).json({ error: 'A member with this identifier already exists' });
     }
     log.error('admin.multi_member_add_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -207,7 +207,7 @@ router.put('/api/multi-member/members/:subId', async (req, res) => {
     res.json({ ok: true, subMember: result.rows[0] });
   } catch (err) {
     log.error('admin.multi_member_update_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -262,7 +262,7 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
     res.json({ ok: true, message: 'Member removed and access revoked' });
   } catch (err) {
     log.error('admin.multi_member_delete_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -353,7 +353,7 @@ router.post('/api/multi-member/submit', async (req, res) => {
     });
   } catch (err) {
     log.error('admin.multi_member_submit_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

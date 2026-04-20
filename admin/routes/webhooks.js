@@ -47,7 +47,7 @@ router.get('/recent', async (req, res) => {
     res.json({ data: result.rows });
   } catch (err) {
     log.error('admin.webhooks_recent_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -65,7 +65,7 @@ router.get('/:id', async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     log.error('admin.webhooks_detail_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

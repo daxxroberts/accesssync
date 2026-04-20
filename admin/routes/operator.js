@@ -285,22 +285,23 @@ async function validateApiKeyGroups(clientId, apiKey, hardwarePlatform) {
        WHERE pm.client_id = $1 AND pm.status = 'active'`,
       [clientId]
     );
-    for (const { hardware_group_id } of groups.rows) {
-      try {
-        await hardwareAdapter.getGroups(hardwarePlatform || 'kisi', apiKey);
-        // If getGroups succeeds we assume access — group-level check would require
-        // a per-group GET which Kisi supports but is expensive. Log success.
-      } catch (err) {
-        const isAuthError = err.statusCode === 401 || err.statusCode === 403;
-        if (isAuthError) {
+    if (groups.rows.length === 0) return;
+
+    // getGroups is an auth check — one call tells us whether the key is valid for all groups.
+    // Per-group validation would require individual GETs which Kisi supports but is expensive.
+    try {
+      await hardwareAdapter.getGroups(hardwarePlatform || 'kisi', apiKey);
+    } catch (err) {
+      const isAuthError = err.statusCode === 401 || err.statusCode === 403;
+      if (isAuthError) {
+        for (const { hardware_group_id } of groups.rows) {
           await db.query(
             `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, created_at)
              VALUES ($1, 'api_key_invalid_after_rotation', $2, NOW())`,
             [clientId, hardware_group_id]
           );
-          log.warn('operator.apikey.group_unreachable', { clientId, hardwareGroupId: hardware_group_id });
         }
-        break; // One auth failure means all groups will fail — no need to loop
+        log.warn('operator.apikey.key_invalid_after_rotation', { clientId, groupCount: groups.rows.length });
       }
     }
   } catch (err) {
@@ -371,32 +372,23 @@ router.post('/verify-bypass', (req, res) => {
 // Token checked against OPERATOR_INVITE_TOKEN env var. Without it, 403.
 // Rate-limited to 5 requests per IP per minute as defense-in-depth.
 
-const signupLimiter = {};
+const signupLimiter = rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false });
 function requireInviteToken(req, res, next) {
-  // Rate limiting: 5 signup requests per IP per minute
-  const ip = req.ip || req.connection.remoteAddress;
-  const now = Date.now();
-  if (!signupLimiter[ip]) signupLimiter[ip] = [];
-  signupLimiter[ip] = signupLimiter[ip].filter(t => now - t < 60_000);
-  if (signupLimiter[ip].length === 0) delete signupLimiter[ip]; // prevent unbounded growth
-  else if (signupLimiter[ip].length >= 5) {
-    return res.status(429).json({ error: 'Too many requests. Try again in a minute.' });
-  }
-  if (signupLimiter[ip]) signupLimiter[ip].push(now);
-  else signupLimiter[ip] = [now];
-
-  // Token check — timing-safe comparison to prevent side-channel attacks
-  const expected = process.env.OPERATOR_INVITE_TOKEN;
-  if (!expected) {
-    log.warn('operator.auth.invite_token_missing');
-    return res.status(503).json({ error: 'Signup is not currently available' });
-  }
-  const token = req.headers['x-invite-token'];
-  if (!token || Buffer.byteLength(token) !== Buffer.byteLength(expected) ||
-      !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected))) {
-    return res.status(403).json({ error: 'Valid invite link required' });
-  }
-  next();
+  // Rate-limit first (5 req/IP/min), then check invite token.
+  signupLimiter(req, res, () => {
+    // Token check — timing-safe comparison to prevent side-channel attacks
+    const expected = process.env.OPERATOR_INVITE_TOKEN;
+    if (!expected) {
+      log.warn('operator.auth.invite_token_missing');
+      return res.status(503).json({ error: 'Signup is not currently available' });
+    }
+    const token = req.headers['x-invite-token'];
+    if (!token || Buffer.byteLength(token) !== Buffer.byteLength(expected) ||
+        !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected))) {
+      return res.status(403).json({ error: 'Valid invite link required' });
+    }
+    next();
+  });
 }
 
 // ── GET /operator/site-id/verify ─────────────────────────────────
@@ -1128,10 +1120,14 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
         [clientId]
       ),
       db.query(
-        `SELECT id, source_plan_id, plan_name, door_name, hardware_group_id, status, source_status, allow_multiple, max_members, created_at
-         FROM plan_mappings
-         WHERE client_id = $2 AND (location_id = $1 OR location_id IS NULL)
-         ORDER BY plan_name`,
+        `SELECT pm.id, pm.source_plan_id, pm.plan_name, pm.door_name, pm.hardware_group_id,
+                pm.status, pm.source_status, pm.allow_multiple, pm.max_members, pm.created_at,
+                COUNT(DISTINCT mra.member_id)::int AS member_count
+         FROM plan_mappings pm
+         LEFT JOIN member_role_assignments mra ON mra.mapping_id = pm.id
+         WHERE pm.client_id = $2 AND (pm.location_id = $1 OR pm.location_id IS NULL)
+         GROUP BY pm.id
+         ORDER BY pm.plan_name`,
         [locationId, clientId]
       ),
     ]);
@@ -1772,7 +1768,7 @@ router.get('/:clientId/errors', async (req, res) => {
 // ── GET /operator/:clientId/errors/summary ──────────────────────────────────
 // Total active error count + breakdown by error_code + breakdown by location.
 // Used by the /errors page header and filter dropdowns.
-// NOTE: placed before /:clientId/errors/:errorId routes to avoid param collision.
+// NOTE: placed before /:clientId/errors/:id routes to avoid param collision.
 router.get('/:clientId/errors/summary', async (req, res) => {
   const { clientId } = req.params;
   try {
@@ -2061,15 +2057,17 @@ router.get('/:clientId/wix-plans', async (req, res) => {
       // can resolve the per-location hardware API key and subscription status (DR-027/DR-028).
       const defaultLocationId = locationRows.rows.length === 1 ? locationRows.rows[0].id : null;
 
-      for (const plan of allPlans) {
-        if (!existingIds.has(plan.id)) {
-          await db.query(
-            `INSERT INTO plan_mappings (client_id, source_plan_id, hardware_group_id, plan_name, status, location_id, created_at)
-             VALUES ($1, $2, '', $3, 'inactive', $4, NOW())
-             ON CONFLICT DO NOTHING`,
-            [clientId, plan.id, plan.name, defaultLocationId]
-          ).catch(e => log.warn('operator.wix_plans.auto_insert_failed', { clientId, planId: plan.id }, e));
-        }
+      const newPlans = allPlans.filter(p => !existingIds.has(p.id));
+      if (newPlans.length > 0) {
+        const values = newPlans.flatMap(p => [clientId, p.id, p.name, defaultLocationId]);
+        const placeholders = newPlans.map((_, i) =>
+          `($${i * 4 + 1}, $${i * 4 + 2}, '', $${i * 4 + 3}, 'inactive', $${i * 4 + 4}, NOW())`
+        ).join(', ');
+        await db.query(
+          `INSERT INTO plan_mappings (client_id, source_plan_id, hardware_group_id, plan_name, status, location_id, created_at)
+           VALUES ${placeholders} ON CONFLICT DO NOTHING`,
+          values
+        ).catch(e => log.warn('operator.wix_plans.auto_insert_failed', { clientId, count: newPlans.length }, e));
       }
     }
 
@@ -2090,7 +2088,7 @@ router.get('/clients/:clientId/wix-api-key/status', async (req, res) => {
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     res.json({ hasKey: !!result.rows[0].source_api_key });
   } catch (err) {
-    log.error('operator.wix_apikey.status_failed', { clientId }, err);
+    log.error('operator.wix_apikey.status_failed', { clientId: req.params.clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2131,112 +2129,6 @@ router.get('/clients/:clientId/wix-api-key/test', async (req, res) => {
     log.error('operator.wix_apikey.test_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
-
-// ── GET /operator/:clientId/diagnostics/summary ──────────────────
-// Fetches recent diagnostic_log events for a client and asks Claude
-// to identify the top failure reason, trend, and recommended action.
-// Query params:
-//   since=7d  — lookback window in days (default 7, max 90)
-//   limit=50  — max rows to fetch (default 50, max 200)
-router.get('/:clientId/diagnostics/summary', async (req, res) => {
-  const { clientId } = req.params;
-  const limit     = Math.min(parseInt(req.query.limit || '50',  10), 200);
-  const sinceDays = Math.min(parseInt((req.query.since || '7d').replace('d', ''), 10) || 7, 90);
-
-  let rows;
-  try {
-    const result = await db.query(
-      `SELECT id, created_at, service, level, error_code, message, context, resolved_at
-       FROM diagnostic_log
-       WHERE client_id = $1
-         AND created_at >= NOW() - ($2 || ' days')::INTERVAL
-       ORDER BY created_at DESC
-       LIMIT $3`,
-      [clientId, sinceDays, limit]
-    );
-    rows = result.rows;
-  } catch (err) {
-    log.error('operator.diagnostics.db_failed', { clientId }, err);
-    return res.status(500).json({ error: 'Failed to fetch diagnostic data' });
-  }
-
-  // No events — return a clean healthy state without calling AI.
-  if (rows.length === 0) {
-    return res.json({
-      summary: {
-        topFailureReason: null,
-        trend: 'stable',
-        trendRationale: 'No warn/error events recorded in this period.',
-        recommendedAction: 'Everything looks healthy.',
-        confidence: 'high',
-      },
-      rawEvents: [],
-      meta: { clientId, windowDays: sinceDays, eventCount: 0 },
-    });
-  }
-
-  // Build a compact event list for the prompt — no raw stack traces or full JSONB.
-  const eventLines = rows.map(r => {
-    const ts       = new Date(r.created_at).toISOString();
-    const resolved = r.resolved_at ? 'resolved' : 'open';
-    return `[${ts}] ${r.level.toUpperCase()} | ${r.service} | ${r.error_code} | ${resolved} | ${r.message}`;
-  }).join('\n');
-
-  const prompt = `You are analyzing failure logs for an access control automation platform called AccessSync.
-AccessSync connects Wix membership plans to Kisi hardware door access control.
-When a member buys a plan, AccessSync provisions their access. When they cancel, it revokes it.
-
-The following diagnostic events occurred for one client in the last ${sinceDays} days:
-
-${eventLines}
-
-Respond in this exact JSON format only — no markdown, no prose outside the JSON:
-{
-  "topFailureReason": "<one sentence — the most common or impactful failure>",
-  "trend": "improving" | "worsening" | "stable",
-  "trendRationale": "<one sentence explaining the trend>",
-  "recommendedAction": "<one specific, actionable next step the operator can take>",
-  "confidence": "high" | "medium" | "low"
-}
-
-Rules:
-- If most events have resolved=resolved, trend is likely improving.
-- If the same error_code repeats with no resolved events, trend is worsening.
-- WIX_KEY_INVALID or HARDWARE_KEY_INVALID repeating = call that out as topFailureReason.
-- HMAC_FAILURE_SPIKE = possible security issue, mention it directly.
-- PLAN_NOT_MAPPED = operator needs to map a plan in the Plan Mapping screen.
-- If events span many different error codes with no pattern, set confidence to low.
-- Never recommend "contact support" unless no operator action is available.`;
-
-  let analysis;
-  try {
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const message = await anthropic.messages.create({
-      model:      'claude-haiku-4-5-20251001',
-      max_tokens: 512,
-      messages:   [{ role: 'user', content: prompt }],
-    });
-    const text = message.content[0]?.text || '{}';
-    analysis = JSON.parse(text);
-  } catch (err) {
-    // AI failure is non-fatal — return raw events with a fallback so the page still renders.
-    log.error('operator.diagnostics.ai_failed', { clientId }, err);
-    analysis = {
-      topFailureReason: 'AI analysis unavailable',
-      trend: 'unknown',
-      trendRationale: 'Could not reach the AI service.',
-      recommendedAction: 'Review the raw events below.',
-      confidence: 'low',
-    };
-  }
-
-  res.json({
-    summary:   analysis,
-    rawEvents: rows,
-    meta: { clientId, windowDays: sinceDays, eventCount: rows.length },
-  });
 });
 
 // ── POST /sync/run ─────────────────────────────────────────────────

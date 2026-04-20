@@ -8,6 +8,7 @@
  * GET  /auth/config                   → returns { clientId } for frontend GIS initialization (public)
  */
 
+const crypto  = require('crypto');
 const router  = require('express').Router();
 const { OAuth2Client } = require('google-auth-library');
 const { signToken, requireAuth } = require('../middleware/auth');
@@ -113,7 +114,7 @@ router.get('/google/callback', async (req, res) => {
     res.redirect('/OwnerDashboard');
   } catch (err) {
     log.error('auth.oauth_callback_verify_failed', {}, err);
-    res.redirect('/OwnerDashboard?auth_error=' + encodeURIComponent(err.message));
+    res.redirect('/OwnerDashboard?auth_error=verification_failed');
   }
 });
 
@@ -125,7 +126,10 @@ router.post('/pin', (req, res) => {
     log.error('auth.missing_owner_pin', {});
     return res.status(500).json({ error: 'PIN auth not configured' });
   }
-  if (!pin || pin !== ownerPin) {
+  const pinInvalid = !pin ||
+    Buffer.byteLength(String(pin)) !== Buffer.byteLength(ownerPin) ||
+    !crypto.timingSafeEqual(Buffer.from(String(pin)), Buffer.from(ownerPin));
+  if (pinInvalid) {
     log.warn('auth.invalid_pin', {});
     return res.status(401).json({ error: 'Invalid PIN' });
   }

@@ -107,7 +107,7 @@ router.post('/', async (req, res) => {
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Site ID already in use' });
     log.error('admin.clients_create_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -155,7 +155,7 @@ router.get('/', async (req, res) => {
     res.json({ data: result.rows });
   } catch (err) {
     log.error('admin.clients_list_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -189,7 +189,7 @@ router.patch('/:id', async (req, res) => {
     res.json({ ok: true, client: safeClient });
   } catch (err) {
     log.error('admin.clients_patch_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -218,7 +218,7 @@ router.post('/:id/api-key', async (req, res) => {
     res.json({ ok: true, message: 'API key saved' });
   } catch (err) {
     log.error('admin.clients_api_key_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -241,7 +241,7 @@ router.get('/:id/api-key/test', async (req, res) => {
     if (err.statusCode === 401) return res.json({ valid: false, error: 'Invalid API key — Kisi rejected it' });
     if (err.statusCode === 403) return res.json({ valid: false, error: 'API key authenticated but lacks required permissions' });
     log.error('admin.clients_api_key_test_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -255,7 +255,7 @@ router.get('/:id/api-key/status', async (req, res) => {
     res.json({ hasKey: !!result.rows[0].hardware_api_key });
   } catch (err) {
     log.error('admin.clients_api_key_status_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -281,7 +281,7 @@ router.get('/:id/locations', async (req, res) => {
     res.json({ data: result.rows });
   } catch (err) {
     log.error('admin.clients_locations_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -306,7 +306,7 @@ router.post('/:id/locations', async (req, res) => {
     res.status(201).json({ ok: true, location: result.rows[0] });
   } catch (err) {
     log.error('admin.clients_location_create_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -367,7 +367,7 @@ router.patch('/:id/locations/:locationId', async (req, res) => {
     res.json({ ok: true, location: safeLocation });
   } catch (err) {
     log.error('admin.clients_location_patch_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -392,7 +392,7 @@ router.post('/:id/locations/:locationId/api-key', async (req, res) => {
     res.json({ ok: true, message: 'Location API key saved' });
   } catch (err) {
     log.error('admin.clients_location_key_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -414,7 +414,7 @@ router.post('/:id/locations/:locationId/suspend', async (req, res) => {
     });
   } catch (err) {
     log.error('admin.clients_location_suspend_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -445,7 +445,7 @@ router.post('/:id/locations/:locationId/activate', async (req, res) => {
       .catch(err => log.warn('admin.activate_members_failed', {}, err));
   } catch (err) {
     log.error('admin.clients_location_activate_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -467,7 +467,7 @@ router.post('/:id/archive', async (req, res) => {
     res.json({ ok: true, client: result.rows[0] });
   } catch (err) {
     log.error('admin.clients_archive_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -487,7 +487,7 @@ router.post('/:id/restore', async (req, res) => {
     res.json({ ok: true, client: result.rows[0] });
   } catch (err) {
     log.error('admin.clients_restore_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -514,6 +514,7 @@ router.get('/:id/dependencies', async (req, res) => {
         (SELECT COUNT(*)::int FROM config_alert_log WHERE client_id = $1) AS config_alerts,
         (SELECT COUNT(*)::int FROM client_activity_summary WHERE client_id = $1) AS activity_summaries,
         (SELECT COUNT(*)::int FROM processed_event_ids WHERE client_id = $1) AS processed_events,
+        (SELECT COUNT(*)::int FROM member_access_sources WHERE member_id IN (SELECT id FROM member_identity WHERE client_id = $1)) AS access_sources,
         (SELECT COUNT(*)::int FROM adapter_admin_log WHERE client_id = $1) AS audit_logs,
         (SELECT COUNT(*)::int FROM webhook_log WHERE client_id = $1) AS webhook_logs`,
       [id]
@@ -528,6 +529,7 @@ router.get('/:id/dependencies', async (req, res) => {
         plan_mapping_groups: counts.rows[0].plan_mapping_groups,
         role_assignments: counts.rows[0].role_assignments,
         access_states: counts.rows[0].access_states,
+        access_sources: counts.rows[0].access_sources,
         access_logs: counts.rows[0].access_logs,
         error_queue: counts.rows[0].error_queue,
         config_alerts: counts.rows[0].config_alerts,
@@ -541,7 +543,7 @@ router.get('/:id/dependencies', async (req, res) => {
     });
   } catch (err) {
     log.error('admin.clients_dependencies_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -601,7 +603,7 @@ router.delete('/:id', async (req, res) => {
   } catch (err) {
     await pgClient.query('ROLLBACK').catch(() => {});
     log.error('admin.clients_delete_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   } finally {
     pgClient.release();
   }
@@ -624,7 +626,7 @@ router.get('/:id/audit', async (req, res) => {
     res.json({ data: result.rows });
   } catch (err) {
     log.error('admin.clients_audit_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

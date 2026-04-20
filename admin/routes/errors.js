@@ -64,7 +64,7 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     log.error('admin.errors_list_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -87,7 +87,7 @@ router.get('/:id', async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     log.error('admin.errors_detail_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -109,7 +109,7 @@ router.post('/:id/dismiss', async (req, res) => {
     res.json({ ok: true, ...result.rows[0] });
   } catch (err) {
     log.error('admin.errors_dismiss_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -143,7 +143,7 @@ router.post('/:id/retry', async (req, res) => {
     res.json({ ok: true, queued: jobName });
   } catch (err) {
     log.error('admin.errors_retry_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -187,7 +187,7 @@ router.post('/bulk-retry', async (req, res) => {
     res.json(results);
   } catch (err) {
     log.error('admin.errors_bulk_retry_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

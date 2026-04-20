@@ -147,7 +147,7 @@ router.get('/search', async (req, res) => {
     });
   } catch (err) {
     log.error('admin.members_search_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -277,7 +277,7 @@ router.get('/by-client', async (req, res) => {
     });
   } catch (err) {
     log.error('admin.members_by_client_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -380,7 +380,7 @@ router.post('/:id/retry', async (req, res) => {
     res.json({ ok: true, queued: jobName, errorId });
   } catch (err) {
     log.error('admin.members_retry_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

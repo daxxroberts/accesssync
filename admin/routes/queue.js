@@ -26,7 +26,7 @@ router.get('/counts', async (req, res) => {
     res.json(counts);
   } catch (err) {
     log.error('admin.queue_counts_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -57,7 +57,7 @@ router.get('/jobs', async (req, res) => {
     res.json({ state, data: formatted });
   } catch (err) {
     log.error('admin.queue_jobs_error', {}, err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
