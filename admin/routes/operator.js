@@ -1573,6 +1573,12 @@ router.get('/:clientId/members', async (req, res) => {
                   WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
                 )                                AS plan_names,
                 (
+                  SELECT ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)
+                  FROM member_role_assignments mra
+                  JOIN plan_mappings pm ON pm.id = mra.mapping_id
+                  WHERE mra.member_id = mi.id AND pm.source_plan_id IS NOT NULL
+                )                                AS plan_ids,
+                (
                   SELECT pm.plan_name
                   FROM member_role_assignments mra
                   JOIN plan_mappings pm ON pm.id = mra.mapping_id
@@ -1740,14 +1746,18 @@ router.get('/:clientId/errors', async (req, res) => {
   const { limit = 20 } = req.query;
   try {
     const result = await db.query(
-      `SELECT id, event_type, error_reason AS plain_message,
-              plan_name, door_name, location_id,
-              retry_count, status, created_at,
-              error_code, user_message, action_text, resolution,
-              occurred_count, last_occurred_at
-       FROM error_queue
-       WHERE client_id = $1 AND status = 'failed'
-       ORDER BY last_occurred_at DESC NULLS LAST, created_at DESC
+      `SELECT eq.id, eq.event_type, eq.error_reason AS plain_message,
+              eq.plan_name, eq.door_name, eq.location_id,
+              eq.retry_count, eq.status, eq.created_at,
+              eq.error_code, eq.user_message, eq.action_text, eq.resolution,
+              eq.occurred_count, eq.last_occurred_at,
+              eq.http_status, eq.raw_api_body, eq.payload,
+              mi.first_name, mi.last_name, mi.email AS member_email,
+              mi.platform_member_id
+       FROM error_queue eq
+       LEFT JOIN member_identity mi ON mi.id = eq.member_id
+       WHERE eq.client_id = $1 AND eq.status = 'failed'
+       ORDER BY eq.last_occurred_at DESC NULLS LAST, eq.created_at DESC
        LIMIT $2`,
       [clientId, parseInt(limit)]
     );

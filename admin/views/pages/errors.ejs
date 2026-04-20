@@ -32,21 +32,24 @@
     .err-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
     .err-card-main { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; }
     .err-card-body { flex: 1; min-width: 0; }
-    .err-card-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-    .err-card-context { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
-    .err-sep { font-size: 10px; color: var(--muted); }
-    .err-title-sep { font-size: 11px; color: var(--muted); margin: 0 5px; font-weight: 400; }
-    .err-tag-type { background: var(--surface); color: var(--muted); border: 1px solid var(--border); font-size: 10px; padding: 2px 7px; border-radius: 10px; }
-    .err-card-msg { font-size: 12px; color: var(--text2); line-height: 1.6; margin-bottom: 6px; }
+    .err-card-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+    .err-card-subtitle { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+    .err-card-msg { font-size: 12px; color: var(--text2); line-height: 1.6; margin-bottom: 5px; }
+    .err-confidence { font-size: 11px; color: var(--text2); margin-bottom: 5px; line-height: 1.5; }
     .err-card-consequence  { font-size: 11px; color: var(--red, #ef4444); font-weight: 600; margin-bottom: 5px; line-height: 1.5; }
     .err-card-reason       { font-size: 11px; color: var(--muted); font-style: italic; margin-bottom: 6px; line-height: 1.5; }
     .err-card-directions   { font-size: 11px; color: var(--text2); margin-bottom: 8px; line-height: 1.7; background: var(--surface); border-left: 3px solid var(--brand); padding: 6px 10px; border-radius: 0 6px 6px 0; }
     .err-card-directions strong { color: var(--text); font-weight: 700; }
-    .err-card-cta { margin-bottom: 4px; }
     .err-card-meta { font-size: 10px; color: var(--muted); }
-    .cta-link { font-size: 11px; font-weight: 600; color: var(--brand); text-decoration: none; }
-    .cta-link:hover { text-decoration: underline; }
-    .cta-muted { font-size: 11px; color: var(--muted); }
+    /* ── Details panel ── */
+    .err-details-digest { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
+    .err-details-digest-row { display: flex; gap: 8px; font-size: 12px; }
+    .err-details-digest-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); min-width: 70px; flex-shrink: 0; padding-top: 1px; }
+    .err-details-digest-val { color: var(--text2); line-height: 1.5; }
+    .err-details-collapse { font-size: 12px; color: var(--muted); }
+    .err-details-collapse summary { cursor: pointer; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; list-style: none; }
+    .err-details-collapse summary::-webkit-details-marker { display: none; }
+    .err-details-collapse[open] summary { color: var(--text2); }
 
     /* ── Card actions row ── */
     .err-card-actions { display: flex; gap: 6px; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; align-items: center; }
@@ -63,9 +66,6 @@
 
     /* ── Expandable details panel ── */
     .err-details-panel { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg); }
-    .details-row { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
-    .details-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
-    .details-val { font-size: 12px; color: var(--text2); }
     .details-json { font-size: 11px; color: var(--text2); background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; margin: 0; }
 
     /* ── Dot colors ── */
@@ -135,6 +135,46 @@
     var _filterCode    = '';
     var _errors        = [];
     var _pollTimer     = null;
+
+    // ── Event type → human label ──────────────────────────────────
+    var EVENT_LABELS = {
+      'plan.purchased':         'plan purchase',
+      'plan.cancelled':         'plan cancellation',
+      'payment.failed':         'payment failure',
+      'payment.recovered':      'payment recovery',
+      'booking.confirmed':      'booking confirmation',
+      'booking.cancelled':      'booking cancellation',
+      'member.deleted':         'account deletion',
+      'retry.pending_hardware': 'access retry',
+    };
+
+    // ── Status messages (fallback when user_message is absent) ────
+    var STATUS_MESSAGES = {
+      'HARDWARE_KEY_INVALID':        "AccessSync couldn't connect to your door system — the API key was rejected.",
+      'HARDWARE_KEY_PERMISSIONS':    "AccessSync connected but doesn't have permission to manage member access.",
+      'HARDWARE_KEY_MISSING':        'No door system API key is connected for this location.',
+      'HARDWARE_RESOURCE_NOT_FOUND': 'The door group this plan was mapped to no longer exists.',
+      'HARDWARE_VALIDATION_ERROR':   'The door system rejected this request due to a data conflict.',
+      'HARDWARE_API_ERROR':          'The door system returned an unexpected error. This is usually temporary.',
+      'WIX_KEY_INVALID':             "AccessSync couldn't read plan data from Wix — the API key was rejected.",
+      'WIX_KEY_MISSING':             'No Wix API key is connected.',
+      'WIX_KEY_PERMISSIONS':         'The Wix API key is missing Pricing Plans or Bookings read permissions.',
+      'PLAN_NOT_MAPPED':             "This Wix plan hasn't been linked to a door group yet.",
+      'SUBSCRIPTION_LAPSED':         "AccessSync isn't active for this location.",
+    };
+
+    // ── HTTP status → plain label ──────────────────────────────────
+    var HTTP_LABELS = {
+      400: "400 — Bad request (data the system sent was rejected)",
+      401: "401 — Unauthorized (API key is invalid or expired)",
+      403: "403 — Forbidden (API key doesn't have permission)",
+      404: "404 — Not found (door group or member was deleted)",
+      409: "409 — Conflict (record already exists)",
+      422: "422 — Unprocessable (data validation failed)",
+      429: "429 — Rate limited (too many requests)",
+      500: "500 — Server error (door system issue, usually temporary)",
+      503: "503 — Service unavailable (door system may be down)",
+    };
 
     // ── Error code → human label ──────────────────────────────────
     var CODE_LABELS = {
@@ -319,50 +359,95 @@
       container.innerHTML = errors.map(renderErrorCard).join('');
     }
 
+    // ── Card render helpers ───────────────────────────────────────
+    function memberName(e) {
+      if (e.first_name && e.last_name) return e.first_name + ' ' + e.last_name[0] + '.';
+      if (e.first_name) return e.first_name;
+      if (e.member_email) return e.member_email;
+      return null;
+    }
+
+    function getTitleLine(e) {
+      var name = memberName(e);
+      if (e.error_code === 'PLAN_NOT_MAPPED') {
+        return (name || 'A member') + ' is waiting for access — plan not mapped';
+      }
+      var isRevoke = ['plan.cancelled','payment.failed','member.deleted','booking.cancelled'].indexOf(e.event_type) !== -1;
+      if (isRevoke) return (name || "A member") + "\u2019s access wasn\u2019t removed";
+      return (name || 'A member') + " couldn\u2019t get door access";
+    }
+
+    function getSubtitleLine(e) {
+      var parts = [];
+      if (e.plan_name) parts.push(e.plan_name + ' Plan');
+      if (e.door_name) parts.push(e.door_name);
+      var sub = parts.join(' \u2192 ');
+      var evtLabel = EVENT_LABELS[e.event_type] || e.event_type || '';
+      if (evtLabel) sub += (sub ? ' \u00B7 ' : '') + evtLabel;
+      return sub || null;
+    }
+
+    function getStatusMsg(e) {
+      if (e.user_message) return e.user_message;
+      if (e.error_code && STATUS_MESSAGES[e.error_code]) return STATUS_MESSAGES[e.error_code];
+      return e.plain_message || null;
+    }
+
+    function getConfidenceLine(e) {
+      var count = e.occurred_count || 1;
+      var res   = e.resolution;
+      if (res === 'ROTATE_API_KEY')    return 'This won\u2019t resolve on its own \u2014 updating the API key is required.';
+      if (res === 'REMAP_PLAN')        return 'This won\u2019t resolve on its own \u2014 the plan mapping needs to be updated.';
+      if (res === 'CHECK_PERMISSIONS') return 'This won\u2019t resolve on its own \u2014 check your API key permissions.';
+      if (count > 5) return 'This has failed ' + count + ' times. A retry is unlikely to resolve it without a configuration change.';
+      var tries = (e.retry_count || 0) + count;
+      return 'AccessSync tried ' + tries + ' time' + (tries === 1 ? '' : 's') + ' and will keep retrying automatically.';
+    }
+
+    function getNextStepLine(e) {
+      if (e.action_text) return e.action_text;
+      var res = e.resolution;
+      if (!res || res === 'RETRY') return 'Tap \u201CRetry now\u201D to try again now, or wait for AccessSync to retry automatically.';
+      return null;
+    }
+
     function renderErrorCard(e) {
-      var isResolved    = e.status === 'resolved';
-      var dotClass      = 'err-dot' + (isResolved ? ' sage' : '');
-      var timeLabel     = timeAgo(new Date(e.last_occurred_at || e.created_at));
-      var recurrence    = (e.occurred_count > 1)
-        ? 'Happened ' + e.occurred_count + 'x — last ' + timeLabel
+      var isResolved  = e.status === 'resolved';
+      var dotClass    = 'err-dot' + (isResolved ? ' sage' : '');
+      var timeLabel   = timeAgo(new Date(e.last_occurred_at || e.created_at));
+      var recurrence  = (e.occurred_count > 1)
+        ? 'Happened ' + e.occurred_count + 'x \u2014 last ' + timeLabel
         : timeLabel;
 
-      // Message: prefer DB-stored user_message, fall back to plain_message
-      var msg = e.user_message || e.plain_message || e.error_reason || 'An error occurred.';
-
-      var reason      = errorReason(e.error_code);
-      var consequence = errorConsequence(e.error_code);
-      var jumpUrl     = errorJumpUrl(e.error_code, e.location_id);
-
-      var rawData = JSON.stringify({
-        http_status:  e.http_status  || null,
-        raw_api_body: e.raw_api_body || null,
-        payload:      e.payload      || null,
-      });
+      var titleLine      = getTitleLine(e);
+      var subtitleLine   = getSubtitleLine(e);
+      var statusMsg      = getStatusMsg(e);
+      var confidenceLine = isResolved ? null : getConfidenceLine(e);
+      var nextStep       = isResolved ? null : getNextStepLine(e);
+      var reason         = errorReason(e.error_code);
+      var consequence    = errorConsequence(e.error_code);
+      var jumpUrl        = errorJumpUrl(e.error_code, e.location_id);
 
       return '<div class="err-card" data-id="' + esc(e.id) + '">' +
         '<div class="err-card-main">' +
           '<div class="' + dotClass + '"></div>' +
           '<div class="err-card-body">' +
-            '<div class="err-card-title">' +
-              (e.plan_name
-                ? esc(e.plan_name) + (e.door_name ? '<span class="err-title-sep">→</span>' + esc(e.door_name) : '')
-                : esc(getCodeLabel(e.error_code) || e.event_type || 'Error')) +
-            '</div>' +
-            '<div class="err-card-context">' +
-              (e.plan_name ? '<span class="err-tag err-tag-type">' + esc(getCodeLabel(e.error_code) || e.event_type || '') + '</span>' : '') +
-            '</div>' +
-            '<div class="err-card-msg">' + esc(msg) + '</div>' +
-            (consequence ? '<div class="err-card-consequence">⚠ ' + esc(consequence) + '</div>' : '') +
-            (reason      ? '<div class="err-card-reason">Why: ' + esc(reason) + '</div>' : '') +
+            '<div class="err-card-title">' + esc(titleLine) + '</div>' +
+            (subtitleLine   ? '<div class="err-card-subtitle">' + esc(subtitleLine) + '</div>'              : '') +
+            (statusMsg      ? '<div class="err-card-msg">'        + esc(statusMsg)      + '</div>'          : '') +
+            (confidenceLine ? '<div class="err-confidence">'      + esc(confidenceLine) + '</div>'          : '') +
+            (consequence    ? '<div class="err-card-consequence">\u26A0 ' + esc(consequence) + '</div>'     : '') +
+            (reason         ? '<div class="err-card-reason">Why: ' + esc(reason) + '</div>'                 : '') +
+            (nextStep       ?
+              '<div class="err-card-directions"><strong>Next step:</strong> ' + esc(nextStep) + '</div>'    : '') +
             '<div class="err-card-meta">' + esc(recurrence) + '</div>' +
           '</div>' +
         '</div>' +
         '<div class="err-card-actions">' +
-          (jumpUrl ? '<button class="btn-jump" onclick="jumpToFix(\'' + esc(jumpUrl) + '\')">Jump to Fix ↗</button>' : '') +
-          '<button class="btn-retry"' + (isResolved ? ' disabled' : '') + ' onclick="retryOne(\'' + esc(e.id) + '\', this)">Retry</button>' +
-          '<button class="btn-dismiss"' + (isResolved ? ' disabled' : '') + ' onclick="dismissOne(\'' + esc(e.id) + '\', this)">Dismiss</button>' +
-          '<button class="btn-details" onclick="toggleDetails(\'' + esc(e.id) + '\')" data-raw="' + esc(rawData) + '">▼ Details</button>' +
+          (jumpUrl ? '<button class="btn-jump" onclick="jumpToFix(\'' + esc(jumpUrl) + '\')">Fix this \u2197</button>' : '') +
+          '<button class="btn-retry"'   + (isResolved ? ' disabled' : '') + ' onclick="retryOne(\''   + esc(e.id) + '\', this)">Retry now</button>' +
+          '<button class="btn-dismiss"' + (isResolved ? ' disabled' : '') + ' onclick="dismissOne(\'' + esc(e.id) + '\', this)">Mark resolved</button>' +
+          '<button class="btn-details" onclick="toggleDetails(\'' + esc(e.id) + '\')">&#9660; Details</button>' +
         '</div>' +
         '<div class="err-details-panel" id="details-' + esc(e.id) + '" style="display:none;"></div>' +
       '</div>';
@@ -376,26 +461,61 @@
       if (!panel) return;
 
       if (panel.style.display === 'none') {
-        var raw = {};
-        try { raw = JSON.parse((btn && btn.dataset.raw) || '{}'); } catch(e) {}
-        panel.innerHTML =
-          '<div class="details-row">' +
-            '<span class="details-label">HTTP Status</span>' +
-            '<span class="details-val">' + esc(String(raw.http_status || '—')) + '</span>' +
+        var e = _errors.find(function(x) { return String(x.id) === String(id); }) || {};
+
+        // Section 1 — plain-English digest
+        var name  = memberName(e);
+        var evtTs = e.last_occurred_at || e.created_at;
+        var evtFmt = evtTs ? new Date(evtTs).toLocaleString([], { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+        var tries = (e.retry_count || 0) + (e.occurred_count || 1);
+        var httpLabel = e.http_status ? (HTTP_LABELS[e.http_status] || String(e.http_status)) : null;
+
+        var digestRows = '';
+        if (name) digestRows +=
+          '<div class="err-details-digest-row">' +
+            '<span class="err-details-digest-label">Member</span>' +
+            '<span class="err-details-digest-val">' + esc(name) +
+              (e.member_email && e.member_email !== name ? ' \u00B7 ' + esc(e.member_email) : '') +
+              (e.platform_member_id ? '<br><span style="font-size:10px;color:var(--muted)">' + esc(e.platform_member_id) + '</span>' : '') +
+            '</span>' +
+          '</div>';
+        digestRows +=
+          '<div class="err-details-digest-row">' +
+            '<span class="err-details-digest-label">Event</span>' +
+            '<span class="err-details-digest-val">' + esc(EVENT_LABELS[e.event_type] || e.event_type || '—') + ' at ' + esc(evtFmt) + '</span>' +
           '</div>' +
-          (raw.raw_api_body
-            ? '<div class="details-row"><span class="details-label">API Response</span>' +
-              '<pre class="details-json">' + esc(JSON.stringify(raw.raw_api_body, null, 2)) + '</pre></div>'
-            : '') +
-          (raw.payload
-            ? '<div class="details-row"><span class="details-label">Event Payload</span>' +
-              '<pre class="details-json">' + esc(JSON.stringify(raw.payload, null, 2)) + '</pre></div>'
-            : '');
+          '<div class="err-details-digest-row">' +
+            '<span class="err-details-digest-label">Attempts</span>' +
+            '<span class="err-details-digest-val">Tried ' + tries + ' time' + (tries === 1 ? '' : 's') + '</span>' +
+          '</div>';
+        if (httpLabel) digestRows +=
+          '<div class="err-details-digest-row">' +
+            '<span class="err-details-digest-label">Status</span>' +
+            '<span class="err-details-digest-val">' + esc(httpLabel) + '</span>' +
+          '</div>';
+
+        // Section 2 + 3 — collapsible raw JSON
+        var rawApiSection = e.raw_api_body
+          ? '<details class="err-details-collapse">' +
+              '<summary>&#9654; Raw API response (for support)</summary>' +
+              '<pre class="details-json">' + esc(JSON.stringify(e.raw_api_body, null, 2)) + '</pre>' +
+            '</details>'
+          : '';
+        var payloadSection = e.payload
+          ? '<details class="err-details-collapse">' +
+              '<summary>&#9654; Event data (for support)</summary>' +
+              '<pre class="details-json">' + esc(JSON.stringify(e.payload, null, 2)) + '</pre>' +
+            '</details>'
+          : '';
+
+        panel.innerHTML =
+          '<div class="err-details-digest">' + digestRows + '</div>' +
+          rawApiSection + payloadSection;
         panel.style.display = 'block';
-        if (btn) btn.textContent = '▲ Details';
+        if (btn) btn.innerHTML = '&#9650; Details';
       } else {
         panel.style.display = 'none';
-        if (btn) btn.textContent = '▼ Details';
+        if (btn) btn.innerHTML = '&#9660; Details';
       }
     }
 
@@ -405,7 +525,7 @@
       apiFetch('/operator/' + _clientId + '/errors/' + id + '/retry', { method: 'POST' })
         .then(function(r) { return r.json(); })
         .then(function() { showToast('success', 'Requeued — AccessSync will retry provisioning'); loadErrors(); loadSummary(); })
-        .catch(function() { showToast('error', 'Retry failed'); btn.disabled = false; btn.textContent = 'Retry'; });
+        .catch(function() { showToast('error', 'Retry failed'); btn.disabled = false; btn.textContent = 'Retry now'; });
     }
 
     function dismissOne(id, btn) {
@@ -417,7 +537,7 @@
       })
         .then(function(r) { return r.json(); })
         .then(function() { showToast('success', 'Dismissed'); loadErrors(); loadSummary(); })
-        .catch(function() { showToast('error', 'Dismiss failed'); btn.disabled = false; btn.textContent = 'Dismiss'; });
+        .catch(function() { showToast('error', 'Dismiss failed'); btn.disabled = false; btn.textContent = 'Mark resolved'; });
     }
 
     function retryAll() {
