@@ -119,6 +119,8 @@
     }
     .plan-summary-stat.price { background: #F0FDF4; color: #16A34A; border-color: #BBF7D0; }
     .plan-summary-stat.unmapped-stat { color: #DC2626; background: #FEF2F2; border-color: #FECACA; }
+    .plan-summary-stat.status-active   { background: #F0FDF4; color: #16A34A; border-color: #BBF7D0; }
+    .plan-summary-stat.status-inactive { background: #FEF3C7; color: #92400E; border-color: #FCD34D; }
     .plan-summary-chevron {
       font-size: 11px; color: var(--muted); flex-shrink: 0;
       transition: transform 0.2s; display: inline-block;
@@ -594,6 +596,9 @@
         ? '<span class="plan-summary-stat unmapped-stat">No groups assigned</span>'
         : '<span class="plan-summary-stat">' + groupStatLabel + '</span>';
       var memberChip = '<span class="plan-summary-stat">' + memberStatLabel + '</span>';
+      var statusChip = isUnmapped ? '' : (plan.status === 'active'
+        ? '<span class="plan-summary-stat status-active">Active</span>'
+        : '<span class="plan-summary-stat status-inactive">Inactive</span>');
 
       var summaryId = 'body-' + plan.id;
       var chevronId = 'chevron-summary-' + plan.id;
@@ -605,7 +610,8 @@
             '<div class="plan-summary-text">' +
               '<div class="plan-name">' + esc(plan.name) + archivedBadge + staleWarning + '</div>' +
               '<div class="plan-summary-chips">' +
-                '<span class="plan-type-badge ' + (isUnmapped ? 'unlinked' : typeClass) + '">' + (isUnmapped ? 'Not Mapped' : typeLabel) + '</span>' +
+                (isUnmapped ? '<span class="plan-type-badge unlinked">Not Mapped</span>' : '') +
+                statusChip +
                 groupChip +
                 memberChip +
                 priceChip +
@@ -1242,47 +1248,39 @@
           }
         }).catch(function(e) { console.error('Groups load error:', e); });
 
-      // 2. Load Wix plans + booking services (auto-accept creates missing plan_mappings rows)
+      // 2 + 3. Load Wix plans and mappings in parallel, then merge price/type data.
+      // Previously sequential with a 500ms delay — caused a race where prices arrived null.
       var wixPlansUrl = '/operator/' + clientId + '/wix-plans' + (locationId ? '?locationId=' + locationId : '');
-      apiFetch(wixPlansUrl)
+      var wixPlansFetch = apiFetch(wixPlansUrl)
         .then(function(r) { return r.json(); })
-        .then(function(d) {
-          var wixPlans = d.plans || [];
-          // Store Wix plan type + price info for later use
-          window._wixPlanTypes = {};
-          window._wixPlanPrices = {};
-          wixPlans.forEach(function(p) {
-            window._wixPlanTypes[p.id] = p.type;
-            if (p.wixPrice) window._wixPlanPrices[p.id] = p.wixPrice;
-          });
-        }).catch(function(e) { console.error('Wix plans load error:', e); });
+        .catch(function(e) { console.error('Wix plans load error:', e); return { plans: [] }; });
 
-      // 3. Load existing mappings for this location (or all if no locationId)
-      var mappingsUrl = locationId
-        ? '/operator/' + clientId + '/locations/' + locationId + '/mappings'
-        : '/operator/' + clientId + '/locations/' + clientId + '/mappings'; // fallback
-
-      // Small delay to let wix-plans auto-accept run first
-      setTimeout(function() {
-        // Re-fetch all mappings (including newly auto-created ones)
-        var allMappingsUrl = locationId
-          ? '/operator/' + clientId + '/locations/' + locationId + '/mappings'
-          : null;
-
-        if (!allMappingsUrl) {
-          // No locationId — try to get first location
-          apiFetch('/operator/' + clientId + '/locations')
+      var locationFetch = locationId
+        ? Promise.resolve(locationId)
+        : apiFetch('/operator/' + clientId + '/locations')
             .then(function(r) { return r.json(); })
             .then(function(d) {
               var locs = d.locations || d.data || [];
-              if (locs.length > 0) {
-                loadMappingsForLocation(clientId, locs[0].id);
-              }
-            }).catch(function() {});
-          return;
+              return locs.length > 0 ? locs[0].id : null;
+            })
+            .catch(function() { return null; });
+
+      Promise.all([wixPlansFetch, locationFetch]).then(function(results) {
+        var wixData  = results[0];
+        var locId    = results[1];
+        var wixPlans = wixData.plans || [];
+
+        window._wixPlanTypes  = {};
+        window._wixPlanPrices = {};
+        wixPlans.forEach(function(p) {
+          window._wixPlanTypes[p.id]  = p.type;
+          if (p.wixPrice) window._wixPlanPrices[p.id] = p.wixPrice;
+        });
+
+        if (locId) {
+          loadMappingsForLocation(clientId, locId);
         }
-        loadMappingsForLocation(clientId, locationId);
-      }, 500);
+      });
 
       // Expose for toggle refresh — called when switching back to Classic View
       window.refreshLegacyMappings = function() {
