@@ -773,7 +773,7 @@
           // Render sync-compare block from live data
           (function renderSyncCompare() {
             var tsEl = document.getElementById('sync-compare-ts');
-            if (tsEl) tsEl.textContent = c.last_sync_at ? 'As of last sync · ' + fmt(c.last_sync_at) : 'Not yet synced';
+            if (tsEl) tsEl.textContent = c.last_sync_at ? 'As of last sync · ' + new Date(c.last_sync_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : 'Not yet synced';
             var rows = document.getElementById('sync-compare-rows');
             if (!rows) return;
             var hwName = c.hardware_platform ? (c.hardware_platform.charAt(0).toUpperCase() + c.hardware_platform.slice(1)) : 'Hardware';
