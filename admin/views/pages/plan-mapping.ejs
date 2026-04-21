@@ -121,6 +121,33 @@
     .plan-summary-stat.unmapped-stat { color: #DC2626; background: #FEF2F2; border-color: #FECACA; }
     .plan-summary-stat.status-active   { background: #F0FDF4; color: #16A34A; border-color: #BBF7D0; }
     .plan-summary-stat.status-inactive { background: #FEF3C7; color: #92400E; border-color: #FCD34D; }
+
+    /* ── State dot + label (replaces chip for active/inactive) ── */
+    .plan-state { display: flex; align-items: center; gap: 5px; }
+    .plan-state-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .plan-state-dot.wired    { background: #16A34A; }
+    .plan-state-dot.inactive { background: #D97706; animation: pulse-dot 2s ease-in-out infinite; }
+    .plan-state-dot.stale    { background: #DC2626; }
+    .plan-state-label { font-size: 12px; font-weight: 600; }
+    .plan-state-label.wired    { color: #16A34A; }
+    .plan-state-label.inactive { color: #92400E; }
+    .plan-state-label.stale    { color: #DC2626; }
+    @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+    /* ── Inline activate CTA (outside the collapsible button) ── */
+    .plan-activate-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 20px 10px;
+      background: #FFFBEB; border-top: 1px solid #FDE68A;
+    }
+    .plan-activate-bar-text { font-size: 12px; color: #92400E; }
+    .plan-activate-btn {
+      font-size: 11px; font-weight: 700; color: #fff;
+      background: #D97706; border: none; border-radius: 6px;
+      padding: 4px 12px; cursor: pointer; font-family: inherit;
+      transition: background 0.12s; white-space: nowrap;
+    }
+    .plan-activate-btn:hover { background: #B45309; }
     .plan-summary-chevron {
       font-size: 11px; color: var(--muted); flex-shrink: 0;
       transition: transform 0.2s; display: inline-block;
@@ -593,12 +620,19 @@
         ? '<span class="plan-summary-stat price">' + esc(plan.wixPrice) + '</span>'
         : '';
       var groupChip = isUnmapped
-        ? '<span class="plan-summary-stat unmapped-stat">No groups assigned</span>'
+        ? '<span class="plan-summary-stat unmapped-stat">No door group</span>'
         : '<span class="plan-summary-stat">' + groupStatLabel + '</span>';
       var memberChip = '<span class="plan-summary-stat">' + memberStatLabel + '</span>';
-      var statusChip = isUnmapped ? '' : (plan.status === 'active'
-        ? '<span class="plan-summary-stat status-active">Active</span>'
-        : '<button class="plan-summary-stat status-inactive" onclick="activatePlan(\'' + plan.id + '\', event)" title="Click to activate this plan mapping" style="cursor:pointer;border:none;font-family:inherit;font-size:inherit;">Inactive — click to activate</button>');
+
+      // State dot — shows wired/inactive/stale at a glance. Not interactive (no nested button).
+      var hasStale = getStaleGroupIds(plan).length > 0;
+      var stateClass = isUnmapped ? 'inactive' : (hasStale ? 'stale' : (plan.status === 'active' ? 'wired' : 'inactive'));
+      var stateLabel = isUnmapped ? 'No door connected'
+        : (hasStale ? 'Stale group — re-map' : (plan.status === 'active' ? 'Wired' : 'No door connected'));
+      var statusChip = '<span class="plan-state">'
+        + '<span class="plan-state-dot ' + stateClass + '"></span>'
+        + '<span class="plan-state-label ' + stateClass + '">' + stateLabel + '</span>'
+        + '</span>';
 
       var summaryId = 'body-' + plan.id;
       var chevronId = 'chevron-summary-' + plan.id;
@@ -621,7 +655,16 @@
           '<span class="plan-summary-chevron" id="' + chevronId + '">&#9660;</span>' +
         '</button>';
 
-      var bodyHTML = '<div class="plan-card-collapse-wrap" id="' + summaryId + '">' +
+      // Activate bar — rendered between the summary button and the collapsible body.
+      // Sits outside the <button> element so it's a valid interactive element (no nesting).
+      var activateBar = (!isUnmapped && plan.status !== 'active' && !hasStale)
+        ? '<div class="plan-activate-bar">'
+          + '<span class="plan-activate-bar-text">No door group connected — members on this plan won\'t get access.</span>'
+          + '<button class="plan-activate-btn" onclick="activatePlan(\'' + plan.id + '\', event)">Connect &amp; Activate</button>'
+          + '</div>'
+        : '';
+
+      var bodyHTML = activateBar + '<div class="plan-card-collapse-wrap" id="' + summaryId + '">' +
         '<div class="plan-card-body">';
 
       // ── Archived plan notice ──
@@ -789,7 +832,10 @@
           dirty = false;
           document.getElementById('saveBar').classList.remove('visible');
           render();
-          showToast('success', 'Plan mapping activated');
+          // Open the card body so operator immediately sees the groups section
+          var wrap = document.getElementById('body-' + planId);
+          if (wrap && !wrap.classList.contains('open')) togglePlanBody(planId);
+          showToast('success', 'Activated — now connect a door group below');
         } else {
           showToast('error', 'Could not activate — try again');
         }
