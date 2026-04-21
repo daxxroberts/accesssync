@@ -820,26 +820,15 @@
       evt.stopPropagation();
       var plan = plans.find(function(p) { return p.id === planId; });
       if (!plan || plan.status === 'active') return;
-      var clientId = new URLSearchParams(window.location.search).get('clientId');
-      apiFetch('/operator/' + clientId + '/plan-mappings/' + planId, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'active' }),
-      }).then(function(r) {
-        if (r.ok) {
-          plan.status = 'active';
-          originalState = JSON.stringify(plans);
-          dirty = false;
-          document.getElementById('saveBar').classList.remove('visible');
-          render();
-          // Open the card body so operator immediately sees the groups section
-          var wrap = document.getElementById('body-' + planId);
-          if (wrap && !wrap.classList.contains('open')) togglePlanBody(planId);
-          showToast('success', 'Activated — now connect a door group below');
-        } else {
-          showToast('error', 'Could not activate — try again');
-        }
-      }).catch(function() { showToast('error', 'Could not activate — try again'); });
+      // Stage locally — Save bar appears, user confirms with Save
+      plan.status = 'active';
+      markDirty();
+      render();
+      // Open the card body so operator immediately sees the groups section
+      setTimeout(function() {
+        var wrap = document.getElementById('body-' + planId);
+        if (wrap && !wrap.classList.contains('open')) togglePlanBody(planId);
+      }, 50);
     }
 
     function removeGroup(planId, groupId, evt) {
@@ -858,35 +847,13 @@
         .catch(function() { return 0; })
         .then(function(count) {
           var doRemove = function() {
+            // Stage the removal locally — Save bar appears, user confirms with Save
             plan.groupIds = plan.groupIds.filter(function(id) { return id !== groupId; });
-            // Fire API immediately — same pattern as addGroupId (no separate Save step)
-            apiFetch('/operator/' + clientId + '/plan-mappings/' + planId, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ removeGroupId: groupId }),
-            }).then(function(r) {
-              if (r.ok) {
-                // Update originalState so dirty bar doesn't show for this change
-                originalState = JSON.stringify(plans);
-                dirty = false;
-                document.getElementById('saveBar').classList.remove('visible');
-                showToast('success', 'Group removed');
-              } else {
-                // Rollback local state on failure
-                plan.groupIds.push(groupId);
-                render();
-                showToast('error', 'Failed to remove group — try again');
-              }
-            }).catch(function() {
-              plan.groupIds.push(groupId);
-              render();
-              showToast('error', 'Failed to remove group — try again');
-            });
+            markDirty();
             render();
           };
 
           if (count === 0 && !isStale) {
-            // No members affected, not a dead group — just remove
             doRemove();
             return;
           }
@@ -1460,7 +1427,20 @@
 
       // Override saveChanges to POST to API
       saveChanges = function() {
-        var promises = plans.map(function(plan) {
+        var original = JSON.parse(originalState);
+        var changed = plans.filter(function(plan) {
+          var orig = original.find(function(o) { return o.id === plan.id; });
+          if (!orig) return false;
+          return JSON.stringify(plan.groupIds) !== JSON.stringify(orig.groupIds)
+              || plan.isMultiMember !== orig.isMultiMember
+              || plan.maxMembers !== orig.maxMembers
+              || plan.status !== orig.status;
+        });
+        if (!changed.length) {
+          showToast('info', 'No changes to save');
+          return;
+        }
+        var promises = changed.map(function(plan) {
           var groups = plan.groupIds.map(function(gid) {
             var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
             return { hardware_group_id: gid, door_name: g ? g.name : null };
@@ -1472,9 +1452,10 @@
               groups: groups,
               allow_multiple: plan.isMultiMember,
               max_members: plan.maxMembers,
+              status: plan.status,
             })
           }).then(function(r) {
-            if (!r.ok) throw new Error('Failed to save ' + (plan.planName || 'plan'));
+            if (!r.ok) throw new Error('Failed to save ' + (plan.name || 'plan'));
             return r;
           });
         });
