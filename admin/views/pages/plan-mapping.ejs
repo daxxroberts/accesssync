@@ -777,6 +777,7 @@
       evt.stopPropagation();
       var plan = plans.find(function(p) { return p.id === planId; });
       if (!plan || plan.status === 'active') return;
+      var clientId = new URLSearchParams(window.location.search).get('clientId');
       apiFetch('/operator/' + clientId + '/plan-mappings/' + planId, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -797,6 +798,7 @@
 
     function removeGroup(planId, groupId, evt) {
       evt.stopPropagation();
+      var clientId = new URLSearchParams(window.location.search).get('clientId');
       var plan = plans.find(function(p) { return p.id === planId; });
       if (!plan.groupIds) return;
       var g = PLATFORM_GROUPS.find(function(x) { return x.id === groupId; });
