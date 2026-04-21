@@ -36,6 +36,7 @@ const standardAdapter = require('../adapters/standard-adapter');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { getRedisConnection } = require('./redis-utils');
+const { eventQueue } = require('./webhook-processor');
 const db = require('../db');
 const { decryptApiKey } = require('./crypto-utils');
 const { log, withTrace } = require('./logger');
@@ -354,6 +355,46 @@ function startWorker() {
 
   worker.on('error', (err) => {
     log.critical('queue.worker.error', {}, err);
+  });
+
+  // DR-023: BullMQ stall events bypass the catch block in processJob — the lock
+  // is never released via the normal path when a worker process is killed mid-job.
+  // This handler recovers the job data and calls releaseLock() so the member is
+  // never permanently stuck at in_flight.
+  worker.on('stalled', async (jobId) => {
+    try {
+      const job = await eventQueue.getJob(jobId);
+      if (!job) {
+        log.warn('queue.job.stalled.no_job', { jobId });
+        return;
+      }
+      const { tenantId, standardEvent } = job.data || {};
+      const platformMemberId = standardEvent?.platformMemberId || null;
+      log.warn('queue.job.stalled', {
+        jobId, jobName: job.name,
+        clientId: tenantId || null,
+        platformMemberId,
+        stage: 'queue', result: 'stalled',
+      });
+      // Recover member_id from DB so we can release the lock
+      if (tenantId && platformMemberId) {
+        const result = await db.query(
+          `SELECT mi.id FROM member_identity mi
+           JOIN member_access_state mas ON mas.member_id = mi.id
+           WHERE mi.client_id = $1 AND mi.platform_member_id = $2 AND mas.status = 'in_flight'`,
+          [tenantId, platformMemberId]
+        );
+        if (result.rows.length) {
+          const memberId = result.rows[0].id;
+          await standardAdapter.releaseLock(memberId, tenantId, 'failed');
+          log.info('queue.job.stalled.lock_released', { jobId, memberId, clientId: tenantId });
+        } else {
+          log.info('queue.job.stalled.no_lock', { jobId, clientId: tenantId, platformMemberId });
+        }
+      }
+    } catch (err) {
+      log.error('queue.job.stalled.release_failed', { jobId }, err);
+    }
   });
 
   log.info('queue.worker.started', { queue: 'accesssync-events', concurrency: 20 });
