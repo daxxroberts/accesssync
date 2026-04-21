@@ -1323,6 +1323,15 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
           values
         );
       }
+      // Auto-sync status: groups present → active, groups empty → inactive
+      const autoStatus = validGroups.length > 0 ? 'active' : 'inactive';
+      if (mapping.status !== autoStatus) {
+        await db.query(
+          `UPDATE plan_mappings SET status = $1 WHERE id = $2`,
+          [autoStatus, mappingId]
+        );
+        mapping = { ...mapping, status: autoStatus };
+      }
     }
 
     res.json(mapping);
