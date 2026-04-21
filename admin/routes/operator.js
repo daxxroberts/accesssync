@@ -2150,6 +2150,34 @@ router.get('/clients/:clientId/wix-api-key/test', async (req, res) => {
   }
 });
 
+// ── POST /operator/:clientId/members/:memberId/unlock ──────────────
+// Clears a stuck in_flight lock. Sets status back to 'pending' so the
+// next webhook retry can proceed. Scoped to clientId for safety.
+router.post('/:clientId/members/:memberId/unlock', async (req, res) => {
+  const { clientId, memberId } = req.params;
+  try {
+    const scope = await db.query(
+      `SELECT mas.status FROM member_access_state mas
+       JOIN member_identity mi ON mi.id = mas.member_id
+       WHERE mas.member_id = $1 AND mi.client_id = $2`,
+      [memberId, clientId]
+    );
+    if (!scope.rows.length) return res.status(404).json({ error: 'Member not found' });
+    if (scope.rows[0].status !== 'in_flight') {
+      return res.status(400).json({ error: `Member is not in_flight (current status: ${scope.rows[0].status})` });
+    }
+    await db.query(
+      `UPDATE member_access_state SET status = 'pending', updated_at = NOW() WHERE member_id = $1`,
+      [memberId]
+    );
+    log.info('operator.member.unlock', { clientId, memberId, previousStatus: 'in_flight' });
+    res.json({ ok: true, status: 'pending' });
+  } catch (err) {
+    log.error('operator.member.unlock_failed', { clientId, memberId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /sync/run ─────────────────────────────────────────────────
 // Manual sync trigger from the dashboard Sync button.
 // Runs _syncClient() for the logged-in client only — bypasses the

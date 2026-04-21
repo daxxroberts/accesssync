@@ -82,6 +82,7 @@
     .status-pill.partial          { background: var(--amber-dim); color: var(--amber); }
     .status-pill.failed           { background: var(--red-dim);   color: var(--red); }
     .status-pill.suspended        { background: var(--surface);   color: var(--muted); }
+    .status-pill.in_flight        { background: var(--brand-dim); color: var(--brand); }
     .status-dot { width: 6px; height: 6px; border-radius: 50%; }
     .status-pill.active .status-dot           { background: var(--sage-dark); }
     .status-pill.pending .status-dot          { background: var(--amber); animation: pulse 1.4s ease-in-out infinite; }
@@ -89,6 +90,7 @@
     .status-pill.partial .status-dot          { background: var(--amber); }
     .status-pill.failed .status-dot           { background: var(--red); }
     .status-pill.suspended .status-dot        { background: var(--muted); }
+    .status-pill.in_flight .status-dot        { background: var(--brand); animation: pulse 1.4s ease-in-out infinite; }
 
     /* Extended color palette (additive — DR-014 indigo/sage locked) */
     --plan-accent: #7C3AED;
@@ -605,7 +607,8 @@
         var statusCell = '<td><span class="status-pill ' + m.status + '" title="' + esc(statusTooltip(m.status)) + '"><span class="status-dot"></span>' + statusLabel(m.status) + '</span></td>';
         var dateCell   = '<td style="font-size:12px;color:#9aa5b4;">' + m.addedDate + '</td>';
         var actionsCell = '<td style="text-align:right;">' +
-          (m.status === 'failed' ? '<button class="tbl-action-btn retry" onclick="retryMember(\'' + m.id + '\')" title="Retry">&#8635;</button>' : '') +
+          (m.status === 'failed'    ? '<button class="tbl-action-btn retry"  onclick="retryMember(\''  + m.id + '\')" title="Retry">&#8635;</button>' : '') +
+          (m.status === 'in_flight' ? '<button class="tbl-action-btn retry"  onclick="unlockMember(\'' + m.id + '\')" title="Clear stuck lock" style="font-size:11px;">&#128275;</button>' : '') +
           '</td>';
 
         tr.innerHTML = memberCell + planCell + roleCell + statusCell + dateCell + actionsCell;
@@ -833,7 +836,8 @@
 
       document.getElementById('drawerFooter').innerHTML =
         '<button class="drawer-btn secondary" onclick="closeDrawer()">Close</button>' +
-        (m.status === 'failed' ? '<button class="drawer-btn primary" onclick="retryMember(\'' + m.id + '\');closeDrawer()">Retry</button>' : '');
+        (m.status === 'failed'    ? '<button class="drawer-btn primary" onclick="retryMember(\''  + m.id + '\');closeDrawer()">Retry</button>' : '') +
+        (m.status === 'in_flight' ? '<button class="drawer-btn primary" onclick="unlockMember(\'' + m.id + '\');closeDrawer()">Clear Stuck Lock</button>' : '');
 
       document.getElementById('drawerOverlay').classList.add('visible');
       document.getElementById('drawer').classList.add('open');
@@ -915,6 +919,25 @@
         renderStats(); applyFilters();
         showToast('success', m.firstName + ' now has access');
       }, 2500);
+    }
+
+    function unlockMember(memberId) {
+      var m = allMembers.find(function(x) { return x.id === memberId; });
+      if (!m || m.status !== 'in_flight') return;
+      var clientId = urlParams.get('clientId');
+      showToast('info', 'Clearing stuck lock for ' + m.firstName + '...');
+      apiFetch('/operator/' + clientId + '/members/' + memberId + '/unlock', { method: 'POST' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            m.status = 'pending';
+            renderStats(); applyFilters();
+            showToast('success', 'Lock cleared — ' + m.firstName + ' will retry on next sync');
+          } else {
+            showToast('error', data.error || 'Could not clear lock');
+          }
+        })
+        .catch(function() { showToast('error', 'Request failed — try again'); });
     }
 
     renderStats();
