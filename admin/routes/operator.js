@@ -1579,6 +1579,15 @@ router.get('/:clientId/members', async (req, res) => {
                   WHERE mra.member_id = mi.id AND pm.source_plan_id IS NOT NULL
                 )                                AS plan_ids,
                 (
+                  SELECT ARRAY_AGG(mas_src.valid_until ORDER BY pm.plan_name)
+                  FROM member_role_assignments mra
+                  JOIN plan_mappings pm ON pm.id = mra.mapping_id
+                  LEFT JOIN member_access_sources mas_src
+                    ON mas_src.member_id = mi.id
+                    AND mas_src.mapping_id = pm.id
+                  WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
+                )                                AS plan_valid_untils,
+                (
                   SELECT pm.plan_name
                   FROM member_role_assignments mra
                   JOIN plan_mappings pm ON pm.id = mra.mapping_id

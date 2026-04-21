@@ -90,10 +90,16 @@
     .status-pill.failed .status-dot           { background: var(--red); }
     .status-pill.suspended .status-dot        { background: var(--muted); }
 
+    /* Extended color palette (additive — DR-014 indigo/sage locked) */
+    --plan-accent: #7C3AED;
+    --plan-accent-dim: #F3E8FF;
+    --teal: #0D9488;
+    --teal-dim: rgba(13,148,136,0.10);
+
     .plan-badge     { font-size: 11px; font-weight: 600; color: var(--text); }
     .plan-badge-sub { font-size: 11px; color: var(--muted); }
 
-    /* Plan details inline dropdown */
+    /* Plan cell toggle button */
     .plan-cell-wrap { display: flex; flex-direction: column; gap: 4px; }
     .plan-detail-btn {
       display: inline-flex; align-items: center; gap: 4px;
@@ -105,18 +111,29 @@
     .plan-detail-btn:hover { background: rgba(79,110,247,0.18); }
     .plan-detail-btn .pdb-chevron { font-size: 8px; transition: transform 0.15s; display: inline-block; }
     .plan-detail-btn.open .pdb-chevron { transform: rotate(180deg); }
-    .plan-detail-panel {
-      display: none; margin-top: 6px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px 12px;
-      font-size: 12px; color: var(--text2); line-height: 1.6;
+
+    /* Child row that appears below parent member row */
+    .plan-child-row td {
+      background: var(--surface); padding: 0 16px 14px 48px;
+      border-bottom: 1px solid var(--border);
     }
-    .plan-detail-panel.open { display: block; }
-    .plan-detail-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+    .plan-child-row.hidden { display: none; }
+    .plan-cards-wrap { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 10px; }
+
+    /* Individual plan card */
+    .plan-card {
+      background: var(--plan-accent-dim); border: 1px solid rgba(124,58,237,0.18);
+      border-radius: 10px; padding: 12px 14px; min-width: 200px; flex: 1; max-width: 280px;
+    }
+    .plan-card-title {
+      font-size: 13px; font-weight: 700; color: var(--plan-accent);
+      border-left: 3px solid var(--plan-accent); padding-left: 8px;
+      margin-bottom: 8px; line-height: 1.3;
+    }
+    .plan-detail-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid rgba(124,58,237,0.1); }
     .plan-detail-row:last-child { border-bottom: none; }
     .plan-detail-label { color: var(--muted); font-size: 11px; }
     .plan-detail-value { font-weight: 600; color: var(--text); font-size: 11px; text-align: right; }
-    .plan-detail-section { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 8px 0 4px; }
 
     /* View additional members button */
     .view-members-btn {
@@ -400,16 +417,29 @@
     }
 
     var STATUS_TOOLTIPS = {
-      active: 'Member has door access.',
-      pending: 'Access is being set up now.',
+      active:           'Member has door access.',
+      pending:          'Access is being set up right now.',
+      in_flight:        'Access is being set up right now.',
       pending_hardware: 'Plan purchased but door system not connected. Add your API key in Locations.',
-      partial: 'Some plans provisioned successfully — one or more plans had an issue. Check the error queue.',
-      failed: 'Something went wrong — check the error queue for details and next steps.',
-      suspended: 'Access paused — plan cancelled or payment lapsed.'
+      partial:          'Some plans provisioned successfully — one or more plans had an issue. Check the error queue.',
+      failed:           'Something went wrong — check the error queue for details and next steps.',
+      suspended:        'Access paused — plan cancelled or payment lapsed.',
+      revoked:          'Access has been revoked.',
+      pending_identity: 'Member identity not yet resolved — access will provision once confirmed.'
     };
     function statusLabel(s) {
-      var labels = { active: 'Active', pending: 'Processing', pending_hardware: 'Needs Setup', partial: 'Partial Access', failed: 'Action Needed', suspended: 'Paused' };
-      return labels[s] || (s.charAt(0).toUpperCase() + s.slice(1));
+      var labels = {
+        active:           'Active',
+        pending:          'Setting Up',
+        in_flight:        'Setting Up',
+        pending_hardware: 'Needs Setup',
+        partial:          'Partial Access',
+        failed:           'Action Needed',
+        suspended:        'Paused',
+        revoked:          'Revoked',
+        pending_identity: 'Pending Identity'
+      };
+      return labels[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ') : 'Unknown');
     }
     function statusTooltip(s) { return STATUS_TOOLTIPS[s] || ''; }
 
@@ -559,8 +589,7 @@
           planCell += '<div class="plan-badge">' + esc(livePlanLabel || '—') + '</div>';
           if (livePlanLabel && livePlanLabel !== '—') {
             planCell += '<button class="plan-detail-btn" id="' + planDetailBtnId + '" onclick="togglePlanDetail(\'' + m.id + '\')">' +
-              'View plan details <span class="pdb-chevron">&#9660;</span></button>' +
-              '<div class="plan-detail-panel" id="' + planDetailPanelId + '"></div>';
+              'View plan details <span class="pdb-chevron">&#9660;</span></button>';
           }
           if (isMulti && subCount > 0) {
             planCell += '<button class="view-members-btn" id="' + viewMembersBtnId + '" onclick="toggleSubMembers(\'' + m.id + '\')">' +
@@ -581,6 +610,15 @@
 
         tr.innerHTML = memberCell + planCell + roleCell + statusCell + dateCell + actionsCell;
         tbody.appendChild(tr);
+
+        // Child plan row — hidden by default, revealed by togglePlanDetail()
+        if (isHolder && livePlanLabel && livePlanLabel !== '—') {
+          var childTr = document.createElement('tr');
+          childTr.className = 'plan-child-row hidden';
+          childTr.id = 'pcr-' + m.id;
+          childTr.innerHTML = '<td colspan="6"><div class="plan-cards-wrap"></div></td>';
+          tbody.appendChild(childTr);
+        }
       });
     }
 
@@ -595,46 +633,56 @@
       if (btn) btn.classList.toggle('open');
     }
 
+    function buildPlanCardsHtml(m) {
+      var planNames = m.planNames && m.planNames.length > 0 ? m.planNames : (m.planName ? [m.planName] : []);
+      var planIds   = m.planIds || [];
+      var validUntils = m.planValidUntils || [];
+      if (planNames.length === 0) return '<div style="color:var(--muted);font-size:12px;padding:8px 0;">No plan data available.</div>';
+
+      return planNames.map(function(pName, idx) {
+        var pid     = planIds[idx] || null;
+        var detail  = pid ? wixPlanDetails[pid] : null;
+        var vu      = validUntils[idx] || null;
+
+        // Section header = Wix plan name (what member bought); fallback to mapping name
+        var displayTitle = (detail && detail.name) ? detail.name : pName;
+
+        var rows = '';
+        if (detail && detail.wixPrice) {
+          rows += '<div class="plan-detail-row"><span class="plan-detail-label">Price</span><span class="plan-detail-value" style="color:#16A34A;">' + esc(detail.wixPrice) + '</span></div>';
+        }
+        rows += '<div class="plan-detail-row"><span class="plan-detail-label">Type</span><span class="plan-detail-value">' + (detail && detail.type === 'booking_service' ? 'Booking Service' : 'Pricing Plan') + '</span></div>';
+        rows += '<div class="plan-detail-row"><span class="plan-detail-label">Plan status</span><span class="plan-detail-value">' + esc((detail && detail.status) || 'active') + '</span></div>';
+
+        var expiryVal, expiryStyle;
+        if (vu) {
+          expiryVal = new Date(vu).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          expiryStyle = 'color:var(--teal);';
+        } else {
+          expiryVal = 'No expiry';
+          expiryStyle = 'color:var(--muted);font-weight:400;';
+        }
+        rows += '<div class="plan-detail-row"><span class="plan-detail-label">Access ends</span><span class="plan-detail-value" style="' + expiryStyle + '">' + expiryVal + '</span></div>';
+        rows += '<div class="plan-detail-row"><span class="plan-detail-label">Member since</span><span class="plan-detail-value">' + esc(m.addedDate) + '</span></div>';
+
+        return '<div class="plan-card"><div class="plan-card-title">' + esc(displayTitle) + '</div>' + rows + '</div>';
+      }).join('');
+    }
+
     function togglePlanDetail(memberId) {
-      var btn = document.getElementById('pdb-' + memberId);
-      var panel = document.getElementById('pdp-' + memberId);
-      if (!btn || !panel) return;
-      var isOpen = btn.classList.contains('open');
-      btn.classList.toggle('open');
-      panel.classList.toggle('open');
+      var btn      = document.getElementById('pdb-' + memberId);
+      var childRow = document.getElementById('pcr-' + memberId);
+      if (!btn || !childRow) return;
+      var isOpen = !childRow.classList.contains('hidden');
+      btn.classList.toggle('open', !isOpen);
+      childRow.classList.toggle('hidden', isOpen);
 
-      if (!isOpen && panel.innerHTML === '') {
-        var m = allMembers.find(function(x) { return x.id === memberId; });
-        if (!m) { panel.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:4px 0;">No plan data available.</div>'; return; }
-
-        var planNames = m.planNames && m.planNames.length > 0 ? m.planNames : (m.planName ? [m.planName] : []);
-        var planIds   = m.planIds   || [];
-        var html = '';
-
-        planNames.forEach(function(pName, idx) {
-          var pid = planIds[idx] || null;
-          var detail = pid ? wixPlanDetails[pid] : null;
-
-          if (planNames.length > 1) {
-            html += '<div class="plan-detail-section">' + esc(pName) + '</div>';
-          }
-
-          if (detail) {
-            html += '<div class="plan-detail-row"><span class="plan-detail-label">Plan name</span><span class="plan-detail-value">' + esc(detail.name) + '</span></div>';
-            if (detail.wixPrice) {
-              html += '<div class="plan-detail-row"><span class="plan-detail-label">Price</span><span class="plan-detail-value" style="color:#16A34A;">' + esc(detail.wixPrice) + '</span></div>';
-            }
-            html += '<div class="plan-detail-row"><span class="plan-detail-label">Type</span><span class="plan-detail-value">' + (detail.type === 'booking_service' ? 'Booking Service' : 'Pricing Plan') + '</span></div>';
-            html += '<div class="plan-detail-row"><span class="plan-detail-label">Plan status</span><span class="plan-detail-value">' + esc(detail.status || '—') + '</span></div>';
-          } else {
-            html += '<div class="plan-detail-row"><span class="plan-detail-label">Plan name</span><span class="plan-detail-value">' + esc(pName) + '</span></div>';
-            html += '<div class="plan-detail-row"><span class="plan-detail-label">Price</span><span class="plan-detail-value" style="color:var(--muted);">—</span></div>';
-          }
-          html += '<div class="plan-detail-row"><span class="plan-detail-label">Member since</span><span class="plan-detail-value">' + esc(m.addedDate) + '</span></div>';
-        });
-
-        if (!html) html = '<div style="color:var(--muted);font-size:11px;padding:4px 0;">No plan data available.</div>';
-        panel.innerHTML = html;
+      if (!isOpen) {
+        var wrap = childRow.querySelector('.plan-cards-wrap');
+        if (wrap && wrap.innerHTML === '') {
+          var m = allMembers.find(function(x) { return x.id === memberId; });
+          wrap.innerHTML = m ? buildPlanCardsHtml(m) : '<div style="color:var(--muted);font-size:12px;">No plan data available.</div>';
+        }
       }
     }
 
@@ -951,6 +999,7 @@
               planDisplay: planDisplay, // for row rendering
               planNames: planNames,     // full list for drawer/modal
               planIds: Array.isArray(m.plan_ids) ? m.plan_ids.filter(Boolean) : [],
+              planValidUntils: Array.isArray(m.plan_valid_untils) ? m.plan_valid_untils : [],
               role: 'holder',
               status: m.effective_status || m.access_status || 'pending',
               addedDate: m.provisioned_at ? new Date(m.provisioned_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—',
