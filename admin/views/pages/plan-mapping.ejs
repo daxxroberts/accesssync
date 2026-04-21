@@ -598,7 +598,7 @@
       var memberChip = '<span class="plan-summary-stat">' + memberStatLabel + '</span>';
       var statusChip = isUnmapped ? '' : (plan.status === 'active'
         ? '<span class="plan-summary-stat status-active">Active</span>'
-        : '<span class="plan-summary-stat status-inactive">Inactive</span>');
+        : '<button class="plan-summary-stat status-inactive" onclick="activatePlan(\'' + plan.id + '\', event)" title="Click to activate this plan mapping" style="cursor:pointer;border:none;font-family:inherit;font-size:inherit;">Inactive — click to activate</button>');
 
       var summaryId = 'body-' + plan.id;
       var chevronId = 'chevron-summary-' + plan.id;
@@ -773,6 +773,28 @@
       render();
     }
 
+    function activatePlan(planId, evt) {
+      evt.stopPropagation();
+      var plan = plans.find(function(p) { return p.id === planId; });
+      if (!plan || plan.status === 'active') return;
+      apiFetch('/operator/' + clientId + '/plan-mappings/' + planId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      }).then(function(r) {
+        if (r.ok) {
+          plan.status = 'active';
+          originalState = JSON.stringify(plans);
+          dirty = false;
+          document.getElementById('saveBar').classList.remove('visible');
+          render();
+          showToast('success', 'Plan mapping activated');
+        } else {
+          showToast('error', 'Could not activate — try again');
+        }
+      }).catch(function() { showToast('error', 'Could not activate — try again'); });
+    }
+
     function removeGroup(planId, groupId, evt) {
       evt.stopPropagation();
       var plan = plans.find(function(p) { return p.id === planId; });
@@ -789,7 +811,29 @@
         .then(function(count) {
           var doRemove = function() {
             plan.groupIds = plan.groupIds.filter(function(id) { return id !== groupId; });
-            markDirty();
+            // Fire API immediately — same pattern as addGroupId (no separate Save step)
+            apiFetch('/operator/' + clientId + '/plan-mappings/' + planId, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ removeGroupId: groupId }),
+            }).then(function(r) {
+              if (r.ok) {
+                // Update originalState so dirty bar doesn't show for this change
+                originalState = JSON.stringify(plans);
+                dirty = false;
+                document.getElementById('saveBar').classList.remove('visible');
+                showToast('success', 'Group removed');
+              } else {
+                // Rollback local state on failure
+                plan.groupIds.push(groupId);
+                render();
+                showToast('error', 'Failed to remove group — try again');
+              }
+            }).catch(function() {
+              plan.groupIds.push(groupId);
+              render();
+              showToast('error', 'Failed to remove group — try again');
+            });
             render();
           };
 
