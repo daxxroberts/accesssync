@@ -15,6 +15,7 @@
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
 jest.mock('bullmq', () => ({
+  Queue: jest.fn(() => ({ add: jest.fn(), on: jest.fn() })),
   Worker: jest.fn(() => ({ on: jest.fn() })),
   UnrecoverableError: class UnrecoverableError extends Error {
     constructor(msg) { super(msg); this.name = 'UnrecoverableError'; }

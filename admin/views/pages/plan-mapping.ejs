@@ -614,7 +614,11 @@
       // Summary stat pills
       var groupCount = plan.groupIds ? plan.groupIds.length : 0;
       var memberCount = plan.memberCount || 0;
-      var groupStatLabel = groupCount === 1 ? '1 group' : groupCount + ' groups';
+      var pName = platformName();
+      var gLabel = groupLabel();
+      var groupStatLabel = groupCount === 1
+        ? '1 ' + pName + ' ' + gLabel
+        : groupCount + ' ' + pName + ' ' + gLabel + 's';
       var memberStatLabel = memberCount === 1 ? '1 member' : memberCount + ' members';
       var priceChip = plan.wixPrice
         ? '<span class="plan-summary-stat price">' + esc(plan.wixPrice) + '</span>'

@@ -150,6 +150,7 @@
 
     // ── Status messages (fallback when user_message is absent) ────
     var STATUS_MESSAGES = {
+      'IN_FLIGHT_LOCK':              "Two events arrived for the same member at the same time. AccessSync handled the first one and queued this one — it will retry automatically.",
       'HARDWARE_KEY_INVALID':        "AccessSync couldn't connect to your door system — the API key was rejected.",
       'HARDWARE_KEY_PERMISSIONS':    "AccessSync connected but doesn't have permission to manage member access.",
       'HARDWARE_KEY_MISSING':        'No door system API key is connected for this location.',
@@ -178,6 +179,7 @@
 
     // ── Error code → human label ──────────────────────────────────
     var CODE_LABELS = {
+      IN_FLIGHT_LOCK:              'Concurrent Event',
       HARDWARE_KEY_INVALID:        'Invalid API Key',
       HARDWARE_KEY_PERMISSIONS:    'API Key Permissions',
       HARDWARE_KEY_MISSING:        'No API Key Connected',
@@ -196,6 +198,11 @@
     // jumpUrl: destination with jumpTo= (element ID) and tip= (tooltip text).
     // Location-specific errors use LOCID placeholder replaced at render time with e.location_id.
     var ERROR_MAP = {
+      'IN_FLIGHT_LOCK': {
+        jumpUrl:     null,
+        reason:      'A second Wix event (such as a payment confirmation) arrived while AccessSync was still processing the first one for this member. The system protects against data conflicts by handling events one at a time.',
+        consequence: 'No action needed — AccessSync will retry this automatically. The member\'s access will not be affected.',
+      },
       'HARDWARE_KEY_INVALID': {
         jumpUrl:     '/locations?clientId=' + _clientId + '&jumpTo=keyform-LOCID&tip=Paste+a+new+hardware+API+key+here',
         reason:      'This usually happens when an API key is regenerated in Kisi, or when the Kisi account password is changed — both invalidate existing keys.',
@@ -369,6 +376,9 @@
 
     function getTitleLine(e) {
       var name = memberName(e);
+      if (isInFlightError(e)) {
+        return (name || 'A member') + '\u2019s event was delayed — another event was already in progress';
+      }
       if (e.error_code === 'PLAN_NOT_MAPPED') {
         return (name || 'A member') + ' is waiting for access — plan not mapped';
       }
@@ -387,13 +397,21 @@
       return sub || null;
     }
 
+    function isInFlightError(e) {
+      return e.error_code === 'IN_FLIGHT_LOCK' ||
+        (!e.error_code && typeof (e.plain_message || e.error_reason) === 'string' &&
+          (e.plain_message || e.error_reason).indexOf('in_flight lock') !== -1);
+    }
+
     function getStatusMsg(e) {
+      if (isInFlightError(e)) return STATUS_MESSAGES['IN_FLIGHT_LOCK'];
       if (e.user_message) return e.user_message;
       if (e.error_code && STATUS_MESSAGES[e.error_code]) return STATUS_MESSAGES[e.error_code];
       return e.plain_message || null;
     }
 
     function getConfidenceLine(e) {
+      if (isInFlightError(e)) return 'This resolves automatically \u2014 no configuration change needed.';
       var count = e.occurred_count || 1;
       var res   = e.resolution;
       if (res === 'ROTATE_API_KEY')    return 'This won\u2019t resolve on its own \u2014 updating the API key is required.';
@@ -492,6 +510,14 @@
           '<div class="err-details-digest-row">' +
             '<span class="err-details-digest-label">Status</span>' +
             '<span class="err-details-digest-val">' + esc(httpLabel) + '</span>' +
+          '</div>';
+
+        // For in_flight errors: show raw technical message in details
+        var rawLockMsg = isInFlightError(e) ? (e.plain_message || e.error_reason || null) : null;
+        if (rawLockMsg) digestRows +=
+          '<div class="err-details-digest-row">' +
+            '<span class="err-details-digest-label">System log</span>' +
+            '<span class="err-details-digest-val" style="font-family:\'Courier New\',monospace;font-size:10px;word-break:break-all;">' + esc(rawLockMsg) + '</span>' +
           '</div>';
 
         // Section 2 + 3 — collapsible raw JSON
