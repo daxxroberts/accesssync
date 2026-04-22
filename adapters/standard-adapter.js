@@ -92,7 +92,10 @@ class StandardAdapter {
         const { status, role_assignment_id } = stateResult.rows[0];
 
         if (status === 'in_flight') {
-          throw new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId} (clientId=${tenantId})`);
+          const lockErr = new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId} (clientId=${tenantId})`);
+          lockErr.code = 'IN_FLIGHT_LOCK';
+          lockErr.memberId = memberId;  // carry memberId so catch block can release the lock
+          throw lockErr;
         }
 
         // Read all role assignment IDs from member_role_assignments (multi-door)

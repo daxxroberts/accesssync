@@ -61,8 +61,8 @@ async function getClientApiKey(tenantId) {
  * BullMQ calls this for every job dequeued. Returning normally = success. Throwing = retry.
  */
 async function processJob(job) {
-  const { tenantId, standardEvent } = job.data;
-  const traceId  = standardEvent.traceId  || null;
+  const { tenantId, standardEvent } = job.data || {};
+  const traceId  = standardEvent?.traceId  || null;
   const clientId = tenantId;               // canonical field name — tenantId kept internally
   const eventId  = standardEvent.eventId  || null;
   const logger   = traceId ? withTrace(traceId) : log;
@@ -296,9 +296,18 @@ async function processJob(job) {
       stage: lastStep.split('.')[0], result: 'failed',
     }, error);
 
-    // Release in_flight lock before BullMQ retries
-    if (memberId) {
-      await standardAdapter.releaseLock(memberId, tenantId, 'failed');
+    // Release in_flight lock before BullMQ retries.
+    // error.memberId is set by the in_flight lock throw when memberId isn't yet assigned
+    // in the outer scope (i.e. the lock fired before resolveAndLock returned).
+    const lockMemberId = memberId || error.memberId || null;
+    if (lockMemberId) {
+      await standardAdapter.releaseLock(lockMemberId, tenantId, 'failed');
+    }
+
+    // IN_FLIGHT_LOCK is a transient race — let BullMQ retry with its normal backoff.
+    // Do not dead-letter or escalate to UnrecoverableError.
+    if (error.code === 'IN_FLIGHT_LOCK') {
+      throw error;
     }
 
     // 4xx errors (except 429) are non-retryable — bad config, not transient failures.

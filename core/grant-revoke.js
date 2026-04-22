@@ -226,6 +226,19 @@ class GrantRevokeLogic {
           [memberId]
         );
 
+        // Member was never provisioned — no hardware assignments to remove.
+        // Happens when a cancel fires before (or without) a successful grant,
+        // e.g. Wix fires orderCancelled on a superseded order when a new one is created.
+        if (raWithGroups.rows.length === 0 && roleAssignmentIds.length === 0) {
+          log.info('revoke.skipped.never_provisioned', {
+            clientId: tenantId, memberId,
+            platformMemberId: wixEvent.platformMemberId,
+            eventType, planId,
+            stage: 'revoke', result: 'skipped',
+          });
+          return 'revoked';
+        }
+
         for (const { role_assignment_id: raId, hardware_group_id: groupId } of raWithGroups.rows) {
           await db.query(
             `DELETE FROM member_access_sources
