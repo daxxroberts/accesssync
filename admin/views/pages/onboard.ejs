@@ -1581,8 +1581,10 @@ async function _send(eventType, data) {
 export function wixPricingPlans_onOrderCreated(event)   { return _send('wixPricingPlans.orderCreated', event); }
 export function wixPricingPlans_onOrderPurchased(event) { return _send('wixPricingPlans.orderPurchased', event); }
 export function wixPricingPlans_onOrderStarted(event)   { return _send('wixPricingPlans.orderStarted', event); }
-export function wixPricingPlans_onOrderCanceled(event)  { return _send('wixPricingPlans.orderCanceled', event); }
-export function wixPricingPlans_onOrderUpdated(event)   { return _send('wixPricingPlans.orderUpdated', event); }
+export function wixPricingPlans_onOrderCanceled(event)          { return _send('wixPricingPlans.orderCanceled', event); }
+export function wixPricingPlans_onOrderAutoRenewCanceled(event) { return _send('wixPricingPlans.orderAutoRenewCanceled', event); }
+export function wixPricingPlans_onOrderEnded(event)             { return _send('wixPricingPlans.orderEnded', event); }
+export function wixPricingPlans_onOrderUpdated(event)           { return _send('wixPricingPlans.orderUpdated', event); }
 export function wixBookings_onBookingConfirmed(event)   { return _send('wixBookings.bookingConfirmed', event); }
 export function wixBookings_onBookingCanceled(event)    { return _send('wixBookings.bookingCanceled', event); }
 export function wixMembers_onMemberDeleted(event)       { return _send('wixMembers.memberDeleted', event); }`;

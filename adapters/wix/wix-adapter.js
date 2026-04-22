@@ -37,9 +37,11 @@ class WixAdapter {
       'wixPricingPlans.orderPurchased': 'plan.purchased',
       'wixPricingPlans.orderStarted':   'plan.purchased',
       'wixPricingPlans.orderUpdated':   'plan.purchased',  // covers renewals + upgrades
-      'wixPricingPlans.orderCanceled':  'plan.cancelled',
-      'wixPricingPlans.orderCancelled': 'plan.cancelled',  // British spelling variant
-      'wixPricingPlans.orderExpired':   'plan.cancelled',
+      'wixPricingPlans.orderCanceled':          'plan.cancelled',
+      'wixPricingPlans.orderCancelled':         'plan.cancelled',  // British spelling variant
+      'wixPricingPlans.orderAutoRenewCanceled': 'plan.cancelled',  // member cancels, access ends at next billing date
+      'wixPricingPlans.orderEnded':             'plan.cancelled',  // natural expiry or deferred cancel completion
+      'wixPricingPlans.orderExpired':           'plan.cancelled',  // legacy / non-standard variant, kept for safety
       'wixPricingPlans.orderPaused':    'payment.failed',
       'wixPricingPlans.orderResumed':   'payment.recovered',
       'wixBookings.bookingCreated':     'booking.confirmed',
