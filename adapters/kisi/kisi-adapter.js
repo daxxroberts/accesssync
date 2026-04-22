@@ -58,11 +58,30 @@ class KisiAdapter {
         ...(options.validUntil ? { valid_until: options.validUntil } : {}),
       }
     };
-    const data = await kisiConnector.makeRequest('/role_assignments', {
-      method: 'POST',
-      body: JSON.stringify(body)
-    }, apiKey);
-    return data.id;
+    try {
+      const data = await kisiConnector.makeRequest('/role_assignments', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      }, apiKey);
+      return data.id;
+    } catch (err) {
+      // 409 means the assignment already exists — idempotent success.
+      // Fetch the existing role assignment ID so we can record it correctly.
+      if (err.statusCode === 409) {
+        log.info('kisi.assign_role.already_exists', { userId, groupId });
+        const existing = await kisiConnector.makeRequest(
+          `/role_assignments?user_id=${userId}&group_id=${groupId}&limit=1`,
+          { method: 'GET' },
+          apiKey
+        );
+        const match = Array.isArray(existing) ? existing[0] : null;
+        if (match?.id) return match.id;
+        // Kisi confirmed 409 but we can't retrieve the ID — surface as unknown
+        log.warn('kisi.assign_role.conflict_unresolvable', { userId, groupId });
+        throw err;
+      }
+      throw err;
+    }
   }
 
   /**
