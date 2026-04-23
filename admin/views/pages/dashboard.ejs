@@ -611,10 +611,19 @@
           '</div>';
           html += '<div class="loc-sub-body" id="sub-mapping-' + locId + '">';
           if (mappings.length) {
+            // Count occurrences of each plan name to detect duplicates
+            var nameCount = {};
+            mappings.forEach(function(pm) { var n = pm.plan_name || pm.source_plan_id; nameCount[n] = (nameCount[n] || 0) + 1; });
             html += mappings.map(function(pm) {
               var isExcluded = pm.status === 'excluded';
+              var planLabel = pm.plan_name || pm.source_plan_id;
+              // Show last 6 chars of source_plan_id as disambiguator when name is duplicated
+              var isDuplicate = nameCount[planLabel] > 1;
+              var detail = isDuplicate && pm.source_plan_id ? '…' + pm.source_plan_id.slice(-6) : '';
               return '<div class="map-row"' + (isExcluded ? ' style="opacity:0.5;"' : '') + '>' +
-                '<div><div class="map-plan">' + esc(pm.plan_name || pm.source_plan_id) + '</div></div>' +
+                '<div><div class="map-plan">' + esc(planLabel) + '</div>' +
+                (detail ? '<div class="map-detail" style="font-family:monospace;">' + esc(detail) + '</div>' : '') +
+                '</div>' +
                 '<div class="map-right">' +
                   (isExcluded
                     ? '<span class="mbadge excl">Not managed</span>'
@@ -758,7 +767,26 @@
           } else if (syncN) { syncN.textContent = 'Never'; }
           // Update platform details from live client data
           var wixDetail = document.getElementById('wix-platform-detail');
-          if (wixDetail) wixDetail.textContent = c.source_site_url ? c.source_site_url.replace(/^https?:\/\//, '') + ' · Webhooks active' : 'Webhooks active';
+          if (wixDetail) {
+            var wixLabel = c.source_site_url ? c.source_site_url.replace(/^https?:\/\//, '')
+                         : c.source_site_name ? c.source_site_name
+                         : '';
+            wixDetail.textContent = wixLabel ? wixLabel + ' · Webhooks active' : 'Webhooks active';
+          }
+          // Update Wix chip pill — only show "Live" if a webhook has been received
+          var wixChip = document.querySelectorAll('.platform-chip')[0];
+          if (wixChip) {
+            var wixPill = wixChip.querySelector('.pill');
+            if (wixPill) {
+              if (c.last_webhook_at) {
+                wixPill.className = 'pill sage';
+                wixPill.innerHTML = '<span class="pdot pulse"></span>Live';
+              } else {
+                wixPill.className = 'pill amber';
+                wixPill.innerHTML = '<span class="pdot"></span>Not yet received';
+              }
+            }
+          }
           var hwDetail = document.getElementById('hardware-platform-detail');
           if (hwDetail) {
             var hwParts = [];

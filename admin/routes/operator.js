@@ -752,7 +752,7 @@ router.get('/:clientId', async (req, res) => {
   try {
     const [clientResult, errorCount, activeMembers, totalMembers, locationCount, pendingHardware] = await Promise.all([
       db.query(
-        `SELECT id, name, source_site_url, platform, hardware_platform, tier,
+        `SELECT id, name, source_site_url, source_site_name, platform, hardware_platform, tier,
                 last_sync_at, last_webhook_at
          FROM clients WHERE id = $1`,
         [clientId]
@@ -987,7 +987,9 @@ router.get('/:clientId/locations', async (req, res) => {
     const [locations, errorCounts, doorCounts, planCounts] = await Promise.all([
       db.query(
         `SELECT l.id, l.name, l.city, l.state, l.subscription_status, l.tier,
-                l.subscribed_at, l.hardware_platform, l.notification_email,
+                l.subscribed_at,
+                COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform,
+                l.notification_email,
                 (l.hardware_api_key IS NOT NULL) AS has_location_key,
                 (l.hardware_api_key IS NOT NULL OR c.hardware_api_key IS NOT NULL) AS has_key
          FROM locations l
