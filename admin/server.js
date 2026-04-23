@@ -115,7 +115,13 @@ app.get('/onboard', allowWixFrame, (req, res) =>
     inviteToken: process.env.OPERATOR_INVITE_TOKEN || '',
   }));
 // Member-facing pages — no auth required
-app.get('/sync-status',    (req, res) => res.render('pages/sync-status'));
+// allowMemberFrame: removes X-Frame-Options so sync-status can be embedded in Wix member pages
+function allowMemberFrame(req, res, next) {
+  res.removeHeader('X-Frame-Options');
+  res.setHeader('Content-Security-Policy', "frame-ancestors *");
+  next();
+}
+app.get('/sync-status', allowMemberFrame, (req, res) => res.render('pages/sync-status'));
 app.get('/multi-member',   (req, res) => res.render('pages/multi-member'));
 
 // ── Admin Hub ──────────────────────────────────────────────────
