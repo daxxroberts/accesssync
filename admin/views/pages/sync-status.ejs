@@ -5,7 +5,7 @@
   @role member-facing
   @audience gym members (post-purchase)
   @data GET /member/access-status (polls every 3s, max 60 polls)
-  @features 4 states: syncing/active/error/pending, stale indicator after 30s
+  @features animated step pipeline, 5 states: syncing/active/error/pending/setup
 %>
 <!DOCTYPE html>
 <html lang="en">
@@ -15,24 +15,28 @@
 <title>Access Status — AccessSync</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --brand: #4F6EF7;
-  --green: #22C55E;
-  --green-dim: rgba(34,197,94,0.12);
-  --amber: #F59E0B;
-  --amber-dim: rgba(245,158,11,0.12);
-  --red: #EF4444;
-  --red-dim: rgba(239,68,68,0.10);
-  --bg: #F1F5F9;
-  --card: #FFFFFF;
-  --border: #E2E8F0;
-  --text: #0F172A;
-  --text2: #475569;
-  --muted: #94A3B8;
-  --r: 12px;
+  --brand:      #4F6EF7;
+  --brand-glow: rgba(79,110,247,0.18);
+  --green:      #22C55E;
+  --green-dim:  rgba(34,197,94,0.12);
+  --green-glow: rgba(34,197,94,0.25);
+  --amber:      #F59E0B;
+  --amber-dim:  rgba(245,158,11,0.12);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,0.10);
+  --bg:         #0B0F1A;
+  --card:       #131929;
+  --card2:      #1A2236;
+  --border:     rgba(255,255,255,0.07);
+  --border2:    rgba(255,255,255,0.12);
+  --text:       #F1F5F9;
+  --text2:      #94A3B8;
+  --muted:      #475569;
+  --r:          16px;
 }
 html, body {
   height: 100%;
@@ -42,177 +46,665 @@ html, body {
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }
-.page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+
+/* ── Page layout ─────────────────────────────── */
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle animated background gradient */
+.bg-orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+}
+.bg-orb-1 {
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(79,110,247,0.12) 0%, transparent 70%);
+  top: -120px; left: -120px;
+  animation: orb-drift-1 18s ease-in-out infinite alternate;
+}
+.bg-orb-2 {
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(34,197,94,0.07) 0%, transparent 70%);
+  bottom: -100px; right: -80px;
+  animation: orb-drift-2 22s ease-in-out infinite alternate;
+}
+@keyframes orb-drift-1 { from { transform: translate(0,0); } to { transform: translate(60px,40px); } }
+@keyframes orb-drift-2 { from { transform: translate(0,0); } to { transform: translate(-40px,-60px); } }
+
+/* ── Card ────────────────────────────────────── */
 .card {
+  position: relative;
+  z-index: 1;
   background: var(--card);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border2);
   border-radius: var(--r);
-  padding: 40px 36px;
-  max-width: 460px;
+  padding: 44px 40px 40px;
+  max-width: 480px;
   width: 100%;
   text-align: center;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.09);
+  box-shadow: 0 0 0 1px var(--border), 0 24px 60px rgba(0,0,0,0.45), 0 0 80px rgba(79,110,247,0.04);
 }
 
-/* Status icon */
-.status-icon {
-  width: 72px; height: 72px;
+/* ── Logo lockup ─────────────────────────────── */
+.logo-lockup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-bottom: 36px;
+  opacity: 0.55;
+}
+.logo-mark {
+  width: 26px; height: 26px;
+  background: var(--brand);
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+}
+.logo-mark svg { width: 14px; height: 14px; }
+.logo-name { font-size: 13px; font-weight: 700; letter-spacing: -0.2px; color: var(--text2); }
+
+/* ── Central icon area ───────────────────────── */
+.icon-wrap {
+  width: 88px; height: 88px;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 20px;
-  transition: background 0.3s;
+  margin: 0 auto 28px;
+  position: relative;
+  transition: background 0.5s, box-shadow 0.5s;
 }
-.status-icon.syncing { background: var(--amber-dim); }
-.status-icon.active  { background: var(--green-dim); }
-.status-icon.error   { background: var(--red-dim); }
+.icon-wrap.syncing {
+  background: rgba(79,110,247,0.1);
+  box-shadow: 0 0 0 12px rgba(79,110,247,0.06), 0 0 40px rgba(79,110,247,0.12);
+}
+.icon-wrap.active {
+  background: var(--green-dim);
+  box-shadow: 0 0 0 12px rgba(34,197,94,0.08), 0 0 40px var(--green-glow);
+}
+.icon-wrap.error  {
+  background: var(--red-dim);
+  box-shadow: 0 0 0 12px rgba(239,68,68,0.06);
+}
+.icon-wrap.amber  {
+  background: var(--amber-dim);
+  box-shadow: 0 0 0 12px rgba(245,158,11,0.06);
+}
+.icon-wrap.muted  {
+  background: rgba(148,163,184,0.08);
+  box-shadow: 0 0 0 12px rgba(148,163,184,0.04);
+}
 
-/* Spinner */
-@keyframes spin { to { transform: rotate(360deg); } }
-.spinner-ring {
-  width: 32px; height: 32px;
-  border: 3px solid var(--amber-dim);
-  border-top-color: var(--amber);
+/* Pulse ring behind icon during syncing */
+@keyframes pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.5; }
+  70%  { transform: scale(1.55); opacity: 0; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+.pulse-ring {
+  position: absolute;
+  inset: 0;
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  border: 2px solid rgba(79,110,247,0.35);
+  animation: pulse-ring 2.2s ease-out infinite;
+  pointer-events: none;
+}
+.pulse-ring-2 {
+  animation-delay: 1.1s;
 }
 
-.card h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
-.card p  { font-size: 13px; color: var(--text2); line-height: 1.65; margin-bottom: 0; }
+/* Orbit dots during syncing */
+@keyframes orbit {
+  from { transform: rotate(0deg) translateX(52px); }
+  to   { transform: rotate(360deg) translateX(52px); }
+}
+.orbit-dot {
+  position: absolute;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+  opacity: 0.7;
+  animation: orbit 2.8s linear infinite;
+  top: calc(50% - 3px);
+  left: calc(50% - 3px);
+}
+.orbit-dot-2 { animation-delay: -1.4s; opacity: 0.35; }
 
-/* Access list */
-.access-list {
-  margin-top: 24px;
+/* Checkmark draw animation */
+@keyframes draw-check {
+  from { stroke-dashoffset: 40; }
+  to   { stroke-dashoffset: 0; }
+}
+.check-path {
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: draw-check 0.55s cubic-bezier(0.22,1,0.36,1) 0.1s forwards;
+}
+
+/* ── Typography ──────────────────────────────── */
+.card-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+.card-sub {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.7;
+}
+
+/* ── Step pipeline ───────────────────────────── */
+.pipeline {
+  margin: 32px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   text-align: left;
-  display: flex; flex-direction: column; gap: 8px;
+}
+.pipeline-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 13px 0;
+  position: relative;
+}
+.pipeline-step + .pipeline-step::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 0;
+  width: 2px;
+  height: 13px;
+  background: var(--border2);
+  transform: translateX(-50%);
+}
+.step-bullet {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  transition: background 0.4s, border-color 0.4s, box-shadow 0.4s;
+  border: 2px solid var(--border2);
+  background: var(--card2);
+  color: var(--muted);
+  position: relative;
+}
+.step-bullet.done {
+  background: var(--green-dim);
+  border-color: var(--green);
+  color: var(--green);
+  box-shadow: 0 0 12px rgba(34,197,94,0.2);
+}
+.step-bullet.active-step {
+  background: rgba(79,110,247,0.15);
+  border-color: var(--brand);
+  color: var(--brand);
+  box-shadow: 0 0 14px rgba(79,110,247,0.25);
+}
+.step-bullet.active-step::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(79,110,247,0.2);
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+.step-body { flex: 1; padding-top: 5px; }
+.step-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+  transition: color 0.3s;
+  line-height: 1;
+  margin-bottom: 3px;
+}
+.step-label.active-step  { color: var(--text); }
+.step-label.done         { color: var(--green); }
+.step-sub {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  min-height: 16px;
+  transition: color 0.3s;
+}
+.step-sub.active-step { color: var(--text2); }
+
+/* Scanning bar inside active step */
+@keyframes scan {
+  0%   { left: 0%;   width: 0%; }
+  40%  { left: 0%;   width: 55%; }
+  60%  { left: 35%;  width: 55%; }
+  100% { left: 100%; width: 0%; }
+}
+.scan-bar-wrap {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 7px;
+  position: relative;
+}
+.scan-bar {
+  position: absolute;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--brand), transparent);
+  animation: scan 1.6s ease-in-out infinite;
+}
+.done-bar {
+  height: 3px;
+  background: var(--green);
+  border-radius: 2px;
+  margin-top: 7px;
+  width: 100%;
+  opacity: 0.5;
+}
+
+/* ── Active state — access cards ─────────────── */
+.access-list {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
 }
 .access-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 14px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: rgba(34,197,94,0.06);
+  border: 1px solid rgba(34,197,94,0.2);
+  border-radius: 12px;
+  animation: fade-up 0.4s ease forwards;
+  opacity: 0;
 }
-.access-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--green);
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.access-icon {
+  width: 38px; height: 38px;
+  background: var(--green-dim);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.access-item .door { font-weight: 600; font-size: 13px; }
-.access-item .plan { font-size: 11px; color: var(--muted); }
+.access-icon svg { width: 18px; height: 18px; }
+.access-door { font-weight: 700; font-size: 13px; color: var(--text); }
+.access-plan { font-size: 11px; color: var(--text2); margin-top: 2px; }
 
+/* ── Timestamp / freshness ───────────────────── */
 .timestamp {
   margin-top: 20px;
   font-size: 11px;
   color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
-.timestamp.stale { color: var(--amber); }
-.stale-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); margin-right: 5px; vertical-align: middle; }
+.ts-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+.ts-dot.stale { background: var(--amber); }
 
 .hidden { display: none !important; }
 </style>
 </head>
 <body>
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+
 <div class="page">
   <div class="card">
-    <!-- Syncing state (default) -->
-    <div id="state-syncing">
-      <div class="status-icon syncing"><div class="spinner-ring"></div></div>
-      <h2>Setting up your access...</h2>
-      <p>We're linking your membership to your gym's door system. This usually takes less than 30 seconds.</p>
-    </div>
 
-    <!-- Active state -->
-    <div id="state-active" class="hidden">
-      <div class="status-icon active">
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-          <path d="M8 16l6 6L24 10" stroke="#22C55E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Logo -->
+    <div class="logo-lockup">
+      <div class="logo-mark">
+        <svg viewBox="0 0 20 20" fill="none">
+          <path d="M10 3L3 7v6l7 4 7-4V7L10 3z" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" fill="white"/>
         </svg>
       </div>
-      <h2>You're all set!</h2>
-      <p>Your access is active. Use your assigned credential to enter.</p>
+      <span class="logo-name">AccessSync</span>
+    </div>
+
+    <!-- ── SYNCING state ───────────────────────── -->
+    <div id="state-syncing">
+      <div class="icon-wrap syncing" id="icon-syncing">
+        <div class="pulse-ring"></div>
+        <div class="pulse-ring pulse-ring-2"></div>
+        <div class="orbit-dot"></div>
+        <div class="orbit-dot orbit-dot-2"></div>
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <path d="M16 6C10.477 6 6 10.477 6 16" stroke="#4F6EF7" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M16 26c5.523 0 10-4.477 10-10" stroke="rgba(79,110,247,0.35)" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M13 4l3 2-3 2" stroke="#4F6EF7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="card-title" id="syncing-title">Getting you set up</div>
+      <div class="card-sub" id="syncing-sub">Hang tight — we're activating your access right now. This only takes a moment.</div>
+
+      <div class="pipeline" id="pipeline">
+        <div class="pipeline-step" id="ps-1">
+          <div class="step-bullet" id="pb-1">1</div>
+          <div class="step-body">
+            <div class="step-label" id="pl-1">Order received</div>
+            <div class="step-sub" id="psub-1">Your purchase is confirmed</div>
+          </div>
+        </div>
+        <div class="pipeline-step" id="ps-2">
+          <div class="step-bullet" id="pb-2">2</div>
+          <div class="step-body">
+            <div class="step-label" id="pl-2">Account located</div>
+            <div class="step-sub" id="psub-2">Finding your membership record</div>
+          </div>
+        </div>
+        <div class="pipeline-step" id="ps-3">
+          <div class="step-bullet" id="pb-3">3</div>
+          <div class="step-body">
+            <div class="step-label" id="pl-3">Access rules applied</div>
+            <div class="step-sub" id="psub-3">Matching your plan to the right doors</div>
+          </div>
+        </div>
+        <div class="pipeline-step" id="ps-4">
+          <div class="step-bullet" id="pb-4">4</div>
+          <div class="step-body">
+            <div class="step-label" id="pl-4">Door access granted</div>
+            <div class="step-sub" id="psub-4">Activating your credential now</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PENDING state ──────────────────────── -->
+    <div id="state-pending" class="hidden">
+      <div class="icon-wrap syncing">
+        <div class="pulse-ring"></div>
+        <div class="pulse-ring pulse-ring-2"></div>
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="10" stroke="#4F6EF7" stroke-width="2.5" stroke-dasharray="4 3"/>
+          <path d="M16 11v5l3 2" stroke="#4F6EF7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="card-title">Almost there...</div>
+      <div class="card-sub">Your purchase went through — we're just waiting on the final signal to start activating your access. This usually clears up in a few seconds.</div>
+    </div>
+
+    <!-- ── ACTIVE state ───────────────────────── -->
+    <div id="state-active" class="hidden">
+      <div class="icon-wrap active">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+          <path class="check-path" d="M9 18l7 7L27 11" stroke="#22C55E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="card-title">You're all set!</div>
+      <div class="card-sub">Your access is active and ready. Head to the entrance and use your app or credential to get in.</div>
       <div id="access-list" class="access-list"></div>
     </div>
 
-    <!-- Error state -->
+    <!-- ── ERROR state ────────────────────────── -->
     <div id="state-error" class="hidden">
-      <div class="status-icon error">
+      <div class="icon-wrap error">
         <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
           <circle cx="16" cy="16" r="12" stroke="#EF4444" stroke-width="2.5"/>
-          <path d="M16 11v6M16 20v1" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M16 11v6M16 20.5v.5" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round"/>
         </svg>
       </div>
-      <h2>Something went wrong</h2>
-      <p>We couldn't activate your access automatically. Your gym has been notified and will sort it out shortly. If you need immediate access, contact your gym directly.</p>
+      <div class="card-title">We hit a snag</div>
+      <div class="card-sub" id="error-sub">No worries — your purchase is safe. We weren't able to activate your access automatically this time, but your gym has been notified and will get it sorted for you. Reach out to them directly if you need to get in right away.</div>
     </div>
 
-    <!-- Setup state (plan not yet mapped — not the member's fault) -->
+    <!-- ── SETUP state (plan unmapped) ───────────── -->
     <div id="state-setup" class="hidden">
-      <div class="status-icon syncing">
+      <div class="icon-wrap amber">
         <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
           <circle cx="16" cy="16" r="12" stroke="#F59E0B" stroke-width="2.5"/>
-          <path d="M16 11v6M16 20v1" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M16 11v6M16 20.5v.5" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round"/>
         </svg>
       </div>
-      <h2>Your access is being set up</h2>
-      <p>Your purchase was received, but your gym is still finishing the setup for this plan. This usually gets resolved quickly. If you need immediate access, contact your gym directly.</p>
+      <div class="card-title">Finishing your setup</div>
+      <div class="card-sub">Your payment went through and everything is on track. Your gym is putting the finishing touches on this plan — you'll be good to go very soon. Feel free to contact your gym if you'd like an update.</div>
     </div>
 
-    <!-- Pending state (member not found yet — webhook hasn't arrived) -->
-    <div id="state-pending" class="hidden">
-      <div class="status-icon syncing"><div class="spinner-ring"></div></div>
-      <h2>Waiting for confirmation...</h2>
-      <p>Your purchase went through. We're waiting for your gym's system to send us the signal — this usually takes a few seconds.</p>
+    <!-- ── NO RECORD state (no membership found) ── -->
+    <div id="state-norecord" class="hidden">
+      <div class="icon-wrap muted">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <rect x="8" y="10" width="16" height="14" rx="3" stroke="#94A3B8" stroke-width="2.5"/>
+          <path d="M12 10V8a4 4 0 018 0v2" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="16" cy="17" r="1.5" fill="#94A3B8"/>
+        </svg>
+      </div>
+      <div class="card-title">No active membership found</div>
+      <div class="card-sub">We don't have an active plan on file for your account just yet. If you recently purchased, it may take a moment to come through — check back in a minute. Otherwise, head to the plans page to get started.</div>
     </div>
 
-    <div id="timestamp" class="timestamp hidden"></div>
+    <!-- Timestamp strip (active state only) -->
+    <div id="timestamp" class="timestamp hidden">
+      <div class="ts-dot" id="ts-dot"></div>
+      <span id="ts-text"></span>
+    </div>
+
   </div>
 </div>
 
 <script>
 'use strict';
 
-const params = new URLSearchParams(window.location.search);
+const params           = new URLSearchParams(window.location.search);
 const platformMemberId = params.get('memberId');
-const clientId = params.get('clientId');
-
-// Core Engine base URL (same origin if embedded, or set explicitly)
-const CORE_URL = params.get('coreUrl') || '';
+const clientId         = params.get('clientId');
+const CORE_URL         = params.get('coreUrl') || '<%- coreUrl %>';
 
 let pollCount = 0;
-const MAX_POLLS = 60; // 60 * 3s = 3 minutes max polling
-const POLL_INTERVAL = 3000;
-const STALE_THRESHOLD = 30000; // 30s — show amber freshness indicator
-const REFRESH_INTERVAL = 30000; // re-check every 30s after settling
-let lastFetchTime = null;
-let settled = false; // true once we reach a terminal state (active/error/suspended)
+const MAX_POLLS       = 60;
+const POLL_INTERVAL   = 3000;
+const STALE_THRESHOLD = 30000;
+const REFRESH_INTERVAL= 30000;
+let lastFetchTime     = null;
+let settled           = false;
 let freshnessInterval = null;
 
-function showState(name) {
-  ['syncing', 'active', 'error', 'setup', 'pending'].forEach(s => {
-    const el = document.getElementById(`state-${s}`);
-    if (el) el.classList.toggle('hidden', s !== name);
-  });
-}
+// ── Pipeline step state machine ───────────────────────────────────
+// Steps advance on a timer to give the feeling of real work even
+// while we wait for the first successful poll.
+const STEPS = [
+  { id: 1, label: 'Order received',      sub: 'Your purchase is confirmed',          doneSub: 'Purchase confirmed' },
+  { id: 2, label: 'Account located',     sub: 'Finding your membership record',      doneSub: 'Membership found' },
+  { id: 3, label: 'Access rules applied',sub: 'Matching your plan to the right doors', doneSub: 'Doors matched' },
+  { id: 4, label: 'Door access granted', sub: 'Activating your credential now',      doneSub: 'Access activated' },
+];
 
-function renderAccess(accessItems) {
-  if (!accessItems || !accessItems.length) return;
-  const list = document.getElementById('access-list');
-  list.innerHTML = accessItems.map(a => `
-    <div class="access-item">
-      <div class="access-dot"></div>
-      <div>
-        <div class="door">${esc(a.doorName || a.locationName || 'Door Access')}</div>
-        <div class="plan">${esc(a.planName || 'Membership')}</div>
-      </div>
-    </div>
-  `).join('');
-}
+let currentStep    = 0; // 0 = none started, 1-4 = step active
+let stepTimers     = [];
+let pipelineActive = false;
+
+const STEP_DURATIONS = [1200, 2000, 2400, null]; // ms until each step marks done; null = waits for API
 
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function showState(name) {
+  ['syncing','active','error','setup','pending','norecord'].forEach(s => {
+    const el = document.getElementById(`state-${s}`);
+    if (el) el.classList.toggle('hidden', s !== name);
+  });
+}
+
+// true when loaded inside an iframe (My Access page) vs. post-purchase full-page redirect
+const IS_IFRAME = window.self !== window.top || params.get('embed') === '1';
+
+// Advance pipeline to step n (1-indexed), marking all prior steps done
+function activateStep(n) {
+  currentStep = n;
+  STEPS.forEach((step, i) => {
+    const idx  = i + 1;
+    const bull = document.getElementById(`pb-${idx}`);
+    const lbl  = document.getElementById(`pl-${idx}`);
+    const sub  = document.getElementById(`psub-${idx}`);
+    if (!bull) return;
+
+    if (idx < n) {
+      // Done
+      bull.className  = 'step-bullet done';
+      bull.innerHTML  = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#22C55E" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      lbl.className   = 'step-label done';
+      sub.className   = 'step-sub';
+      sub.textContent = step.doneSub;
+      // Replace scan bar with done bar if present
+      const existing = sub.nextElementSibling;
+      if (existing && existing.classList.contains('scan-bar-wrap')) { existing.remove(); }
+      if (!sub.nextElementSibling || !sub.nextElementSibling.classList.contains('done-bar')) {
+        const bar = document.createElement('div');
+        bar.className = 'done-bar';
+        sub.after(bar);
+      }
+    } else if (idx === n) {
+      // Active
+      bull.className  = 'step-bullet active-step';
+      bull.innerHTML  = idx;
+      lbl.className   = 'step-label active-step';
+      sub.className   = 'step-sub active-step';
+      sub.textContent = step.sub;
+      const existing = sub.nextElementSibling;
+      if (existing) existing.remove();
+      const wrap = document.createElement('div');
+      wrap.className = 'scan-bar-wrap';
+      wrap.innerHTML = '<div class="scan-bar"></div>';
+      sub.after(wrap);
+    } else {
+      // Pending
+      bull.className  = 'step-bullet';
+      bull.innerHTML  = idx;
+      lbl.className   = 'step-label';
+      sub.className   = 'step-sub';
+      sub.textContent = STEPS[i].sub;
+      const existing = sub.nextElementSibling;
+      if (existing) existing.remove();
+    }
+  });
+}
+
+function markAllDone() {
+  STEPS.forEach((step, i) => {
+    const idx  = i + 1;
+    const bull = document.getElementById(`pb-${idx}`);
+    const lbl  = document.getElementById(`pl-${idx}`);
+    const sub  = document.getElementById(`psub-${idx}`);
+    if (!bull) return;
+    bull.className  = 'step-bullet done';
+    bull.innerHTML  = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#22C55E" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    lbl.className   = 'step-label done';
+    sub.className   = 'step-sub';
+    sub.textContent = step.doneSub;
+    const existing  = sub.nextElementSibling;
+    if (existing) existing.remove();
+    const bar = document.createElement('div');
+    bar.className = 'done-bar';
+    sub.after(bar);
+  });
+}
+
+function clearStepTimers() {
+  stepTimers.forEach(t => clearTimeout(t));
+  stepTimers = [];
+}
+
+function startPipeline() {
+  if (pipelineActive) return;
+  pipelineActive = true;
+  activateStep(1);
+  let elapsed = 0;
+  STEP_DURATIONS.forEach((dur, i) => {
+    if (dur === null) return; // step 4 waits for real API result
+    elapsed += dur;
+    const t = setTimeout(() => activateStep(i + 2), elapsed);
+    stepTimers.push(t);
+  });
+}
+
+// ── Access cards ──────────────────────────────────────────────────
+function renderAccess(accessItems) {
+  if (!accessItems || !accessItems.length) return;
+  const list = document.getElementById('access-list');
+  list.innerHTML = accessItems.map((a, i) => `
+    <div class="access-item" style="animation-delay:${i * 0.12}s">
+      <div class="access-icon">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1h.02c1.71 0 3.1 1.39 3.1 3.1v2z" fill="#22C55E"/>
+        </svg>
+      </div>
+      <div>
+        <div class="access-door">${esc(a.doorName || a.locationName || 'Door Access')}</div>
+        ${a.planName ? `<div class="access-plan">${esc(a.planName)}</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Timestamp ─────────────────────────────────────────────────────
+function updateTimestamp(provisionedAt, stale) {
+  const ts   = document.getElementById('timestamp');
+  const dot  = document.getElementById('ts-dot');
+  const text = document.getElementById('ts-text');
+  if (!provisionedAt && !stale) { ts.classList.add('hidden'); return; }
+  ts.classList.remove('hidden');
+  if (stale) {
+    dot.className  = 'ts-dot stale';
+    const ago      = Math.round((Date.now() - lastFetchTime) / 1000);
+    text.textContent = `Checked ${ago < 60 ? ago + 's' : Math.round(ago/60) + 'm'} ago — verifying again now...`;
+  } else {
+    dot.className    = 'ts-dot';
+    text.textContent = `Access granted ${new Date(provisionedAt).toLocaleTimeString()}`;
+  }
+}
+
+function startFreshnessCheck() {
+  if (freshnessInterval) return;
+  freshnessInterval = setInterval(() => {
+    if (!lastFetchTime || Date.now() - lastFetchTime <= STALE_THRESHOLD) return;
+    updateTimestamp(null, true);
+    fetch(`${CORE_URL}/member/access-status?platformMemberId=${encodeURIComponent(platformMemberId)}&clientId=${encodeURIComponent(clientId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        lastFetchTime = Date.now();
+        if (data.status === 'active') {
+          renderAccess(data.access || []);
+          updateTimestamp(data.provisionedAt, false);
+          showState('active');
+        } else if (data.status === 'suspended') {
+          document.getElementById('error-sub').textContent =
+            'Your access has been paused. This is usually a quick fix — reach out to your gym and they\'ll get you sorted right away.';
+          showState('error');
+        } else if (data.status === 'failed' || data.status === 'error') {
+          if (data.lastEvent?.errorCode === 'PLAN_NOT_MAPPED') { showState('setup'); }
+          else { showState('error'); }
+        }
+      }).catch(() => {});
+  }, REFRESH_INTERVAL);
+}
+
+// ── Main poll ─────────────────────────────────────────────────────
 async function poll() {
   if (!platformMemberId || !clientId) {
     showState('error');
@@ -225,14 +717,20 @@ async function poll() {
     );
 
     if (res.status === 404) {
-      // Member not in system yet — webhook hasn't been processed
-      showState('pending');
-      if (++pollCount < MAX_POLLS) { setTimeout(poll, POLL_INTERVAL); }
-      else { showTimeoutState(); }
+      if (IS_IFRAME) {
+        // Embedded context — member has no active membership, not waiting on a purchase
+        showState('norecord');
+      } else {
+        // Post-purchase full-page — webhook hasn't arrived yet, keep polling
+        showState('pending');
+        if (++pollCount < MAX_POLLS) { setTimeout(poll, POLL_INTERVAL); }
+        else { showState('setup'); }
+      }
       return;
     }
 
     if (!res.ok) {
+      clearStepTimers();
       showState('error');
       return;
     }
@@ -240,100 +738,55 @@ async function poll() {
     const data = await res.json();
 
     if (data.status === 'active') {
-      showState('active');
-      renderAccess(data.access || []);
-      lastFetchTime = Date.now();
-      updateTimestamp(data.provisionedAt);
-      if (!settled) { settled = true; startFreshnessCheck(); }
-      return; // stop fast polling
-    }
-
-    if (data.status === 'failed' || data.status === 'error') {
-      // W-1: Check if failure is due to unmapped plan — show amber setup state, not red error
-      if (data.lastEvent?.errorCode === 'PLAN_NOT_MAPPED') {
-        showState('setup');
-      } else {
-        showState('error');
-      }
-      return; // stop polling
-    }
-
-    if (data.status === 'suspended') {
-      showState('error');
-      document.querySelector('#state-error p').textContent =
-        'Your access has been suspended. Contact your gym directly for more information.';
+      clearStepTimers();
+      markAllDone();
+      // Brief pause so user sees step 4 complete before transition
+      setTimeout(() => {
+        showState('active');
+        renderAccess(data.access || []);
+        lastFetchTime = Date.now();
+        updateTimestamp(data.provisionedAt, false);
+        if (!settled) { settled = true; startFreshnessCheck(); }
+      }, 600);
       return;
     }
 
-    // in_flight or other transitional state — keep polling
-    showState('syncing');
-    if (++pollCount < MAX_POLLS) { setTimeout(poll, POLL_INTERVAL); }
-    else { showTimeoutState(); }
+    if (data.status === 'failed' || data.status === 'error') {
+      clearStepTimers();
+      if (data.lastEvent?.errorCode === 'PLAN_NOT_MAPPED') { showState('setup'); }
+      else { showState('error'); }
+      return;
+    }
 
-  } catch (err) {
-    console.error('Poll error:', err);
+    if (data.status === 'suspended') {
+      clearStepTimers();
+      document.getElementById('error-sub').textContent =
+        'Your access has been suspended. Contact your gym directly for more information.';
+      showState('error');
+      return;
+    }
+
+    // in_flight / transitional — keep polling
     if (++pollCount < MAX_POLLS) { setTimeout(poll, POLL_INTERVAL); }
-    else { showTimeoutState(); }
+    else { showState('setup'); }
+
+  } catch {
+    if (++pollCount < MAX_POLLS) { setTimeout(poll, POLL_INTERVAL); }
+    else { showState('setup'); }
   }
 }
 
-function showTimeoutState() {
-  showState('setup');
-}
-
-// OI-05: Freshness tracking — shows amber when data age exceeds threshold
-function updateTimestamp(provisionedAt) {
-  const ts = document.getElementById('timestamp');
-  if (!provisionedAt) { ts.classList.add('hidden'); return; }
-  ts.classList.remove('hidden');
-  ts.classList.remove('stale');
-  ts.innerHTML = `Access granted ${new Date(provisionedAt).toLocaleString()}`;
-}
-
-function startFreshnessCheck() {
-  if (freshnessInterval) return; // already running
-  freshnessInterval = setInterval(() => {
-    const ts = document.getElementById('timestamp');
-    if (lastFetchTime && Date.now() - lastFetchTime > STALE_THRESHOLD) {
-      const ago = Math.round((Date.now() - lastFetchTime) / 1000);
-      const agoText = ago < 60 ? `${ago}s ago` : `${Math.round(ago/60)}m ago`;
-      ts.classList.add('stale');
-      ts.innerHTML = `<span class="stale-dot"></span>Last verified ${agoText} — refreshing...`;
-      ts.classList.remove('hidden');
-      // Background re-check
-      fetch(`${CORE_URL}/member/access-status?platformMemberId=${encodeURIComponent(platformMemberId)}&clientId=${encodeURIComponent(clientId)}`)
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (!data) return;
-          lastFetchTime = Date.now();
-          if (data.status === 'active') {
-            showState('active');
-            renderAccess(data.access || []);
-            updateTimestamp(data.provisionedAt);
-          } else if (data.status === 'suspended') {
-            showState('error');
-            document.querySelector('#state-error p').textContent =
-              'Your access has been suspended. Contact your gym for more information.';
-          } else if (data.status === 'failed' || data.status === 'error') {
-            if (data.lastEvent?.errorCode === 'PLAN_NOT_MAPPED') {
-              showState('setup');
-            } else {
-              showState('error');
-            }
-          }
-        }).catch(() => {});
-    }
-  }, REFRESH_INTERVAL);
-}
-
-// Start polling
+// ── Boot ──────────────────────────────────────────────────────────
 if (platformMemberId && clientId) {
+  showState('syncing');
+  startPipeline();
   poll();
 } else {
-  showState('pending');
+  showState(IS_IFRAME ? 'norecord' : 'pending');
 }
 
 window.addEventListener('beforeunload', () => {
+  clearStepTimers();
   if (freshnessInterval) clearInterval(freshnessInterval);
 });
 </script>

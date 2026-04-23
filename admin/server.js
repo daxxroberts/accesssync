@@ -121,7 +121,9 @@ function allowMemberFrame(req, res, next) {
   res.setHeader('Content-Security-Policy', "frame-ancestors *");
   next();
 }
-app.get('/sync-status', allowMemberFrame, (req, res) => res.render('pages/sync-status'));
+app.get('/sync-status', allowMemberFrame, (req, res) => res.render('pages/sync-status', {
+  coreUrl: process.env.CORE_ENGINE_URL || 'https://accesssync-production.up.railway.app'
+}));
 app.get('/multi-member',   (req, res) => res.render('pages/multi-member'));
 
 // ── Admin Hub ──────────────────────────────────────────────────
