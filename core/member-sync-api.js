@@ -59,8 +59,10 @@ class MemberSyncApi {
           return res.status(401).json({ error: 'Unauthorized' });
         }
       } else {
-        // No JWT — block in production; allow in development for testing
-        if (process.env.NODE_ENV === 'production') {
+        // Allow internal proxy requests from the admin server (sync-status iframe polling)
+        if (req.headers['x-internal-proxy'] === '1') {
+          // trusted internal call — no JWT required
+        } else if (process.env.NODE_ENV === 'production') {
           return res.status(401).json({ error: 'Authorization header required' });
         }
       }

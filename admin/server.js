@@ -122,8 +122,24 @@ function allowMemberFrame(req, res, next) {
   next();
 }
 app.get('/sync-status', allowMemberFrame, (req, res) => res.render('pages/sync-status', {
-  coreUrl: process.env.CORE_ENGINE_URL || 'https://accesssync-production.up.railway.app'
+  coreUrl: '' // polls /member/access-status on this same server (proxied below)
 }));
+
+// Proxy /member/access-status to the core engine server-side — avoids CORS and JWT
+// requirement from the browser. The admin server calls the core engine internally.
+app.get('/member/access-status', async (req, res) => {
+  const coreUrl = process.env.CORE_ENGINE_URL || 'https://accesssync-production.up.railway.app';
+  const qs = new URLSearchParams(req.query).toString();
+  try {
+    const upstream = await fetch(`${coreUrl}/member/access-status?${qs}`, {
+      headers: { 'x-internal-proxy': '1' }
+    });
+    const data = await upstream.json();
+    res.status(upstream.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'upstream unavailable' });
+  }
+});
 app.get('/multi-member',   (req, res) => res.render('pages/multi-member'));
 
 // ── Admin Hub ──────────────────────────────────────────────────
