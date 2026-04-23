@@ -43,6 +43,7 @@ class GrantRevokeLogic {
   async processGrant(tenantId, memberId, hardwareUserId, mappings, wixEvent) {
     const assignments = [];
     const failedGroups = [];
+    let newHardwareCallMade = false; // only true when assignRole() was actually called
 
     for (const mapping of mappings) {
       const apiKey = mapping.apiKey;
@@ -120,6 +121,7 @@ class GrantRevokeLogic {
         const roleId = await hardwareAdapter.assignRole(
           mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId
         );
+        newHardwareCallMade = true;
         assignments.push({
           mappingId:        mapping.mappingId,
           roleAssignmentId: String(roleId),
@@ -172,11 +174,24 @@ class GrantRevokeLogic {
       });
     }
 
-    await db.query(
-      `INSERT INTO member_access_log (member_id, client_id, event_type)
-       VALUES ($1, $2, 'provisioned')`,
-      [memberId, tenantId]
-    );
+    // Only write the provisioned log entry when a real hardware call was made.
+    // Idempotency-reuse jobs (all mappings skipped via the existing-role guard) do
+    // not produce a new provisioned entry — they are duplicates from Wix multi-firing
+    // the same purchase event (orderCreated / orderPurchased / orderStarted).
+    if (newHardwareCallMade) {
+      await db.query(
+        `INSERT INTO member_access_log (member_id, client_id, event_type)
+         VALUES ($1, $2, 'provisioned')`,
+        [memberId, tenantId]
+      );
+    } else {
+      log.info('grant.log.skipped_duplicate', {
+        clientId: tenantId, memberId,
+        platformMemberId: wixEvent.platformMemberId,
+        reason: 'all_assignments_reused',
+        stage: 'grant', result: 'skipped',
+      });
+    }
 
     return assignments;
   }

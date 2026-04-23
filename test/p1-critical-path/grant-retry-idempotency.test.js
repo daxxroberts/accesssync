@@ -73,8 +73,7 @@ describe('[P1] processGrant idempotency on retry after prior partial success', (
     db.query.mockResolvedValueOnce({
       rows: [{ role_assignment_id: EXISTING_RA }],
     });
-    // member_access_log INSERT at end of processGrant
-    db.query.mockResolvedValueOnce({ rowCount: 1 });
+    // No member_access_log INSERT — all assignments reused, newHardwareCallMade stays false.
 
     const result = await grantRevoke.processGrant(TENANT_ID, MEMBER_ID, HW_USER_ID, [mapping], wixEvent);
 
