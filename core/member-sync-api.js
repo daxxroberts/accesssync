@@ -96,7 +96,7 @@ class MemberSyncApi {
 
       // 2. Fetch access state
       const stateResult = await db.query(
-        `SELECT status, role_assignment_id, provisioned_at, updated_at
+        `SELECT status, role_assignment_id, provisioned_at, updated_at, scheduled_start_date
          FROM member_access_state
          WHERE member_id = $1`,
         [identity.id]
@@ -139,9 +139,10 @@ class MemberSyncApi {
         clientId,
         hardwarePlatform: identity.hardware_platform,
         sourcePlatform:   identity.source_platform,
-        status:           state?.status || null,
-        provisionedAt:    state?.provisioned_at || null,
-        updatedAt:        state?.updated_at || null,
+        status:               state?.status || null,
+        provisionedAt:        state?.provisioned_at || null,
+        updatedAt:            state?.updated_at || null,
+        scheduledStartDate:   state?.scheduled_start_date || null,
         lastEvent: lastEvent ? {
           eventType:      lastEvent.event_type,
           credentialType: lastEvent.credential_type,

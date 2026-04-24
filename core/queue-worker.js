@@ -112,6 +112,62 @@ async function processJob(job) {
         return;
       }
 
+      // plan.started: orderStarted has arrived — Kisi user already exists (cache hit from
+      // orderPurchased), assign to access group now. This is phase 2 of delayed-start grants.
+      if (standardEvent.eventType === 'plan.started') {
+        lastStep = 'grant.started.resolve_mappings';
+        const mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
+        if (!mappings || mappings.length === 0) {
+          logger.warn('queue.grant.started.no_mappings', {
+            clientId, eventId,
+            platformMemberId: standardEvent.platformMemberId,
+            planId: standardEvent.planId,
+            stage: 'grant', result: 'skipped',
+          });
+          return;
+        }
+
+        lastStep = 'grant.started.resolve_and_lock';
+        const startedLock = await standardAdapter.resolveAndLock(tenantId, standardEvent, mappings[0].hardwarePlatform);
+        memberId = startedLock.memberId;
+
+        lastStep = 'grant.started.get_api_key';
+        const startedApiKey = await getClientApiKey(tenantId);
+        if (!startedApiKey) {
+          await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
+          logger.info('queue.grant.started.parked.no_api_key', {
+            clientId, memberId, eventId,
+            platformMemberId: standardEvent.platformMemberId,
+            stage: 'grant', result: 'skipped',
+          });
+          return;
+        }
+
+        lastStep = 'grant.started.resolve_identity';
+        const startedHardwareUserId = await standardAdapter.resolveIdentity(
+          memberId, standardEvent.email, standardEvent.name,
+          mappings[0].hardwarePlatform, startedApiKey,
+          { tenantId, platformMemberId: standardEvent.platformMemberId }
+        );
+        if (startedHardwareUserId === null) return; // parked as pending_identity
+
+        lastStep = 'grant.started.process_grant';
+        const startedAssignments = await grantRevokeLogic.processGrant(
+          tenantId, memberId, startedHardwareUserId, mappings, standardEvent
+        );
+
+        lastStep = 'grant.started.complete_grant';
+        await standardAdapter.completeGrant(memberId, tenantId, startedAssignments);
+        logger.info('queue.grant.started.complete', {
+          clientId, memberId, eventId,
+          platformMemberId: standardEvent.platformMemberId,
+          assignments: startedAssignments.length,
+          durationMs: Date.now() - jobStart,
+          stage: 'grant', result: 'success',
+        });
+        return;
+      }
+
       // Step 1: Resolve all active plan mappings for this plan (returns array, null, or empty array)
       lastStep = 'grant.resolve_mappings';
       const mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
@@ -202,6 +258,21 @@ async function processJob(job) {
         platformMemberId: standardEvent.platformMemberId,
         stage: 'identity', result: 'success',
       });
+      // Two-phase provisioning: if startDate is more than 1 minute in the future,
+      // park as pending_start — Kisi user exists but group assignment is deferred.
+      // orderStarted fires when the start date arrives and completes the grant.
+      const grantStartDate = standardEvent.startDate ? new Date(standardEvent.startDate) : null;
+      if (grantStartDate && grantStartDate.getTime() > Date.now() + 60_000) {
+        await standardAdapter.parkPendingStart(memberId, tenantId, grantStartDate.toISOString());
+        logger.info('queue.grant.parked.pending_start', {
+          clientId, memberId, eventId,
+          platformMemberId: standardEvent.platformMemberId,
+          scheduledStartDate: grantStartDate.toISOString(),
+          stage: 'grant', result: 'skipped',
+        });
+        return;
+      }
+
       // Step 5: Execute hardware grant across all active mappings
       lastStep = 'grant.process_grant';
       const assignments = await grantRevokeLogic.processGrant(

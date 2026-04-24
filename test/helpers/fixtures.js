@@ -99,6 +99,35 @@ const wixRestOrderCreatedPayload = {
   }
 };
 
+// orderStarted fires when the order's startDate arrives (delayed-start plans).
+// Payload structure is identical to orderPurchased — same Order object, same fields.
+// startDate is in the future relative to the fixture timestamp so isFutureStart check fires.
+const wixRestOrderStartedPayload = {
+  data: {
+    metadata: {
+      id: 'evt-rest-003',
+      entityId: 'order-rest-001',
+      eventTime: '2026-05-01T09:00:00.000Z',
+      instanceId: 'wix-site-hog-001',
+    },
+    entity: {
+      _id: 'order-rest-001',
+      planId: CONNECT_PLAN_ID,
+      planName: 'Connect All Access',
+      buyer: {
+        memberId: WIX_MEMBER_ID,
+        contactId: 'contact-rest-001',
+        email: 'chad@houseofgains.com',
+        fullName: 'Chad Member',
+      },
+      subscriptionId: 'sub-rest-001',
+      status: 'ACTIVE',
+      startDate: '2026-05-01T09:00:00.000Z',
+      createdDate: '2026-04-14T18:52:38.000Z',
+    }
+  }
+};
+
 const wixRestMemberDeletedPayload = {
   data: {
     metadata: {
@@ -219,6 +248,7 @@ module.exports = {
 
   // Payloads (REST webhook format)
   wixRestOrderCreatedPayload,
+  wixRestOrderStartedPayload,
   wixRestMemberDeletedPayload,
 
   // Standard events (post-adapter)

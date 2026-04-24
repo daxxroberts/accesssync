@@ -475,6 +475,30 @@ class StandardAdapter {
   }
 
   /**
+   * Parks a member whose Kisi user has been created but group assignment is deferred
+   * because the plan's startDate is in the future. Sets status = 'pending_start' and
+   * stores the scheduled date so sync-status.ejs can display it to the member.
+   * Called by queue-worker after resolveIdentity() succeeds on an orderPurchased event
+   * for a delayed-start plan. orderStarted fires when the startDate arrives and completes
+   * the grant via the plan.started path.
+   *
+   * @param {string} memberId
+   * @param {string} tenantId
+   * @param {string} scheduledStartDate  ISO-8601 string
+   */
+  async parkPendingStart(memberId, tenantId, scheduledStartDate) {
+    await db.query(
+      `UPDATE member_access_state
+       SET status = 'pending_start', scheduled_start_date = $2, updated_at = NOW()
+       WHERE member_id = $1`,
+      [memberId, scheduledStartDate]
+    );
+    this._incrementActivity(tenantId, 'events_received').catch(err =>
+      log.warn('adapter.activity_update_failed', { field: 'events_received' }, err)
+    );
+  }
+
+  /**
    * Daily UPSERT for client_activity_summary (DR-024).
    * Fault-tolerant — all callers .catch() this. Never awaited in critical paths.
    *

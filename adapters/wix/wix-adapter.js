@@ -36,7 +36,7 @@ class WixAdapter {
     // where orderPurchased fires weeks before the member's access window opens.
     const map = {
       'wixPricingPlans.orderPurchased': 'plan.purchased',
-      'wixPricingPlans.orderStarted':   'plan.purchased',
+      'wixPricingPlans.orderStarted':   'plan.started',   // fires when startDate arrives — phase 2 of delayed-start grant
       'wixPricingPlans.orderUpdated':   'plan.purchased',  // covers renewals + upgrades
       'wixPricingPlans.orderCanceled':          'plan.cancelled',
       'wixPricingPlans.orderCancelled':         'plan.cancelled',  // British spelling variant
@@ -102,6 +102,13 @@ class WixAdapter {
       body?.planId                ||  // top-level fallback
       null;
 
+    // Resolve startDate — present on Order object when orderStarted fires (delayed-start plans)
+    const startDate =
+      entity?.startDate  ||   // REST webhook: entity is the Order object
+      d?.startDate       ||   // Velo events.js: data IS the Order object directly
+      body?.startDate    ||   // top-level fallback
+      null;
+
     // Resolve email/name from buyer or member data
     const email =
       entity?.buyer?.email        ||  // REST webhook
@@ -135,6 +142,7 @@ class WixAdapter {
       sourcePlatform: 'wix',         // DR-021
       platformMemberId: memberId,     // DR-021
       planId,
+      startDate,
       email,
       name,
       timestamp: new Date().toISOString(),

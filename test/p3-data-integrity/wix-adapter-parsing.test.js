@@ -21,6 +21,7 @@ const {
   wixPlanPurchasedPayload,
   wixMemberDeletedPayload,
   wixRestOrderCreatedPayload,
+  wixRestOrderStartedPayload,
   wixRestMemberDeletedPayload,
 } = require('../helpers/fixtures');
 
@@ -146,6 +147,21 @@ describe('[P3] Wix REST webhook format (data.entity) resolves correctly', () => 
   it('normalizes wixPricingPlans.orderCanceled → plan.cancelled', () => {
     const result = wixAdapter.parseEvent('wixPricingPlans.orderCanceled', 'site-001', wixRestOrderCreatedPayload);
     expect(result.eventType).toBe('plan.cancelled');
+  });
+
+  it('normalizes wixPricingPlans.orderStarted → plan.started (phase 2 of delayed-start grant)', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderStarted', 'site-001', wixRestOrderStartedPayload);
+    expect(result.eventType).toBe('plan.started');
+  });
+
+  it('resolves startDate from REST webhook entity.startDate', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderStarted', 'site-001', wixRestOrderStartedPayload);
+    expect(result.startDate).toBe('2026-05-01T09:00:00.000Z');
+  });
+
+  it('startDate is null when not present in payload', () => {
+    const result = wixAdapter.parseEvent('plan.purchased', 'site-001', wixPlanPurchasedPayload);
+    expect(result.startDate).toBeNull();
   });
 
   it('normalizes wixMembers.memberDeleted → member.deleted', () => {

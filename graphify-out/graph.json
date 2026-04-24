@@ -249,7 +249,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L1",
       "id": "standard_adapter",
-      "community": 3
+      "community": 2
     },
     {
       "label": "StandardAdapter",
@@ -257,7 +257,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L19",
       "id": "standard_adapter_standardadapter",
-      "community": 3
+      "community": 2
     },
     {
       "label": ".resolveAndLock()",
@@ -265,7 +265,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L40",
       "id": "standard_adapter_standardadapter_resolveandlock",
-      "community": 3
+      "community": 2
     },
     {
       "label": ".resolveIdentity()",
@@ -273,7 +273,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L183",
       "id": "standard_adapter_standardadapter_resolveidentity",
-      "community": 3
+      "community": 2
     },
     {
       "label": ".completeGrant()",
@@ -281,7 +281,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L277",
       "id": "standard_adapter_standardadapter_completegrant",
-      "community": 3
+      "community": 2
     },
     {
       "label": "._maybeFireFirstGrantEmail()",
@@ -289,7 +289,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L322",
       "id": "standard_adapter_standardadapter_maybefirefirstgrantemail",
-      "community": 3
+      "community": 2
     },
     {
       "label": ".completeRevoke()",
@@ -297,7 +297,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L381",
       "id": "standard_adapter_standardadapter_completerevoke",
-      "community": 3
+      "community": 2
     },
     {
       "label": ".releaseLock()",
@@ -305,39 +305,47 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L452",
       "id": "standard_adapter_standardadapter_releaselock",
-      "community": 3
+      "community": 2
+    },
+    {
+      "label": ".parkPendingStart()",
+      "file_type": "code",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L489",
+      "id": "standard_adapter_standardadapter_parkpendingstart",
+      "community": 2
     },
     {
       "label": "._incrementActivity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L484",
+      "source_location": "L508",
       "id": "standard_adapter_standardadapter_incrementactivity",
-      "community": 3
+      "community": 2
     },
     {
       "label": "._callHardwareToResolveIdentity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L504",
+      "source_location": "L528",
       "id": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
-      "community": 3
+      "community": 2
     },
     {
       "label": "._recoverMissingEmail()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L525",
+      "source_location": "L549",
       "id": "standard_adapter_standardadapter_recovermissingemail",
-      "community": 3
+      "community": 2
     },
     {
       "label": "._parkPendingIdentity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L628",
+      "source_location": "L652",
       "id": "standard_adapter_standardadapter_parkpendingidentity",
-      "community": 3
+      "community": 2
     },
     {
       "label": "wix-adapter.js",
@@ -623,7 +631,7 @@
       "label": ".parseEvent()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-adapter.js",
-      "source_location": "L55",
+      "source_location": "L56",
       "id": "wix_adapter_wixadapter_parseevent",
       "community": 25
     },
@@ -815,7 +823,7 @@
       "label": "allowMemberFrame()",
       "file_type": "code",
       "source_file": "admin\\server.js",
-      "source_location": "L119",
+      "source_location": "L120",
       "id": "server_allowmemberframe",
       "community": 26
     },
@@ -1129,7 +1137,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L1",
       "id": "operator_nav",
-      "community": 2
+      "community": 3
     },
     {
       "label": "platformName()",
@@ -1137,7 +1145,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L12",
       "id": "operator_nav_platformname",
-      "community": 2
+      "community": 3
     },
     {
       "label": "toggleDarkMode()",
@@ -1145,7 +1153,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L15",
       "id": "operator_nav_toggledarkmode",
-      "community": 2
+      "community": 3
     },
     {
       "label": "renderNav()",
@@ -1153,7 +1161,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L28",
       "id": "operator_nav_rendernav",
-      "community": 2
+      "community": 3
     },
     {
       "label": "renderBreadcrumb()",
@@ -1161,7 +1169,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L61",
       "id": "operator_nav_renderbreadcrumb",
-      "community": 2
+      "community": 3
     },
     {
       "label": "showToast()",
@@ -1169,7 +1177,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L78",
       "id": "operator_nav_showtoast",
-      "community": 2
+      "community": 3
     },
     {
       "label": "doLogout()",
@@ -1177,7 +1185,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L90",
       "id": "operator_nav_dologout",
-      "community": 2
+      "community": 3
     },
     {
       "label": "showSessionExpiredModal()",
@@ -1185,7 +1193,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L104",
       "id": "operator_nav_showsessionexpiredmodal",
-      "community": 2
+      "community": 3
     },
     {
       "label": "stopAllPolling()",
@@ -1193,7 +1201,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L136",
       "id": "operator_nav_stopallpolling",
-      "community": 2
+      "community": 3
     },
     {
       "label": "apiFetch()",
@@ -1201,7 +1209,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L145",
       "id": "operator_nav_apifetch",
-      "community": 2
+      "community": 3
     },
     {
       "label": "esc()",
@@ -1209,7 +1217,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L180",
       "id": "operator_nav_esc",
-      "community": 2
+      "community": 3
     },
     {
       "label": "jumpToFix()",
@@ -1217,7 +1225,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L186",
       "id": "operator_nav_jumptofix",
-      "community": 2
+      "community": 3
     },
     {
       "label": "activateJumpTarget()",
@@ -1225,7 +1233,7 @@
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L193",
       "id": "operator_nav_activatejumptarget",
-      "community": 2
+      "community": 3
     },
     {
       "label": "clients.js",
@@ -1679,7 +1687,7 @@
       "label": "._verifyWixJWT()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L180",
+      "source_location": "L181",
       "id": "member_sync_api_membersyncapi_verifywixjwt",
       "community": 17
     },
@@ -1687,7 +1695,7 @@
       "label": "._getWixPublicKey()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L232",
+      "source_location": "L233",
       "id": "member_sync_api_membersyncapi_getwixpublickey",
       "community": 17
     },
@@ -1695,7 +1703,7 @@
       "label": "._fetchWixJwks()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L247",
+      "source_location": "L248",
       "id": "member_sync_api_membersyncapi_fetchwixjwks",
       "community": 17
     },
@@ -1751,7 +1759,7 @@
       "label": "startWorker()",
       "file_type": "code",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L329",
+      "source_location": "L400",
       "id": "queue_worker_startworker",
       "community": 29
     },
@@ -2553,7 +2561,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\server.js",
-      "source_location": "L119",
+      "source_location": "L120",
       "weight": 1.0,
       "_src": "server",
       "_tgt": "server_allowmemberframe",
@@ -3081,7 +3089,19 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L484",
+      "source_location": "L489",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter",
+      "_tgt": "standard_adapter_standardadapter_parkpendingstart",
+      "source": "standard_adapter_standardadapter",
+      "target": "standard_adapter_standardadapter_parkpendingstart",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L508",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3093,7 +3113,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L504",
+      "source_location": "L528",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
@@ -3105,7 +3125,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L525",
+      "source_location": "L549",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_recovermissingemail",
@@ -3117,7 +3137,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L628",
+      "source_location": "L652",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_parkpendingidentity",
@@ -3218,6 +3238,18 @@
       "_src": "standard_adapter_standardadapter_releaselock",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
       "source": "standard_adapter_standardadapter_releaselock",
+      "target": "standard_adapter_standardadapter_incrementactivity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L496",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter_parkpendingstart",
+      "_tgt": "standard_adapter_standardadapter_incrementactivity",
+      "source": "standard_adapter_standardadapter_parkpendingstart",
       "target": "standard_adapter_standardadapter_incrementactivity",
       "confidence_score": 1.0
     },
@@ -3609,7 +3641,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-adapter.js",
-      "source_location": "L55",
+      "source_location": "L56",
       "weight": 1.0,
       "_src": "wix_adapter_wixadapter",
       "_tgt": "wix_adapter_wixadapter_parseevent",
@@ -3621,7 +3653,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-adapter.js",
-      "source_location": "L57",
+      "source_location": "L58",
       "weight": 1.0,
       "_src": "wix_adapter_wixadapter_parseevent",
       "_tgt": "wix_adapter_wixadapter_normalizeeventtype",
@@ -5457,7 +5489,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L180",
+      "source_location": "L181",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_verifywixjwt",
@@ -5469,7 +5501,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L232",
+      "source_location": "L233",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_getwixpublickey",
@@ -5481,7 +5513,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L247",
+      "source_location": "L248",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_fetchwixjwks",
@@ -5505,7 +5537,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L200",
+      "source_location": "L201",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_verifywixjwt",
       "_tgt": "member_sync_api_membersyncapi_getwixpublickey",
@@ -5517,7 +5549,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L235",
+      "source_location": "L236",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_getwixpublickey",
       "_tgt": "member_sync_api_membersyncapi_fetchwixjwks",
@@ -5577,7 +5609,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L329",
+      "source_location": "L400",
       "weight": 1.0,
       "_src": "queue_worker",
       "_tgt": "queue_worker_startworker",

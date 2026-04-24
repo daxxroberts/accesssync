@@ -1,17 +1,17 @@
 # Graph Report - .  (2026-04-24)
 
 ## Corpus Check
-- 72 files · ~95,492 words
+- 72 files · ~96,151 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 303 nodes · 342 edges · 67 communities detected
+- 304 nodes · 344 edges · 67 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## God Nodes (most connected - your core abstractions)
 1. `HardwareAdapter` - 14 edges
-2. `StandardAdapter` - 11 edges
+2. `StandardAdapter` - 12 edges
 3. `KisiAdapter` - 11 edges
 4. `SeamAdapter` - 10 edges
 5. `NightlyReconciliation` - 10 edges
@@ -35,12 +35,12 @@ Cohesion: 0.28
 Nodes (2): HardwareAdapter, _requireFields()
 
 ### Community 2 - "Community 2"
-Cohesion: 0.19
-Nodes (5): activateJumpTarget(), apiFetch(), esc(), showSessionExpiredModal(), stopAllPolling()
+Cohesion: 0.27
+Nodes (1): StandardAdapter
 
 ### Community 3 - "Community 3"
-Cohesion: 0.29
-Nodes (1): StandardAdapter
+Cohesion: 0.19
+Nodes (5): activateJumpTarget(), apiFetch(), esc(), showSessionExpiredModal(), stopAllPolling()
 
 ### Community 4 - "Community 4"
 Cohesion: 0.17
