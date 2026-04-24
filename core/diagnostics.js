@@ -151,12 +151,14 @@ async function getTimeline(memberId) {
          ROUND(EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at)))::int   AS total_s
        FROM webhook_log wl
        JOIN processed_event_ids pei ON pei.event_id = wl.event_id
-       JOIN member_role_assignments mra ON mra.member_id = mi.id
+       JOIN member_role_assignments mra
+         ON mra.member_id = mi.id
+        AND mra.created_at > wl.received_at
+        AND mra.created_at < wl.received_at + INTERVAL '1 hour'
        WHERE wl.client_id = mi.client_id
          AND wl.normalized_payload->>'platformMemberId' = mi.platform_member_id
          AND wl.hmac_status = 'accepted'
          AND wl.dedup_status = 'new'
-         AND mra.created_at > wl.received_at
        ORDER BY wl.received_at DESC
        LIMIT 1
      ) lat ON TRUE
