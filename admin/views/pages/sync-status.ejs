@@ -464,6 +464,18 @@ html, body {
       <div class="card-sub">Your purchase went through — we're just waiting on the final signal to start activating your access. This usually clears up in a few seconds.</div>
     </div>
 
+    <!-- ── SCHEDULED state ──────────────────────── -->
+    <div id="state-scheduled" class="hidden">
+      <div class="icon-wrap amber">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="12" stroke="#F59E0B" stroke-width="2.5"/>
+          <path d="M16 10v6l4 2" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="card-title">Access confirmed</div>
+      <div class="card-sub">Your payment is confirmed and your access is scheduled. You'll be able to use your credential starting <strong id="scheduled-date"></strong>. Nothing to do — we'll activate it automatically when the time comes.</div>
+    </div>
+
     <!-- ── ACTIVE state ───────────────────────── -->
     <div id="state-active" class="hidden">
       <div class="icon-wrap active">
@@ -560,7 +572,7 @@ function esc(s) {
 }
 
 function showState(name) {
-  ['syncing','active','error','setup','pending','norecord'].forEach(s => {
+  ['syncing','active','error','setup','pending','norecord','scheduled'].forEach(s => {
     const el = document.getElementById(`state-${s}`);
     if (el) el.classList.toggle('hidden', s !== name);
   });
@@ -708,6 +720,14 @@ function startFreshnessCheck() {
           renderAccess(data.access || []);
           updateTimestamp(data.provisionedAt, false);
           showState('active');
+        } else if (data.status === 'pending_start') {
+          const dateEl = document.getElementById('scheduled-date');
+          if (dateEl && data.scheduledStartDate) {
+            dateEl.textContent = new Date(data.scheduledStartDate).toLocaleDateString(undefined, {
+              weekday: 'long', month: 'long', day: 'numeric'
+            });
+          }
+          showState('scheduled');
         } else if (data.status === 'suspended') {
           document.getElementById('error-sub').textContent =
             'Your access has been paused. This is usually a quick fix — reach out to your gym and they\'ll get you sorted right away.';
@@ -779,6 +799,19 @@ async function poll() {
       document.getElementById('error-sub').textContent =
         'Your access has been suspended. Contact your gym directly for more information.';
       showState('error');
+      return;
+    }
+
+    if (data.status === 'pending_start') {
+      clearStepTimers();
+      const dateEl = document.getElementById('scheduled-date');
+      if (dateEl && data.scheduledStartDate) {
+        dateEl.textContent = new Date(data.scheduledStartDate).toLocaleDateString(undefined, {
+          weekday: 'long', month: 'long', day: 'numeric'
+        });
+      }
+      showState('scheduled');
+      settled = true;
       return;
     }
 

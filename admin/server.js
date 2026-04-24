@@ -115,15 +115,18 @@ app.get('/onboard', allowWixFrame, (req, res) =>
     inviteToken: process.env.OPERATOR_INVITE_TOKEN || '',
   }));
 // Member-facing pages — no auth required
-// allowMemberFrame: removes X-Frame-Options so sync-status can be embedded in Wix member pages
+// allowMemberFrame: removes X-Frame-Options and opens frame-ancestors so member pages
+// can be embedded in Wix member area pages (any origin — member-facing public pages)
 function allowMemberFrame(req, res, next) {
   res.removeHeader('X-Frame-Options');
+  res.removeHeader('Content-Security-Policy');
   res.setHeader('Content-Security-Policy', "frame-ancestors *");
   next();
 }
 app.get('/sync-status', allowMemberFrame, (req, res) => res.render('pages/sync-status', {
   coreUrl: '' // polls /member/access-status on this same server (proxied below)
 }));
+app.get('/my-access', allowMemberFrame, (req, res) => res.render('pages/my-access'));
 
 // Proxy /member/access-status to the core engine server-side — avoids CORS and JWT
 // requirement from the browser. The admin server calls the core engine internally.

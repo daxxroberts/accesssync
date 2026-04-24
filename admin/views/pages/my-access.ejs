@@ -1,0 +1,566 @@
+<%#
+  @file my-access.ejs
+  @layer admin/pages
+  @route /my-access?memberId=X&clientId=Y
+  @role member-facing — persistent access status dashboard
+  @audience gym members (ongoing, not just post-purchase)
+  @data GET /member/access-status (on load + on "Check Status" click)
+  @theme light — operator-styles.css tokens
+  @embed iframe from Wix My Access member page (postMessage for memberId/clientId)
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<%- include('../partials/head', { title: 'My Access' }) %>
+<style>
+/* ── Page shell ──────────────────────────────── */
+html, body { height: 100%; }
+.page {
+  min-height: 100vh;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Top bar ─────────────────────────────────── */
+.topbar {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  height: 52px;
+  display: flex; align-items: center;
+  padding: 0 20px;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.logo { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+.logo-text { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; color: var(--text); }
+.logo-text span { color: var(--brand); }
+.topbar-right { margin-left: auto; }
+.member-chip {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--brand-dim);
+  border: 1px solid rgba(79,110,247,0.18);
+  border-radius: 20px;
+  padding: 4px 12px 4px 8px;
+  font-size: 11px; font-weight: 600; color: var(--brand);
+}
+.member-chip-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--brand); flex-shrink: 0;
+}
+
+/* ── Content ─────────────────────────────────── */
+.content {
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 28px 16px 40px;
+  flex: 1;
+}
+
+/* ── Page header ─────────────────────────────── */
+.page-header { margin-bottom: 24px; }
+.page-title {
+  font-size: 22px; font-weight: 800;
+  color: var(--text); letter-spacing: -0.4px;
+  margin-bottom: 4px;
+}
+.page-subtitle { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+/* ── Status banner ───────────────────────────── */
+.status-banner {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid;
+  margin-bottom: 24px;
+  animation: fade-in 0.3s ease;
+}
+@keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+.status-banner.active  { background: rgba(34,197,94,0.06);  border-color: rgba(34,197,94,0.22); }
+.status-banner.syncing { background: rgba(79,110,247,0.06); border-color: rgba(79,110,247,0.22); }
+.status-banner.error   { background: rgba(255,77,106,0.06); border-color: rgba(255,77,106,0.22); }
+.status-banner.pending { background: rgba(245,166,35,0.06); border-color: rgba(245,166,35,0.22); }
+
+.banner-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.status-banner.active  .banner-icon { background: rgba(34,197,94,0.12); }
+.status-banner.syncing .banner-icon { background: rgba(79,110,247,0.12); }
+.status-banner.error   .banner-icon { background: rgba(255,77,106,0.10); }
+.status-banner.pending .banner-icon { background: rgba(245,166,35,0.10); }
+
+.banner-body { flex: 1; min-width: 0; }
+.banner-title {
+  font-size: 13px; font-weight: 700;
+  margin-bottom: 2px;
+}
+.status-banner.active  .banner-title { color: #16a34a; }
+.status-banner.syncing .banner-title { color: var(--brand); }
+.status-banner.error   .banner-title { color: var(--red); }
+.status-banner.pending .banner-title { color: #b45309; }
+
+.banner-sub { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+/* Syncing spinner in banner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; display: inline-block; }
+
+/* ── Section ─────────────────────────────────── */
+.section { margin-bottom: 20px; }
+.section-label {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+/* ── Card ────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card-empty {
+  padding: 20px 18px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ── Plan row ────────────────────────────────── */
+.plan-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.plan-row:last-child { border-bottom: none; }
+.plan-icon {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: var(--brand-dim);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.plan-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.plan-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.plan-badge {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 10px; font-weight: 700;
+  padding: 3px 8px; border-radius: 20px;
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+.plan-badge.active  { background: rgba(34,197,94,0.12); color: #16a34a; }
+.plan-badge.pending { background: rgba(245,166,35,0.12); color: #b45309; }
+.plan-badge.other   { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+
+/* ── Door row ────────────────────────────────── */
+.door-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.door-row:last-child { border-bottom: none; }
+.door-icon {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: rgba(34,197,94,0.10);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.door-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.door-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.door-status {
+  margin-left: auto; flex-shrink: 0;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #22C55E;
+  box-shadow: 0 0 6px rgba(34,197,94,0.4);
+}
+
+/* ── Footer strip ────────────────────────────── */
+.footer-strip {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin-top: 24px;
+}
+.last-synced {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--muted);
+}
+.sync-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #22C55E; flex-shrink: 0;
+}
+.sync-dot.stale { background: var(--amber); }
+
+.btn-check {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--brand); color: #fff;
+  font-family: 'Sora', sans-serif;
+  font-size: 12px; font-weight: 600;
+  padding: 8px 16px; border-radius: 8px;
+  border: none; cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+.btn-check:hover { background: var(--brand-dark); }
+.btn-check:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ── Skeleton loader ─────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--border) 25%, var(--surface) 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 6px;
+  height: 14px;
+}
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.skeleton-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.skeleton-row:last-child { border-bottom: none; }
+.skeleton-circle { width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0; }
+.skeleton-body { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+
+/* ── Hidden utility ──────────────────────────── */
+.hidden { display: none !important; }
+
+/* ── Mobile ──────────────────────────────────── */
+@media (max-width: 480px) {
+  .content { padding: 20px 12px 32px; }
+  .page-title { font-size: 19px; }
+  .footer-strip { flex-direction: column; align-items: flex-start; }
+  .btn-check { width: 100%; justify-content: center; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <a class="logo" href="#">
+      <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
+        <rect x="5" y="13" width="18" height="13" rx="3" fill="var(--brand-dim)" stroke="var(--brand)" stroke-width="1.5"/>
+        <path d="M9 13V10a5 5 0 0110 0v3" stroke="var(--brand)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+        <path d="M15.5 17l-3 4h3l-1.5 4 4-5.5h-3l1.5-2.5z" fill="var(--brand)"/>
+      </svg>
+      <span class="logo-text">Access<span>Sync</span></span>
+    </a>
+    <div class="topbar-right">
+      <div class="member-chip">
+        <div class="member-chip-dot"></div>
+        <span id="member-label">Member</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Content -->
+  <div class="content">
+
+    <div class="page-header">
+      <div class="page-title">My Access</div>
+      <div class="page-subtitle">Your current gym access status and active plans.</div>
+    </div>
+
+    <!-- Status banner -->
+    <div id="banner-active"  class="status-banner active  hidden">
+      <div class="banner-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M4 10l4 4 8-8" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="banner-body">
+        <div class="banner-title">Access Active</div>
+        <div class="banner-sub">You're all set — head to the gym and you're good to go.</div>
+      </div>
+    </div>
+
+    <div id="banner-syncing" class="status-banner syncing hidden">
+      <div class="banner-icon">
+        <svg class="spin" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M10 3C6.13 3 3 6.13 3 10" stroke="var(--brand)" stroke-width="2" stroke-linecap="round"/>
+          <path d="M10 17c3.87 0 7-3.13 7-7" stroke="rgba(79,110,247,0.3)" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="banner-body">
+        <div class="banner-title">Syncing Your Access</div>
+        <div class="banner-sub">We're activating your access right now — this usually takes just a moment.</div>
+      </div>
+    </div>
+
+    <div id="banner-error" class="status-banner error hidden">
+      <div class="banner-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="8" stroke="var(--red)" stroke-width="1.8"/>
+          <path d="M10 7v4M10 13.5v.5" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="banner-body">
+        <div class="banner-title">Access Issue</div>
+        <div class="banner-sub" id="banner-error-sub">There was a problem activating your access. Your gym has been notified.</div>
+      </div>
+    </div>
+
+    <div id="banner-pending" class="status-banner pending hidden">
+      <div class="banner-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="7" stroke="#b45309" stroke-width="1.8" stroke-dasharray="3 2"/>
+          <path d="M10 7v3.5l2 1.5" stroke="#b45309" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="banner-body">
+        <div class="banner-title">Pending Setup</div>
+        <div class="banner-sub">No active access found yet. If you recently purchased a plan, it may take a moment to come through.</div>
+      </div>
+    </div>
+
+    <!-- Plans section -->
+    <div class="section">
+      <div class="section-label">Your Plans</div>
+      <div class="card" id="plans-card">
+        <!-- skeleton -->
+        <div class="skeleton-row" id="plans-skeleton">
+          <div class="skeleton skeleton-circle"></div>
+          <div class="skeleton-body">
+            <div class="skeleton" style="width:55%"></div>
+            <div class="skeleton" style="width:30%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Door access section -->
+    <div class="section">
+      <div class="section-label">Door Access</div>
+      <div class="card" id="doors-card">
+        <!-- skeleton -->
+        <div class="skeleton-row" id="doors-skeleton">
+          <div class="skeleton skeleton-circle"></div>
+          <div class="skeleton-body">
+            <div class="skeleton" style="width:50%"></div>
+            <div class="skeleton" style="width:35%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer strip -->
+    <div class="footer-strip">
+      <div class="last-synced">
+        <div class="sync-dot" id="sync-dot"></div>
+        <span id="last-synced-text">Checking...</span>
+      </div>
+      <button class="btn-check" id="btn-check">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+          <path d="M7 2C4.24 2 2 4.24 2 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M7 12c2.76 0 5-2.24 5-5" stroke="rgba(255,255,255,0.4)" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M5.5 1l1.5 1-1.5 1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Check Status
+      </button>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /page -->
+
+<script>
+'use strict';
+
+const params           = new URLSearchParams(window.location.search);
+let   platformMemberId = params.get('memberId');
+let   clientId         = params.get('clientId');
+
+// ── postMessage listener (Wix iframe sends memberId + clientId) ───
+window.addEventListener('message', (e) => {
+  if (!e.data) return;
+  if (e.data.memberId && !platformMemberId) {
+    platformMemberId = e.data.memberId;
+    clientId         = e.data.clientId || clientId;
+    boot();
+  }
+});
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Banner ────────────────────────────────────────────────────────
+function showBanner(state, errorMsg) {
+  ['active','syncing','error','pending'].forEach(s => {
+    document.getElementById(`banner-${s}`).classList.toggle('hidden', s !== state);
+  });
+  if (state === 'error' && errorMsg) {
+    document.getElementById('banner-error-sub').textContent = errorMsg;
+  }
+}
+
+// ── Plans ─────────────────────────────────────────────────────────
+function renderPlans(plans) {
+  const card = document.getElementById('plans-card');
+  document.getElementById('plans-skeleton').remove();
+
+  if (!plans || !plans.length) {
+    card.innerHTML = '<div class="card-empty">No active plans found.</div>';
+    return;
+  }
+
+  card.innerHTML = plans.map(p => {
+    const statusClass = p.status === 'ACTIVE' ? 'active' : p.status === 'PENDING' ? 'pending' : 'other';
+    const statusLabel = p.status === 'ACTIVE' ? 'Active' : p.status === 'PENDING' ? 'Pending' : (p.status || 'Unknown');
+    return `
+      <div class="plan-row">
+        <div class="plan-icon">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+            <rect x="3" y="8" width="14" height="10" rx="2" stroke="var(--brand)" stroke-width="1.5"/>
+            <path d="M7 8V6a3 3 0 016 0v2" stroke="var(--brand)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <div>
+          <div class="plan-name">${esc(p.planName)}</div>
+        </div>
+        <span class="plan-badge ${statusClass}">${esc(statusLabel)}</span>
+      </div>`;
+  }).join('');
+}
+
+// ── Doors ─────────────────────────────────────────────────────────
+function renderDoors(access) {
+  const card = document.getElementById('doors-card');
+  document.getElementById('doors-skeleton').remove();
+
+  if (!access || !access.length) {
+    card.innerHTML = '<div class="card-empty">No door access found.</div>';
+    return;
+  }
+
+  card.innerHTML = access.map(a => `
+    <div class="door-row">
+      <div class="door-icon">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+          <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2zm-6 7c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-7H8.9V6c0-1.71 1.39-3.1 3.1-3.1h.02c1.71 0 3.1 1.39 3.1 3.1v2z" fill="#22C55E"/>
+        </svg>
+      </div>
+      <div>
+        <div class="door-name">${esc(a.doorName || 'Door Access')}</div>
+        <div class="door-meta">${esc(a.planName || '')}${a.locationName ? ' &middot; ' + esc(a.locationName) : ''}</div>
+      </div>
+      <div class="door-status"></div>
+    </div>`
+  ).join('');
+}
+
+// ── Timestamp ─────────────────────────────────────────────────────
+function setTimestamp(provisionedAt, stale) {
+  const dot  = document.getElementById('sync-dot');
+  const text = document.getElementById('last-synced-text');
+  if (stale) {
+    dot.className = 'sync-dot stale';
+    text.textContent = 'Status may be outdated — click Check Status';
+    return;
+  }
+  dot.className = 'sync-dot';
+  if (provisionedAt) {
+    text.textContent = `Last synced: ${new Date(provisionedAt).toLocaleString()}`;
+  } else {
+    text.textContent = 'Not yet synced';
+  }
+}
+
+// ── Fetch access status ───────────────────────────────────────────
+async function fetchAccessStatus() {
+  const res = await fetch(
+    `/member/access-status?platformMemberId=${encodeURIComponent(platformMemberId)}&clientId=${encodeURIComponent(clientId)}`
+  );
+  if (res.status === 404) return { status: null };
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ── Render access data ────────────────────────────────────────────
+function renderAccess(data) {
+  renderDoors(data.access || []);
+  setTimestamp(data.provisionedAt, false);
+
+  switch (data.status) {
+    case 'active':
+      showBanner('active'); break;
+    case 'in_flight':
+    case 'pending_sync':
+    case 'pending_hardware':
+    case 'pending_identity':
+      showBanner('syncing'); break;
+    case 'failed':
+    case 'revoked':
+      showBanner('error',
+        data.lastEvent?.errorCode === 'PLAN_NOT_MAPPED'
+          ? 'Your plan is still being configured. Contact your gym for an update.'
+          : 'There was an issue with your access. Your gym has been notified.'
+      ); break;
+    default:
+      showBanner('pending');
+  }
+}
+
+// ── Check Status button ───────────────────────────────────────────
+document.getElementById('btn-check').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-check');
+  btn.disabled = true;
+  document.getElementById('last-synced-text').textContent = 'Checking...';
+  try {
+    const data = await fetchAccessStatus();
+    renderDoors(data.access || []);
+    setTimestamp(data.provisionedAt, false);
+    renderAccess(data);
+  } catch {
+    setTimestamp(null, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ── Boot ──────────────────────────────────────────────────────────
+async function boot() {
+  if (!platformMemberId || !clientId) return;
+
+  // Show member chip label (truncated ID)
+  document.getElementById('member-label').textContent =
+    'Member · ' + platformMemberId.slice(0, 8) + '…';
+
+  // Fetch plans (Wix side — passed via postMessage or skipped if not available)
+  // Plans are rendered from postMessage context data if provided, otherwise empty
+  const plans = (window._wixPlans) || [];
+  renderPlans(plans);
+
+  // Fetch AccessSync status
+  try {
+    const data = await fetchAccessStatus();
+    renderAccess(data);
+  } catch {
+    document.getElementById('doors-skeleton')?.remove();
+    const doorsCard = document.getElementById('doors-card');
+    if (doorsCard) doorsCard.innerHTML = '<div class="card-empty">Could not reach the access system. Try again shortly.</div>';
+    showBanner('error', 'Could not reach the access system. Try again shortly.');
+    setTimestamp(null, true);
+  }
+}
+
+// ── Also accept plans via postMessage ────────────────────────────
+window.addEventListener('message', (e) => {
+  if (e.data && e.data.plans) {
+    window._wixPlans = e.data.plans;
+    renderPlans(e.data.plans);
+  }
+});
+
+// Boot immediately if params are in URL (direct load / testing)
+if (platformMemberId && clientId) boot();
+</script>
+</body>
+</html>
