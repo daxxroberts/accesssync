@@ -49,7 +49,7 @@
       "source_file": "jest.config.js",
       "source_location": "L1",
       "id": "jest_config",
-      "community": 48
+      "community": 49
     },
     {
       "label": "seed.js",
@@ -73,7 +73,7 @@
       "source_file": "admin\\server.js",
       "source_location": "L1",
       "id": "server",
-      "community": 30
+      "community": 26
     },
     {
       "label": "simulate.js",
@@ -97,7 +97,7 @@
       "source_file": "test-screens.js",
       "source_location": "L1",
       "id": "test_screens",
-      "community": 49
+      "community": 50
     },
     {
       "label": "hardware-adapter.js",
@@ -271,7 +271,7 @@
       "label": ".resolveIdentity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L180",
+      "source_location": "L183",
       "id": "standard_adapter_standardadapter_resolveidentity",
       "community": 3
     },
@@ -279,7 +279,7 @@
       "label": ".completeGrant()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L274",
+      "source_location": "L277",
       "id": "standard_adapter_standardadapter_completegrant",
       "community": 3
     },
@@ -287,7 +287,7 @@
       "label": "._maybeFireFirstGrantEmail()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L319",
+      "source_location": "L322",
       "id": "standard_adapter_standardadapter_maybefirefirstgrantemail",
       "community": 3
     },
@@ -295,7 +295,7 @@
       "label": ".completeRevoke()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L378",
+      "source_location": "L381",
       "id": "standard_adapter_standardadapter_completerevoke",
       "community": 3
     },
@@ -303,7 +303,7 @@
       "label": ".releaseLock()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L449",
+      "source_location": "L452",
       "id": "standard_adapter_standardadapter_releaselock",
       "community": 3
     },
@@ -311,7 +311,7 @@
       "label": "._incrementActivity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L481",
+      "source_location": "L484",
       "id": "standard_adapter_standardadapter_incrementactivity",
       "community": 3
     },
@@ -319,7 +319,7 @@
       "label": "._callHardwareToResolveIdentity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L501",
+      "source_location": "L504",
       "id": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
       "community": 3
     },
@@ -327,7 +327,7 @@
       "label": "._recoverMissingEmail()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L522",
+      "source_location": "L525",
       "id": "standard_adapter_standardadapter_recovermissingemail",
       "community": 3
     },
@@ -335,7 +335,7 @@
       "label": "._parkPendingIdentity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L625",
+      "source_location": "L628",
       "id": "standard_adapter_standardadapter_parkpendingidentity",
       "community": 3
     },
@@ -383,7 +383,7 @@
       "label": ".removeRole()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L71",
+      "source_location": "L90",
       "id": "kisi_adapter_kisiadapter_removerole",
       "community": 4
     },
@@ -391,7 +391,7 @@
       "label": ".suspendAccess()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L82",
+      "source_location": "L101",
       "id": "kisi_adapter_kisiadapter_suspendaccess",
       "community": 4
     },
@@ -399,7 +399,7 @@
       "label": ".enableAccess()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L94",
+      "source_location": "L113",
       "id": "kisi_adapter_kisiadapter_enableaccess",
       "community": 4
     },
@@ -407,7 +407,7 @@
       "label": ".deleteUser()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L106",
+      "source_location": "L125",
       "id": "kisi_adapter_kisiadapter_deleteuser",
       "community": 4
     },
@@ -415,7 +415,7 @@
       "label": ".getGroups()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L115",
+      "source_location": "L134",
       "id": "kisi_adapter_kisiadapter_getgroups",
       "community": 4
     },
@@ -423,7 +423,7 @@
       "label": ".getManagedRoleAssignments()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L138",
+      "source_location": "L157",
       "id": "kisi_adapter_kisiadapter_getmanagedroleassignments",
       "community": 4
     },
@@ -431,7 +431,7 @@
       "label": ".getLocks()",
       "file_type": "code",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L182",
+      "source_location": "L201",
       "id": "kisi_adapter_kisiadapter_getlocks",
       "community": 4
     },
@@ -623,7 +623,7 @@
       "label": ".parseEvent()",
       "file_type": "code",
       "source_file": "adapters\\wix\\wix-adapter.js",
-      "source_location": "L53",
+      "source_location": "L55",
       "id": "wix_adapter_wixadapter_parseevent",
       "community": 25
     },
@@ -801,7 +801,7 @@
       "source_file": "admin\\server.js",
       "source_location": "L59",
       "id": "server_allowwixframe",
-      "community": 30
+      "community": 26
     },
     {
       "label": "sessionMeta()",
@@ -809,7 +809,15 @@
       "source_file": "admin\\server.js",
       "source_location": "L94",
       "id": "server_sessionmeta",
-      "community": 30
+      "community": 26
+    },
+    {
+      "label": "allowMemberFrame()",
+      "file_type": "code",
+      "source_file": "admin\\server.js",
+      "source_location": "L119",
+      "id": "server_allowmemberframe",
+      "community": 26
     },
     {
       "label": "audit.js",
@@ -889,7 +897,7 @@
       "source_file": "admin\\middleware\\wix-instance.js",
       "source_location": "L1",
       "id": "wix_instance",
-      "community": 26
+      "community": 27
     },
     {
       "label": "verifySignedInstance()",
@@ -897,7 +905,7 @@
       "source_file": "admin\\middleware\\wix-instance.js",
       "source_location": "L44",
       "id": "wix_instance_verifysignedinstance",
-      "community": 26
+      "community": 27
     },
     {
       "label": "extractSiteIdFromAuthCode()",
@@ -905,7 +913,7 @@
       "source_file": "admin\\middleware\\wix-instance.js",
       "source_location": "L100",
       "id": "wix_instance_extractsiteidfromauthcode",
-      "community": 26
+      "community": 27
     },
     {
       "label": "requireWixInstance()",
@@ -913,7 +921,7 @@
       "source_file": "admin\\middleware\\wix-instance.js",
       "source_location": "L123",
       "id": "wix_instance_requirewixinstance",
-      "community": 26
+      "community": 27
     },
     {
       "label": "app.js",
@@ -1241,7 +1249,7 @@
       "source_file": "admin\\routes\\errors.js",
       "source_location": "L1",
       "id": "errors",
-      "community": 50
+      "community": 51
     },
     {
       "label": "members.js",
@@ -1249,7 +1257,7 @@
       "source_file": "admin\\routes\\members.js",
       "source_location": "L1",
       "id": "members",
-      "community": 51
+      "community": 52
     },
     {
       "label": "multi-member.js",
@@ -1257,7 +1265,7 @@
       "source_file": "admin\\routes\\multi-member.js",
       "source_location": "L1",
       "id": "multi_member",
-      "community": 52
+      "community": 53
     },
     {
       "label": "operator.js",
@@ -1321,7 +1329,7 @@
       "source_file": "admin\\routes\\portal.js",
       "source_location": "L1",
       "id": "portal",
-      "community": 53
+      "community": 54
     },
     {
       "label": "queue.js",
@@ -1329,7 +1337,7 @@
       "source_file": "admin\\routes\\queue.js",
       "source_location": "L1",
       "id": "queue",
-      "community": 54
+      "community": 55
     },
     {
       "label": "webhooks.js",
@@ -1337,7 +1345,7 @@
       "source_file": "admin\\routes\\webhooks.js",
       "source_location": "L1",
       "id": "webhooks",
-      "community": 55
+      "community": 56
     },
     {
       "label": "main.js",
@@ -1345,7 +1353,7 @@
       "source_file": "admin\\svelte\\main.js",
       "source_location": "L1",
       "id": "main",
-      "community": 56
+      "community": 57
     },
     {
       "label": "plan-mapping-entry.js",
@@ -1353,7 +1361,7 @@
       "source_file": "admin\\svelte\\plan-mapping-entry.js",
       "source_location": "L1",
       "id": "plan_mapping_entry",
-      "community": 57
+      "community": 58
     },
     {
       "label": "toast.js",
@@ -1377,7 +1385,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L1",
       "id": "crypto_utils",
-      "community": 27
+      "community": 28
     },
     {
       "label": "_getKey()",
@@ -1385,7 +1393,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L25",
       "id": "crypto_utils_getkey",
-      "community": 27
+      "community": 28
     },
     {
       "label": "encryptApiKey()",
@@ -1393,7 +1401,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L38",
       "id": "crypto_utils_encryptapikey",
-      "community": 27
+      "community": 28
     },
     {
       "label": "decryptApiKey()",
@@ -1401,7 +1409,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L52",
       "id": "crypto_utils_decryptapikey",
-      "community": 27
+      "community": 28
     },
     {
       "label": "diagnostics.js",
@@ -1455,7 +1463,7 @@
       "label": "._getClientApiKey()",
       "file_type": "code",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L187",
+      "source_location": "L202",
       "id": "grant_revoke_grantrevokelogic_getclientapikey",
       "community": 22
     },
@@ -1463,7 +1471,7 @@
       "label": ".processRevoke()",
       "file_type": "code",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L194",
+      "source_location": "L209",
       "id": "grant_revoke_grantrevokelogic_processrevoke",
       "community": 22
     },
@@ -1671,7 +1679,7 @@
       "label": "._verifyWixJWT()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L178",
+      "source_location": "L180",
       "id": "member_sync_api_membersyncapi_verifywixjwt",
       "community": 17
     },
@@ -1679,7 +1687,7 @@
       "label": "._getWixPublicKey()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L230",
+      "source_location": "L232",
       "id": "member_sync_api_membersyncapi_getwixpublickey",
       "community": 17
     },
@@ -1687,7 +1695,7 @@
       "label": "._fetchWixJwks()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L245",
+      "source_location": "L247",
       "id": "member_sync_api_membersyncapi_fetchwixjwks",
       "community": 17
     },
@@ -1721,31 +1729,31 @@
       "source_file": "core\\queue-worker.js",
       "source_location": "L1",
       "id": "queue_worker",
-      "community": 28
+      "community": 29
     },
     {
       "label": "getClientApiKey()",
       "file_type": "code",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L51",
+      "source_location": "L52",
       "id": "queue_worker_getclientapikey",
-      "community": 28
+      "community": 29
     },
     {
       "label": "processJob()",
       "file_type": "code",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L62",
+      "source_location": "L63",
       "id": "queue_worker_processjob",
-      "community": 28
+      "community": 29
     },
     {
       "label": "startWorker()",
       "file_type": "code",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L319",
+      "source_location": "L329",
       "id": "queue_worker_startworker",
-      "community": 28
+      "community": 29
     },
     {
       "label": "rate-limiter.js",
@@ -2129,7 +2137,23 @@
       "source_file": "scripts\\audit-summary.js",
       "source_location": "L1",
       "id": "audit_summary",
-      "community": 58
+      "community": 59
+    },
+    {
+      "label": "db-check.js",
+      "file_type": "code",
+      "source_file": "scripts\\db-check.js",
+      "source_location": "L1",
+      "id": "db_check",
+      "community": 46
+    },
+    {
+      "label": "run()",
+      "file_type": "code",
+      "source_file": "scripts\\db-check.js",
+      "source_location": "L4",
+      "id": "db_check_run",
+      "community": 46
     },
     {
       "label": "priority-sequencer.js",
@@ -2137,7 +2161,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L1",
       "id": "priority_sequencer",
-      "community": 29
+      "community": 30
     },
     {
       "label": "PrioritySequencer",
@@ -2145,7 +2169,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L11",
       "id": "priority_sequencer_prioritysequencer",
-      "community": 29
+      "community": 30
     },
     {
       "label": ".sort()",
@@ -2153,7 +2177,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L16",
       "id": "priority_sequencer_prioritysequencer_sort",
-      "community": 29
+      "community": 30
     },
     {
       "label": ".cacheResults()",
@@ -2161,7 +2185,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L31",
       "id": "priority_sequencer_prioritysequencer_cacheresults",
-      "community": 29
+      "community": 30
     },
     {
       "label": "fixtures.js",
@@ -2169,7 +2193,7 @@
       "source_file": "test\\helpers\\fixtures.js",
       "source_location": "L1",
       "id": "fixtures",
-      "community": 59
+      "community": 60
     },
     {
       "label": "grant-retry-idempotency.test.js",
@@ -2177,7 +2201,7 @@
       "source_file": "test\\p1-critical-path\\grant-retry-idempotency.test.js",
       "source_location": "L1",
       "id": "grant_retry_idempotency_test",
-      "community": 60
+      "community": 61
     },
     {
       "label": "member-cancels-loses-access.test.js",
@@ -2185,7 +2209,7 @@
       "source_file": "test\\p1-critical-path\\member-cancels-loses-access.test.js",
       "source_location": "L1",
       "id": "member_cancels_loses_access_test",
-      "community": 46
+      "community": 47
     },
     {
       "label": "mockClientApiKey()",
@@ -2193,7 +2217,7 @@
       "source_file": "test\\p1-critical-path\\member-cancels-loses-access.test.js",
       "source_location": "L53",
       "id": "member_cancels_loses_access_test_mockclientapikey",
-      "community": 46
+      "community": 47
     },
     {
       "label": "member-pays-gets-access.test.js",
@@ -2201,7 +2225,7 @@
       "source_file": "test\\p1-critical-path\\member-pays-gets-access.test.js",
       "source_location": "L1",
       "id": "member_pays_gets_access_test",
-      "community": 61
+      "community": 62
     },
     {
       "label": "ob-89-two-gate.test.js",
@@ -2209,7 +2233,7 @@
       "source_file": "test\\p1-critical-path\\ob-89-two-gate.test.js",
       "source_location": "L1",
       "id": "ob_89_two_gate_test",
-      "community": 62
+      "community": 63
     },
     {
       "label": "queue-worker-coordination.test.js",
@@ -2223,7 +2247,7 @@
       "label": "constructor()",
       "file_type": "code",
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
-      "source_location": "L20",
+      "source_location": "L21",
       "id": "queue_worker_coordination_test_constructor",
       "community": 36
     },
@@ -2231,7 +2255,7 @@
       "label": "makeJob()",
       "file_type": "code",
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
-      "source_location": "L84",
+      "source_location": "L85",
       "id": "queue_worker_coordination_test_makejob",
       "community": 36
     },
@@ -2241,7 +2265,7 @@
       "source_file": "test\\p2-onboarding\\api-key-encryption.test.js",
       "source_location": "L1",
       "id": "api_key_encryption_test",
-      "community": 63
+      "community": 64
     },
     {
       "label": "plan-mapping-resolver.test.js",
@@ -2249,7 +2273,7 @@
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
       "source_location": "L1",
       "id": "plan_mapping_resolver_test",
-      "community": 47
+      "community": 48
     },
     {
       "label": "mockMappingRow()",
@@ -2257,7 +2281,7 @@
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
       "source_location": "L43",
       "id": "plan_mapping_resolver_test_mockmappingrow",
-      "community": 47
+      "community": 48
     },
     {
       "label": "no-raw-console.test.js",
@@ -2289,7 +2313,7 @@
       "source_file": "test\\p3-data-integrity\\rate-limiter.test.js",
       "source_location": "L1",
       "id": "rate_limiter_test",
-      "community": 64
+      "community": 65
     },
     {
       "label": "wix-adapter-parsing.test.js",
@@ -2297,7 +2321,7 @@
       "source_file": "test\\p3-data-integrity\\wix-adapter-parsing.test.js",
       "source_location": "L1",
       "id": "wix_adapter_parsing_test",
-      "community": 65
+      "community": 66
     },
     {
       "label": "wix-members-api-normalization.test.js",
@@ -2523,6 +2547,18 @@
       "_tgt": "server_sessionmeta",
       "source": "server",
       "target": "server_sessionmeta",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\server.js",
+      "source_location": "L119",
+      "weight": 1.0,
+      "_src": "server",
+      "_tgt": "server_allowmemberframe",
+      "source": "server",
+      "target": "server_allowmemberframe",
       "confidence_score": 1.0
     },
     {
@@ -2985,7 +3021,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L180",
+      "source_location": "L183",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_resolveidentity",
@@ -2997,7 +3033,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L274",
+      "source_location": "L277",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_completegrant",
@@ -3009,7 +3045,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L319",
+      "source_location": "L322",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_maybefirefirstgrantemail",
@@ -3021,7 +3057,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L378",
+      "source_location": "L381",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_completerevoke",
@@ -3033,7 +3069,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L449",
+      "source_location": "L452",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_releaselock",
@@ -3045,7 +3081,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L481",
+      "source_location": "L484",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3057,7 +3093,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L501",
+      "source_location": "L504",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
@@ -3069,7 +3105,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L522",
+      "source_location": "L525",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_recovermissingemail",
@@ -3081,7 +3117,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L625",
+      "source_location": "L628",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_parkpendingidentity",
@@ -3093,7 +3129,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L138",
+      "source_location": "L141",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_resolveandlock",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3105,7 +3141,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L203",
+      "source_location": "L206",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_resolveidentity",
       "_tgt": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
@@ -3117,7 +3153,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L214",
+      "source_location": "L217",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_resolveidentity",
       "_tgt": "standard_adapter_standardadapter_recovermissingemail",
@@ -3129,7 +3165,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L231",
+      "source_location": "L234",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_resolveidentity",
       "_tgt": "standard_adapter_standardadapter_parkpendingidentity",
@@ -3141,7 +3177,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L304",
+      "source_location": "L307",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completegrant",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3153,7 +3189,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L310",
+      "source_location": "L313",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completegrant",
       "_tgt": "standard_adapter_standardadapter_maybefirefirstgrantemail",
@@ -3165,7 +3201,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L432",
+      "source_location": "L435",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completerevoke",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3177,7 +3213,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L468",
+      "source_location": "L471",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_releaselock",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -3237,7 +3273,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L71",
+      "source_location": "L90",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_removerole",
@@ -3249,7 +3285,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L82",
+      "source_location": "L101",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_suspendaccess",
@@ -3261,7 +3297,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L94",
+      "source_location": "L113",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_enableaccess",
@@ -3273,7 +3309,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L106",
+      "source_location": "L125",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_deleteuser",
@@ -3285,7 +3321,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L115",
+      "source_location": "L134",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_getgroups",
@@ -3297,7 +3333,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L138",
+      "source_location": "L157",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_getmanagedroleassignments",
@@ -3309,7 +3345,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\kisi\\kisi-adapter.js",
-      "source_location": "L182",
+      "source_location": "L201",
       "weight": 1.0,
       "_src": "kisi_adapter_kisiadapter",
       "_tgt": "kisi_adapter_kisiadapter_getlocks",
@@ -3573,7 +3609,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-adapter.js",
-      "source_location": "L53",
+      "source_location": "L55",
       "weight": 1.0,
       "_src": "wix_adapter_wixadapter",
       "_tgt": "wix_adapter_wixadapter_parseevent",
@@ -3585,7 +3621,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\wix\\wix-adapter.js",
-      "source_location": "L55",
+      "source_location": "L57",
       "weight": 1.0,
       "_src": "wix_adapter_wixadapter_parseevent",
       "_tgt": "wix_adapter_wixadapter_normalizeeventtype",
@@ -5013,7 +5049,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L187",
+      "source_location": "L202",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic",
       "_tgt": "grant_revoke_grantrevokelogic_getclientapikey",
@@ -5025,7 +5061,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L194",
+      "source_location": "L209",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic",
       "_tgt": "grant_revoke_grantrevokelogic_processrevoke",
@@ -5037,7 +5073,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L201",
+      "source_location": "L216",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic_processrevoke",
       "_tgt": "grant_revoke_grantrevokelogic_getclientapikey",
@@ -5421,7 +5457,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L178",
+      "source_location": "L180",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_verifywixjwt",
@@ -5433,7 +5469,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L230",
+      "source_location": "L232",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_getwixpublickey",
@@ -5445,7 +5481,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L245",
+      "source_location": "L247",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_fetchwixjwks",
@@ -5469,7 +5505,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L198",
+      "source_location": "L200",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_verifywixjwt",
       "_tgt": "member_sync_api_membersyncapi_getwixpublickey",
@@ -5481,7 +5517,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L233",
+      "source_location": "L235",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_getwixpublickey",
       "_tgt": "member_sync_api_membersyncapi_fetchwixjwks",
@@ -5517,7 +5553,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L51",
+      "source_location": "L52",
       "weight": 1.0,
       "_src": "queue_worker",
       "_tgt": "queue_worker_getclientapikey",
@@ -5529,7 +5565,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L62",
+      "source_location": "L63",
       "weight": 1.0,
       "_src": "queue_worker",
       "_tgt": "queue_worker_processjob",
@@ -5541,7 +5577,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L319",
+      "source_location": "L329",
       "weight": 1.0,
       "_src": "queue_worker",
       "_tgt": "queue_worker_startworker",
@@ -5553,7 +5589,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L101",
+      "source_location": "L102",
       "weight": 1.0,
       "_src": "queue_worker_processjob",
       "_tgt": "queue_worker_getclientapikey",
@@ -6200,6 +6236,18 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "scripts\\db-check.js",
+      "source_location": "L4",
+      "weight": 1.0,
+      "_src": "db_check",
+      "_tgt": "db_check_run",
+      "source": "db_check",
+      "target": "db_check_run",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L11",
       "weight": 1.0,
@@ -6249,7 +6297,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
-      "source_location": "L20",
+      "source_location": "L21",
       "weight": 1.0,
       "_src": "queue_worker_coordination_test",
       "_tgt": "queue_worker_coordination_test_constructor",
@@ -6261,7 +6309,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
-      "source_location": "L84",
+      "source_location": "L85",
       "weight": 1.0,
       "_src": "queue_worker_coordination_test",
       "_tgt": "queue_worker_coordination_test_makejob",

@@ -937,6 +937,28 @@ html, body {
             <pre id="events-code-display"></pre>
           </div>
         </div>
+
+        <div style="margin-top:20px">
+          <div class="done-section-title" style="margin-bottom:6px">Member sync redirect</div>
+          <p class="code-instructions">
+            After a member buys a plan or confirms a booking, send them to their access status screen automatically. Paste this into the <strong>page code</strong> of your Wix <strong>Plans Thank You</strong> page and your <strong>Bookings Confirmation</strong> page.
+          </p>
+          <ol class="code-steps">
+            <li>In Wix Editor, open your <strong>Plans Thank You</strong> page</li>
+            <li>Click the page in the editor → <strong>Page Code</strong> panel at the bottom</li>
+            <li>Paste the code below and click <strong>Publish</strong></li>
+            <li>Repeat on your <strong>Bookings Confirmation</strong> page if you use Bookings</li>
+          </ol>
+          <div class="code-block-wrap">
+            <div class="code-block-header">
+              <span class="code-block-label">Page code — Thank You &amp; Confirmation pages</span>
+              <button class="btn-copy-code" onclick="copyThankYouCode()">Copy</button>
+            </div>
+            <div class="code-scroll">
+              <pre id="thankyou-code-display"></pre>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ── What happens next ── -->
@@ -1593,6 +1615,30 @@ function _buildEventsCode(clientId) {
   return EVENTS_JS_TEMPLATE.replace('{{CLIENT_ID}}', clientId);
 }
 
+const THANKYOU_JS_TEMPLATE = `import wixLocationFrontend from 'wix-location-frontend';
+import { currentMember } from 'wix-members-frontend';
+
+const ACCESSSYNC_URL = 'https://accesssync-admin.up.railway.app';
+const CLIENT_ID = '{{CLIENT_ID}}'; // Your AccessSync client ID
+
+$w.onReady(async function () {
+  try {
+    const member = await currentMember.getMember();
+    if (!member?._id) return;
+    wixLocationFrontend.to(
+      ACCESSSYNC_URL + '/sync-status' +
+      '?memberId=' + encodeURIComponent(member._id) +
+      '&clientId=' + encodeURIComponent(CLIENT_ID)
+    );
+  } catch (e) {
+    console.error('AccessSync redirect error:', e);
+  }
+});`;
+
+function _buildThankYouCode(clientId) {
+  return THANKYOU_JS_TEMPLATE.replace(/\{\{CLIENT_ID\}\}/g, clientId);
+}
+
 async function goToDone() {
   const hwLabel = state.tier === 'Connect' ? 'Kisi' : 'Seam';
   document.getElementById('done-headline').textContent =
@@ -1603,6 +1649,7 @@ async function goToDone() {
 
   const code = _buildEventsCode(state.clientId);
   document.getElementById('events-code-display').textContent = code;
+  document.getElementById('thankyou-code-display').textContent = _buildThankYouCode(state.clientId);
 
   if (state.locations.length) {
     document.getElementById('mapping-section').classList.remove('hidden');
@@ -1750,6 +1797,16 @@ function copyEventsCode() {
   if (!code) { toast('Code not ready yet', 'error'); return; }
   navigator.clipboard.writeText(code).then(() => {
     toast('Code copied — paste it into Wix backend/events.js', 'success');
+  }).catch(() => {
+    toast('Select the code and copy it manually', 'error');
+  });
+}
+
+function copyThankYouCode() {
+  const code = document.getElementById('thankyou-code-display').textContent;
+  if (!code) { toast('Code not ready yet', 'error'); return; }
+  navigator.clipboard.writeText(code).then(() => {
+    toast('Code copied — paste it into your Thank You and Confirmation page code', 'success');
   }).catch(() => {
     toast('Select the code and copy it manually', 'error');
   });

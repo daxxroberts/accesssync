@@ -53,7 +53,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 16px;
   position: relative;
   overflow: hidden;
 }
@@ -67,13 +67,13 @@ html, body {
   z-index: 0;
 }
 .bg-orb-1 {
-  width: 500px; height: 500px;
+  width: min(500px, 100vw); height: min(500px, 100vw);
   background: radial-gradient(circle, rgba(79,110,247,0.12) 0%, transparent 70%);
   top: -120px; left: -120px;
   animation: orb-drift-1 18s ease-in-out infinite alternate;
 }
 .bg-orb-2 {
-  width: 400px; height: 400px;
+  width: min(400px, 90vw); height: min(400px, 90vw);
   background: radial-gradient(circle, rgba(34,197,94,0.07) 0%, transparent 70%);
   bottom: -100px; right: -80px;
   animation: orb-drift-2 22s ease-in-out infinite alternate;
@@ -88,11 +88,15 @@ html, body {
   background: var(--card);
   border: 1px solid var(--border2);
   border-radius: var(--r);
-  padding: 44px 40px 40px;
+  padding: 32px 24px 28px;
   max-width: 480px;
   width: 100%;
   text-align: center;
   box-shadow: 0 0 0 1px var(--border), 0 24px 60px rgba(0,0,0,0.45), 0 0 80px rgba(79,110,247,0.04);
+}
+@media (min-width: 520px) {
+  .card { padding: 44px 40px 40px; }
+  .page { padding: 24px; }
 }
 
 /* ── Logo lockup ─────────────────────────────── */
@@ -101,8 +105,11 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 9px;
-  margin-bottom: 36px;
+  margin-bottom: 24px;
   opacity: 0.55;
+}
+@media (min-width: 520px) {
+  .logo-lockup { margin-bottom: 36px; }
 }
 .logo-mark {
   width: 26px; height: 26px;
@@ -115,12 +122,15 @@ html, body {
 
 /* ── Central icon area ───────────────────────── */
 .icon-wrap {
-  width: 88px; height: 88px;
+  width: 72px; height: 72px;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 28px;
+  margin: 0 auto 22px;
   position: relative;
   transition: background 0.5s, box-shadow 0.5s;
+}
+@media (min-width: 520px) {
+  .icon-wrap { width: 88px; height: 88px; margin-bottom: 28px; }
 }
 .icon-wrap.syncing {
   background: rgba(79,110,247,0.1);
@@ -191,7 +201,7 @@ html, body {
 
 /* ── Typography ──────────────────────────────── */
 .card-title {
-  font-size: 22px;
+  font-size: 19px;
   font-weight: 800;
   letter-spacing: -0.5px;
   line-height: 1.2;
@@ -203,14 +213,20 @@ html, body {
   color: var(--text2);
   line-height: 1.7;
 }
+@media (min-width: 520px) {
+  .card-title { font-size: 22px; }
+}
 
 /* ── Step pipeline ───────────────────────────── */
 .pipeline {
-  margin: 32px 0 0;
+  margin: 24px 0 0;
   display: flex;
   flex-direction: column;
   gap: 0;
   text-align: left;
+}
+@media (min-width: 520px) {
+  .pipeline { margin-top: 32px; }
 }
 .pipeline-step {
   display: flex;
