@@ -87,6 +87,7 @@ body { background: var(--bg); }
 .status-banner.syncing { background: rgba(79,110,247,0.06); border-color: rgba(79,110,247,0.22); }
 .status-banner.error   { background: rgba(255,77,106,0.06); border-color: rgba(255,77,106,0.22); }
 .status-banner.pending { background: rgba(245,166,35,0.06); border-color: rgba(245,166,35,0.22); }
+.status-banner.revoked { background: rgba(100,100,120,0.06); border-color: rgba(100,100,120,0.22); }
 
 .banner-icon {
   width: 40px; height: 40px; border-radius: 10px;
@@ -97,6 +98,7 @@ body { background: var(--bg); }
 .status-banner.syncing .banner-icon { background: rgba(79,110,247,0.12); }
 .status-banner.error   .banner-icon { background: rgba(255,77,106,0.10); }
 .status-banner.pending .banner-icon { background: rgba(245,166,35,0.10); }
+.status-banner.revoked .banner-icon { background: rgba(100,100,120,0.10); }
 
 .banner-body { flex: 1; min-width: 0; }
 .banner-title {
@@ -107,6 +109,7 @@ body { background: var(--bg); }
 .status-banner.syncing .banner-title { color: var(--brand); }
 .status-banner.error   .banner-title { color: var(--red); }
 .status-banner.pending .banner-title { color: #b45309; }
+.status-banner.revoked .banner-title { color: #6b7280; }
 
 .banner-sub { font-size: 12px; color: var(--muted); line-height: 1.5; }
 
@@ -289,7 +292,7 @@ body { background: var(--bg); }
       </div>
       <div class="banner-body">
         <div class="banner-title">Access Active</div>
-        <div class="banner-sub">You're all set — head to the gym and you're good to go.</div>
+        <div class="banner-sub">Your doors are open. Come on in.</div>
       </div>
     </div>
 
@@ -302,7 +305,7 @@ body { background: var(--bg); }
       </div>
       <div class="banner-body">
         <div class="banner-title">Syncing Your Access</div>
-        <div class="banner-sub">We're activating your access right now — this usually takes just a moment.</div>
+        <div class="banner-sub">We're setting up your access now. Hang tight — it should only take a minute.</div>
       </div>
     </div>
 
@@ -315,7 +318,7 @@ body { background: var(--bg); }
       </div>
       <div class="banner-body">
         <div class="banner-title">Access Issue</div>
-        <div class="banner-sub" id="banner-error-sub">There was a problem activating your access. Your gym has been notified.</div>
+        <div class="banner-sub" id="banner-error-sub">Something went wrong on our end. Your gym's been notified and they'll get it sorted.</div>
       </div>
     </div>
 
@@ -328,7 +331,20 @@ body { background: var(--bg); }
       </div>
       <div class="banner-body">
         <div class="banner-title">Pending Setup</div>
-        <div class="banner-sub">No active access found yet. If you recently purchased a plan, it may take a moment to come through.</div>
+        <div class="banner-sub">We don't see an active plan yet. If you just signed up, give it a minute and check again.</div>
+      </div>
+    </div>
+
+    <div id="banner-revoked" class="status-banner revoked hidden">
+      <div class="banner-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="7" stroke="#6b7280" stroke-width="1.8"/>
+          <path d="M7 10h6" stroke="#6b7280" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="banner-body">
+        <div class="banner-title">No Active Membership</div>
+        <div class="banner-sub">Looks like there's no active plan on your account. Pick up a membership and your access will be ready to go.</div>
       </div>
     </div>
 
@@ -410,7 +426,7 @@ function esc(s) {
 
 // ── Banner ────────────────────────────────────────────────────────
 function showBanner(state, errorMsg) {
-  ['active','syncing','error','pending'].forEach(s => {
+  ['active','syncing','error','pending','revoked'].forEach(s => {
     document.getElementById(`banner-${s}`).classList.toggle('hidden', s !== state);
   });
   if (state === 'error' && errorMsg) {
@@ -513,13 +529,18 @@ function renderAccess(data) {
     case 'pending_hardware':
     case 'pending_identity':
       showBanner('syncing'); break;
-    case 'failed':
     case 'revoked':
+    case null:
+      showBanner('revoked'); break;
+    case 'failed': {
+      const planLabel = data.access?.[0]?.planName || data.lastEvent?.planName || '';
+      const planPhrase = planLabel ? `Your ${planLabel} is` : 'Your plan is';
       showBanner('error',
         data.lastEvent?.errorCode === 'PLAN_NOT_MAPPED'
-          ? 'Your plan is still being configured. Contact your gym for an update.'
-          : 'There was an issue with your access. Your gym has been notified.'
+          ? `${planPhrase} still being configured. Reach out to your gym and they'll get it sorted.`
+          : "Something went wrong activating your access. Your gym's been notified and they'll get it sorted."
       ); break;
+    }
     default:
       showBanner('pending');
   }
@@ -570,8 +591,8 @@ async function boot() {
   } catch {
     document.getElementById('doors-skeleton')?.remove();
     const doorsCard = document.getElementById('doors-card');
-    if (doorsCard) doorsCard.innerHTML = '<div class="card-empty">Could not reach the access system. Try again shortly.</div>';
-    showBanner('error', 'Could not reach the access system. Try again shortly.');
+    if (doorsCard) doorsCard.innerHTML = '<div class="card-empty">We couldn\'t connect just now. Hit Check Status to try again.</div>';
+    showBanner('error', "We couldn't connect just now. Hit Check Status to try again.");
     setTimestamp(null, true);
   }
 }
