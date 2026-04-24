@@ -14,12 +14,16 @@
 <%- include('../partials/head', { title: 'My Access' }) %>
 <style>
 /* ── Page shell ──────────────────────────────── */
-html, body { height: 100%; }
+html, body {
+  height: auto;
+  overflow-x: hidden;
+}
+body { background: var(--bg); }
 .page {
-  min-height: 100vh;
   background: var(--bg);
   display: flex;
   flex-direction: column;
+  min-height: 100vh;
 }
 
 /* ── Top bar ─────────────────────────────────── */
@@ -233,10 +237,17 @@ html, body { height: 100%; }
 
 /* ── Mobile ──────────────────────────────────── */
 @media (max-width: 480px) {
-  .content { padding: 20px 12px 32px; }
-  .page-title { font-size: 19px; }
-  .footer-strip { flex-direction: column; align-items: flex-start; }
+  .topbar { padding: 0 14px; height: 46px; }
+  .content { padding: 16px 12px 28px; }
+  .page-title { font-size: 18px; }
+  .page-subtitle { font-size: 12px; }
+  .page-header { margin-bottom: 16px; }
+  .section { margin-bottom: 14px; }
+  .status-banner { padding: 12px 14px; gap: 10px; }
+  .banner-icon { width: 34px; height: 34px; }
+  .footer-strip { flex-direction: column; align-items: flex-start; gap: 10px; }
   .btn-check { width: 100%; justify-content: center; }
+  .member-chip { font-size: 10px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 </style>
 </head>
@@ -376,14 +387,20 @@ html, body { height: 100%; }
 const params           = new URLSearchParams(window.location.search);
 let   platformMemberId = params.get('memberId');
 let   clientId         = params.get('clientId');
+let   memberName       = params.get('memberName') || '';
 
-// ── postMessage listener (Wix iframe sends memberId + clientId) ───
+// ── postMessage listener (Wix iframe sends memberId + clientId + memberName) ──
 window.addEventListener('message', (e) => {
   if (!e.data) return;
   if (e.data.memberId && !platformMemberId) {
     platformMemberId = e.data.memberId;
     clientId         = e.data.clientId || clientId;
+    memberName       = e.data.memberName || '';
     boot();
+  }
+  if (e.data.memberName && !memberName) {
+    memberName = e.data.memberName;
+    updateMemberChip();
   }
 });
 
@@ -525,13 +542,21 @@ document.getElementById('btn-check').addEventListener('click', async () => {
   }
 });
 
+// ── Member chip ───────────────────────────────────────────────────
+function updateMemberChip() {
+  const label = document.getElementById('member-label');
+  if (memberName && memberName.trim()) {
+    label.textContent = memberName.trim();
+  } else {
+    label.textContent = 'Member';
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────────
 async function boot() {
   if (!platformMemberId || !clientId) return;
 
-  // Show member chip label (truncated ID)
-  document.getElementById('member-label').textContent =
-    'Member · ' + platformMemberId.slice(0, 8) + '…';
+  updateMemberChip();
 
   // Fetch plans (Wix side — passed via postMessage or skipped if not available)
   // Plans are rendered from postMessage context data if provided, otherwise empty
@@ -551,11 +576,16 @@ async function boot() {
   }
 }
 
-// ── Also accept plans via postMessage ────────────────────────────
+// ── Also accept plans + name via postMessage ──────────────────────
 window.addEventListener('message', (e) => {
-  if (e.data && e.data.plans) {
+  if (!e.data) return;
+  if (e.data.plans) {
     window._wixPlans = e.data.plans;
     renderPlans(e.data.plans);
+  }
+  if (e.data.memberName && !memberName) {
+    memberName = e.data.memberName;
+    updateMemberChip();
   }
 });
 
