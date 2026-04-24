@@ -1600,7 +1600,6 @@ async function _send(eventType, data) {
   } catch (e) { console.error('AccessSync webhook error:', e); }
 }
 
-export function wixPricingPlans_onOrderCreated(event)   { return _send('wixPricingPlans.orderCreated', event); }
 export function wixPricingPlans_onOrderPurchased(event) { return _send('wixPricingPlans.orderPurchased', event); }
 export function wixPricingPlans_onOrderStarted(event)   { return _send('wixPricingPlans.orderStarted', event); }
 export function wixPricingPlans_onOrderCanceled(event)          { return _send('wixPricingPlans.orderCanceled', event); }

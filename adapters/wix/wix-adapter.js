@@ -28,12 +28,13 @@ class WixAdapter {
    * Velo events.js sends short types like 'plan.purchased' directly.
    */
   _normalizeEventType(eventType) {
-    // Wix docs: orderPurchased fires on paid + free orders (canonical grant event).
-    // orderStarted fires when order reaches startDate (paid + free). orderCreated may
-    // represent a DRAFT/PENDING order — hooking all three is safe because processed_event_ids
-    // dedupes by unique event id and member_role_assignments UNIQUE constraint makes grants idempotent.
+    // orderPurchased: fires on payment confirmation for paid plans, and on acceptance for
+    // free plans. This is the canonical grant trigger — payment is confirmed at this point.
+    // orderCreated fires before payment (DRAFT/PENDING state) and is intentionally excluded
+    // to prevent provisioning access before a member finishes paying.
+    // orderStarted fires when the order's startDate arrives — required for delayed-start plans
+    // where orderPurchased fires weeks before the member's access window opens.
     const map = {
-      'wixPricingPlans.orderCreated':   'plan.purchased',
       'wixPricingPlans.orderPurchased': 'plan.purchased',
       'wixPricingPlans.orderStarted':   'plan.purchased',
       'wixPricingPlans.orderUpdated':   'plan.purchased',  // covers renewals + upgrades

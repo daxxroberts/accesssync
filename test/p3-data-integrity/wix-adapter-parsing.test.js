@@ -128,9 +128,14 @@ describe('[P3] Parsed event always contains the required fields for downstream p
 
 describe('[P3] Wix REST webhook format (data.entity) resolves correctly', () => {
 
-  it('normalizes wixPricingPlans.orderCreated → plan.purchased', () => {
-    const result = wixAdapter.parseEvent('wixPricingPlans.orderCreated', 'site-001', wixRestOrderCreatedPayload);
+  it('normalizes wixPricingPlans.orderPurchased → plan.purchased (canonical payment-confirmed grant)', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderPurchased', 'site-001', wixRestOrderCreatedPayload);
     expect(result.eventType).toBe('plan.purchased');
+  });
+
+  it('does NOT normalize wixPricingPlans.orderCreated — excluded because it fires pre-payment', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderCreated', 'site-001', wixRestOrderCreatedPayload);
+    expect(result.eventType).toBe('wixPricingPlans.orderCreated'); // passes through unnormalized → ignored by queue-worker
   });
 
   it('normalizes wixPricingPlans.orderUpdated → plan.purchased', () => {
@@ -149,17 +154,17 @@ describe('[P3] Wix REST webhook format (data.entity) resolves correctly', () => 
   });
 
   it('resolves memberId from REST webhook entity.buyer.memberId', () => {
-    const result = wixAdapter.parseEvent('wixPricingPlans.orderCreated', 'site-001', wixRestOrderCreatedPayload);
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderPurchased', 'site-001', wixRestOrderCreatedPayload);
     expect(result.platformMemberId).toBe(WIX_MEMBER_ID);
   });
 
   it('resolves planId from REST webhook entity.planId', () => {
-    const result = wixAdapter.parseEvent('wixPricingPlans.orderCreated', 'site-001', wixRestOrderCreatedPayload);
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderPurchased', 'site-001', wixRestOrderCreatedPayload);
     expect(result.planId).toBe(CONNECT_PLAN_ID);
   });
 
   it('resolves email and name from REST webhook entity.buyer', () => {
-    const result = wixAdapter.parseEvent('wixPricingPlans.orderCreated', 'site-001', wixRestOrderCreatedPayload);
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderPurchased', 'site-001', wixRestOrderCreatedPayload);
     expect(result.email).toBe('chad@houseofgains.com');
     expect(result.name).toBe('Chad Member');
   });
