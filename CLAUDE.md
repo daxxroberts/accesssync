@@ -1,5 +1,5 @@
 # CLAUDE.md — AccessSync
-**Version:** 4.5 | **Updated:** 2026-04-20 | **Author:** Daxx Roberts / KEEPER
+**Version:** 4.6 | **Updated:** 2026-04-26 | **Author:** Daxx Roberts / KEEPER
 
 > **Read this file before writing a single line of code. Then read `open_items.md`. Then read the spec for what you're building.**
 
@@ -51,10 +51,10 @@ When asked about a UI page or to view/open one:
 
 ## Repository State
 
-**All 4 project-plan sprints complete. Business-risk-aware test framework live (Concept #6): 32 tests across P1/P2/P3 tiers, custom Jest reporter + sequencer. `npm run test:deploy` gives DEPLOY SAFE / DO NOT DEPLOY verdict. End-to-end provisioning pipeline working. Member-facing sync status page live. Operator console wired to live data. Onboarding hardened with invite token auth, end-to-end validation step, and location auto-activation. Sprint 5 complete as of 2026-04-02. 6 operator UI screens live. Pre-HOG code gaps closed 2026-04-10: retryPendingHardwareMembers scoped to plan mapping save (WIRE-G-01), all platform-specific "Kisi app" copy replaced (U-09), full Humanizer pass on all 6 operator UI screens + onboarding portal. OB-46 Railway migration complete 2026-04-10 (member_access_sources table live). Business gates closed 2026-04-10: G-03 (Kisi partner), G-08 (Kisi API access), G-09 (Chad bought Kisi). Pending: G-01 (Chad agreement), G-02 (LLC), G-05 (insurance), G-06 (failure runbook), OB-47/48 (multi-source grant/revoke logic).**
+**All 4 project-plan sprints complete. Business-risk-aware test framework live (Concept #6): 90 tests across P1/P2/P3 tiers (P1: 34, P2: 17, P3: 39 as of 2026-04-26), custom Jest reporter + sequencer. `npm run test:deploy` gives DEPLOY SAFE / DO NOT DEPLOY verdict. End-to-end provisioning pipeline working. Member-facing sync status page + persistent My Access dashboard live. Operator console wired to live data. Onboarding hardened with invite token auth, end-to-end validation step, and location auto-activation. Sprint 5 complete as of 2026-04-02. 6 operator UI screens + 3 member-facing pages (sync-status, my-access, multi-member) live. Pre-HOG code gaps closed 2026-04-10. OB-46 Railway migration complete 2026-04-18 (member_access_sources table live). Two-phase provisioning schema in place 2026-04-22 (orderStarted split for delayed-start plans). DR-036 locked 2026-04-13 (client_subscriptions table — phase 1 schema applied locally; deploy pending OB-70). Business gates closed 2026-04-10: G-03 (Kisi partner), G-08 (Kisi API access), G-09 (Chad bought Kisi). Pending: G-01 (Chad agreement), G-02 (LLC), G-05 (insurance), G-06 (failure runbook), OB-47/48 (multi-source grant/revoke logic), OB-70 (DR-036 prod deploy).**
 
-**Current status as of 2026-04-10:**
-- `schema.sql` — DR-018 through DR-035 applied. **14 tables in Railway DB as of 2026-04-18 (OB-46 applied — `member_access_sources` created in prod with 3 indexes).** `member_role_assignments` (DR-026), `access_type` on `plan_mappings` (DR-026), `hardware_api_key` columns (DR-035), `source_plan_id` (DR-035), `hardware_key_last_verified` + `hardware_key_last_error` on `locations` (sprint-5), `first_grant_sent` on `clients` (sprint-5).
+**Current status as of 2026-04-26:**
+- `schema.sql` — DR-018 through DR-036 applied locally. **17 tables in `schema.sql` as of 2026-04-26 (15 in Railway prod; `client_subscriptions` schema present but not yet deployed — OB-70).** Tables added since v4.5: `diagnostic_log` (observability-trace-id.sql + diagnostic-log.sql), `client_subscriptions` (dr-036.sql, deploy pending). New columns: `member_access_state.scheduled_start_date` (two-phase-provisioning.sql), `webhook_log.dedup_status`, `plan_mapping_groups.health_status`, `error_queue.error_code` + `user_message` + `resolution`. Existing prior columns: `member_role_assignments` (DR-026), `access_type` on `plan_mappings` (DR-026), `hardware_api_key` columns (DR-035), `source_plan_id` (DR-035), `hardware_key_last_verified` + `hardware_key_last_error` on `locations` (sprint-5), `first_grant_sent` on `clients` (sprint-5).
 - `db.js` — ✅ Built. pg pool, query helper, `getClient()`, `healthCheck()`, `pool` exported.
 - `adapters/wix/wix-connector.js` — ✅ Layer 1. HTTP handler, HMAC verification (uses `req.rawBody`). Reads `X-AccessSync-Client-Id` header → calls `tenantResolver.registerSiteId()` for self-registration. Calls wix-adapter.parseEvent(). On HMAC rejection: calls `hmacMonitor.recordFailure()` (Sprint 5.1).
 - `adapters/wix/wix-adapter.js` — ✅ Layer 2. Wix payload parsing only. parseEvent() → standard event object. Zero dependencies. Multi-path resolution for memberId + planId across Pricing Plans, Bookings, and Members event structures (P6 fix).
@@ -68,7 +68,7 @@ When asked about a UI page or to view/open one:
 - `adapters/kisi-adapter.js` — Shim → `./kisi/kisi-adapter` (DR-022 backward compat).
 - `adapters/seam-adapter.js` — Shim → `./seam/seam-adapter` (DR-022 backward compat).
 - `server.js` — ✅ Fully implemented. Imports `adapters/wix/wix-connector` (DR-022). DB health check, BullMQ worker boot, SIGTERM graceful shutdown.
-- `core/queue-worker.js` — ✅ Built. Layer coordinator. Calls standardAdapter (resolve/lock/complete) around grantRevokeLogic. `payment.recovered` early-exit path (enableAccess only). `UnrecoverableError` for 4xx errors (DR-026). Concurrency: 20 (rate limiting moved to per-adapter connectors).
+- `core/queue-worker.js` — ✅ Built. Layer coordinator. Calls standardAdapter (resolve/lock/complete) around grantRevokeLogic. `payment.recovered` early-exit path (enableAccess only). `UnrecoverableError` for 4xx errors (DR-026). Two-phase provisioning: if plan has future `scheduled_start_date`, parks member as `'pending_start'` instead of firing hardware grant (post-v4.5). Concurrency: 20 (rate limiting moved to per-adapter connectors).
 - `core/hmac-monitor.js` — ✅ Built (Sprint 5.1). Redis sliding window HMAC failure counter. 3 failures in 5 min → Resend alert to `ACCESSSYNC_OWNER_NOTIFICATION_EMAIL`. 10-min cooldown key prevents alert storm. Non-blocking — never interrupts webhook flow.
 - `core/hardware-health-check.js` — ✅ Built (Sprint 5.2). 6-hourly Railway Cron. Tests each active client's `hardware_api_key` via `getLocks()`. 401 = invalid key, 403 = permissions error, no key = config missing. Sends specific diagnosis email per failure type. Updates `locations.hardware_key_last_verified` + `locations.hardware_key_last_error`.
 - `core/tenant-resolver.js` — ✅ Built. `site_id` → `client_id` with 5-min cache. `registerSiteId(clientId, siteId)` — idempotent UPDATE for self-registration. `DEFAULT_TENANT_ID` fallback auto-wires real `site_id` on first webhook.
@@ -81,7 +81,7 @@ When asked about a UI page or to view/open one:
 - `core/location-lapse.js` — ✅ Built (OB-20). `suspendLocationMembers()` — suspends all active members at a location when subscription lapses. Admin routes: POST /admin/clients/:id/locations/:locationId/suspend + /activate.
 - `core/crypto-utils.js` — ✅ Built. AES-256-GCM encrypt/decrypt for `hardware_api_key` + `wix_api_key` (DR-028).
 - `core/wix-plans-api.js` — ✅ Built (OB-62). Wix REST API client. Authorization: bare API key in header, `wix-site-id` header. Required permissions: Pricing Plans + Bookings read.
-- `admin/server.js` — ✅ Built. Separate Express app. Crash-isolated from Core Engine. EJS view engine (`admin/views/`). 6 operator page routes: `/dashboard`, `/members`, `/plan-mapping`, `/access`, `/locations`, `/admin-panel`. Passes `activeTab` to subnav partial.
+- `admin/server.js` — ✅ Built. Separate Express app. Crash-isolated from Core Engine. EJS view engine (`admin/views/`). 6 operator page routes: `/dashboard`, `/members`, `/plan-mapping`, `/access`, `/locations`, `/admin-panel`. 3 member-facing routes: `/sync-status`, `/my-access`, `/multi-member`. Plus `/portal-setup`, `/errors`, `/admin-errors`, `/onboard`. Passes `activeTab` to subnav partial.
 - `admin/middleware/auth.js` — ✅ Built. JWT httpOnly cookie.
 - `admin/routes/auth.js` — ✅ Built. Google OAuth.
 - `admin/routes/errors.js` — ✅ Built. Full Error Queue CRUD + BullMQ retry.
@@ -89,6 +89,8 @@ When asked about a UI page or to view/open one:
 - `admin/routes/webhooks.js` — ✅ Built. Webhook Inspector — recent + detail.
 - `admin/routes/queue.js` — ✅ Built. Queue Monitor — counts + jobs by state.
 - `admin/routes/clients.js` — ✅ Built. Clients panel — GET / (with member counts), PATCH /:id. GET /:id/api-key/test (validates stored key against Kisi GET /groups?limit=1).
+- `admin/routes/portal.js` — ✅ Built (post-v4.5). Operator portal entry via Wix Dashboard Page Extension iframe. `instanceId` + JWT verification, exchanges Wix instance token for Admin Hub session.
+- `admin/routes/multi-member.js` — ✅ Built (post-v4.5). Sub-member CRUD + batch submit workflow (draft → submitted → active lifecycle per DR-029/DR-032). Family plan back end. **Note: family plan UI still gated by HOG launch hard stop.**
 - `admin/routes/operator.js` — ✅ Built. Structured front matter (`@file/@layer/@reads/@writes/@calls/@exports/@dr`). Structured logger (`core/logger.js`) on all paths — no raw `console.*`. Error responses hardened (generic 500s, no `err.message` leaks). POST /operator/verify-bypass (owner PIN). Signup endpoints protected by `requireInviteToken` middleware + 5 req/IP/min rate limiter (OB-24). Full operator API: paginated members, config alerts, error summary, location management, hardware API key management, notification email (Sprint 5.3), onboarding, hardware groups, access log, access stats, plan mappings. Invite token middleware on signup endpoints.
 - `admin/views/pages/dashboard.ejs` — ✅ Live data. Amber "Connect your hardware API key" banner when key missing (OB-26). Hardware platform chip shows amber "No Key" pill.
 - `admin/views/pages/members.ejs` — ✅ Live data. Email search + CSV export (Sprint 5.6). No family grouping code.
@@ -97,11 +99,17 @@ When asked about a UI page or to view/open one:
 - `admin/views/pages/locations.ejs` — ✅ API key management + notification email card (Sprint 5.3). Per-location API key override. Suspend/reactivate button (Sprint 5.7).
 - `admin/views/pages/admin-panel.ejs` — ✅ Built. Mock data.
 - `admin/views/pages/sync-status.ejs` — ✅ Built (OB-46). Member-facing post-purchase sync status page at `/sync-status?memberId=X&clientId=Y`. 4 visual states: syncing, active, error, pending. Polls `/member/access-status` every 3s, max 60 polls. Stale data indicator: amber badge after 30s (OI-05).
+- `admin/views/pages/my-access.ejs` — ✅ Built (post-v4.5). Member-facing persistent access dashboard at `/my-access?memberId=X&clientId=Y`. Iframe-embeddable from Wix member page; postMessage listener accepts `{memberId, clientId, memberName, plans}`. 5 visual states: active, syncing, error, pending, revoked (null/revoked unified). On-demand "Check Status" polling. Member name in topbar chip. CSP `frame-ancestors` configured for Wix embed.
+- `admin/views/pages/multi-member.ejs` — ✅ Built (post-v4.5). Member plan-card UI + sub-member editor + draft submission workflow. Wired to `admin/routes/multi-member.js`. Family-plan member-facing surface. **Gated by HOG launch hard stop.**
+- `admin/views/pages/portal-setup.ejs` — ✅ Built (post-v4.5). Operator portal first-run / Wix Dashboard iframe entry. Pairs with `admin/routes/portal.js`.
+- `admin/views/pages/errors.ejs` / `admin-errors.ejs` — ✅ Built. Error Queue UI (operator + admin).
+- `admin/views/pages/onboard.ejs` — ✅ Built. EJS-rendered onboarding wizard. Coexists with `admin/public/onboard.html` (legacy static path; EJS path is current).
 - `admin/views/partials/head.ejs` — ✅ Shared `<head>` — meta, Sora font, operator-styles.css link.
 - `admin/views/partials/topbar.ejs` — ✅ Shared topbar — AccessSync logo, sync badge, dark mode toggle.
 - `admin/views/partials/subnav.ejs` — ✅ Shared sub-nav container — `data-active` drives tab highlighting via operator-nav.js.
 - `admin/public/operator-nav.js` — ✅ Shared JS — sub-nav rendering (6 tabs), dark mode toggle, `showToast()`, `esc()` utility.
 - `admin/public/operator-styles.css` — ✅ Shared CSS — all operator page styling. Sora font, CSS variables, responsive.
+- `admin/svelte/` — ✅ Component library bootstrapped (post-v4.5). Shared components: `ConfirmModal`, `Drawer`, `DataTable`, `LoadingState`, `StatCard`, `CodeChip`, `SearchBar`, `PillBadge`, `EmptyState`, `TimeStamp`. Stores + panels + plan-mapping-entry.js. Vite-built (`npm run build`). Foundation for next-gen Admin Hub UI rebuild. See `admin/svelte/COMPONENTS.md`.
 - `admin/public/onboard.html` — ✅ Multi-step onboarding. Invite token gate. Owner bypass PIN path. System Check panel (`runValidation()`). Webhook secret instructions. Hardware group summary after key validation.
 - `docs/what-is-accesssync.html` — ✅ Operator-facing explainer — platform boxes, 4-step flow, before/after, pricing tiers.
 - `docs/architecture.html` — ✅ 7-layer architecture explainer — layer stack, standard event contract, hardware interface, adapter growth matrix.
@@ -114,6 +122,17 @@ When asked about a UI page or to view/open one:
 - `llms-full.txt` — ✅ Full context dump — all 8 doc sections concatenated, markup stripped. ~400 lines.
 - `migrations/dr-035.sql` — ✅ Platform-agnostic schema renames. Run on Railway before Sprint 5 code deploy. ✅ Applied 2026-04-02.
 - `migrations/sprint-5.sql` — ✅ Sprint 5 columns: `hardware_key_last_verified`, `hardware_key_last_error`, `first_grant_sent`. ✅ Applied 2026-04-02.
+- `migrations/dr-034.sql` — ✅ `member_access_sources` + 3 indexes. ✅ Applied 2026-04-18 (OB-46 closed).
+- `migrations/dr-036.sql` — ⚠️ `client_subscriptions` table (DR-036, phase 1 additive). **Pending Railway deploy — OB-70 open.**
+- `migrations/two-phase-provisioning.sql` — ✅ Adds `member_access_state.scheduled_start_date` for delayed-start plans (commit 4e6b72f).
+- `migrations/observability-trace-id.sql` + `diagnostic-log.sql` — ✅ `diagnostic_log` table + `trace_id` threaded through webhook_log + diagnostic_log.
+- `migrations/observability-pipeline-stages.sql` — ✅ Pipeline stage tracking.
+- `migrations/error-queue-v2.sql` — ✅ `error_code` + `user_message` + `resolution` enum on `error_queue`.
+- `migrations/edge-case-health-status.sql` — ✅ `health_status` on `plan_mapping_groups`.
+- `migrations/webhook-log-dedup-status.sql` + `webhook-log-index.sql` — ✅ Audit trail + index optimization.
+- `migrations/multi-member.sql` — ✅ Family plan schema (DR-029–032, deferred).
+- `migrations/wix-instance-id.sql` — ✅ Wix Dashboard Page Extension instance ID column for portal auth (paired with `admin/routes/portal.js`).
+- `migrations/multi-group-archive-audit.sql`, `per-location-config.sql`, `wix-first-flow.sql`, `platform-agnostic-client-columns.sql`, `reconciliation-interval.sql`, `ob-19.sql` — ✅ Earlier migrations, all applied.
 
 ---
 
@@ -162,31 +181,40 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 
 ---
 
-## Schema — 14 Tables
+## Schema — 17 Tables
 
-**14 tables in Railway DB as of 2026-04-18 (OB-46 applied). All migrations through DR-035 + sprint-5.sql + multi-group-archive-audit.sql + OB-46 `member_access_sources` applied. See `04_Data/Data_Model.md` for full schema.**
+**17 tables in `schema.sql` as of 2026-04-26 (15 in Railway prod). All migrations through DR-035 + sprint-5 + DR-034 (OB-46) + two-phase-provisioning + observability + error-queue-v2 applied. `client_subscriptions` (DR-036) schema present locally but not yet deployed — OB-70 pending. See `04_Data/Data_Model.md` for full schema.**
 
 | Table | Purpose |
 |---|---|
 | `clients` | One row per operator account. `hardware_api_key` (encrypted, DR-028/DR-035), `notification_email`, `first_grant_sent`, `last_wix_webhook_at`, `wix_api_key` (encrypted). |
 | `locations` | One row per physical location. `subscription_status`, `tier`, `hardware_api_key` (per-location override), `hardware_key_last_verified`, `hardware_key_last_error` (sprint-5, DR-035). |
 | `plan_mappings` | Maps `source_plan_id` (DR-035, was `wix_plan_id`) to location. `access_type`, `plan_name`, `door_name`, `status`. Multi-group via junction table. |
+| `plan_mapping_groups` | Junction table — one row per mapping per hardware group. `health_status` (ok / not_found) per group. |
 | `member_identity` | Platform-agnostic member record. `platform_member_id`, `source_platform`, `hardware_platform`, `hardware_user_id`. |
-| `member_access_state` | Current access state per member. `in_flight` lock (DR-023). |
+| `member_access_state` | Current access state per member. `in_flight` lock (DR-023). `scheduled_start_date` for two-phase provisioning (post-v4.5). |
 | `member_access_sources` | Multi-source grant/revoke (DR-034). One row per member-per-mapping-per-source. **Applied 2026-04-18 (OB-46 closed). Schema + 3 indexes live in Railway DB.** |
 | `member_role_assignments` | One row per member per mapping (DR-026). UNIQUE constraint. Enables multi-door provisioning. |
 | `member_access_log` | Lifecycle audit log. |
 | `processed_event_ids` | Idempotency table (DR-010). |
-| `error_queue` | Dead-letter + operator-visible errors. |
+| `error_queue` | Dead-letter + operator-visible errors. `error_code`, `user_message`, `resolution` enum (error-queue-v2). |
 | `adapter_admin_log` | Operator configuration issues. `configured_by`, `configured_at` (DR-019). |
-| `webhook_log` | Raw inbound webhook record. |
+| `webhook_log` | Raw inbound webhook record. `dedup_status` audit field. `trace_id` for observability threading. |
+| `diagnostic_log` | Observability pipeline stages + trace IDs. Threaded with `webhook_log.trace_id`. |
 | `client_activity_summary` | Daily UPSERT per client — events_received, grants_completed, revokes_completed, errors_count (DR-024). |
 | `config_alert_log` | Configuration issue alerts. |
+| `client_subscriptions` | DR-036 — platform-agnostic billing/subscription model. **Schema present in `schema.sql` (dr-036.sql); not yet deployed to Railway prod — OB-70 open. Phase 2 dual-read code + phase 3 column removal deferred.** |
 
 **Column name notes (DR-035):**
 - `kisi_api_key` → `hardware_api_key` on both `clients` and `locations`
 - `wix_plan_id` → `source_plan_id` on `plan_mappings`
 - `hardware_key_last_verified` + `hardware_key_last_error` on `locations`
+
+**Post-v4.5 column additions:**
+- `member_access_state.scheduled_start_date` — two-phase provisioning (delayed-start plans)
+- `webhook_log.dedup_status` + `webhook_log.trace_id` — observability
+- `error_queue.error_code` + `user_message` + `resolution` — error-queue-v2
+- `plan_mapping_groups.health_status` — per-group health
 
 ---
 
@@ -281,6 +309,7 @@ Front matter is the index. If it drifts from reality it defeats the purpose — 
 | DR-033 | Unified member access widget — single HTML, 3 modes via `planType`. **⚠️ DEFERRED.** |
 | DR-034 | `member_access_sources` — multi-source grant/revoke. Pre-grant source check. Revoke fires hardware DELETE only when all sources gone. **OB-46/47/48 pending.** |
 | DR-035 | Platform-agnostic column renames: `kisi_api_key → hardware_api_key`, `wix_plan_id → source_plan_id`, `hardware_key_last_verified`, `hardware_key_last_error`. Migration applied 2026-04-02. |
+| DR-036 | `client_subscriptions` table — platform-agnostic billing model. Phase 1: additive schema (live in `schema.sql`, dr-036.sql). Phase 2: dual-read code in plan-mapping-resolver. Phase 3: deprecate `locations.subscription_status` + `tier` columns. **Phase 1 deploy pending — OB-70 open.** Locked 2026-04-13. |
 
 Full decision records: `AccessSync/13_Decision_Records/`
 
@@ -304,6 +333,8 @@ Full decision records: `AccessSync/13_Decision_Records/`
 | OB-49 | **Nightly reconciliation** — compare `member_access_sources` against live hardware role assignments. Flag orphans + missing. Clean expired `valid_until` rows. | Reconciliation accuracy |
 | OB-51 | Set `RESEND_API_KEY` + `RESEND_FROM_EMAIL` in Railway. Required before any alert emails fire. | Sprint 5 email alerts |
 | OB-56 | Weekly summary email. **DEFERRED — 3 design decisions needed first.** | Post-sprint |
+| OB-70 | **DR-036 deploy** — run `migrations/dr-036.sql` against Railway prod (creates `client_subscriptions`). Then phase 2 dual-read in `plan-mapping-resolver.js`. Blocks OB-47/48 hardening since source-check + subscription model now interleaved. | Multi-source safety + billing model |
+| OB-71 | **Two-phase provisioning automation** — `member_access_state.scheduled_start_date` column live, parking logic in `queue-worker.js` parks members as `pending_start`. Cron job to flip `pending_start` → `active` when `scheduled_start_date <= NOW()` not yet wired. | Delayed-start plan correctness |
 | G-10 | NOVA reviews Kisi API docs, confirms schema assumptions | Adapter build start |
 | RI-01 | **PARSE research: Wix plan modification behavior.** Does Wix change `plan_id` on rename/reprice? Does archiving fire `plan.cancelled`? Load-bearing assumption — must verify before HOG launch. | HOG correctness |
 | DEF-01 | Role-based Admin Hub access. **Deferred — trigger: second client onboard.** | Multi-client scale |
@@ -576,5 +607,6 @@ REX will not allow build work to begin until this statement is made.
 | v4.3 | 2026-04-10 | Pre-HOG code complete. WIRE-G-01 closed (retryPendingHardwareMembers scoped to plan mapping PATCH). U-09 closed (all platform-specific copy removed from operator UI + onboarding + sync-status). Humanizer pass complete — all 6 operator pages + onboarding portal. Graphify rebuilt (262 nodes, 370 edges). HANDOFF_BRIEF + APP_CONTEXT updated to reflect closed gaps. |
 | v4.4 | 2026-04-14 | operator.js code quality cleanup: structured logger migration (~75 console.* → log.*), error response hardening (19 err.message leaks sealed), OB-46 stale catch removed, 6 inline requires hoisted, N+1 INSERT loops batched, front matter added per protocol. 32/32 tests DEPLOY SAFE. |
 | v4.5 | 2026-04-20 | Added SAGE Approval Rule — all non-trivial changes require SAGE review before implementation. SAGE pulls in supporting agents as needed; UX/UI changes automatically include FORGE, LENS, PIXEL, REAM. |
+| v4.6 | 2026-04-26 | Repository-State refresh: My Access member dashboard live (`/my-access`, iframe-embeddable from Wix). Two-phase provisioning schema in (`scheduled_start_date`); cron flip TBD (OB-71). Portal route + `wix-instance-id.sql` for Wix Dashboard Page Extension auth. Multi-member backend wired (DR-029/032 family plan, still HOG-gated). Svelte component library bootstrapped under `admin/svelte/` (10+ shared components, Vite build). Schema count 14 → 17 (added `diagnostic_log`, `plan_mapping_groups`, `client_subscriptions`). DR-036 locked (`client_subscriptions`, phase 1 schema only — OB-70 deploy pending). Error-queue-v2 + observability migrations applied. handoff/ docs (APP_CONTEXT, DECISION_REGISTER, CIRCUIT_REVIEW, QUERY_PATTERNS, PROVISIONING, IRIS screen specs) in repo. |
 
 *Archive of prior versions: `01_Project_Foundation/Claude_Versions/`*
