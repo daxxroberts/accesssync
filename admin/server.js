@@ -143,7 +143,8 @@ app.get('/member/access-status', async (req, res) => {
     res.status(502).json({ error: 'upstream unavailable' });
   }
 });
-app.get('/multi-member',   (req, res) => res.render('pages/multi-member'));
+app.get('/multi-member', allowMemberFrame, (req, res) => res.render('pages/multi-member'));
+app.get('/member-hub',   allowMemberFrame, (req, res) => res.render('pages/member-hub'));
 
 // ── Admin Hub ──────────────────────────────────────────────────
 // Serve index.html at both / and /OwnerDashboard — no redirect.

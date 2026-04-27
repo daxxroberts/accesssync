@@ -1,0 +1,2151 @@
+<%#
+  @file member-hub.ejs
+  @layer admin/pages
+  @route /member-hub?memberId=X&clientId=Y[&tab=status]
+  @role member-facing
+  @audience gym members — unified hub replacing sync-status.ejs, my-access.ejs, multi-member.ejs
+  @data GET /member/access-status?platformMemberId=X&clientId=Y
+  @data GET /member/:memberId/widget-data?clientId=Y
+  @data POST /api/multi-member/members
+  @data PUT /api/multi-member/members/:subId
+  @data DELETE /api/multi-member/members/:subId
+  @data POST /api/multi-member/submit
+  @dr DR-029, DR-030, DR-031, DR-032, DR-033, DR-037
+  @notes Tab 1 = My Access (always visible). Tab 2 = Manage Members (gated on allowMultiple).
+         Status overlay = always present, triggers on ?tab=status or in-flight access state.
+         Holder name fallback: widget-data does not return firstName/lastName (AXIOM gap — OB pending).
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>Member Hub — AccessSync</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --brand:       #4F6EF7;
+  --brand-dark:  #3D5BD4;
+  --brand-dim:   rgba(79,110,247,0.10);
+  --brand-glow:  rgba(79,110,247,0.20);
+  --green:       #16A34A;
+  --green-dim:   rgba(22,163,74,0.10);
+  --green-glow:  rgba(22,163,74,0.25);
+  --amber:       #D97706;
+  --amber-dim:   rgba(217,119,6,0.10);
+  --red:         #DC2626;
+  --red-dim:     rgba(220,38,38,0.07);
+  --bg:          #FAFAF7;
+  --card:        #FFFFFF;
+  --card2:       #F5F4F0;
+  --border:      rgba(28,22,16,0.06);
+  --border2:     rgba(28,22,16,0.10);
+  --text:        #1F1B16;
+  --text2:       #6E6358;
+  --muted:       #9A8F82;
+  --shadow:      rgba(28,22,16,0.08);
+  --surface:     rgba(28,22,16,0.03);
+  --row-bg:      rgba(28,22,16,0.02);
+  --row-draft-bg: rgba(217,119,6,0.05);
+  --row-draft-bd: rgba(217,119,6,0.20);
+  --input-bg:    rgba(28,22,16,0.025);
+  --input-bg-hi: rgba(28,22,16,0.04);
+  --bg-rgb:      250,250,247;
+}
+
+html, body {
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Sora', -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ── Background orbs ─────────────────────────────────── */
+.bg-orb {
+  position: fixed; border-radius: 50%;
+  filter: blur(80px); pointer-events: none; z-index: 0;
+}
+.bg-orb-1 {
+  width: min(500px,100vw); height: min(500px,100vw);
+  background: radial-gradient(circle, var(--brand-dim) 0%, transparent 70%);
+  top: -120px; left: -120px;
+  animation: orb-drift-1 18s ease-in-out infinite alternate;
+}
+.bg-orb-2 {
+  width: min(400px,90vw); height: min(400px,90vw);
+  background: radial-gradient(circle, rgba(22,163,74,0.06) 0%, transparent 70%);
+  bottom: -100px; right: -80px;
+  animation: orb-drift-2 22s ease-in-out infinite alternate;
+}
+
+/* ── Shell ────────────────────────────────────────────── */
+.shell {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 480px;
+  margin: 0 auto;
+  display: flex; flex-direction: column;
+  min-height: 100vh; min-height: 100svh;
+}
+
+/* ── Header ───────────────────────────────────────────── */
+.header {
+  padding: 18px 18px 0;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.logo-text { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+.logo-text .brand { color: var(--brand); }
+.logo-text .dim   { color: var(--text2); }
+.member-chip {
+  font-size: 11.5px; color: var(--text2); font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+}
+.member-dot {
+  width: 6px; height: 6px; border-radius: 3px;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+
+/* ── Tab bar ──────────────────────────────────────────── */
+.tab-bar {
+  padding: 12px 18px 0;
+  display: flex; gap: 4px;
+  flex-shrink: 0;
+}
+.tab-btn {
+  appearance: none; border: none;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: background .12s, color .12s, box-shadow .12s;
+  background: transparent; color: var(--text2);
+}
+.tab-btn:hover { background: rgba(28,22,16,0.04); color: var(--text); }
+.tab-btn.active {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(79,110,247,0.30);
+}
+
+/* ── Tab panels ───────────────────────────────────────── */
+.tab-panel { display: none; flex: 1; flex-direction: column; }
+.tab-panel.active { display: flex; }
+
+/* ── Shared scroll body ───────────────────────────────── */
+.panel-body {
+  flex: 1;
+  padding: 16px 18px 24px;
+  display: flex; flex-direction: column;
+}
+
+/* ═══════════════════════════════════════════════════════
+   TAB 1 — MY ACCESS
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Status banner ────────────────────────────────────── */
+.status-banner {
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin-bottom: 14px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; font-weight: 600;
+}
+.status-banner.active  { background: var(--green-dim); color: var(--green);  box-shadow: inset 0 0 0 1px rgba(22,163,74,0.25); }
+.status-banner.syncing { background: var(--brand-dim); color: var(--brand);  box-shadow: inset 0 0 0 1px var(--brand-glow); }
+.status-banner.error   { background: var(--red-dim);   color: var(--red);    box-shadow: inset 0 0 0 1px rgba(220,38,38,0.20); }
+.status-banner.pending { background: var(--amber-dim); color: var(--amber);  box-shadow: inset 0 0 0 1px rgba(217,119,6,0.25); }
+.status-banner.revoked { background: rgba(28,22,16,0.04); color: var(--text2); box-shadow: inset 0 0 0 1px var(--border2); }
+.banner-dot {
+  width: 8px; height: 8px; border-radius: 4px; flex-shrink: 0;
+  background: currentColor;
+}
+.banner-dot.pulse { animation: pulse 1.6s ease-in-out infinite; }
+.banner-sub { font-size: 11.5px; font-weight: 400; color: inherit; opacity: .75; margin-top: 2px; }
+
+/* ── Data cards ───────────────────────────────────────── */
+.data-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 4px var(--shadow);
+}
+.data-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.data-card-title {
+  font-size: 12px; font-weight: 600; color: var(--text2);
+  letter-spacing: .6px; text-transform: uppercase;
+}
+
+/* ── Plan rows ────────────────────────────────────────── */
+.plan-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+.plan-row:last-child { border-bottom: none; padding-bottom: 0; }
+.plan-row:first-child { padding-top: 0; }
+.plan-icon {
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  background: var(--brand-dim);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand-glow);
+}
+.plan-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.plan-meta { font-size: 11.5px; color: var(--text2); margin-top: 1px; }
+
+/* ── Door rows ────────────────────────────────────────── */
+.door-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+.door-row:last-child { border-bottom: none; padding-bottom: 0; }
+.door-row:first-child { padding-top: 0; }
+.door-icon {
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  background: var(--green-dim);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--green);
+  box-shadow: inset 0 0 0 1px rgba(22,163,74,0.25);
+}
+.door-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.door-plan { font-size: 11.5px; color: var(--text2); margin-top: 1px; }
+
+/* ── Timestamp ────────────────────────────────────────── */
+.timestamp-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.ts-text { font-size: 11.5px; color: var(--muted); }
+.ts-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); flex-shrink: 0;
+  margin-right: 5px; display: inline-block;
+}
+.ts-dot.stale { background: var(--amber); }
+.btn-check {
+  appearance: none; border: none;
+  height: 30px; padding: 0 12px; border-radius: 8px;
+  font-family: inherit; font-size: 12px; font-weight: 600;
+  background: transparent; color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand-glow);
+  cursor: pointer;
+  transition: background .12s;
+}
+.btn-check:hover { background: var(--brand-dim); }
+
+/* ── Skeleton loaders ─────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--card2) 25%, rgba(28,22,16,0.07) 50%, var(--card2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 6px;
+}
+.skeleton-row { height: 14px; margin-bottom: 8px; border-radius: 6px; }
+.skeleton-circle { border-radius: 50%; }
+.skeleton-body { display: flex; flex-direction: column; gap: 6px; }
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* ── Empty state (My Access) ──────────────────────────── */
+.empty-access {
+  padding: 28px 16px; text-align: center;
+  color: var(--muted); font-size: 13px; line-height: 1.6;
+}
+
+/* ═══════════════════════════════════════════════════════
+   STATUS OVERLAY
+   ═══════════════════════════════════════════════════════ */
+.status-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  transition: opacity .3s ease;
+}
+.status-overlay.hidden { display: none !important; }
+.status-card {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  padding: 32px 24px 28px;
+  max-width: 480px; width: 100%;
+  text-align: center;
+  box-shadow: 0 8px 32px var(--shadow);
+}
+@media (min-width: 520px) {
+  .status-card { padding: 44px 40px 40px; }
+}
+
+/* ── Logo lockup (overlay) ────────────────────────────── */
+.overlay-logo {
+  display: flex; align-items: center; justify-content: center;
+  gap: 9px; margin-bottom: 24px; opacity: .55;
+}
+.logo-mark {
+  width: 26px; height: 26px;
+  background: var(--brand); border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+}
+.logo-mark svg { width: 14px; height: 14px; }
+.logo-name { font-size: 13px; font-weight: 700; letter-spacing: -0.2px; color: var(--text2); }
+
+/* ── Overlay icon ─────────────────────────────────────── */
+.ov-icon-wrap {
+  width: 72px; height: 72px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 22px; position: relative;
+  transition: background .5s, box-shadow .5s;
+}
+@media (min-width: 520px) { .ov-icon-wrap { width: 88px; height: 88px; margin-bottom: 28px; } }
+.ov-icon-wrap.syncing {
+  background: var(--brand-dim);
+  box-shadow: 0 0 0 12px rgba(79,110,247,0.06), 0 0 40px rgba(79,110,247,0.10);
+}
+.ov-icon-wrap.active {
+  background: var(--green-dim);
+  box-shadow: 0 0 0 12px rgba(22,163,74,0.08), 0 0 40px var(--green-glow);
+}
+.ov-icon-wrap.error  {
+  background: var(--red-dim);
+  box-shadow: 0 0 0 12px rgba(220,38,38,0.06);
+}
+.ov-icon-wrap.amber  {
+  background: var(--amber-dim);
+  box-shadow: 0 0 0 12px rgba(217,119,6,0.06);
+}
+
+/* Pulse ring */
+@keyframes pulse-ring {
+  0%   { transform: scale(1);    opacity: .5; }
+  70%  { transform: scale(1.55); opacity: 0; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+.pulse-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid rgba(79,110,247,0.30);
+  animation: pulse-ring 2.2s ease-out infinite;
+  pointer-events: none;
+}
+.pulse-ring-2 { animation-delay: 1.1s; }
+
+/* Orbit dots */
+@keyframes orbit {
+  from { transform: rotate(0deg) translateX(52px); }
+  to   { transform: rotate(360deg) translateX(52px); }
+}
+.orbit-dot {
+  position: absolute;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--brand); opacity: .7;
+  animation: orbit 2.8s linear infinite;
+  top: calc(50% - 3px); left: calc(50% - 3px);
+}
+.orbit-dot-2 { animation-delay: -1.4s; opacity: .35; }
+
+/* Checkmark */
+@keyframes draw-check { from { stroke-dashoffset: 40; } to { stroke-dashoffset: 0; } }
+.check-path {
+  stroke-dasharray: 40; stroke-dashoffset: 40;
+  animation: draw-check .55s cubic-bezier(.22,1,.36,1) .1s forwards;
+}
+
+/* ── Overlay typography ───────────────────────────────── */
+.ov-title {
+  font-size: 19px; font-weight: 800; letter-spacing: -.5px;
+  line-height: 1.2; margin-bottom: 10px; color: var(--text);
+}
+.ov-sub {
+  font-size: 13px; color: var(--text2); line-height: 1.7;
+}
+@media (min-width: 520px) { .ov-title { font-size: 22px; } }
+
+/* ── Step pipeline ────────────────────────────────────── */
+.pipeline { margin: 24px 0 0; display: flex; flex-direction: column; gap: 0; text-align: left; }
+@media (min-width: 520px) { .pipeline { margin-top: 32px; } }
+.pipeline-step {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 13px 0; position: relative;
+}
+.pipeline-step + .pipeline-step::before {
+  content: ''; position: absolute; left: 15px; top: 0;
+  width: 2px; height: 13px;
+  background: var(--border2); transform: translateX(-50%);
+}
+.step-bullet {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  transition: background .4s, border-color .4s, box-shadow .4s;
+  border: 2px solid var(--border2);
+  background: var(--card2); color: var(--muted); position: relative;
+}
+.step-bullet.done {
+  background: var(--green-dim); border-color: var(--green);
+  color: var(--green); box-shadow: 0 0 12px rgba(22,163,74,0.15);
+}
+.step-bullet.active-step {
+  background: var(--brand-dim); border-color: var(--brand);
+  color: var(--brand); box-shadow: 0 0 14px rgba(79,110,247,0.20);
+}
+.step-bullet.active-step::after {
+  content: ''; position: absolute; inset: -5px; border-radius: 50%;
+  border: 1.5px solid rgba(79,110,247,0.2);
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+.step-body { flex: 1; padding-top: 5px; }
+.step-label {
+  font-size: 13px; font-weight: 600; color: var(--text2);
+  transition: color .3s; line-height: 1; margin-bottom: 3px;
+}
+.step-label.active-step { color: var(--text); }
+.step-label.done        { color: var(--green); }
+.step-sub { font-size: 11px; color: var(--muted); line-height: 1.5; min-height: 16px; transition: color .3s; }
+.step-sub.active-step   { color: var(--text2); }
+
+/* Scan bar */
+@keyframes scan {
+  0%   { left: 0%;   width: 0%;  }
+  40%  { left: 0%;   width: 55%; }
+  60%  { left: 35%;  width: 55%; }
+  100% { left: 100%; width: 0%;  }
+}
+.scan-bar-wrap {
+  height: 3px; background: var(--border); border-radius: 2px;
+  overflow: hidden; margin-top: 7px; position: relative;
+}
+.scan-bar {
+  position: absolute; height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--brand), transparent);
+  animation: scan 1.6s ease-in-out infinite;
+}
+.done-bar {
+  height: 3px; background: var(--green); border-radius: 2px;
+  margin-top: 7px; width: 100%; opacity: .5;
+}
+
+/* ── Overlay states ───────────────────────────────────── */
+.ov-state { }
+.ov-state.hidden { display: none !important; }
+
+/* Active state access list (overlay) */
+.ov-access-list { margin-top: 20px; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.ov-access-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: var(--green-dim);
+  border: 1px solid rgba(22,163,74,0.20);
+  border-radius: 11px;
+  animation: fade-up .4s ease forwards; opacity: 0;
+}
+.ov-access-icon {
+  width: 34px; height: 34px; background: rgba(22,163,74,0.12);
+  border-radius: 9px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; color: var(--green);
+}
+
+/* ═══════════════════════════════════════════════════════
+   TAB 2 — MANAGE MEMBERS
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Hero card ────────────────────────────────────────── */
+.mm-hero {
+  position: relative;
+  padding: 18px;
+  background: linear-gradient(180deg, var(--brand-dim) 0%, rgba(79,110,247,0.02) 100%);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  display: flex; align-items: center; gap: 14px;
+  overflow: hidden; margin-bottom: 0;
+}
+.mm-hero-glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(800px circle at 0% 0%, var(--brand-dim), transparent 50%);
+  opacity: .5;
+}
+.mm-ring { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+.mm-ring svg { transform: rotate(-90deg); }
+.mm-ring-center {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; line-height: 1;
+}
+.mm-ring-num  { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -.3px; }
+.mm-ring-of   { font-size: 9.5px; color: var(--text2); font-weight: 500; margin-top: 2px; letter-spacing: .5px; }
+.mm-hero-info { flex: 1; min-width: 0; position: relative; }
+.mm-eyebrow   { font-size: 11px; font-weight: 600; color: var(--brand); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+.mm-plan-name { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mm-meta      { font-size: 12px; color: var(--text2); margin-bottom: 10px; }
+.spot-pips    { display: inline-flex; gap: 5px; align-items: center; }
+.spot-pip {
+  height: 6px; border-radius: 3px;
+  transition: background .25s, box-shadow .25s;
+}
+.spot-pip.filled {
+  background: var(--brand);
+  box-shadow: 0 0 12px var(--brand-glow), inset 0 0 0 1px rgba(255,255,255,0.15);
+}
+.spot-pip.empty {
+  background: rgba(28,22,16,0.08);
+  box-shadow: inset 0 0 0 1px var(--border2);
+}
+
+/* ── Section header ───────────────────────────────────── */
+.mm-section-row {
+  margin-top: 22px;
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.mm-section-title { font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -.1px; }
+.mm-section-sub   { font-size: 11.5px; color: var(--text2); margin-top: 2px; }
+.draft-chip {
+  font-size: 11px; color: var(--amber); font-weight: 600;
+  padding: 4px 9px; border-radius: 999px;
+  background: var(--amber-dim);
+  box-shadow: inset 0 0 0 1px rgba(217,119,6,0.28);
+  white-space: nowrap;
+}
+
+/* ── Member rows ──────────────────────────────────────── */
+.member-list   { display: flex; flex-direction: column; gap: 10px; }
+.member-row {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 16px; border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--row-bg);
+  transition: background .15s, border-color .15s;
+  animation: fade-up .35s ease;
+}
+.member-row.draft { background: var(--row-draft-bg); border-color: var(--row-draft-bd); }
+.member-avatar {
+  width: 40px; height: 40px; flex-shrink: 0;
+  border-radius: 11px;
+  background: var(--brand); color: #fff;
+  font-family: inherit;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14.5px; letter-spacing: .2px;
+}
+.member-avatar.green { background: rgba(22,163,74,0.12);  color: var(--green); box-shadow: inset 0 0 0 1px rgba(22,163,74,0.30); }
+.member-avatar.amber { background: rgba(217,119,6,0.12);  color: var(--amber); box-shadow: inset 0 0 0 1px rgba(217,119,6,0.30); }
+.member-avatar.red   { background: rgba(220,38,38,0.10);  color: var(--red);   box-shadow: inset 0 0 0 1px rgba(220,38,38,0.30); }
+.member-body    { flex: 1; min-width: 0; }
+.member-name    { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 3px; line-height: 1.25; word-break: break-word; }
+.member-detail  { font-size: 12px; color: var(--text2); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; row-gap: 4px; }
+.member-actions { display: flex; gap: 6px; flex-shrink: 0; align-self: center; }
+
+/* ── Status badge ─────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px 3px 7px;
+  border-radius: 999px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .2px;
+  white-space: nowrap;
+}
+.badge-dot { width: 6px; height: 6px; border-radius: 3px; }
+.badge-green { background: var(--green-dim); color: var(--green); box-shadow: inset 0 0 0 1px rgba(22,163,74,0.25); }
+.badge-amber { background: var(--amber-dim); color: var(--amber); box-shadow: inset 0 0 0 1px rgba(217,119,6,0.28); }
+.badge-brand { background: var(--brand-dim); color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand-glow); }
+.badge-red   { background: var(--red-dim);   color: var(--red);   box-shadow: inset 0 0 0 1px rgba(220,38,38,0.30); }
+.badge .pulse { animation: pulse 1.6s ease-in-out infinite; }
+
+/* ── Icon buttons ─────────────────────────────────────── */
+.icon-btn {
+  width: 28px; height: 28px; padding: 0; border: none;
+  border-radius: 8px;
+  background: transparent; color: var(--text2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background .12s, color .12s, box-shadow .12s;
+}
+.icon-btn:hover { background: rgba(28,22,16,0.05); color: var(--text); box-shadow: inset 0 0 0 1px var(--border2); }
+.icon-btn.danger:hover { background: var(--red-dim); color: var(--red); box-shadow: inset 0 0 0 1px rgba(220,38,38,0.30); }
+.icon-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── Confirm row ──────────────────────────────────────── */
+.confirm-row {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 16px;
+  background: var(--red-dim);
+  border: 1px solid rgba(220,38,38,0.25);
+  border-radius: 14px;
+  animation: fade-up .2s ease;
+}
+.confirm-inner { display: flex; align-items: center; gap: 12px; }
+.confirm-text  { flex: 1; min-width: 0; }
+.confirm-title { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.confirm-sub   { font-size: 12px; color: var(--text2); line-height: 1.4; }
+.confirm-btns  { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ── Inline edit row ──────────────────────────────────── */
+.edit-row {
+  padding: 16px 16px 14px;
+  border-radius: 14px;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  animation: fade-up .2s ease;
+}
+.edit-label    { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.edit-eyebrow  { font-size: 12px; font-weight: 600; color: var(--text2); letter-spacing: .5px; text-transform: uppercase; }
+
+/* ── Form grid ────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+  gap: 10px;
+}
+.form-grid .full { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field-label { font-size: 11.5px; font-weight: 500; color: var(--text2); letter-spacing: .4px; text-transform: uppercase; }
+.field input {
+  appearance: none; border: none; outline: none;
+  background: var(--input-bg); color: var(--text);
+  height: 38px; padding: 0 12px;
+  border-radius: 10px; width: 100%; min-width: 0;
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  box-shadow: inset 0 0 0 1px var(--border2);
+  transition: background .12s, box-shadow .12s;
+}
+.field input:focus {
+  background: var(--input-bg-hi);
+  box-shadow: inset 0 0 0 1px var(--brand), 0 0 0 3px var(--brand-dim);
+}
+.field input.invalid { box-shadow: inset 0 0 0 1px var(--red); }
+.field-err { font-size: 11px; color: var(--red); }
+
+/* ── Add form ─────────────────────────────────────────── */
+.add-form {
+  margin-top: 12px; padding: 18px 18px 16px;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  animation: slide-down .25s ease;
+}
+.add-form-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.add-icon {
+  width: 32px; height: 32px; border-radius: 9px;
+  background: var(--brand-dim); color: var(--brand);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 0 0 1px var(--brand-glow);
+}
+.add-form-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.add-form-sub   { font-size: 11.5px; font-weight: 400; color: var(--text2); margin-top: 2px; }
+
+/* ── Buttons ──────────────────────────────────────────── */
+.btn-primary {
+  appearance: none; border: none;
+  background: var(--brand); color: #fff;
+  height: 36px; padding: 0 14px; border-radius: 10px;
+  font-family: inherit; font-weight: 600; font-size: 13px; letter-spacing: .1px;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: 0 4px 14px rgba(79,110,247,0.30), inset 0 1px 0 rgba(255,255,255,0.15);
+  transition: background .15s, box-shadow .15s;
+}
+.btn-primary:hover { background: var(--brand-dark); box-shadow: 0 6px 24px rgba(79,110,247,0.40), inset 0 1px 0 rgba(255,255,255,0.15); }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary.full { width: 100%; height: 44px; font-size: 14px; border-radius: 12px; }
+
+.btn-ghost {
+  appearance: none; border: none;
+  background: transparent; color: var(--text2);
+  height: 32px; padding: 0 14px; border-radius: 9px;
+  font-family: inherit; font-weight: 600; font-size: 13px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--border2);
+  transition: background .12s, color .12s;
+}
+.btn-ghost:hover { background: rgba(28,22,16,0.05); color: var(--text); }
+
+.btn-danger {
+  appearance: none; border: none;
+  background: var(--red); color: #fff;
+  height: 32px; padding: 0 14px; border-radius: 9px;
+  font-family: inherit; font-weight: 600; font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(220,38,38,0.25);
+}
+
+.btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+
+/* ── Add trigger ──────────────────────────────────────── */
+.add-trigger {
+  margin-top: 12px; appearance: none; border: none;
+  width: 100%; height: 48px; border-radius: 12px;
+  background: transparent; color: var(--text2);
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: inset 0 0 0 1px var(--border2);
+  transition: background .12s, color .12s, box-shadow .12s;
+}
+.add-trigger:hover {
+  background: var(--brand-dim); color: var(--brand);
+  box-shadow: inset 0 0 0 1px rgba(79,110,247,0.25);
+}
+
+/* ── Limit notice ─────────────────────────────────────── */
+.limit-notice {
+  margin-top: 12px; padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--input-bg);
+  box-shadow: inset 0 0 0 1px var(--border2);
+  font-size: 12px; color: var(--text2);
+  display: flex; align-items: center; gap: 10px;
+}
+
+/* ── Submit area ──────────────────────────────────────── */
+.submit-area { margin-top: 22px; }
+.submit-note { text-align: center; margin-top: 10px; font-size: 11.5px; color: var(--text2); }
+
+/* ── Sticky CTA ───────────────────────────────────────── */
+.sticky-cta {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  padding: 14px 18px 18px;
+  background: linear-gradient(180deg,
+    rgba(var(--bg-rgb),0) 0%,
+    rgba(var(--bg-rgb),0.92) 35%,
+    rgba(var(--bg-rgb),1) 100%);
+  z-index: 20; pointer-events: none;
+  animation: fade-up .25s ease;
+}
+.sticky-cta > * { pointer-events: auto; }
+
+/* ── Empty state ──────────────────────────────────────── */
+.mm-empty-state {
+  padding: 32px 22px; border-radius: 14px;
+  border: 1px dashed var(--border2);
+  text-align: center; background: var(--row-bg);
+}
+.mm-empty-icon {
+  width: 44px; height: 44px; margin: 0 auto 12px;
+  border-radius: 12px; background: var(--brand-dim);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand-glow);
+}
+.mm-empty-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.mm-empty-sub   { font-size: 12px; color: var(--text2); margin-bottom: 16px; line-height: 1.5; }
+
+/* ── Loading / error ──────────────────────────────────── */
+.state-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 30vh; gap: 14px; color: var(--text2); font-size: 13px;
+}
+.spinner {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 2.5px solid var(--border2); border-top-color: var(--brand);
+  animation: spin .8s linear infinite;
+}
+.state-error-card {
+  margin: 16px 0; padding: 20px;
+  background: var(--card);
+  border: 1px solid rgba(220,38,38,0.15);
+  border-radius: 14px; text-align: center;
+}
+.state-error-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.state-error-msg   { font-size: 13px; color: var(--text2); }
+
+/* ── Toast ────────────────────────────────────────────── */
+.toast {
+  position: fixed; bottom: -60px; left: 50%; transform: translateX(-50%);
+  background: var(--card2); color: var(--text);
+  padding: 11px 16px; border-radius: 10px;
+  font-size: 13px; font-weight: 600;
+  box-shadow: 0 12px 40px rgba(28,22,16,0.20);
+  z-index: 800; transition: transform .3s ease;
+  pointer-events: none; max-width: calc(100% - 32px);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.toast.visible { transform: translateX(-50%) translateY(-80px); }
+.toast.toast-success { border-left: 3px solid var(--green); }
+.toast.toast-error   { border-left: 3px solid var(--red); }
+.toast.toast-info    { border-left: 3px solid var(--brand); }
+
+/* ── Keyframes ────────────────────────────────────────── */
+@keyframes spin       { to { transform: rotate(360deg); } }
+@keyframes pulse      { 0%,100%{opacity:1} 50%{opacity:.35} }
+@keyframes fade-up    { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slide-down { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+@keyframes orb-drift-1  { from{transform:translate(0,0)} to{transform:translate(60px,40px)} }
+@keyframes orb-drift-2  { from{transform:translate(0,0)} to{transform:translate(-40px,-60px)} }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+
+<!-- ── Shell ───────────────────────────────────────────── -->
+<div class="shell">
+
+  <!-- Header -->
+  <div class="header">
+    <span class="logo-text"><span class="brand">Access</span><span class="dim">Sync</span></span>
+    <span class="member-chip" id="member-chip" style="display:none">
+      <span class="member-dot"></span>
+      <span id="member-chip-name"></span>
+    </span>
+  </div>
+
+  <!-- Tab bar (hidden until we know which tabs to show) -->
+  <div class="tab-bar hidden" id="tab-bar">
+    <button class="tab-btn active" id="tab-btn-access" onclick="switchTab('access')">My Access</button>
+    <button class="tab-btn hidden" id="tab-btn-members" onclick="switchTab('members')">Manage Members</button>
+  </div>
+
+  <!-- ── Tab 1: My Access ─────────────────────────────── -->
+  <div class="tab-panel active" id="panel-access">
+    <div class="panel-body">
+
+      <!-- Loading skeleton -->
+      <div id="access-loading" class="state-loading" style="min-height:40vh">
+        <div class="spinner"></div>
+        Loading your access…
+      </div>
+
+      <!-- Content (hidden until loaded) -->
+      <div id="access-content" class="hidden">
+
+        <!-- Status banner -->
+        <div class="status-banner hidden" id="status-banner">
+          <span class="banner-dot" id="banner-dot"></span>
+          <div>
+            <div id="banner-text"></div>
+            <div class="banner-sub" id="banner-sub"></div>
+          </div>
+        </div>
+
+        <!-- Your Plans card -->
+        <div class="data-card" id="plans-card">
+          <div class="data-card-header">
+            <span class="data-card-title">Your Plans</span>
+          </div>
+          <div id="plans-list"></div>
+        </div>
+
+        <!-- Door Access card -->
+        <div class="data-card" id="doors-card">
+          <div class="data-card-header">
+            <span class="data-card-title">Door Access</span>
+          </div>
+          <div id="doors-list"></div>
+        </div>
+
+        <!-- Timestamp -->
+        <div class="timestamp-row" id="timestamp-row">
+          <span style="display:flex;align-items:center">
+            <span class="ts-dot" id="ts-dot"></span>
+            <span class="ts-text" id="ts-text"></span>
+          </span>
+          <button class="btn-check" onclick="checkStatus()">Check Status</button>
+        </div>
+
+      </div><!-- /access-content -->
+
+      <!-- Error -->
+      <div id="access-error" class="state-error-card hidden">
+        <div class="state-error-title">Unable to load</div>
+        <div class="state-error-msg" id="access-error-msg">Something went wrong.</div>
+      </div>
+
+    </div>
+  </div><!-- /panel-access -->
+
+  <!-- ── Tab 2: Manage Members ────────────────────────── -->
+  <div class="tab-panel" id="panel-members">
+    <div class="panel-body">
+
+      <!-- Loading -->
+      <div id="mm-loading" class="state-loading" style="min-height:30vh">
+        <div class="spinner"></div>
+        Loading your plan…
+      </div>
+
+      <!-- Error -->
+      <div id="mm-error" class="state-error-card hidden">
+        <div class="state-error-title">Unable to load</div>
+        <div class="state-error-msg" id="mm-error-msg">Something went wrong.</div>
+      </div>
+
+      <!-- Content -->
+      <div id="mm-content" class="hidden">
+
+        <!-- Hero card -->
+        <div class="mm-hero">
+          <div class="mm-hero-glow"></div>
+          <div class="mm-ring">
+            <svg width="64" height="64" viewBox="0 0 64 64">
+              <circle cx="32" cy="32" r="26" fill="none" stroke="var(--border2)" stroke-width="4"/>
+              <circle id="mm-ring-progress" cx="32" cy="32" r="26" fill="none"
+                stroke="var(--brand)" stroke-width="4"
+                stroke-dasharray="0 163.4" stroke-linecap="round"
+                style="transition:stroke-dasharray .5s cubic-bezier(.2,.7,.3,1);filter:drop-shadow(0 0 6px var(--brand-glow))"/>
+            </svg>
+            <div class="mm-ring-center">
+              <span class="mm-ring-num" id="mm-ring-used">0</span>
+              <span class="mm-ring-of" id="mm-ring-of">of 0</span>
+            </div>
+          </div>
+          <div class="mm-hero-info">
+            <div class="mm-eyebrow">Your plan</div>
+            <div class="mm-plan-name" id="mm-plan-name">—</div>
+            <div class="mm-meta" id="mm-meta"></div>
+            <div class="spot-pips" id="mm-spot-pips"></div>
+          </div>
+        </div>
+
+        <!-- Section header -->
+        <div class="mm-section-row">
+          <div>
+            <div class="mm-section-title">Additional members</div>
+            <div class="mm-section-sub" id="mm-section-sub"></div>
+          </div>
+          <span class="draft-chip hidden" id="mm-draft-chip"></span>
+        </div>
+
+        <!-- Member list -->
+        <div id="mm-member-list" class="member-list"></div>
+
+        <!-- Add trigger / limit notice -->
+        <div id="mm-add-trigger-wrap">
+          <button class="add-trigger hidden" id="mm-btn-add-trigger" onclick="mmOpenAddForm()">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+            Add member
+          </button>
+          <div class="limit-notice hidden" id="mm-limit-notice">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.5v4M8 4.7v.05" stroke-linecap="round"/></svg>
+            <span id="mm-limit-text"></span>
+          </div>
+        </div>
+
+        <!-- Inline add form -->
+        <div id="mm-add-form" class="add-form hidden">
+          <div class="add-form-header">
+            <div class="add-icon">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+            </div>
+            <div>
+              <div class="add-form-title">Add a member</div>
+              <div class="add-form-sub">They'll be saved as a draft until you grant access.</div>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label class="field-label" for="f-first">First name</label>
+              <input id="f-first" type="text" placeholder="First" autocomplete="given-name"/>
+              <span class="field-err hidden" id="err-first"></span>
+            </div>
+            <div class="field">
+              <label class="field-label" for="f-last">Last name</label>
+              <input id="f-last" type="text" placeholder="Last" autocomplete="family-name"/>
+              <span class="field-err hidden" id="err-last"></span>
+            </div>
+            <div class="field full">
+              <label class="field-label" for="f-email">Email</label>
+              <input id="f-email" type="email" placeholder="member@email.com" autocomplete="email"/>
+              <span class="field-err hidden" id="err-email"></span>
+            </div>
+            <div class="field full">
+              <label class="field-label" for="f-phone">Phone</label>
+              <input id="f-phone" type="tel" placeholder="+1 555 0100" autocomplete="tel"/>
+              <span class="field-err hidden" id="err-phone"></span>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-ghost" onclick="mmCloseAddForm()">Cancel</button>
+            <button class="btn-primary" id="mm-btn-add-save" onclick="mmSaveAdd()">Add member</button>
+          </div>
+        </div>
+
+        <!-- Submit CTA -->
+        <div class="submit-area hidden" id="mm-submit-area">
+          <button class="btn-primary full" id="mm-btn-submit" onclick="mmSubmitAll()">
+            Grant access to <span id="mm-submit-label">0 members</span>
+          </button>
+          <div class="submit-note">We'll email them an invite to set up their pass.</div>
+        </div>
+
+      </div><!-- /mm-content -->
+    </div>
+  </div><!-- /panel-members -->
+
+</div><!-- /shell -->
+
+<!-- Sticky CTA (Manage Members) -->
+<div id="mm-sticky-cta" class="sticky-cta hidden">
+  <button class="btn-primary full" onclick="mmSubmitAll()">
+    Grant access to <span id="mm-sticky-label">0 members</span>
+  </button>
+</div>
+
+<!-- Status Overlay (always present, triggers on ?tab=status or in-flight) -->
+<div class="status-overlay hidden" id="status-overlay">
+  <div class="status-card">
+
+    <!-- Logo -->
+    <div class="overlay-logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 20 20" fill="none">
+          <path d="M10 3L3 7v6l7 4 7-4V7L10 3z" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" fill="white"/>
+        </svg>
+      </div>
+      <span class="logo-name">AccessSync</span>
+    </div>
+
+    <!-- Syncing state -->
+    <div id="ov-syncing" class="ov-state">
+      <div class="ov-icon-wrap syncing" id="ov-icon-syncing">
+        <div class="pulse-ring"></div>
+        <div class="pulse-ring pulse-ring-2"></div>
+        <div class="orbit-dot"></div>
+        <div class="orbit-dot orbit-dot-2"></div>
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <path d="M16 6C10.477 6 6 10.477 6 16" stroke="#4F6EF7" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M16 26c5.523 0 10-4.477 10-10" stroke="rgba(79,110,247,0.35)" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M13 4l3 2-3 2" stroke="#4F6EF7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="ov-title">Getting you set up</div>
+      <div class="ov-sub">Hang tight — we're activating your access right now. This only takes a moment.</div>
+      <div class="pipeline" id="ov-pipeline">
+        <div class="pipeline-step">
+          <div class="step-bullet" id="pb-1">1</div>
+          <div class="step-body">
+            <div class="step-label" id="pl-1">Order received</div>
+            <div class="step-sub" id="psub-1">Your purchase is confirmed</div>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-bullet" id="pb-2">2</div>
+          <div class="step-body">
+            <div class="step-label" id="pl-2">Account located</div>
+            <div class="step-sub" id="psub-2">Finding your membership record</div>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-bullet" id="pb-3">3</div>
+          <div class="step-body">
+            <div class="step-label" id="pl-3">Access rules applied</div>
+            <div class="step-sub" id="psub-3">Matching your plan to the right doors</div>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-bullet" id="pb-4">4</div>
+          <div class="step-body">
+            <div class="step-label" id="pl-4">Door access granted</div>
+            <div class="step-sub" id="psub-4">Activating your credential now</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active state -->
+    <div id="ov-active" class="ov-state hidden">
+      <div class="ov-icon-wrap active">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+          <path class="check-path" d="M9 18l7 7L27 11" stroke="var(--green)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="ov-title">You're all set!</div>
+      <div class="ov-sub">Your access is active and ready. Head to the entrance and use your app or credential to get in.</div>
+      <div class="ov-access-list" id="ov-access-list"></div>
+    </div>
+
+    <!-- Error state -->
+    <div id="ov-error" class="ov-state hidden">
+      <div class="ov-icon-wrap error">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="12" stroke="var(--red)" stroke-width="2.5"/>
+          <path d="M16 11v6M16 20.5v.5" stroke="var(--red)" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="ov-title">We hit a snag</div>
+      <div class="ov-sub" id="ov-error-sub">No worries — your purchase is safe. We weren't able to activate your access automatically this time, but your gym has been notified and will get it sorted for you.</div>
+    </div>
+
+    <!-- Setup / pending state -->
+    <div id="ov-setup" class="ov-state hidden">
+      <div class="ov-icon-wrap amber">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="12" stroke="var(--amber)" stroke-width="2.5"/>
+          <path d="M16 11v6M16 20.5v.5" stroke="var(--amber)" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="ov-title">Finishing your setup</div>
+      <div class="ov-sub">Your payment went through and everything is on track. Your gym is putting the finishing touches on this plan — you'll be good to go very soon.</div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+'use strict';
+
+// ── URL params ──────────────────────────────────────────────────────
+const params = new URLSearchParams(window.location.search);
+let platformMemberId = params.get('memberId');
+let clientId         = params.get('clientId');
+const BASE           = '';  // same-server proxy (see server.js)
+const tabParam       = params.get('tab'); // 'status' triggers overlay immediately
+
+// ── XSS-safe escaping ───────────────────────────────────────────────
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Iframe resize ────────────────────────────────────────────────────
+function notifyHeight() {
+  window.parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(message, type) {
+  const el = document.getElementById('toast');
+  el.textContent = message;
+  el.className = 'toast toast-' + (type || 'info') + ' visible';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 3500);
+}
+
+// ── Wix postMessage params (memberId / clientId / memberName) ─────────
+// Some Wix page setups pass params via postMessage instead of URL query string.
+window.addEventListener('message', function(e) {
+  if (!e.data || typeof e.data !== 'object') return;
+  if (e.data.memberId)   { platformMemberId = e.data.memberId; }
+  if (e.data.clientId)   { clientId = e.data.clientId; }
+  if (e.data.memberName) { setMemberChip(e.data.memberName); }
+  // If we got fresh credentials and haven't booted yet, boot now
+  if (platformMemberId && clientId && !_booted) boot();
+});
+
+function setMemberChip(name) {
+  const chip = document.getElementById('member-chip');
+  const label = document.getElementById('member-chip-name');
+  if (label && name) { label.textContent = name; chip.style.display = 'flex'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════════════════════════
+
+let _activeTab = 'access';
+
+function switchTab(tab) {
+  _activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+
+  const btn = document.getElementById('tab-btn-' + tab);
+  const panel = document.getElementById('panel-' + tab);
+  if (btn) btn.classList.add('active');
+  if (panel) panel.classList.add('active');
+
+  // Load Manage Members data on first switch to that tab
+  if (tab === 'members' && !MM.loaded) mmLoadData();
+
+  notifyHeight();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STATUS OVERLAY
+// ═══════════════════════════════════════════════════════════════════
+
+let _overlayActive   = false;
+let _pollCount       = 0;
+let _pollTimer       = null;
+let _pipelineActive  = false;
+let _stepTimers      = [];
+let _overlaySettled  = false;
+
+const MAX_POLLS     = 60;
+const POLL_INTERVAL = 3000;
+const STEPS = [
+  { id: 1, label: 'Order received',       sub: 'Your purchase is confirmed',           doneSub: 'Purchase confirmed' },
+  { id: 2, label: 'Account located',      sub: 'Finding your membership record',       doneSub: 'Membership found' },
+  { id: 3, label: 'Access rules applied', sub: 'Matching your plan to the right doors', doneSub: 'Doors matched' },
+  { id: 4, label: 'Door access granted',  sub: 'Activating your credential now',       doneSub: 'Access activated' },
+];
+const STEP_DURATIONS = [1200, 2000, 2400, null];
+
+function showOverlay() {
+  _overlayActive = true;
+  document.getElementById('status-overlay').classList.remove('hidden');
+  document.getElementById('tab-bar').classList.add('hidden');
+  notifyHeight();
+}
+
+function hideOverlay() {
+  _overlayActive = false;
+  document.getElementById('status-overlay').classList.add('hidden');
+  document.getElementById('tab-bar').classList.remove('hidden');
+  clearPollTimer();
+  clearStepTimers();
+  notifyHeight();
+}
+
+function setOvState(name) {
+  ['syncing','active','error','setup'].forEach(s => {
+    const el = document.getElementById('ov-' + s);
+    if (el) el.classList.toggle('hidden', s !== name);
+  });
+}
+
+function activateStep(n) {
+  STEPS.forEach((step, i) => {
+    const idx  = i + 1;
+    const bull = document.getElementById('pb-' + idx);
+    const lbl  = document.getElementById('pl-' + idx);
+    const sub  = document.getElementById('psub-' + idx);
+    if (!bull) return;
+    if (idx < n) {
+      bull.className  = 'step-bullet done';
+      bull.innerHTML  = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--green)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      lbl.className   = 'step-label done';
+      sub.className   = 'step-sub';
+      sub.textContent = step.doneSub;
+      const ex = sub.nextElementSibling;
+      if (ex && ex.classList.contains('scan-bar-wrap')) ex.remove();
+      if (!sub.nextElementSibling || !sub.nextElementSibling.classList.contains('done-bar')) {
+        const bar = document.createElement('div'); bar.className = 'done-bar'; sub.after(bar);
+      }
+    } else if (idx === n) {
+      bull.className  = 'step-bullet active-step';
+      bull.innerHTML  = idx;
+      lbl.className   = 'step-label active-step';
+      sub.className   = 'step-sub active-step';
+      sub.textContent = step.sub;
+      const ex = sub.nextElementSibling; if (ex) ex.remove();
+      const wrap = document.createElement('div');
+      wrap.className = 'scan-bar-wrap';
+      wrap.innerHTML = '<div class="scan-bar"></div>';
+      sub.after(wrap);
+    } else {
+      bull.className  = 'step-bullet';
+      bull.innerHTML  = idx;
+      lbl.className   = 'step-label';
+      sub.className   = 'step-sub';
+      sub.textContent = step.sub;
+      const ex = sub.nextElementSibling; if (ex) ex.remove();
+    }
+  });
+}
+
+function markAllDone() {
+  STEPS.forEach((step, i) => {
+    const idx  = i + 1;
+    const bull = document.getElementById('pb-' + idx);
+    const lbl  = document.getElementById('pl-' + idx);
+    const sub  = document.getElementById('psub-' + idx);
+    if (!bull) return;
+    bull.className  = 'step-bullet done';
+    bull.innerHTML  = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--green)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    lbl.className   = 'step-label done';
+    sub.className   = 'step-sub';
+    sub.textContent = step.doneSub;
+    const ex = sub.nextElementSibling; if (ex) ex.remove();
+    const bar = document.createElement('div'); bar.className = 'done-bar'; sub.after(bar);
+  });
+}
+
+function clearStepTimers() {
+  _stepTimers.forEach(t => clearTimeout(t));
+  _stepTimers = [];
+}
+
+function clearPollTimer() {
+  if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; }
+}
+
+function startPipeline() {
+  if (_pipelineActive) return;
+  _pipelineActive = true;
+  activateStep(1);
+  let elapsed = 0;
+  STEP_DURATIONS.forEach((dur, i) => {
+    if (dur === null) return;
+    elapsed += dur;
+    const t = setTimeout(() => activateStep(i + 2), elapsed);
+    _stepTimers.push(t);
+  });
+}
+
+function renderOvAccess(access) {
+  if (!access || !access.length) return;
+  const list = document.getElementById('ov-access-list');
+  list.innerHTML = access.map((a, i) => `
+    <div class="ov-access-item" style="animation-delay:${i * 0.12}s">
+      <div class="ov-access-icon">
+        <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
+          <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1h.02c1.71 0 3.1 1.39 3.1 3.1v2z" fill="var(--green)"/>
+        </svg>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(a.doorName || a.locationName || 'Door Access')}</div>
+        ${a.planName ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${esc(a.planName)}</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function pollAccess() {
+  if (!_overlayActive) return;
+  if (!platformMemberId || !clientId) { setOvState('error'); return; }
+
+  try {
+    const res = await fetch(BASE + '/member/access-status?platformMemberId=' + encodeURIComponent(platformMemberId) + '&clientId=' + encodeURIComponent(clientId));
+
+    if (res.status === 404) {
+      if (++_pollCount < MAX_POLLS) {
+        _pollTimer = setTimeout(pollAccess, POLL_INTERVAL);
+      } else {
+        setOvState('setup');
+      }
+      return;
+    }
+
+    if (!res.ok) { clearStepTimers(); setOvState('error'); return; }
+
+    const data = await res.json();
+
+    if (data.status === 'active') {
+      clearStepTimers(); markAllDone();
+      setTimeout(() => {
+        setOvState('active');
+        renderOvAccess(data.access || []);
+        notifyHeight();
+        if (!_overlaySettled) {
+          _overlaySettled = true;
+          // Auto-dismiss after 1.5s then reload My Access tab
+          setTimeout(() => {
+            hideOverlay();
+            switchTab('access');
+            loadAccessData();
+          }, 1500);
+        }
+      }, 600);
+      return;
+    }
+
+    if (data.status === 'failed' || data.status === 'error') {
+      clearStepTimers();
+      if (data.lastEvent && data.lastEvent.errorCode === 'PLAN_NOT_MAPPED') {
+        setOvState('setup');
+      } else {
+        setOvState('error');
+      }
+      // Auto-dismiss error after 1.5s
+      setTimeout(() => { hideOverlay(); switchTab('access'); loadAccessData(); }, 1500);
+      return;
+    }
+
+    // in_flight / pending — keep polling
+    if (++_pollCount < MAX_POLLS) {
+      _pollTimer = setTimeout(pollAccess, POLL_INTERVAL);
+    } else {
+      setOvState('setup');
+    }
+
+  } catch (e) {
+    if (++_pollCount < MAX_POLLS) {
+      _pollTimer = setTimeout(pollAccess, POLL_INTERVAL);
+    } else {
+      setOvState('setup');
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB 1 — MY ACCESS
+// ═══════════════════════════════════════════════════════════════════
+
+let _lastFetchTime = null;
+const STALE_THRESHOLD = 30000;
+let _freshnessInterval = null;
+
+function showBanner(state, errorMsg) {
+  const banner = document.getElementById('status-banner');
+  const dot    = document.getElementById('banner-dot');
+  const text   = document.getElementById('banner-text');
+  const sub    = document.getElementById('banner-sub');
+
+  banner.className = 'status-banner';
+  dot.className    = 'banner-dot';
+
+  if (state === 'active') {
+    banner.classList.add('active');
+    text.textContent = 'Access active';
+    sub.textContent  = 'Your credential is ready to use at all assigned doors.';
+  } else if (state === 'syncing') {
+    banner.classList.add('syncing');
+    dot.classList.add('pulse');
+    text.textContent = 'Setting up your access';
+    sub.textContent  = 'This usually takes less than a minute.';
+  } else if (state === 'error') {
+    banner.classList.add('error');
+    text.textContent = errorMsg || 'Something went wrong with your access.';
+    sub.textContent  = 'Contact your gym for help.';
+  } else if (state === 'pending') {
+    banner.classList.add('pending');
+    dot.classList.add('pulse');
+    text.textContent = 'Access pending';
+    sub.textContent  = 'Your plan is confirmed — access will activate soon.';
+  } else if (state === 'revoked') {
+    banner.classList.add('revoked');
+    text.textContent = 'No active membership';
+    sub.textContent  = 'Purchase a plan to get door access.';
+  }
+
+  banner.classList.remove('hidden');
+}
+
+function renderPlans(plans) {
+  const el = document.getElementById('plans-list');
+  if (!plans || !plans.length) {
+    el.innerHTML = '<div class="empty-access">No active plans found.</div>';
+    return;
+  }
+  el.innerHTML = plans.map(p => `
+    <div class="plan-row">
+      <div class="plan-icon">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 1l2.1 4.2L15 6.1l-3.5 3.4.8 4.8L8 12.1l-4.3 2.2.8-4.8L1 6.1l4.9-.9L8 1z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="plan-name">${esc(p.planName || p.name || 'Plan')}</div>
+        <div class="plan-meta">${esc(p.status || 'Active')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderDoors(access) {
+  const el = document.getElementById('doors-list');
+  if (!access || !access.length) {
+    el.innerHTML = '<div class="empty-access">No doors provisioned yet.</div>';
+    return;
+  }
+  el.innerHTML = access.map(a => `
+    <div class="door-row">
+      <div class="door-icon">
+        <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+          <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1h.02c1.71 0 3.1 1.39 3.1 3.1v2z" fill="currentColor"/>
+        </svg>
+      </div>
+      <div>
+        <div class="door-name">${esc(a.doorName || a.locationName || 'Door Access')}</div>
+        <div class="door-plan">${esc(a.planName || '')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function setTimestamp(provisionedAt, stale) {
+  const row  = document.getElementById('timestamp-row');
+  const dot  = document.getElementById('ts-dot');
+  const text = document.getElementById('ts-text');
+  if (!provisionedAt && !stale) return;
+  row.classList.remove('hidden');
+  if (stale) {
+    dot.className    = 'ts-dot stale';
+    const ago        = Math.round((Date.now() - _lastFetchTime) / 1000);
+    text.textContent = 'Checked ' + (ago < 60 ? ago + 's' : Math.round(ago/60) + 'm') + ' ago — verifying now…';
+  } else {
+    dot.className    = 'ts-dot';
+    text.textContent = 'Access granted ' + new Date(provisionedAt).toLocaleTimeString();
+  }
+}
+
+async function loadAccessData() {
+  if (!platformMemberId || !clientId) {
+    document.getElementById('access-loading').classList.add('hidden');
+    document.getElementById('access-content').classList.remove('hidden');
+    showBanner('revoked');
+    notifyHeight();
+    return;
+  }
+
+  document.getElementById('access-loading').classList.remove('hidden');
+  document.getElementById('access-content').classList.add('hidden');
+  document.getElementById('access-error').classList.add('hidden');
+
+  try {
+    const res = await fetch(BASE + '/member/access-status?platformMemberId=' + encodeURIComponent(platformMemberId) + '&clientId=' + encodeURIComponent(clientId));
+
+    document.getElementById('access-loading').classList.add('hidden');
+
+    if (res.status === 404) {
+      document.getElementById('access-content').classList.remove('hidden');
+      showBanner('revoked');
+      notifyHeight();
+      return;
+    }
+    if (!res.ok) {
+      document.getElementById('access-error').classList.remove('hidden');
+      document.getElementById('access-error-msg').textContent = 'Unable to load your access status.';
+      notifyHeight();
+      return;
+    }
+
+    const data = await res.json();
+    _lastFetchTime = Date.now();
+    document.getElementById('access-content').classList.remove('hidden');
+
+    const syncingStatuses = ['in_flight','pending_sync','pending_hardware','pending_identity'];
+    const status = data.status;
+
+    if (status === 'active') {
+      showBanner('active');
+      renderPlans(data.plans || []);
+      renderDoors(data.access || []);
+      setTimestamp(data.provisionedAt, false);
+      startFreshnessCheck();
+
+      // If overlay was triggered but access is already active, dismiss immediately
+      if (_overlayActive && !_overlaySettled) {
+        _overlaySettled = true;
+        clearStepTimers(); markAllDone();
+        setOvState('active');
+        renderOvAccess(data.access || []);
+        setTimeout(() => { hideOverlay(); }, 1500);
+      }
+    } else if (syncingStatuses.includes(status)) {
+      showBanner('syncing');
+      renderPlans([]);
+      renderDoors([]);
+      // Trigger overlay if not already showing and not started via ?tab=status
+      if (!_overlayActive && !_overlaySettled) {
+        showOverlay();
+        setOvState('syncing');
+        startPipeline();
+        pollAccess();
+      }
+    } else if (status === 'failed' || status === 'error') {
+      showBanner('error');
+      renderPlans([]);
+      renderDoors([]);
+    } else if (status === 'revoked' || !status) {
+      showBanner('revoked');
+      renderPlans([]);
+      renderDoors([]);
+    } else {
+      showBanner('pending');
+      renderPlans([]);
+      renderDoors([]);
+    }
+
+    notifyHeight();
+  } catch (e) {
+    document.getElementById('access-loading').classList.add('hidden');
+    document.getElementById('access-error').classList.remove('hidden');
+    document.getElementById('access-error-msg').textContent = 'Something went wrong. Try again.';
+    notifyHeight();
+  }
+}
+
+function checkStatus() {
+  _lastFetchTime = null;
+  loadAccessData();
+}
+
+function startFreshnessCheck() {
+  if (_freshnessInterval) return;
+  _freshnessInterval = setInterval(() => {
+    if (!_lastFetchTime || Date.now() - _lastFetchTime <= STALE_THRESHOLD) return;
+    setTimestamp(null, true);
+    fetch(BASE + '/member/access-status?platformMemberId=' + encodeURIComponent(platformMemberId) + '&clientId=' + encodeURIComponent(clientId))
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        _lastFetchTime = Date.now();
+        if (d.status === 'active') {
+          renderDoors(d.access || []);
+          setTimestamp(d.provisionedAt, false);
+        }
+      }).catch(() => {});
+  }, 30000);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB 2 — MANAGE MEMBERS
+// ═══════════════════════════════════════════════════════════════════
+
+const MM = {
+  loaded:      false,
+  holder:      null,
+  plans:       [],
+  subMembers:  [],
+  maxMembers:  0,
+  planMappingId: null,  // active plan's mapping UUID (DR-037)
+  editingId:   null,
+  confirmingId: null,
+};
+
+function mmInitials(first, last) {
+  return (((first || '').trim()[0] || '') + ((last || '').trim()[0] || '')).toUpperCase() || '?';
+}
+
+function mmTimeAgo(iso) {
+  const d = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (d < 60)     return 'just now';
+  if (d < 3600)   return Math.floor(d / 60) + 'm ago';
+  if (d < 86400)  return Math.floor(d / 3600) + 'h ago';
+  if (d < 604800) return Math.floor(d / 86400) + 'd ago';
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function mmStatusMeta(m) {
+  if (m.status === 'draft') return { label: 'Draft', cls: 'badge-amber', pulse: false };
+  switch (m.accessStatus) {
+    case 'active':       return { label: 'Active',  cls: 'badge-green', pulse: false, ring: true };
+    case 'in_flight':
+    case 'pending_sync': return { label: 'Pending', cls: 'badge-brand', pulse: true };
+    case 'failed':       return { label: 'Issue',   cls: 'badge-red',   pulse: false, alert: true };
+    default:             return { label: 'Pending', cls: 'badge-brand', pulse: true };
+  }
+}
+
+function mmAvatarTone(m) {
+  if (m.status === 'draft') return 'amber';
+  if (m.accessStatus === 'active') return 'green';
+  if (m.accessStatus === 'failed') return 'red';
+  return '';
+}
+
+function mmBadgeHtml(m) {
+  const st = mmStatusMeta(m);
+  let dotHtml;
+  if (st.alert) {
+    dotHtml = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 2.5l6.5 11.5h-13L8 2.5zM8 6.5v3.5M8 12.2v.1"/></svg>';
+  } else if (st.ring) {
+    dotHtml = '<span style="position:relative;display:inline-flex"><span class="badge-dot" style="background:currentColor;position:relative;z-index:1"></span><span style="position:absolute;inset:-2px;border-radius:5px;background:currentColor;opacity:.5;animation:pulse-ring 1.8s ease-out infinite"></span></span>';
+  } else {
+    dotHtml = '<span class="badge-dot" style="background:currentColor' + (st.pulse ? ';animation:pulse 1.6s ease-in-out infinite' : '') + '"></span>';
+  }
+  return '<span class="badge ' + st.cls + '">' + dotHtml + esc(st.label) + '</span>';
+}
+
+async function mmLoadData() {
+  if (!platformMemberId || !clientId) {
+    document.getElementById('mm-loading').classList.add('hidden');
+    document.getElementById('mm-error').classList.remove('hidden');
+    document.getElementById('mm-error-msg').textContent = 'Missing memberId or clientId. Contact your gym.';
+    notifyHeight();
+    return;
+  }
+
+  document.getElementById('mm-loading').classList.remove('hidden');
+  document.getElementById('mm-error').classList.add('hidden');
+  document.getElementById('mm-content').classList.add('hidden');
+
+  try {
+    const res = await fetch(BASE + '/member/' + encodeURIComponent(platformMemberId) + '/widget-data?clientId=' + encodeURIComponent(clientId));
+
+    document.getElementById('mm-loading').classList.add('hidden');
+
+    if (res.status === 404) {
+      document.getElementById('mm-error').classList.remove('hidden');
+      document.getElementById('mm-error-msg').textContent = "We couldn't find your membership. Contact your gym.";
+      notifyHeight();
+      return;
+    }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      document.getElementById('mm-error').classList.remove('hidden');
+      document.getElementById('mm-error-msg').textContent = d.error || 'Unable to load member data.';
+      notifyHeight();
+      return;
+    }
+
+    const data = await res.json();
+    MM.loaded     = true;
+    MM.holder     = data.holder;
+    MM.plans      = data.plans;
+    MM.subMembers = data.subMembers;
+    MM.maxMembers = MM.plans.length > 0 ? Math.min(...MM.plans.map(p => p.maxMembers)) : 0;
+    // DR-037: use the first plan's UUID as the planMappingId for new sub-members
+    MM.planMappingId = MM.plans.length > 0 ? MM.plans[0].id : null;
+
+    // Holder name for chip (AXIOM gap: widget-data doesn't return holder firstName/lastName)
+    // Falls back to email or empty
+    if (MM.holder) {
+      const holderName = [MM.holder.firstName, MM.holder.lastName].filter(Boolean).join(' ') || MM.holder.email || '';
+      if (holderName) setMemberChip(holderName);
+    }
+
+    document.getElementById('mm-content').classList.remove('hidden');
+    mmRender();
+    notifyHeight();
+  } catch (e) {
+    document.getElementById('mm-loading').classList.add('hidden');
+    document.getElementById('mm-error').classList.remove('hidden');
+    document.getElementById('mm-error-msg').textContent = 'Something went wrong. Try again.';
+    notifyHeight();
+  }
+}
+
+function mmRender() {
+  const plan  = MM.plans[0] || {};
+  const used  = MM.subMembers.length;
+  const max   = MM.maxMembers;
+  const atLimit = used >= max;
+  const drafts  = MM.subMembers.filter(m => m.status === 'draft');
+
+  // Hero ring
+  const C   = 2 * Math.PI * 26;
+  const pct = max > 0 ? Math.min(1, used / max) : 0;
+  document.getElementById('mm-ring-progress').setAttribute('stroke-dasharray', (pct * C).toFixed(1) + ' ' + C.toFixed(1));
+  document.getElementById('mm-ring-used').textContent = used;
+  document.getElementById('mm-ring-of').textContent   = 'of ' + max;
+  document.getElementById('mm-plan-name').textContent = plan.planName || 'Your Plan';
+  document.getElementById('mm-meta').textContent = (plan.doorName ? plan.doorName + ' · ' : '') +
+    (max - used > 0 ? (max - used) + ' spot' + (max - used === 1 ? '' : 's') + ' left' : 'Full');
+
+  // Spot pips
+  const pips = document.getElementById('mm-spot-pips');
+  const pipW = max <= 5 ? 28 : 18;
+  pips.innerHTML = Array.from({ length: max }, (_, i) =>
+    '<span class="spot-pip ' + (i < used ? 'filled' : 'empty') + '" style="width:' + pipW + 'px"></span>'
+  ).join('');
+
+  // Section sub
+  document.getElementById('mm-section-sub').textContent =
+    used === 0 ? 'No members yet — add up to ' + max
+               : used + ' of ' + max + ' spot' + (max === 1 ? '' : 's') + ' used';
+
+  // Draft chip
+  const draftChip = document.getElementById('mm-draft-chip');
+  if (drafts.length > 0) {
+    draftChip.textContent = drafts.length + ' draft' + (drafts.length === 1 ? '' : 's');
+    draftChip.classList.remove('hidden');
+  } else {
+    draftChip.classList.add('hidden');
+  }
+
+  mmRenderList();
+
+  // Add trigger
+  const addTrigger  = document.getElementById('mm-btn-add-trigger');
+  const limitNotice = document.getElementById('mm-limit-notice');
+  const addForm     = document.getElementById('mm-add-form');
+  if (addForm.classList.contains('hidden')) {
+    if (atLimit) {
+      addTrigger.classList.add('hidden');
+      limitNotice.classList.remove('hidden');
+      document.getElementById('mm-limit-text').textContent = 'All ' + max + ' spots are used. Remove a member to add a new one.';
+    } else {
+      addTrigger.classList.remove('hidden');
+      limitNotice.classList.add('hidden');
+    }
+  }
+
+  // Submit CTA
+  const submitArea  = document.getElementById('mm-submit-area');
+  const submitLabel = document.getElementById('mm-submit-label');
+  const stickyLabel = document.getElementById('mm-sticky-label');
+  if (drafts.length > 0) {
+    submitArea.classList.remove('hidden');
+    const t = drafts.length + ' member' + (drafts.length === 1 ? '' : 's');
+    submitLabel.textContent = t;
+    stickyLabel.textContent = t;
+  } else {
+    submitArea.classList.add('hidden');
+  }
+
+  mmUpdateStickyVisibility();
+  notifyHeight();
+}
+
+function mmRenderList() {
+  const el = document.getElementById('mm-member-list');
+  if (MM.subMembers.length === 0) {
+    el.innerHTML = mmEmptyHtml();
+    return;
+  }
+  el.innerHTML = MM.subMembers.map(m => {
+    if (m.id === MM.confirmingId) return mmConfirmRowHtml(m);
+    if (m.id === MM.editingId)    return mmEditRowHtml(m);
+    return mmMemberRowHtml(m);
+  }).join('');
+}
+
+function mmEmptyHtml() {
+  return '<div class="mm-empty-state">' +
+    '<div class="mm-empty-icon"><svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg></div>' +
+    '<div class="mm-empty-title">Bring your crew along</div>' +
+    '<div class="mm-empty-sub">Your plan covers additional members.<br>Add them and we\'ll get them set up at the door.</div>' +
+    '<button class="btn-primary" onclick="mmOpenAddForm()">' +
+      '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>' +
+      'Add your first member' +
+    '</button>' +
+  '</div>';
+}
+
+function mmMemberRowHtml(m) {
+  const isDraft = m.status === 'draft';
+  const tone    = mmAvatarTone(m);
+  const ago     = m.provisionedAt ? mmTimeAgo(m.provisionedAt) : null;
+  return '<div class="member-row' + (isDraft ? ' draft' : '') + '">' +
+    '<div class="member-avatar' + (tone ? ' ' + tone : '') + '">' + esc(mmInitials(m.firstName, m.lastName)) + '</div>' +
+    '<div class="member-body">' +
+      '<div class="member-name">' + esc(m.firstName) + ' ' + esc(m.lastName) + '</div>' +
+      '<div class="member-detail">' +
+        mmBadgeHtml(m) +
+        '<span style="word-break:break-all;min-width:0">' + esc(m.email) + '</span>' +
+        (ago ? '<span style="color:var(--green);white-space:nowrap;display:inline-flex;align-items:center;gap:3px;font-size:11px">' +
+          '<svg viewBox="0 0 16 16" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7.5"/></svg>' +
+          esc(ago) + '</span>' : '') +
+      '</div>' +
+    '</div>' +
+    '<div class="member-actions">' +
+      (isDraft ? '<button class="icon-btn" title="Edit" onclick="mmBeginEdit(\'' + esc(m.id) + '\')">' +
+        '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L5 13l-3 .5.5-3 9-8z"/></svg>' +
+        '</button>' : '') +
+      '<button class="icon-btn danger" title="' + (isDraft ? 'Discard draft' : 'Remove member') + '" onclick="mmBeginConfirm(\'' + esc(m.id) + '\')">' +
+        '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L12 4M6.5 7v4M9.5 7v4"/></svg>' +
+      '</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function mmConfirmRowHtml(m) {
+  const isDraft = m.status === 'draft';
+  const tone    = mmAvatarTone(m);
+  return '<div class="confirm-row">' +
+    '<div class="confirm-inner">' +
+      '<div class="member-avatar' + (tone ? ' ' + tone : '') + '" style="width:36px;height:36px;border-radius:10px;font-size:13px">' + esc(mmInitials(m.firstName, m.lastName)) + '</div>' +
+      '<div class="confirm-text">' +
+        '<div class="confirm-title">Remove ' + esc(m.firstName) + '?</div>' +
+        '<div class="confirm-sub">' + (isDraft ? 'This draft will be discarded.' : 'Their access will be revoked at the door.') + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="confirm-btns">' +
+      '<button class="btn-ghost" onclick="mmCancelConfirm()">Cancel</button>' +
+      '<button class="btn-danger" onclick="mmDoRemove(\'' + esc(m.id) + '\')">Remove</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function mmEditRowHtml(m) {
+  const tone = mmAvatarTone(m);
+  return '<div class="edit-row">' +
+    '<div class="edit-label">' +
+      '<div class="member-avatar' + (tone ? ' ' + tone : '') + '" style="width:32px;height:32px;border-radius:9px;font-size:12px">' + esc(mmInitials(m.firstName, m.lastName)) + '</div>' +
+      '<div class="edit-eyebrow">Editing draft</div>' +
+    '</div>' +
+    '<div class="form-grid">' +
+      '<div class="field"><label class="field-label" for="ef-first">First name</label>' +
+        '<input id="ef-first" type="text" value="' + esc(m.firstName) + '" autocomplete="given-name"/>' +
+        '<span class="field-err hidden" id="ef-err-first"></span></div>' +
+      '<div class="field"><label class="field-label" for="ef-last">Last name</label>' +
+        '<input id="ef-last" type="text" value="' + esc(m.lastName) + '" autocomplete="family-name"/>' +
+        '<span class="field-err hidden" id="ef-err-last"></span></div>' +
+      '<div class="field full"><label class="field-label" for="ef-email">Email</label>' +
+        '<input id="ef-email" type="email" value="' + esc(m.email) + '" autocomplete="email"/>' +
+        '<span class="field-err hidden" id="ef-err-email"></span></div>' +
+      '<div class="field full"><label class="field-label" for="ef-phone">Phone</label>' +
+        '<input id="ef-phone" type="tel" value="' + esc(m.phone) + '" autocomplete="tel"/>' +
+        '<span class="field-err hidden" id="ef-err-phone"></span></div>' +
+    '</div>' +
+    '<div class="btn-row">' +
+      '<button class="btn-ghost" onclick="mmCancelEdit()">Cancel</button>' +
+      '<button class="btn-primary" id="mm-btn-edit-save" onclick="mmSaveEdit(\'' + esc(m.id) + '\')">Save changes</button>' +
+    '</div>' +
+  '</div>';
+}
+
+// ── Sticky CTA visibility ────────────────────────────────────────────
+function mmUpdateStickyVisibility() {
+  const submitArea = document.getElementById('mm-submit-area');
+  const stickyCta  = document.getElementById('mm-sticky-cta');
+  const drafts = MM.subMembers.filter(m => m.status === 'draft');
+  if (drafts.length === 0) { stickyCta.classList.add('hidden'); return; }
+  const rect   = submitArea.getBoundingClientRect();
+  const inView = rect.top < window.innerHeight && rect.bottom > 0;
+  stickyCta.classList.toggle('hidden', inView);
+}
+window.addEventListener('scroll', mmUpdateStickyVisibility, { passive: true });
+
+// ── Add form ─────────────────────────────────────────────────────────
+function mmOpenAddForm() {
+  document.getElementById('mm-add-form').classList.remove('hidden');
+  document.getElementById('mm-btn-add-trigger').classList.add('hidden');
+  document.getElementById('mm-limit-notice').classList.add('hidden');
+  mmClearAddForm();
+  document.getElementById('f-first').focus();
+  notifyHeight();
+}
+
+function mmCloseAddForm() {
+  document.getElementById('mm-add-form').classList.add('hidden');
+  mmClearAddForm();
+  mmRender();
+}
+
+function mmClearAddForm() {
+  ['f-first','f-last','f-email','f-phone'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.value = ''; el.classList.remove('invalid'); }
+  });
+  ['err-first','err-last','err-email','err-phone'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ''; el.classList.add('hidden'); }
+  });
+}
+
+function mmValidateAddForm() {
+  let valid = true;
+  const first = document.getElementById('f-first').value.trim();
+  const last  = document.getElementById('f-last').value.trim();
+  const email = document.getElementById('f-email').value.trim();
+  const phone = document.getElementById('f-phone').value.trim();
+  function setErr(fld, errId, msg) {
+    const inp = document.getElementById(fld);
+    const err = document.getElementById(errId);
+    if (msg) { inp.classList.add('invalid'); err.textContent = msg; err.classList.remove('hidden'); valid = false; }
+    else      { inp.classList.remove('invalid'); err.textContent = ''; err.classList.add('hidden'); }
+  }
+  setErr('f-first','err-first', first ? '' : 'Required');
+  setErr('f-last', 'err-last',  last  ? '' : 'Required');
+  setErr('f-email','err-email', /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? '' : 'Invalid email');
+  setErr('f-phone','err-phone', phone.length >= 7 ? '' : 'Phone too short');
+  return valid;
+}
+
+// ── Confirm ──────────────────────────────────────────────────────────
+function mmBeginConfirm(id) { MM.confirmingId = id; MM.editingId = null; mmRenderList(); notifyHeight(); }
+function mmCancelConfirm()   { MM.confirmingId = null; mmRenderList(); notifyHeight(); }
+
+// ── Edit ─────────────────────────────────────────────────────────────
+function mmBeginEdit(id) {
+  MM.editingId = id; MM.confirmingId = null;
+  document.getElementById('mm-add-form').classList.add('hidden');
+  mmRenderList(); notifyHeight();
+}
+function mmCancelEdit() { MM.editingId = null; mmRenderList(); mmRender(); }
+
+function mmValidateEditForm() {
+  let valid = true;
+  const first = document.getElementById('ef-first').value.trim();
+  const last  = document.getElementById('ef-last').value.trim();
+  const email = document.getElementById('ef-email').value.trim();
+  const phone = document.getElementById('ef-phone').value.trim();
+  function setErr(fld, errId, msg) {
+    const inp = document.getElementById(fld);
+    const err = document.getElementById(errId);
+    if (msg) { inp.classList.add('invalid'); err.textContent = msg; err.classList.remove('hidden'); valid = false; }
+    else      { inp.classList.remove('invalid'); err.textContent = ''; err.classList.add('hidden'); }
+  }
+  setErr('ef-first','ef-err-first', first ? '' : 'Required');
+  setErr('ef-last', 'ef-err-last',  last  ? '' : 'Required');
+  setErr('ef-email','ef-err-email', /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? '' : 'Invalid email');
+  setErr('ef-phone','ef-err-phone', phone.length >= 7 ? '' : 'Phone too short');
+  return valid;
+}
+
+// ── API: Add ─────────────────────────────────────────────────────────
+async function mmSaveAdd() {
+  if (!mmValidateAddForm()) return;
+  if (!MM.planMappingId) { showToast('Plan not loaded. Refresh and try again.', 'error'); return; }
+  const btn = document.getElementById('mm-btn-add-save');
+  btn.disabled = true;
+  try {
+    const res = await fetch(BASE + '/api/multi-member/members', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        holderId:     MM.holder.id,
+        clientId,
+        firstName:    document.getElementById('f-first').value.trim(),
+        lastName:     document.getElementById('f-last').value.trim(),
+        email:        document.getElementById('f-email').value.trim(),
+        phone:        document.getElementById('f-phone').value.trim(),
+        planMappingId: MM.planMappingId,  // DR-037
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(res.status === 409 ? 'Member limit reached — this plan allows up to ' + MM.maxMembers + ' additional members.' : (data.error || 'Failed to add member.'), 'error');
+      btn.disabled = false;
+      return;
+    }
+    mmCloseAddForm();
+    await mmLoadData();
+    showToast(data.subMember.firstName + ' added as a draft', 'success');
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+    btn.disabled = false;
+  }
+}
+
+// ── API: Edit ─────────────────────────────────────────────────────────
+async function mmSaveEdit(subId) {
+  if (!mmValidateEditForm()) return;
+  const btn = document.getElementById('mm-btn-edit-save');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(BASE + '/api/multi-member/members/' + encodeURIComponent(subId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        firstName: document.getElementById('ef-first').value.trim(),
+        lastName:  document.getElementById('ef-last').value.trim(),
+        email:     document.getElementById('ef-email').value.trim(),
+        phone:     document.getElementById('ef-phone').value.trim(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Failed to update member.', 'error'); if (btn) btn.disabled = false; return; }
+    MM.editingId = null;
+    await mmLoadData();
+    showToast('Draft updated', 'success');
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── API: Remove ───────────────────────────────────────────────────────
+async function mmDoRemove(subId) {
+  MM.confirmingId = null;
+  try {
+    const res  = await fetch(BASE + '/api/multi-member/members/' + encodeURIComponent(subId), { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Failed to remove member.', 'error'); return; }
+    await mmLoadData();
+    showToast(data.message || 'Member removed', 'info');
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+  }
+}
+
+// ── API: Submit ───────────────────────────────────────────────────────
+async function mmSubmitAll() {
+  const drafts = MM.subMembers.filter(m => m.status === 'draft');
+  if (!drafts.length) return;
+  const btn = document.getElementById('mm-btn-submit');
+  if (btn) btn.disabled = true;
+  try {
+    const res  = await fetch(BASE + '/api/multi-member/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ holderId: MM.holder.id, clientId }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Submit failed.', 'error'); if (btn) btn.disabled = false; return; }
+    await mmLoadData();
+    showToast('Granting access to ' + data.submitted + ' member' + (data.submitted === 1 ? '' : 's') + '…', 'info');
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════════════
+
+let _booted = false;
+
+async function boot() {
+  if (_booted) return;
+  _booted = true;
+
+  // Gate: check which tabs to show, then render tab bar
+  // We need widget-data to know if Manage Members tab should appear.
+  // Do this first (before first render) to avoid tab flash (FAULT rule).
+  let showMembersTab = false;
+
+  if (platformMemberId && clientId) {
+    try {
+      const res = await fetch(BASE + '/member/' + encodeURIComponent(platformMemberId) + '/widget-data?clientId=' + encodeURIComponent(clientId));
+      if (res.ok) {
+        const d = await res.json();
+        MM.loaded       = true;
+        MM.holder       = d.holder;
+        MM.plans        = d.plans;
+        MM.subMembers   = d.subMembers;
+        MM.maxMembers   = MM.plans.length > 0 ? Math.min(...MM.plans.map(p => p.maxMembers)) : 0;
+        MM.planMappingId = MM.plans.length > 0 ? MM.plans[0].id : null;
+        showMembersTab  = MM.plans.some(p => p.allowMultiple);
+
+        // Populate holder chip from widget-data if available
+        if (MM.holder) {
+          const holderName = [MM.holder.firstName, MM.holder.lastName].filter(Boolean).join(' ') || MM.holder.email || '';
+          if (holderName) setMemberChip(holderName);
+        }
+      }
+    } catch (e) {
+      // Widget-data failure is non-fatal — still show My Access
+    }
+  }
+
+  // Show tab bar now that we know which tabs to include
+  const tabBar   = document.getElementById('tab-bar');
+  const mmTabBtn = document.getElementById('tab-btn-members');
+  if (showMembersTab) {
+    mmTabBtn.classList.remove('hidden');
+  }
+  tabBar.classList.remove('hidden');
+
+  // Trigger overlay if ?tab=status was passed (post-purchase redirect)
+  if (tabParam === 'status') {
+    showOverlay();
+    setOvState('syncing');
+    startPipeline();
+    pollAccess();
+  }
+
+  // Load My Access tab data
+  loadAccessData();
+
+  // If Manage Members tab is active (switched before boot), load its data
+  if (_activeTab === 'members' && MM.loaded) {
+    document.getElementById('mm-loading').classList.add('hidden');
+    document.getElementById('mm-content').classList.remove('hidden');
+    mmRender();
+  }
+}
+
+window.addEventListener('beforeunload', function() {
+  clearStepTimers();
+  clearPollTimer();
+  if (_freshnessInterval) clearInterval(_freshnessInterval);
+});
+
+// Boot immediately if URL params are present; otherwise wait for postMessage
+if (platformMemberId && clientId) {
+  boot();
+}
+</script>
+</body>
+</html>

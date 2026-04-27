@@ -58,15 +58,15 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
       [clientId]
     );
 
-    // 3. Get existing sub-members for this plan holder
+    // 3. Get existing sub-members for this plan holder, grouped by plan (DR-037)
     const subMembersResult = await db.query(
       `SELECT mi.id, mi.platform_member_id, mi.first_name, mi.last_name,
-              mi.email, mi.phone, mi.sub_member_status,
+              mi.email, mi.phone, mi.sub_member_status, mi.plan_mapping_id,
               mas.status AS access_status, mas.provisioned_at
        FROM member_identity mi
        LEFT JOIN member_access_state mas ON mas.member_id = mi.id
        WHERE mi.plan_holder_id = $1
-       ORDER BY mi.created_at`,
+       ORDER BY mi.plan_mapping_id, mi.created_at`,
       [holder.id]
     );
 
@@ -93,6 +93,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
         email: m.email,
         phone: m.phone,
         status: m.sub_member_status,
+        planMappingId: m.plan_mapping_id,   // DR-037: which plan this sub-member belongs to
         accessStatus: m.access_status,
         provisionedAt: m.provisioned_at,
       })),
@@ -107,10 +108,10 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
 // Add a new sub-member as draft. Not provisioned until submit.
 // Body: { holderId, clientId, firstName, lastName, email, phone }
 router.post('/api/multi-member/members', async (req, res) => {
-  const { holderId, clientId, firstName, lastName, email, phone } = req.body;
+  const { holderId, clientId, firstName, lastName, email, phone, planMappingId } = req.body;
 
-  if (!holderId || !clientId || !firstName || !lastName || !email || !phone) {
-    return res.status(400).json({ error: 'All fields required: holderId, clientId, firstName, lastName, email, phone' });
+  if (!holderId || !clientId || !firstName || !lastName || !email || !phone || !planMappingId) {
+    return res.status(400).json({ error: 'All fields required: holderId, clientId, firstName, lastName, email, phone, planMappingId' });
   }
 
   try {
@@ -123,25 +124,34 @@ router.post('/api/multi-member/members', async (req, res) => {
       return res.status(404).json({ error: 'Plan holder not found' });
     }
 
-    // Check multi-member limit across all multi-member plans for this client
-    const limitCheck = await db.query(
-      `SELECT COALESCE(MAX(pm.max_members), 1) AS max_members
-       FROM plan_mappings pm
-       WHERE pm.client_id = $1 AND pm.allow_multiple = true AND pm.status = 'active'`,
-      [clientId]
+    // Validate plan mapping exists, belongs to this client, and allows multiple (DR-037)
+    const planCheck = await db.query(
+      `SELECT id, max_members FROM plan_mappings
+       WHERE id = $1 AND client_id = $2 AND allow_multiple = true AND status = 'active'`,
+      [planMappingId, clientId]
     );
-    const maxMembers = limitCheck.rows[0]?.max_members || 1;
+    if (!planCheck.rows.length) {
+      return res.status(404).json({ error: 'Plan not found or does not allow additional members' });
+    }
 
+    // Check limit per plan — not across all plans (DR-037)
+    const maxMembers = planCheck.rows[0].max_members || 1;
     const currentCount = await db.query(
-      `SELECT COUNT(*)::int AS cnt FROM member_identity WHERE plan_holder_id = $1`,
-      [holderId]
+      `SELECT COUNT(*)::int AS cnt FROM member_identity
+       WHERE plan_holder_id = $1 AND plan_mapping_id = $2`,
+      [holderId, planMappingId]
     );
     if (currentCount.rows[0].cnt >= maxMembers) {
-      return res.status(409).json({ error: `Maximum ${maxMembers} additional members allowed` });
+      return res.status(409).json({ error: `Maximum ${maxMembers} additional members allowed for this plan` });
     }
 
     // Generate sub-member platform ID (DR-029): {holderPlatformId}###as{NNN}
-    const nextNum = currentCount.rows[0].cnt + 1;
+    // NNN is scoped across all sub-members for this holder (unique ID, not per-plan counter)
+    const totalCount = await db.query(
+      `SELECT COUNT(*)::int AS cnt FROM member_identity WHERE plan_holder_id = $1`,
+      [holderId]
+    );
+    const nextNum = totalCount.rows[0].cnt + 1;
     const holderPlatformMemberId = await db.query(
       `SELECT platform_member_id FROM member_identity WHERE id = $1`, [holderId]
     );
@@ -150,11 +160,11 @@ router.post('/api/multi-member/members', async (req, res) => {
     const result = await db.query(
       `INSERT INTO member_identity
        (client_id, platform_member_id, source_platform, hardware_platform, source_tag,
-        plan_holder_id, first_name, last_name, email, phone, sub_member_status)
-       VALUES ($1, $2, 'wix', $3, 'accesssync', $4, $5, $6, $7, $8, 'draft')
-       RETURNING id, platform_member_id, first_name, last_name, email, phone, sub_member_status, created_at`,
+        plan_holder_id, plan_mapping_id, first_name, last_name, email, phone, sub_member_status)
+       VALUES ($1, $2, 'wix', $3, 'accesssync', $4, $5, $6, $7, $8, $9, $10, 'draft')
+       RETURNING id, platform_member_id, first_name, last_name, email, phone, sub_member_status, plan_mapping_id, created_at`,
       [clientId, subPlatformMemberId, holderCheck.rows[0].hardware_platform,
-       holderId, firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim()]
+       holderId, planMappingId, firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim()]
     );
 
     log.info('admin.sub_member_added', { subPlatformMemberId, holderId });
@@ -278,12 +288,14 @@ router.post('/api/multi-member/submit', async (req, res) => {
   }
 
   try {
-    // Get all draft sub-members for this holder
+    // Get all draft sub-members for this holder, with each sub-member's own source_plan_id (DR-037)
     const drafts = await db.query(
-      `SELECT id, platform_member_id, first_name, last_name, email, phone
-       FROM member_identity
-       WHERE plan_holder_id = $1 AND client_id = $2 AND sub_member_status = 'draft'
-       ORDER BY created_at`,
+      `SELECT mi.id, mi.platform_member_id, mi.first_name, mi.last_name,
+              mi.email, mi.phone, mi.plan_mapping_id, pm.source_plan_id
+       FROM member_identity mi
+       LEFT JOIN plan_mappings pm ON pm.id = mi.plan_mapping_id
+       WHERE mi.plan_holder_id = $1 AND mi.client_id = $2 AND mi.sub_member_status = 'draft'
+       ORDER BY mi.created_at`,
       [holderId, clientId]
     );
 
@@ -310,33 +322,26 @@ router.post('/api/multi-member/submit', async (req, res) => {
     }
 
     // DR-031: Enqueue synthetic grant events via BullMQ — one per sub-member.
-    // Each sub-member gets a synthetic plan.purchased event that flows through
-    // the same queue-worker pipeline as real webhooks.
-    // The sub-member's email/name are stored on member_identity (not fetched from Wix).
-    const plansResult = await db.query(
-      `SELECT source_plan_id FROM plan_mappings
-       WHERE client_id = $1 AND status = 'active' AND allow_multiple = true LIMIT 1`,
-      [clientId]
-    );
-    const planId = plansResult.rows[0]?.source_plan_id;
-
-    if (planId) {
-      for (const draft of drafts.rows) {
-        const syntheticEvent = {
-          eventType: 'plan.purchased',
-          platformMemberId: draft.platform_member_id,
-          sourcePlatform: 'wix',
-          planId,
-          email: draft.email,
-          name: `${draft.first_name} ${draft.last_name}`,
-          synthetic: true,  // marker so logs can distinguish from real webhooks
-        };
-        const jobId = `grant-multi-member-${draft.id}-${Date.now()}`;
-        await eventQueue.add('grant', { tenantId: clientId, standardEvent: syntheticEvent }, { jobId });
-        log.info('admin.sub_member_grant_queued', { platformMemberId: draft.platform_member_id, jobId });
+    // DR-037: Each sub-member carries its own plan_mapping_id — use that to look up
+    // source_plan_id so sub-members on different plans get provisioned against the
+    // correct plan (not a single LIMIT 1 across all multi-member plans).
+    for (const draft of drafts.rows) {
+      if (!draft.plan_mapping_id) {
+        log.warn('admin.sub_member_no_plan_mapping', { draftId: draft.id });
+        continue;
       }
-    } else {
-      log.warn('admin.sub_member_no_mapping', { clientId });
+      const syntheticEvent = {
+        eventType: 'plan.purchased',
+        platformMemberId: draft.platform_member_id,
+        sourcePlatform: 'wix',
+        planId: draft.source_plan_id,
+        email: draft.email,
+        name: `${draft.first_name} ${draft.last_name}`,
+        synthetic: true,  // marker so logs can distinguish from real webhooks
+      };
+      const jobId = `grant-multi-member-${draft.id}-${Date.now()}`;
+      await eventQueue.add('grant', { tenantId: clientId, standardEvent: syntheticEvent }, { jobId });
+      log.info('admin.sub_member_grant_queued', { platformMemberId: draft.platform_member_id, jobId });
     }
 
     log.info('admin.sub_members_submitted', { count: drafts.rows.length, holderId });
