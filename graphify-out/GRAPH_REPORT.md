@@ -1,13 +1,13 @@
 # Graph Report - .  (2026-04-26)
 
 ## Corpus Check
-- 74 files Â· ~102,010 words
+- 74 files · ~112,388 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 307 nodes Â· 345 edges Â· 69 communities detected
-- Extraction: 100% EXTRACTED Â· 0% INFERRED Â· 0% AMBIGUOUS
-- Token cost: 0 input Â· 0 output
+- 307 nodes · 345 edges · 69 communities detected
+- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
+- Token cost: 0 input · 0 output
 
 ## God Nodes (most connected - your core abstractions)
 1. `HardwareAdapter` - 14 edges

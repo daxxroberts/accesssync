@@ -249,7 +249,7 @@
     <option value="all">All</option>
   </select>
   <button class="btn btn-secondary btn-sm" on:click={load}>Refresh</button>
-  <a href="/onboard.html" class="btn btn-accent btn-sm">+ New Client</a>
+  <a href="/onboard.html" class="btn btn-accent btn-sm">Generate invite link</a>
 </div>
 
 <!-- ── Loading / Empty / Table ───────────────────────────────────── -->

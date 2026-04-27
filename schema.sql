@@ -164,7 +164,8 @@ CREATE TABLE member_identity (
     source_tag          VARCHAR(50)  DEFAULT 'accesssync', -- DR-003: distinguishes from manual/staff users
     -- Primary members: email/name fetched from Wix on-demand (DR-001 data minimization).
     -- Sub-members: stored directly (entered by plan holder — FP-01). Different data model by design (S-07).
-    plan_holder_id      UUID REFERENCES member_identity(id) ON DELETE CASCADE, -- DR-030: links sub-members to primary
+    plan_holder_id      UUID REFERENCES member_identity(id) ON DELETE CASCADE,  -- DR-030: links sub-members to primary
+    plan_mapping_id     UUID REFERENCES plan_mappings(id)  ON DELETE SET NULL,  -- DR-037: which plan this sub-member belongs to (NULL for primary members)
     phone               VARCHAR(50),                    -- Sub-member phone (required)
     first_name          VARCHAR(255),                   -- Sub-member first name (required)
     last_name           VARCHAR(255),                   -- Sub-member last name (required)
@@ -179,6 +180,11 @@ CREATE TABLE member_identity (
 CREATE INDEX idx_member_identity_plan_holder
     ON member_identity (plan_holder_id)
     WHERE plan_holder_id IS NOT NULL;
+
+-- Fast sub-member lookup by plan mapping (DR-037)
+CREATE INDEX idx_member_identity_plan_mapping
+    ON member_identity (plan_mapping_id)
+    WHERE plan_mapping_id IS NOT NULL;
 
 --------------------------------------------------------
 -- 7. Member Access State (Provisioning Status)

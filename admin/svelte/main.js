@@ -22,6 +22,7 @@ import DebugCenterPanel from './panels/DebugCenterPanel.svelte';
 import ErrorQueuePanel  from './panels/ErrorQueuePanel.svelte';
 import MemberSyncPanel  from './panels/MemberSyncPanel.svelte';
 import ClientsPanel     from './panels/ClientsPanel.svelte';
+import Toast            from './components/Toast.svelte';
 
 // mountPanels() is called by app.js after auth is confirmed — not on page load.
 // This prevents panels from making 401 API calls before the user is logged in,
@@ -49,6 +50,9 @@ window.mountSveltePanels = function () {
 
   const clientsTarget = document.getElementById('svelte-clients');
   if (clientsTarget) mount(ClientsPanel, { target: clientsTarget });
+
+  const toastTarget = document.getElementById('svelte-toast');
+  if (toastTarget) mount(Toast, { target: toastTarget });
 };
 
 // Self-trigger: if app.js already ran showDashboard() before this module loaded

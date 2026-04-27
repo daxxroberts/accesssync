@@ -1,293 +1,629 @@
 <%#
   @file multi-member.ejs
   @layer admin/pages
-  @route /plan-mapping (drawer/modal within plan-mapping flow)
-  @role multi-member-config
-  @data GET /operator/:clientId/plan-mappings/:mappingId/groups
-  @writes PATCH /operator/:clientId/plan-mappings/:mappingId (allow_multiple, max_members)
-  @status DEFERRED — code complete but hard-stopped until Chad confirms family plans
+  @route /multi-member?memberId=X&clientId=Y&coreUrl=Z
+  @role member-facing
+  @audience gym members (plan holders managing additional members)
+  @data GET /member/:memberId/widget-data
+  @data POST /api/multi-member/members
+  @data PUT /api/multi-member/members/:subId
+  @data DELETE /api/multi-member/members/:subId
+  @data POST /api/multi-member/submit
+  @dr DR-029, DR-030, DR-031, DR-032, DR-033
+  @status DEFERRED — active post-HOG-launch when Chad confirms family/multi memberships sold
 %>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Manage Additional Members — AccessSync</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>Manage Members — AccessSync</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
 :root {
-  --brand: #4F6EF7;
-  --green: #22C55E;
-  --green-dim: rgba(34,197,94,0.12);
-  --amber: #F59E0B;
-  --amber-dim: rgba(245,158,11,0.12);
-  --red: #EF4444;
-  --red-dim: rgba(239,68,68,0.10);
-  --bg: #F1F5F9;
-  --card: #FFFFFF;
-  --border: #E2E8F0;
-  --text: #0F172A;
-  --text2: #475569;
-  --muted: #94A3B8;
-  --r: 12px;
+  --brand:       #4F6EF7;
+  --brand-dark:  #3D5BD4;
+  --brand-dim:   rgba(79,110,247,0.10);
+  --brand-glow:  rgba(79,110,247,0.20);
+  --green:       #16A34A;
+  --green-dim:   rgba(22,163,74,0.10);
+  --green-glow:  rgba(22,163,74,0.25);
+  --amber:       #D97706;
+  --amber-dim:   rgba(217,119,6,0.10);
+  --red:         #DC2626;
+  --red-dim:     rgba(220,38,38,0.07);
+  --bg:          #FAFAF7;
+  --card:        #FFFFFF;
+  --card2:       #F5F4F0;
+  --border:      rgba(28,22,16,0.06);
+  --border2:     rgba(28,22,16,0.10);
+  --text:        #1F1B16;
+  --text2:       #6E6358;
+  --muted:       #9A8F82;
+  --row-bg:      rgba(28,22,16,0.02);
+  --row-draft-bg: rgba(217,119,6,0.05);
+  --row-draft-bd: rgba(217,119,6,0.20);
+  --input-bg:    rgba(28,22,16,0.025);
+  --input-bg-hi: rgba(28,22,16,0.04);
+  --bg-rgb:      250,250,247;
 }
+
 html, body {
-  height: 100%;
-  font-family: 'Sora', sans-serif;
+  min-height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-size: 14px;
+  font-family: 'Sora', -apple-system, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-.page { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 24px; }
-.container { max-width: 520px; width: 100%; }
 
-/* Plan card */
-.plan-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  padding: 24px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-}
-.plan-card h2 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
-.plan-card .plan-meta { font-size: 12px; color: var(--muted); }
-.plan-card .status-pill {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-  margin-top: 8px;
-}
-.pill-active { background: var(--green-dim); color: var(--green); }
-.pill-pending { background: var(--amber-dim); color: var(--amber); }
-.pill-error { background: var(--red-dim); color: var(--red); }
-
-/* Section header */
-.section-header {
+body {
+  min-height: 100vh;
+  min-height: 100svh;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ── Background orbs ─────────────────────────────────────── */
+.bg-orb {
+  position: fixed; border-radius: 50%;
+  filter: blur(80px); pointer-events: none; z-index: 0;
+}
+.bg-orb-1 {
+  width: min(500px,100vw); height: min(500px,100vw);
+  background: radial-gradient(circle, var(--brand-dim) 0%, transparent 70%);
+  top: -120px; left: -120px;
+  animation: orb-drift-1 18s ease-in-out infinite alternate;
+}
+.bg-orb-2 {
+  width: min(400px,90vw); height: min(400px,90vw);
+  background: radial-gradient(circle, rgba(22,163,74,0.06) 0%, transparent 70%);
+  bottom: -100px; right: -80px;
+  animation: orb-drift-2 22s ease-in-out infinite alternate;
+}
+
+/* ── Layout ──────────────────────────────────────────────── */
+.widget {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 480px;
+  margin: 0 auto;
+  display: flex; flex-direction: column;
+  min-height: 100vh; min-height: 100svh;
+  padding-bottom: 24px;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.header {
+  padding: 18px 18px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.logo-text { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+.logo-text .brand { color: var(--brand); }
+.logo-text .dim   { color: var(--text2); }
+.holder-chip {
+  font-size: 11.5px; color: var(--text2); font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+}
+.holder-dot {
+  width: 6px; height: 6px; border-radius: 3px;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+
+/* ── Scroll body ─────────────────────────────────────────── */
+.body {
+  flex: 1; overflow-y: auto;
+  padding: 4px 18px 24px;
+}
+
+/* ── Hero card ───────────────────────────────────────────── */
+.hero {
+  position: relative;
+  padding: 18px;
+  background: linear-gradient(180deg, var(--brand-dim) 0%, rgba(79,110,247,0.02) 100%);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  display: flex; align-items: center; gap: 14px;
+  overflow: hidden;
+}
+.hero-glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(800px circle at 0% 0%, var(--brand-dim), transparent 50%);
+  opacity: .5;
+}
+.hero-ring { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+.hero-ring svg { transform: rotate(-90deg); }
+.hero-ring-center {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; line-height: 1;
+}
+.hero-ring-num  { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+.hero-ring-of   { font-size: 9.5px; color: var(--text2); font-weight: 500; margin-top: 2px; letter-spacing: .5px; }
+.hero-info      { flex: 1; min-width: 0; position: relative; }
+.hero-eyebrow   { font-size: 11px; font-weight: 600; color: var(--brand); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+.hero-plan-name { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hero-meta      { font-size: 12px; color: var(--text2); margin-bottom: 10px; }
+.spot-pips      { display: inline-flex; gap: 5px; align-items: center; }
+.spot-pip {
+  height: 6px; border-radius: 3px;
+  transition: background .25s, box-shadow .25s;
+}
+.spot-pip.filled {
+  background: var(--brand);
+  box-shadow: 0 0 12px var(--brand-glow), inset 0 0 0 1px rgba(255,255,255,0.15);
+}
+.spot-pip.empty {
+  background: rgba(28,22,16,0.08);
+  box-shadow: inset 0 0 0 1px var(--border2);
+}
+
+/* ── Section header ──────────────────────────────────────── */
+.section-row {
+  margin-top: 22px;
+  display: flex; align-items: baseline; justify-content: space-between;
   margin-bottom: 12px;
 }
-.section-header h3 { font-size: 15px; font-weight: 600; }
-.member-count { font-size: 12px; color: var(--muted); }
+.section-title  { font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -0.1px; }
+.section-sub    { font-size: 11.5px; color: var(--text2); margin-top: 2px; }
+.draft-chip {
+  font-size: 11px; color: var(--amber); font-weight: 600;
+  padding: 4px 9px; border-radius: 999px;
+  background: var(--amber-dim);
+  box-shadow: inset 0 0 0 1px rgba(245,158,11,0.28);
+  white-space: nowrap;
+}
 
-/* Member list */
-.member-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
-.member-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
+/* ── Member rows ─────────────────────────────────────────── */
+.member-list    { display: flex; flex-direction: column; gap: 10px; }
+.member-row {
+  display: flex; align-items: flex-start; gap: 14px;
   padding: 16px;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--row-bg);
+  transition: background .15s, border-color .15s;
+  animation: fade-up .35s ease;
 }
-.member-card .member-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
-.member-card .member-detail { font-size: 12px; color: var(--text2); margin-bottom: 1px; }
-.member-card .member-actions {
-  display: flex; gap: 8px; margin-top: 10px;
+.member-row.draft {
+  background: var(--row-draft-bg);
+  border-color: var(--row-draft-bd);
 }
-.member-card .member-status {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 10px;
-  font-weight: 600;
-  margin-top: 6px;
-}
-
-/* Base .btn provided by operator-styles.css — page-specific variants below */
-.btn-submit {
-  background: var(--green);
-  color: #fff;
-  width: 100%;
-  padding: 12px;
-  font-size: 14px;
-  margin-top: 8px;
-}
-.btn-add {
+.member-avatar {
+  width: 40px; height: 40px; flex-shrink: 0;
+  border-radius: 11px;
   background: var(--brand);
   color: #fff;
-  width: 100%;
-  padding: 12px;
-  font-size: 13px;
+  font-family: inherit;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14.5px; letter-spacing: .2px;
 }
+.member-avatar.green { background: rgba(22,163,74,0.12);  color: var(--green); box-shadow: inset 0 0 0 1px rgba(22,163,74,0.30); }
+.member-avatar.amber { background: rgba(217,119,6,0.12);  color: var(--amber); box-shadow: inset 0 0 0 1px rgba(217,119,6,0.30); }
+.member-avatar.red   { background: rgba(220,38,38,0.10);  color: var(--red);   box-shadow: inset 0 0 0 1px rgba(220,38,38,0.30); }
+.member-body    { flex: 1; min-width: 0; }
+.member-name    { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 3px; line-height: 1.25; word-break: break-word; }
+.member-detail  { font-size: 12px; color: var(--text2); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; row-gap: 4px; }
+.member-actions { display: flex; gap: 6px; flex-shrink: 0; align-self: center; }
 
-/* Form */
-.form-card {
-  background: var(--card);
-  border: 1px solid var(--brand);
-  border-radius: var(--r);
-  padding: 20px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 12px rgba(79,110,247,0.08);
+/* ── Status badge ────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px 3px 7px;
+  border-radius: 999px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .2px;
+  white-space: nowrap;
 }
-.form-card h4 { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
-.form-row { display: flex; gap: 10px; margin-bottom: 10px; }
-.form-row.full { flex-direction: column; }
-.form-field { flex: 1; display: flex; flex-direction: column; }
-.form-field label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text2);
-  margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.form-field input {
-  border: 1px solid var(--border);
+.badge-dot { width: 6px; height: 6px; border-radius: 3px; }
+.badge-green { background: var(--green-dim); color: var(--green); box-shadow: inset 0 0 0 1px rgba(34,197,94,0.25); }
+.badge-amber { background: var(--amber-dim); color: var(--amber); box-shadow: inset 0 0 0 1px rgba(245,158,11,0.28); }
+.badge-brand { background: var(--brand-dim); color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand-glow); }
+.badge-red   { background: var(--red-dim);   color: var(--red);   box-shadow: inset 0 0 0 1px rgba(239,68,68,0.30); }
+.badge .pulse { animation: pulse 1.6s ease-in-out infinite; }
+
+/* ── Icon buttons ────────────────────────────────────────── */
+.icon-btn {
+  width: 28px; height: 28px; padding: 0; border: none;
   border-radius: 8px;
-  padding: 10px 12px;
-  font-family: 'Sora', sans-serif;
-  font-size: 13px;
-  color: var(--text);
-  outline: none;
-  transition: border-color 0.15s;
+  background: transparent; color: var(--text2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background .12s, color .12s, box-shadow .12s;
 }
-.form-field input:focus { border-color: var(--brand); }
-.form-field input.invalid { border-color: var(--red); }
-.form-actions { display: flex; gap: 8px; margin-top: 14px; }
+.icon-btn:hover { background: rgba(28,22,16,0.05); color: var(--text); box-shadow: inset 0 0 0 1px var(--border2); }
+.icon-btn.danger:hover { background: var(--red-dim); color: var(--red); box-shadow: inset 0 0 0 1px rgba(239,68,68,0.30); }
+.icon-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-/* Toast */
-.toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #fff;
-  z-index: 999;
-  opacity: 0;
-  transition: opacity 0.3s;
-  pointer-events: none;
+/* ── Confirm row ─────────────────────────────────────────── */
+.confirm-row {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 16px;
+  background: var(--red-dim);
+  border: 1px solid rgba(239,68,68,0.30);
+  border-radius: 14px;
+  animation: fade-up .2s ease;
 }
-.toast.visible { opacity: 1; }
-.toast.success { background: var(--green); }
-.toast.error { background: var(--red); }
+.confirm-inner { display: flex; align-items: center; gap: 12px; }
+.confirm-text  { flex: 1; min-width: 0; }
+.confirm-title { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.confirm-sub   { font-size: 12px; color: var(--text2); line-height: 1.4; }
+.confirm-btns  { display: flex; gap: 8px; justify-content: flex-end; }
 
-/* Loading */
-.loading {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--muted);
-  font-size: 13px;
+/* ── Inline edit ─────────────────────────────────────────── */
+.edit-row {
+  padding: 16px 16px 14px;
+  border-radius: 14px;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  animation: fade-up .2s ease;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
-.loading-spinner {
-  width: 28px; height: 28px;
-  border: 3px solid var(--border);
-  border-top-color: var(--brand);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin: 0 auto 12px;
+.edit-label {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+}
+.edit-eyebrow { font-size: 12px; font-weight: 600; color: var(--text2); letter-spacing: .5px; text-transform: uppercase; }
+
+/* ── Form grid ───────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+  gap: 10px;
+}
+.form-grid .full { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field-label {
+  font-size: 11.5px; font-weight: 500; color: var(--text2);
+  letter-spacing: .4px; text-transform: uppercase;
+}
+.field input {
+  appearance: none; border: none; outline: none;
+  background: var(--input-bg); color: var(--text);
+  height: 38px; padding: 0 12px;
+  border-radius: 10px;
+  width: 100%; min-width: 0;
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  box-shadow: inset 0 0 0 1px var(--border2);
+  transition: background .12s, box-shadow .12s;
+}
+.field input:focus {
+  background: var(--input-bg-hi);
+  box-shadow: inset 0 0 0 1px var(--brand), 0 0 0 3px var(--brand-dim);
+}
+.field input.invalid { box-shadow: inset 0 0 0 1px var(--red); }
+.field-err { font-size: 11px; color: var(--red); }
+
+/* ── Add form (inline slide-down) ────────────────────────── */
+.add-form {
+  margin-top: 12px;
+  padding: 18px 18px 16px;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  animation: slide-down .25s ease;
+}
+.add-form-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+}
+.add-icon {
+  width: 32px; height: 32px; border-radius: 9px;
+  background: var(--brand-dim); color: var(--brand);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 0 0 1px var(--brand-glow);
+}
+.add-form-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.add-form-sub   { font-size: 11.5px; font-weight: 400; color: var(--text2); margin-top: 2px; }
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btn-primary {
+  appearance: none; border: none;
+  background: var(--brand); color: #fff;
+  height: 36px; padding: 0 14px;
+  border-radius: 10px;
+  font-family: inherit; font-weight: 600; font-size: 13px; letter-spacing: .1px;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: 0 4px 14px rgba(79,110,247,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+  transition: background .15s, box-shadow .15s;
+}
+.btn-primary:hover { background: var(--brand-dark); box-shadow: 0 6px 24px rgba(79,110,247,0.45), inset 0 1px 0 rgba(255,255,255,0.15); }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary.full { width: 100%; height: 44px; font-size: 14px; border-radius: 12px; }
+
+.btn-ghost {
+  appearance: none; border: none;
+  background: transparent; color: var(--text2);
+  height: 32px; padding: 0 14px; border-radius: 9px;
+  font-family: inherit; font-weight: 600; font-size: 13px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--border2);
+  transition: background .12s, color .12s;
+}
+.btn-ghost:hover { background: rgba(28,22,16,0.05); color: var(--text); }
+
+.btn-danger {
+  appearance: none; border: none;
+  background: var(--red); color: #fff;
+  height: 32px; padding: 0 14px; border-radius: 9px;
+  font-family: inherit; font-weight: 600; font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(239,68,68,0.30);
 }
 
-/* Empty state */
+.btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+
+/* ── Add member trigger button ───────────────────────────── */
+.add-trigger {
+  margin-top: 12px;
+  appearance: none; border: none;
+  width: 100%; height: 48px;
+  border-radius: 12px;
+  background: transparent; color: var(--text2);
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: inset 0 0 0 1px var(--border2);
+  transition: background .12s, color .12s, box-shadow .12s;
+}
+.add-trigger:hover {
+  background: var(--brand-dim); color: var(--brand);
+  box-shadow: inset 0 0 0 1px rgba(79,110,247,0.25);
+}
+
+/* ── Limit notice ────────────────────────────────────────── */
+.limit-notice {
+  margin-top: 12px; padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--input-bg);
+  box-shadow: inset 0 0 0 1px var(--border2);
+  font-size: 12px; color: var(--text2);
+  display: flex; align-items: center; gap: 10px;
+}
+
+/* ── Submit CTA ──────────────────────────────────────────── */
+.submit-area { margin-top: 22px; }
+.submit-note { text-align: center; margin-top: 10px; font-size: 11.5px; color: var(--text2); }
+
+/* ── Sticky bottom CTA ───────────────────────────────────── */
+.sticky-cta {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  padding: 14px 18px 18px;
+  background: linear-gradient(180deg,
+    rgba(var(--bg-rgb),0) 0%,
+    rgba(var(--bg-rgb),0.92) 35%,
+    rgba(var(--bg-rgb),1) 100%);
+  z-index: 20; pointer-events: none;
+  animation: fade-up .25s ease;
+}
+.sticky-cta > * { pointer-events: auto; }
+
+/* ── Empty state ─────────────────────────────────────────── */
 .empty-state {
+  padding: 32px 22px;
+  border-radius: 14px;
+  border: 1px dashed var(--border2);
   text-align: center;
-  padding: 32px 16px;
-  color: var(--muted);
-  font-size: 13px;
+  background: var(--row-bg);
 }
-.empty-state svg { margin-bottom: 12px; opacity: 0.4; }
+.empty-icon {
+  width: 44px; height: 44px; margin: 0 auto 12px;
+  border-radius: 12px;
+  background: var(--brand-dim);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand-glow);
+}
+.empty-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.empty-sub   { font-size: 12px; color: var(--text2); margin-bottom: 16px; line-height: 1.5; }
+
+/* ── Loading / error states ──────────────────────────────── */
+.state-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 50vh; gap: 14px; color: var(--text2); font-size: 13px;
+}
+.spinner {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 2.5px solid var(--border2);
+  border-top-color: var(--brand);
+  animation: spin .8s linear infinite;
+}
+.state-error {
+  margin: 32px 18px;
+  padding: 24px;
+  background: var(--card);
+  border: 1px solid var(--red-dim);
+  border-radius: 16px;
+  text-align: center;
+}
+.state-error-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.state-error-msg   { font-size: 13px; color: var(--text2); }
+
+/* ── No-plan state ───────────────────────────────────────── */
+.no-plan-notice {
+  margin: 32px 18px;
+  padding: 24px;
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  text-align: center;
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ── Toast ───────────────────────────────────────────────── */
+.toast {
+  position: fixed; bottom: -60px; left: 50%; transform: translateX(-50%);
+  background: var(--card2); color: var(--text);
+  padding: 11px 16px; border-radius: 10px;
+  font-size: 13px; font-weight: 600;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+  z-index: 800; transition: transform .3s ease;
+  pointer-events: none;
+  max-width: calc(100% - 32px);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.toast.visible    { transform: translateX(-50%) translateY(-80px); }
+.toast.toast-success { border-left: 3px solid var(--green); }
+.toast.toast-error   { border-left: 3px solid var(--red); }
+.toast.toast-info    { border-left: 3px solid var(--brand); }
+
+/* ── Keyframes ───────────────────────────────────────────── */
+@keyframes spin         { to { transform: rotate(360deg); } }
+@keyframes pulse        { 0%,100%{opacity:1} 50%{opacity:.35} }
+@keyframes pulse-ring   { 0%{transform:scale(1);opacity:.5} 70%{transform:scale(1.55);opacity:0} 100%{transform:scale(1.55);opacity:0} }
+@keyframes fade-up      { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slide-down   { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+@keyframes orb-drift-1  { from{transform:translate(0,0)} to{transform:translate(60px,40px)} }
+@keyframes orb-drift-2  { from{transform:translate(0,0)} to{transform:translate(-40px,-60px)} }
 
 .hidden { display: none !important; }
 </style>
 </head>
 <body>
-<div class="page">
-  <div class="container">
-    <!-- Loading -->
-    <div id="loading" class="loading">
-      <div class="loading-spinner"></div>
-      Loading your plan...
-    </div>
 
-    <!-- Error (no params or API failure) -->
-    <div id="error-state" class="plan-card hidden" style="text-align:center;">
-      <svg width="40" height="40" viewBox="0 0 32 32" fill="none" style="margin-bottom:12px;">
-        <circle cx="16" cy="16" r="12" stroke="#EF4444" stroke-width="2.5"/>
-        <path d="M16 11v6M16 20v1" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round"/>
-      </svg>
-      <h2 style="font-size:16px;">Unable to load</h2>
-      <p id="error-msg" style="font-size:13px;color:var(--text2);margin-top:6px;">Something went wrong.</p>
-    </div>
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
 
-    <!-- Main content (populated by JS) -->
-    <div id="main-content" class="hidden">
-      <!-- Plan info card -->
-      <div class="plan-card">
-        <h2 id="plan-name">Your Plan</h2>
-        <div class="plan-meta" id="plan-meta"></div>
-        <div id="plan-status"></div>
+<div class="widget">
+  <!-- Header -->
+  <div class="header">
+    <span class="logo-text"><span class="brand">Access</span><span class="dim">Sync</span></span>
+    <span class="holder-chip" id="holder-chip" style="display:none">
+      <span class="holder-dot"></span>
+      <span id="holder-name-label"></span>
+    </span>
+  </div>
+
+  <!-- Loading -->
+  <div id="state-loading" class="state-loading">
+    <div class="spinner"></div>
+    Loading your plan…
+  </div>
+
+  <!-- Error -->
+  <div id="state-error" class="state-error hidden">
+    <div class="state-error-title">Unable to load</div>
+    <div class="state-error-msg" id="error-msg">Something went wrong.</div>
+  </div>
+
+  <!-- No multi-member plan -->
+  <div id="state-no-plan" class="no-plan-notice hidden">
+    Your current plan doesn't include additional members.
+  </div>
+
+  <!-- Main content -->
+  <div id="main-content" class="hidden">
+    <div class="body" id="scroll-body">
+
+      <!-- Hero card -->
+      <div class="hero">
+        <div class="hero-glow"></div>
+        <div class="hero-ring">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="26" fill="none" stroke="var(--border2)" stroke-width="4"/>
+            <circle id="ring-progress" cx="32" cy="32" r="26" fill="none"
+              stroke="var(--brand)" stroke-width="4"
+              stroke-dasharray="0 163.4" stroke-linecap="round"
+              style="transition:stroke-dasharray .5s cubic-bezier(.2,.7,.3,1);filter:drop-shadow(0 0 6px var(--brand-glow))"/>
+          </svg>
+          <div class="hero-ring-center">
+            <span class="hero-ring-num" id="ring-used">0</span>
+            <span class="hero-ring-of" id="ring-of">of 0</span>
+          </div>
+        </div>
+        <div class="hero-info">
+          <div class="hero-eyebrow">Your plan</div>
+          <div class="hero-plan-name" id="hero-plan-name">—</div>
+          <div class="hero-meta" id="hero-meta"></div>
+          <div class="spot-pips" id="spot-pips"></div>
+        </div>
       </div>
 
-      <!-- Additional Members section -->
-      <div class="section-header">
-        <h3>Additional Members</h3>
-        <span class="member-count" id="member-count"></span>
+      <!-- Section header -->
+      <div class="section-row">
+        <div>
+          <div class="section-title">Additional members</div>
+          <div class="section-sub" id="section-sub"></div>
+        </div>
+        <span class="draft-chip hidden" id="draft-chip"></span>
       </div>
 
       <!-- Member list -->
       <div id="member-list" class="member-list"></div>
 
-      <!-- Empty state -->
-      <div id="empty-state" class="empty-state hidden">
-        <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-          <circle cx="18" cy="18" r="15" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M18 12v6M15 21h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-        <div>No additional members yet</div>
-      </div>
-
-      <!-- Add member form (hidden until triggered) -->
-      <div id="add-form" class="form-card hidden">
-        <h4 id="form-title">Add Additional Member</h4>
-        <div class="form-row">
-          <div class="form-field">
-            <label for="f-first">First Name</label>
-            <input id="f-first" type="text" placeholder="First name" autocomplete="given-name">
-          </div>
-          <div class="form-field">
-            <label for="f-last">Last Name</label>
-            <input id="f-last" type="text" placeholder="Last name" autocomplete="family-name">
-          </div>
-        </div>
-        <div class="form-row full">
-          <div class="form-field">
-            <label for="f-email">Email</label>
-            <input id="f-email" type="email" placeholder="member@email.com" autocomplete="email">
-          </div>
-        </div>
-        <div class="form-row full">
-          <div class="form-field">
-            <label for="f-phone">Phone</label>
-            <input id="f-phone" type="tel" placeholder="(555) 123-4567" autocomplete="tel">
-          </div>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-primary" id="form-save" onclick="saveForm()">Add Member</button>
-          <button class="btn btn-outline" onclick="cancelForm()">Cancel</button>
+      <!-- Add trigger / limit notice -->
+      <div id="add-trigger-wrap">
+        <button class="add-trigger hidden" id="btn-add-trigger" onclick="openAddForm()">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+          Add member
+        </button>
+        <div class="limit-notice hidden" id="limit-notice">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.5v4M8 4.7v.05" stroke-linecap="round"/></svg>
+          <span id="limit-text"></span>
         </div>
       </div>
 
-      <!-- Add button -->
-      <button class="btn btn-add" id="btn-add" onclick="showAddForm()">+ Add Additional Member</button>
+      <!-- Inline add form -->
+      <div id="add-form" class="add-form hidden">
+        <div class="add-form-header">
+          <div class="add-icon">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+          </div>
+          <div>
+            <div class="add-form-title">Add a member</div>
+            <div class="add-form-sub">They'll be saved as a draft until you grant access.</div>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="field-label" for="f-first">First name</label>
+            <input id="f-first" type="text" placeholder="First" autocomplete="given-name"/>
+            <span class="field-err hidden" id="err-first"></span>
+          </div>
+          <div class="field">
+            <label class="field-label" for="f-last">Last name</label>
+            <input id="f-last" type="text" placeholder="Last" autocomplete="family-name"/>
+            <span class="field-err hidden" id="err-last"></span>
+          </div>
+          <div class="field full">
+            <label class="field-label" for="f-email">Email</label>
+            <input id="f-email" type="email" placeholder="member@email.com" autocomplete="email"/>
+            <span class="field-err hidden" id="err-email"></span>
+          </div>
+          <div class="field full">
+            <label class="field-label" for="f-phone">Phone</label>
+            <input id="f-phone" type="tel" placeholder="+1 555 0100" autocomplete="tel"/>
+            <span class="field-err hidden" id="err-phone"></span>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-ghost" onclick="closeAddForm()">Cancel</button>
+          <button class="btn-primary" id="btn-add-save" onclick="saveAdd()">Add member</button>
+        </div>
+      </div>
 
-      <!-- Submit all button (visible when drafts exist) -->
-      <button class="btn btn-submit hidden" id="btn-submit" onclick="submitAll()">
-        Submit All for Access
-      </button>
-    </div>
-  </div>
+      <!-- Submit CTA (inline) -->
+      <div class="submit-area hidden" id="submit-area">
+        <button class="btn-primary full" id="btn-submit" onclick="submitAll()">
+          Grant access to <span id="submit-label">0 members</span>
+        </button>
+        <div class="submit-note">We'll email them an invite to set up their pass.</div>
+      </div>
+
+    </div><!-- /body -->
+  </div><!-- /main-content -->
+</div><!-- /widget -->
+
+<!-- Sticky CTA (appears when inline CTA scrolls out of view) -->
+<div id="sticky-cta" class="sticky-cta hidden">
+  <button class="btn-primary full" onclick="submitAll()">
+    Grant access to <span id="sticky-label">0 members</span>
+  </button>
 </div>
 
 <div id="toast" class="toast"></div>
@@ -295,297 +631,552 @@ html, body {
 <script>
 'use strict';
 
-const params = new URLSearchParams(window.location.search);
+// ── URL params ──────────────────────────────────────────────────
+const params        = new URLSearchParams(window.location.search);
 const platformMemberId = params.get('memberId');
-const clientId = params.get('clientId');
-const BASE = params.get('coreUrl') || '';
+const clientId      = params.get('clientId');
+const BASE          = (params.get('coreUrl') || '').replace(/\/+$/, '');
 
-let state = {
-  holder: null,
-  plans: [],
-  subMembers: [],
-  editingId: null,  // sub-member ID being edited (null = adding new)
+// ── State ───────────────────────────────────────────────────────
+let S = {
+  holder:      null,
+  plans:       [],
+  subMembers:  [],
+  maxMembers:  0,
+  editingId:   null,    // sub-member id being edited inline (null = none)
+  confirmingId: null,   // sub-member id showing confirm dialog
 };
 
+// ── XSS-safe escaping ───────────────────────────────────────────
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function showToast(msg, type = 'success') {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = `toast ${type} visible`;
-  setTimeout(() => t.classList.remove('visible'), 3000);
+// ── Iframe resize ───────────────────────────────────────────────
+function notifyHeight() {
+  window.parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*');
 }
 
-function statusPill(status) {
-  if (status === 'active') return '<span class="status-pill pill-active">Active</span>';
-  if (status === 'failed' || status === 'error') return '<span class="status-pill pill-error">Error</span>';
-  return '<span class="status-pill pill-pending">Pending</span>';
+// ── Toast ───────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(message, type = 'info') {
+  const el = document.getElementById('toast');
+  el.textContent = message;
+  el.className = 'toast toast-' + type + ' visible';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 3500);
 }
 
-function memberStatusPill(subStatus, accessStatus) {
-  if (subStatus === 'draft') return '<span class="member-status" style="background:var(--amber-dim);color:var(--amber);">Draft</span>';
-  if (accessStatus === 'active') return '<span class="member-status" style="background:var(--green-dim);color:var(--green);">Active</span>';
-  if (accessStatus === 'failed') return '<span class="member-status" style="background:var(--red-dim);color:var(--red);">Failed</span>';
-  return '<span class="member-status" style="background:var(--amber-dim);color:var(--amber);">Pending</span>';
+// ── Initials ────────────────────────────────────────────────────
+function initials(first, last) {
+  return (((first || '').trim()[0] || '') + ((last || '').trim()[0] || '')).toUpperCase() || '?';
 }
 
-// ── Load widget data ─────────────────────────────────────────────
+// ── Status metadata ─────────────────────────────────────────────
+function statusMeta(m) {
+  if (m.status === 'draft') return { label: 'Draft', cls: 'badge-amber', dot: 'dot-amber', pulse: false };
+  switch (m.accessStatus) {
+    case 'active':       return { label: 'Active',  cls: 'badge-green', dot: 'dot-green', pulse: false, ring: true };
+    case 'in_flight':
+    case 'pending_sync': return { label: 'Pending', cls: 'badge-brand', dot: 'dot-brand', pulse: true };
+    case 'failed':       return { label: 'Issue',   cls: 'badge-red',   dot: null,        pulse: false, alert: true };
+    default:             return { label: 'Pending', cls: 'badge-brand', dot: 'dot-brand', pulse: true };
+  }
+}
+
+function avatarTone(m) {
+  if (m.status === 'draft') return 'amber';
+  if (m.accessStatus === 'active') return 'green';
+  if (m.accessStatus === 'failed') return 'red';
+  return '';
+}
+
+function badgeHtml(m) {
+  const st = statusMeta(m);
+  let dotHtml = '';
+  if (st.alert) {
+    dotHtml = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5l6.5 11.5h-13L8 2.5zM8 6.5v3.5M8 12.2v.1"/></svg>';
+  } else if (st.ring) {
+    dotHtml = '<span style="position:relative;display:inline-flex"><span class="badge-dot" style="background:currentColor;position:relative;z-index:1"></span><span style="position:absolute;inset:-2px;border-radius:5px;background:currentColor;opacity:.5;animation:pulse-ring 1.8s ease-out infinite"></span></span>';
+  } else {
+    dotHtml = '<span class="badge-dot" style="background:currentColor' + (st.pulse ? ';animation:pulse 1.6s ease-in-out infinite' : '') + '"></span>';
+  }
+  return '<span class="badge ' + st.cls + '">' + dotHtml + esc(st.label) + '</span>';
+}
+
+// ── Relative time ───────────────────────────────────────────────
+function timeAgo(iso) {
+  const d = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (d < 60)        return 'just now';
+  if (d < 3600)      return Math.floor(d / 60) + 'm ago';
+  if (d < 86400)     return Math.floor(d / 3600) + 'h ago';
+  if (d < 604800)    return Math.floor(d / 86400) + 'd ago';
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ── Load ─────────────────────────────────────────────────────────
 async function loadData() {
   if (!platformMemberId || !clientId) {
-    showError('Missing memberId or clientId in URL.');
+    showState('error', 'Missing memberId or clientId in URL. Contact your gym.');
     return;
   }
-
   try {
-    const res = await fetch(`${BASE}/member/${encodeURIComponent(platformMemberId)}/widget-data?clientId=${encodeURIComponent(clientId)}`);
+    const res = await fetch(BASE + '/member/' + encodeURIComponent(platformMemberId) + '/widget-data?clientId=' + encodeURIComponent(clientId));
+    if (res.status === 404) {
+      showState('error', "We couldn't find your membership. Contact your gym.");
+      return;
+    }
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      showError(err.error || 'Unable to load member data.');
+      const d = await res.json().catch(() => ({}));
+      showState('error', d.error || 'Unable to load member data.');
+      return;
+    }
+    const data = await res.json();
+    S.holder     = data.holder;
+    S.plans      = data.plans;
+    S.subMembers = data.subMembers;
+    S.maxMembers = S.plans.length > 0 ? Math.min(...S.plans.map(p => p.maxMembers)) : 0;
+
+    // allowMultiple gate: if no plan allows multiple members, show the no-plan state
+    const hasMulti = S.plans.some(p => p.allowMultiple);
+    if (!hasMulti) {
+      showState('no-plan');
       return;
     }
 
-    const data = await res.json();
-    state.holder = data.holder;
-    state.plans = data.plans;
-    state.subMembers = data.subMembers;
-
     render();
-  } catch (err) {
-    console.error('Load error:', err);
-    showError('Unable to connect to AccessSync.');
+    showState('main');
+  } catch (e) {
+    showState('error', 'Something went wrong. Try again.');
   }
 }
 
-function showError(msg) {
-  document.getElementById('loading').classList.add('hidden');
-  document.getElementById('error-state').classList.remove('hidden');
-  document.getElementById('error-msg').textContent = msg;
+function showState(state, msg) {
+  document.getElementById('state-loading').classList.add('hidden');
+  document.getElementById('state-error').classList.add('hidden');
+  document.getElementById('state-no-plan').classList.add('hidden');
+  document.getElementById('main-content').classList.add('hidden');
+
+  if (state === 'error') {
+    document.getElementById('state-error').classList.remove('hidden');
+    document.getElementById('error-msg').textContent = msg || 'Something went wrong.';
+  } else if (state === 'no-plan') {
+    document.getElementById('state-no-plan').classList.remove('hidden');
+  } else if (state === 'main') {
+    document.getElementById('main-content').classList.remove('hidden');
+  }
+  notifyHeight();
 }
 
 // ── Render ───────────────────────────────────────────────────────
 function render() {
-  document.getElementById('loading').classList.add('hidden');
-  document.getElementById('main-content').classList.remove('hidden');
+  const plan = S.plans[0] || {};
+  const used = S.subMembers.length;
+  const max  = S.maxMembers;
+  const atLimit = used >= max;
+  const drafts = S.subMembers.filter(m => m.status === 'draft');
 
-  // Plan card
-  const plan = state.plans[0]; // primary multi-member plan
-  if (plan) {
-    document.getElementById('plan-name').textContent = plan.planName;
-    document.getElementById('plan-meta').textContent = plan.doorName ? `Access: ${plan.doorName}` : '';
-  } else {
-    document.getElementById('plan-name').textContent = 'Your Plan';
-    document.getElementById('plan-meta').textContent = 'No multi-member plans configured';
+  // Holder chip
+  const chip = document.getElementById('holder-chip');
+  const nameLabel = document.getElementById('holder-name-label');
+  if (nameLabel && S.holder) {
+    nameLabel.textContent = [S.holder.firstName, S.holder.lastName].filter(Boolean).join(' ') || S.holder.email || '';
   }
-  document.getElementById('plan-status').innerHTML = statusPill(state.holder?.accessStatus);
+  chip.style.display = 'flex';
 
-  // Max members
-  const maxMembers = plan ? plan.maxMembers : 0;
-  const currentCount = state.subMembers.length;
-  document.getElementById('member-count').textContent = `${currentCount} / ${maxMembers}`;
+  // Hero ring
+  const C = 2 * Math.PI * 26;
+  const pct = max > 0 ? Math.min(1, used / max) : 0;
+  document.getElementById('ring-progress').setAttribute('stroke-dasharray', (pct * C).toFixed(1) + ' ' + C.toFixed(1));
+  document.getElementById('ring-used').textContent = used;
+  document.getElementById('ring-of').textContent   = 'of ' + max;
+  document.getElementById('hero-plan-name').textContent = plan.planName || 'Your Plan';
+  document.getElementById('hero-meta').textContent = (plan.doorName ? plan.doorName + ' · ' : '') +
+    (max - used > 0 ? (max - used) + ' spot' + (max - used === 1 ? '' : 's') + ' left' : 'Full');
+
+  // Spot pips
+  const pips = document.getElementById('spot-pips');
+  const pipW = max <= 5 ? 28 : 18;
+  pips.innerHTML = Array.from({ length: max }, (_, i) =>
+    '<span class="spot-pip ' + (i < used ? 'filled' : 'empty') + '" style="width:' + pipW + 'px"></span>'
+  ).join('');
+
+  // Section sub
+  document.getElementById('section-sub').textContent =
+    used === 0 ? 'No members yet — add up to ' + max
+               : used + ' of ' + max + ' spot' + (max === 1 ? '' : 's') + ' used';
+
+  // Draft chip
+  const draftChip = document.getElementById('draft-chip');
+  if (drafts.length > 0) {
+    draftChip.textContent = drafts.length + ' draft' + (drafts.length === 1 ? '' : 's');
+    draftChip.classList.remove('hidden');
+  } else {
+    draftChip.classList.add('hidden');
+  }
 
   // Member list
-  const listEl = document.getElementById('member-list');
-  const emptyEl = document.getElementById('empty-state');
+  renderMemberList();
 
-  if (state.subMembers.length === 0) {
-    listEl.innerHTML = '';
-    emptyEl.classList.remove('hidden');
-  } else {
-    emptyEl.classList.add('hidden');
-    listEl.innerHTML = state.subMembers.map(m => `
-      <div class="member-card">
-        <div class="member-name">${esc(m.firstName)} ${esc(m.lastName)}</div>
-        <div class="member-detail">${esc(m.email)}</div>
-        <div class="member-detail">${esc(m.phone)}</div>
-        ${memberStatusPill(m.status, m.accessStatus)}
-        <div class="member-actions">
-          ${m.status === 'draft' ? `<button class="btn btn-outline" onclick="editMember('${m.id}')">Edit</button>` : ''}
-          <button class="btn btn-danger" onclick="removeMember('${m.id}', '${esc(m.firstName)}')">Remove</button>
-        </div>
-      </div>
-    `).join('');
+  // Add trigger
+  const addTrigger = document.getElementById('btn-add-trigger');
+  const limitNotice = document.getElementById('limit-notice');
+  const addForm = document.getElementById('add-form');
+  if (addForm.classList.contains('hidden')) {
+    if (atLimit) {
+      addTrigger.classList.add('hidden');
+      limitNotice.classList.remove('hidden');
+      document.getElementById('limit-text').textContent = 'All ' + max + ' spots are used. Remove a member to add a new one.';
+    } else {
+      addTrigger.classList.remove('hidden');
+      limitNotice.classList.add('hidden');
+    }
   }
 
-  // Add button — hide if at max
-  const addBtn = document.getElementById('btn-add');
-  if (!plan || currentCount >= maxMembers) {
-    addBtn.classList.add('hidden');
+  // Submit CTA
+  const submitArea = document.getElementById('submit-area');
+  const submitLabel = document.getElementById('submit-label');
+  const stickyLabel = document.getElementById('sticky-label');
+  if (drafts.length > 0) {
+    submitArea.classList.remove('hidden');
+    const t = drafts.length + ' member' + (drafts.length === 1 ? '' : 's');
+    submitLabel.textContent = t;
+    stickyLabel.textContent = t;
   } else {
-    addBtn.classList.remove('hidden');
+    submitArea.classList.add('hidden');
   }
 
-  // Submit button — show if there are any drafts
-  const hasDrafts = state.subMembers.some(m => m.status === 'draft');
-  document.getElementById('btn-submit').classList.toggle('hidden', !hasDrafts);
+  updateStickyVisibility();
+  notifyHeight();
 }
 
-// ── Add / Edit form ──────────────────────────────────────────────
-function showAddForm() {
-  state.editingId = null;
-  document.getElementById('form-title').textContent = 'Add Additional Member';
-  document.getElementById('form-save').textContent = 'Add Member';
-  clearForm();
+function renderMemberList() {
+  const el = document.getElementById('member-list');
+  if (S.subMembers.length === 0) {
+    el.innerHTML = emptyStateHtml();
+    return;
+  }
+
+  el.innerHTML = S.subMembers.map(m => {
+    // Confirm dialog takes over the full row
+    if (m.id === S.confirmingId) return confirmRowHtml(m);
+    // Inline edit takes over the full row
+    if (m.id === S.editingId) return editRowHtml(m);
+    return memberRowHtml(m);
+  }).join('');
+}
+
+function emptyStateHtml() {
+  return '<div class="empty-state">' +
+    '<div class="empty-icon"><svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg></div>' +
+    '<div class="empty-title">Bring your crew along</div>' +
+    '<div class="empty-sub">Your plan covers additional members.<br>Add them and we\'ll get them set up at the door.</div>' +
+    '<button class="btn-primary" onclick="openAddForm()">' +
+      '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>' +
+      'Add your first member' +
+    '</button>' +
+  '</div>';
+}
+
+function memberRowHtml(m) {
+  const isDraft  = m.status === 'draft';
+  const tone     = avatarTone(m);
+  const ago      = m.provisionedAt ? timeAgo(m.provisionedAt) : null;
+
+  return '<div class="member-row' + (isDraft ? ' draft' : '') + '">' +
+    '<div class="member-avatar' + (tone ? ' ' + tone : '') + '">' + esc(initials(m.firstName, m.lastName)) + '</div>' +
+    '<div class="member-body">' +
+      '<div class="member-name">' + esc(m.firstName) + ' ' + esc(m.lastName) + '</div>' +
+      '<div class="member-detail">' +
+        badgeHtml(m) +
+        '<span style="word-break:break-all;min-width:0">' + esc(m.email) + '</span>' +
+        (ago ? '<span style="color:var(--green);white-space:nowrap;display:inline-flex;align-items:center;gap:3px;font-size:11px">' +
+          '<svg viewBox="0 0 16 16" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7.5"/></svg>' +
+          esc(ago) + '</span>' : '') +
+      '</div>' +
+    '</div>' +
+    '<div class="member-actions">' +
+      (isDraft ? '<button class="icon-btn" title="Edit" onclick="beginEdit(\'' + esc(m.id) + '\')">' +
+        '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L5 13l-3 .5.5-3 9-8z"/></svg>' +
+        '</button>' : '') +
+      '<button class="icon-btn danger" title="' + (isDraft ? 'Discard draft' : 'Remove member') + '" onclick="beginConfirm(\'' + esc(m.id) + '\')">' +
+        '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L12 4M6.5 7v4M9.5 7v4"/></svg>' +
+      '</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function confirmRowHtml(m) {
+  const isDraft = m.status === 'draft';
+  const tone = avatarTone(m);
+  return '<div class="confirm-row">' +
+    '<div class="confirm-inner">' +
+      '<div class="member-avatar' + (tone ? ' ' + tone : '') + '" style="width:36px;height:36px;border-radius:10px;font-size:13px">' + esc(initials(m.firstName, m.lastName)) + '</div>' +
+      '<div class="confirm-text">' +
+        '<div class="confirm-title">Remove ' + esc(m.firstName) + '?</div>' +
+        '<div class="confirm-sub">' + (isDraft ? 'This draft will be discarded.' : 'Their access will be revoked at the door.') + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="confirm-btns">' +
+      '<button class="btn-ghost" onclick="cancelConfirm()">Cancel</button>' +
+      '<button class="btn-danger" onclick="doRemove(\'' + esc(m.id) + '\')">Remove</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function editRowHtml(m) {
+  const tone = avatarTone(m);
+  return '<div class="edit-row" id="edit-row-' + esc(m.id) + '">' +
+    '<div class="edit-label">' +
+      '<div class="member-avatar' + (tone ? ' ' + tone : '') + '" style="width:32px;height:32px;border-radius:9px;font-size:12px">' + esc(initials(m.firstName, m.lastName)) + '</div>' +
+      '<div class="edit-eyebrow">Editing draft</div>' +
+    '</div>' +
+    '<div class="form-grid">' +
+      '<div class="field"><label class="field-label" for="ef-first">First name</label>' +
+        '<input id="ef-first" type="text" value="' + esc(m.firstName) + '" autocomplete="given-name"/>' +
+        '<span class="field-err hidden" id="ef-err-first"></span></div>' +
+      '<div class="field"><label class="field-label" for="ef-last">Last name</label>' +
+        '<input id="ef-last" type="text" value="' + esc(m.lastName) + '" autocomplete="family-name"/>' +
+        '<span class="field-err hidden" id="ef-err-last"></span></div>' +
+      '<div class="field full"><label class="field-label" for="ef-email">Email</label>' +
+        '<input id="ef-email" type="email" value="' + esc(m.email) + '" autocomplete="email"/>' +
+        '<span class="field-err hidden" id="ef-err-email"></span></div>' +
+      '<div class="field full"><label class="field-label" for="ef-phone">Phone</label>' +
+        '<input id="ef-phone" type="tel" value="' + esc(m.phone) + '" autocomplete="tel"/>' +
+        '<span class="field-err hidden" id="ef-err-phone"></span></div>' +
+    '</div>' +
+    '<div class="btn-row">' +
+      '<button class="btn-ghost" onclick="cancelEdit()">Cancel</button>' +
+      '<button class="btn-primary" id="btn-edit-save" onclick="saveEdit(\'' + esc(m.id) + '\')">Save changes</button>' +
+    '</div>' +
+  '</div>';
+}
+
+// ── Sticky CTA visibility ────────────────────────────────────────
+function updateStickyVisibility() {
+  const body = document.getElementById('scroll-body');
+  const submitArea = document.getElementById('submit-area');
+  const stickyCta = document.getElementById('sticky-cta');
+  const drafts = S.subMembers.filter(m => m.status === 'draft');
+  if (drafts.length === 0) { stickyCta.classList.add('hidden'); return; }
+  const rect = submitArea.getBoundingClientRect();
+  const inView = rect.top < window.innerHeight && rect.bottom > 0;
+  stickyCta.classList.toggle('hidden', inView);
+}
+
+window.addEventListener('scroll', updateStickyVisibility, { passive: true });
+
+// ── Add form ─────────────────────────────────────────────────────
+function openAddForm() {
   document.getElementById('add-form').classList.remove('hidden');
-  document.getElementById('btn-add').classList.add('hidden');
+  document.getElementById('btn-add-trigger').classList.add('hidden');
+  document.getElementById('limit-notice').classList.add('hidden');
+  clearAddForm();
   document.getElementById('f-first').focus();
+  notifyHeight();
 }
 
-function editMember(subId) {
-  const m = state.subMembers.find(s => s.id === subId);
-  if (!m) return;
-  state.editingId = subId;
-  document.getElementById('form-title').textContent = 'Edit Additional Member';
-  document.getElementById('form-save').textContent = 'Save Changes';
-  document.getElementById('f-first').value = m.firstName || '';
-  document.getElementById('f-last').value = m.lastName || '';
-  document.getElementById('f-email').value = m.email || '';
-  document.getElementById('f-phone').value = m.phone || '';
-  document.getElementById('add-form').classList.remove('hidden');
-  document.getElementById('btn-add').classList.add('hidden');
-  document.getElementById('f-first').focus();
-}
-
-function cancelForm() {
+function closeAddForm() {
   document.getElementById('add-form').classList.add('hidden');
-  state.editingId = null;
-  clearForm();
-  render(); // re-show add button if applicable
+  clearAddForm();
+  render();
 }
 
-function clearForm() {
+function clearAddForm() {
   ['f-first','f-last','f-email','f-phone'].forEach(id => {
     const el = document.getElementById(id);
-    el.value = '';
-    el.classList.remove('invalid');
+    if (el) { el.value = ''; el.classList.remove('invalid'); }
+  });
+  ['err-first','err-last','err-email','err-phone'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ''; el.classList.add('hidden'); }
   });
 }
 
-function validateForm() {
+function validateAddForm() {
   let valid = true;
-  const fields = [
-    { id: 'f-first', test: v => v.trim().length > 0 },
-    { id: 'f-last', test: v => v.trim().length > 0 },
-    { id: 'f-email', test: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) },
-    { id: 'f-phone', test: v => v.trim().length >= 7 },
-  ];
-  fields.forEach(f => {
-    const el = document.getElementById(f.id);
-    if (!f.test(el.value)) { el.classList.add('invalid'); valid = false; }
-    else { el.classList.remove('invalid'); }
-  });
+  const first = document.getElementById('f-first').value.trim();
+  const last  = document.getElementById('f-last').value.trim();
+  const email = document.getElementById('f-email').value.trim();
+  const phone = document.getElementById('f-phone').value.trim();
+
+  function setErr(field, errId, msg) {
+    const inp = document.getElementById(field);
+    const err = document.getElementById(errId);
+    if (msg) { inp.classList.add('invalid'); err.textContent = msg; err.classList.remove('hidden'); valid = false; }
+    else      { inp.classList.remove('invalid'); err.textContent = ''; err.classList.add('hidden'); }
+  }
+
+  setErr('f-first', 'err-first', first ? '' : 'Required');
+  setErr('f-last',  'err-last',  last  ? '' : 'Required');
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  setErr('f-email', 'err-email', emailOk ? '' : 'Invalid email');
+  setErr('f-phone', 'err-phone', phone.length >= 7 ? '' : 'Phone too short');
   return valid;
 }
 
-// ── Save (add or edit) ──────────────────────────────────────────
-async function saveForm() {
-  if (!validateForm()) return;
-
-  const body = {
-    firstName: document.getElementById('f-first').value.trim(),
-    lastName: document.getElementById('f-last').value.trim(),
-    email: document.getElementById('f-email').value.trim(),
-    phone: document.getElementById('f-phone').value.trim(),
-  };
-
-  const btn = document.getElementById('form-save');
-  btn.disabled = true;
-
-  try {
-    let res;
-    if (state.editingId) {
-      // Edit existing
-      res = await fetch(`${BASE}/api/multi-member/members/${state.editingId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-    } else {
-      // Add new
-      res = await fetch(`${BASE}/api/multi-member/members`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...body,
-          holderId: state.holder.id,
-          clientId: clientId,
-        }),
-      });
-    }
-
-    const data = await res.json();
-    if (!res.ok) {
-      showToast(data.error || 'Failed to save', 'error');
-      btn.disabled = false;
-      return;
-    }
-
-    showToast(state.editingId ? 'Member updated' : 'Member added');
-    cancelForm();
-    await loadData(); // refresh
-  } catch (err) {
-    console.error('Save error:', err);
-    showToast('Connection error', 'error');
-  }
-  btn.disabled = false;
+// ── Confirm ──────────────────────────────────────────────────────
+function beginConfirm(id) {
+  S.confirmingId = id;
+  S.editingId = null;
+  renderMemberList();
+  notifyHeight();
+}
+function cancelConfirm() {
+  S.confirmingId = null;
+  renderMemberList();
+  notifyHeight();
 }
 
-// ── Remove ──────────────────────────────────────────────────────
-async function removeMember(subId, name) {
-  if (!confirm(`Remove ${name}? This will revoke their access.`)) return;
-
-  try {
-    const res = await fetch(`${BASE}/api/multi-member/members/${subId}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (!res.ok) {
-      showToast(data.error || 'Failed to remove', 'error');
-      return;
-    }
-    showToast('Member removed');
-    await loadData();
-  } catch (err) {
-    console.error('Remove error:', err);
-    showToast('Connection error', 'error');
-  }
+// ── Edit ─────────────────────────────────────────────────────────
+function beginEdit(id) {
+  S.editingId = id;
+  S.confirmingId = null;
+  document.getElementById('add-form').classList.add('hidden');
+  renderMemberList();
+  notifyHeight();
+}
+function cancelEdit() {
+  S.editingId = null;
+  renderMemberList();
+  render();
 }
 
-// ── Submit all drafts ───────────────────────────────────────────
-async function submitAll() {
-  const drafts = state.subMembers.filter(m => m.status === 'draft');
-  if (!drafts.length) return;
+function validateEditForm() {
+  let valid = true;
+  const first = document.getElementById('ef-first').value.trim();
+  const last  = document.getElementById('ef-last').value.trim();
+  const email = document.getElementById('ef-email').value.trim();
+  const phone = document.getElementById('ef-phone').value.trim();
 
-  if (!confirm(`Submit ${drafts.length} member(s) for access? They will be provisioned in the door system.`)) return;
+  function setErr(field, errId, msg) {
+    const inp = document.getElementById(field);
+    const err = document.getElementById(errId);
+    if (msg) { inp.classList.add('invalid'); err.textContent = msg; err.classList.remove('hidden'); valid = false; }
+    else      { inp.classList.remove('invalid'); err.textContent = ''; err.classList.add('hidden'); }
+  }
 
-  const btn = document.getElementById('btn-submit');
+  setErr('ef-first', 'ef-err-first', first ? '' : 'Required');
+  setErr('ef-last',  'ef-err-last',  last  ? '' : 'Required');
+  setErr('ef-email', 'ef-err-email', /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? '' : 'Invalid email');
+  setErr('ef-phone', 'ef-err-phone', phone.length >= 7 ? '' : 'Phone too short');
+  return valid;
+}
+
+// ── API: Add ─────────────────────────────────────────────────────
+async function saveAdd() {
+  if (!validateAddForm()) return;
+  const btn = document.getElementById('btn-add-save');
   btn.disabled = true;
-  btn.textContent = 'Submitting...';
-
   try {
-    const res = await fetch(`${BASE}/api/multi-member/submit`, {
+    const res = await fetch(BASE + '/api/multi-member/members', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ holderId: state.holder.id, clientId }),
+      body: JSON.stringify({
+        holderId:  S.holder.id,
+        clientId,
+        firstName: document.getElementById('f-first').value.trim(),
+        lastName:  document.getElementById('f-last').value.trim(),
+        email:     document.getElementById('f-email').value.trim(),
+        phone:     document.getElementById('f-phone').value.trim(),
+      }),
     });
     const data = await res.json();
     if (!res.ok) {
-      showToast(data.error || 'Submit failed', 'error');
+      if (res.status === 409) {
+        showToast('Member limit reached — this plan allows up to ' + S.maxMembers + ' additional members.', 'error');
+      } else {
+        showToast(data.error || 'Failed to add member.', 'error');
+      }
       btn.disabled = false;
-      btn.textContent = 'Submit All for Access';
       return;
     }
-
-    showToast(`${data.submitted} member(s) submitted for access`);
+    closeAddForm();
     await loadData();
-  } catch (err) {
-    console.error('Submit error:', err);
-    showToast('Connection error', 'error');
+    showToast(data.subMember.firstName + ' added as a draft', 'success');
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+    btn.disabled = false;
   }
-  btn.disabled = false;
-  btn.textContent = 'Submit All for Access';
 }
 
-// ── Init ────────────────────────────────────────────────────────
+// ── API: Edit ────────────────────────────────────────────────────
+async function saveEdit(subId) {
+  if (!validateEditForm()) return;
+  const btn = document.getElementById('btn-edit-save');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(BASE + '/api/multi-member/members/' + encodeURIComponent(subId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        firstName: document.getElementById('ef-first').value.trim(),
+        lastName:  document.getElementById('ef-last').value.trim(),
+        email:     document.getElementById('ef-email').value.trim(),
+        phone:     document.getElementById('ef-phone').value.trim(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Failed to update member.', 'error');
+      if (btn) btn.disabled = false;
+      return;
+    }
+    S.editingId = null;
+    await loadData();
+    showToast('Draft updated', 'success');
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── API: Remove ──────────────────────────────────────────────────
+async function doRemove(subId) {
+  S.confirmingId = null;
+  try {
+    const res = await fetch(BASE + '/api/multi-member/members/' + encodeURIComponent(subId), {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Failed to remove member.', 'error');
+      return;
+    }
+    await loadData();
+    showToast(data.message || 'Member removed', 'info');
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+  }
+}
+
+// ── API: Submit ──────────────────────────────────────────────────
+async function submitAll() {
+  const drafts = S.subMembers.filter(m => m.status === 'draft');
+  if (!drafts.length) return;
+  const btn = document.getElementById('btn-submit');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(BASE + '/api/multi-member/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ holderId: S.holder.id, clientId }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Submit failed.', 'error');
+      if (btn) btn.disabled = false;
+      return;
+    }
+    await loadData();
+    showToast('Granting access to ' + data.submitted + ' member' + (data.submitted === 1 ? '' : 's') + '…', 'info');
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── Init ─────────────────────────────────────────────────────────
 loadData();
 </script>
 </body>
