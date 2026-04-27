@@ -1669,9 +1669,15 @@ router.get('/:clientId/members', async (req, res) => {
                 lat.kisi_confirmed_at,
                 lat.ingest_s,
                 lat.processing_s,
-                lat.total_s
+                lat.total_s,
+                mi.plan_holder_id,
+                CASE WHEN mi.plan_holder_id IS NULL THEN 'holder' ELSE 'sub' END AS role,
+                holder_mi.id          AS holder_id,
+                holder_mi.display_name AS holder_name,
+                holder_mi.email        AS holder_email
          FROM   member_identity mi
          LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+         LEFT JOIN member_identity holder_mi ON holder_mi.id = mi.plan_holder_id
          LEFT JOIN LATERAL (
            SELECT
              wl.received_at                                                      AS webhook_received_at,
@@ -1711,6 +1717,12 @@ router.get('/:clientId/members', async (req, res) => {
       let effectiveStatus = m.access_status;
       if (m.access_status === 'failed' && m.assignment_count > 0) {
         effectiveStatus = 'partial';
+      }
+      // Plan holder with active status but no role assignments: they're the billing identity
+      // with no door access of their own. Show as 'holder_only' so the UI doesn't imply
+      // they have a door assigned.
+      if (m.role === 'holder' && m.access_status === 'active' && m.assignment_count === 0) {
+        effectiveStatus = 'holder_only';
       }
       return { ...m, effective_status: effectiveStatus };
     });

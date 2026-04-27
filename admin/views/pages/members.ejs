@@ -432,6 +432,7 @@
     function statusLabel(s) {
       var labels = {
         active:           'Active',
+        holder_only:      'Plan Holder',
         pending:          'Setting Up',
         in_flight:        'Setting Up',
         pending_hardware: 'Needs Setup',
@@ -1156,10 +1157,10 @@
               planNames: planNames,     // full list for drawer/modal
               planIds: Array.isArray(m.plan_ids) ? m.plan_ids.filter(Boolean) : [],
               planValidUntils: Array.isArray(m.plan_valid_untils) ? m.plan_valid_untils : [],
-              role: 'holder',
+              role: m.role || 'holder',
               status: m.effective_status || m.access_status || 'pending',
               addedDate: m.provisioned_at ? new Date(m.provisioned_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '—',
-              holderId: null,
+              holderId: m.holder_id || null,
               pendingIdentity: !hasRealName,
               // Latency fields — null when webhook_log / processed_event_ids correlation unavailable
               webhook_received_at: m.webhook_received_at || null,
