@@ -72,7 +72,7 @@ class GrantRevokeLogic {
             AND mra.hardware_group_id = mas.hardware_group_id
            WHERE mas.member_id = $1
              AND mas.hardware_group_id = $2
-           ORDER BY mas.created_at ASC
+           ORDER BY mas.granted_at ASC
            LIMIT 1`,
           [memberId, mapping.hardwareGroupId]
         );
