@@ -18,6 +18,7 @@ const router = express.Router();
 const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
 const { log } = require('../../core/logger');
+const { mintTraceId } = require('../../core/trace-context');
 
 // ── GET /member/:memberId/widget-data ──────────────────────────────
 // Returns everything the multi-member editor needs:
@@ -69,6 +70,46 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
        ORDER BY mi.plan_mapping_id, mi.created_at`,
       [holder.id]
     );
+
+    // 4. Auto-insert the holder as a draft sub-member on first open (zero sub-members).
+    // Holder occupies a slot by default but can remove themselves (business owner case).
+    // Only fires when a multi-member plan exists for this client.
+    if (subMembersResult.rows.length === 0 && plansResult.rows.length > 0) {
+      const plan = plansResult.rows[0];
+      const holderPlatformId = holder.platform_member_id;
+      const subPlatformMemberId = `${holderPlatformId}###as001`;
+      // Pull holder name/email from their own member_identity row
+      const holderInfoResult = await db.query(
+        `SELECT first_name, last_name, email, phone FROM member_identity WHERE id = $1`,
+        [holder.id]
+      );
+      const hi = holderInfoResult.rows[0] || {};
+      const inserted = await db.query(
+        `INSERT INTO member_identity
+           (client_id, platform_member_id, source_platform, hardware_platform, source_tag,
+            plan_holder_id, plan_mapping_id, first_name, last_name, email, phone, sub_member_status)
+         VALUES ($1, $2, 'wix', $3, 'accesssync', $4, $5, $6, $7, $8, $9, 'draft')
+         ON CONFLICT (client_id, source_platform, platform_member_id) DO NOTHING
+         RETURNING id, platform_member_id, first_name, last_name, email, phone, sub_member_status, plan_mapping_id`,
+        [clientId, subPlatformMemberId, holder.hardware_platform,
+         holder.id, plan.id, hi.first_name || '', hi.last_name || '', hi.email || '', hi.phone || '']
+      );
+      if (inserted.rows.length > 0) {
+        const r = inserted.rows[0];
+        subMembersResult.rows.push({
+          id: r.id,
+          platform_member_id: r.platform_member_id,
+          first_name: r.first_name,
+          last_name: r.last_name,
+          email: r.email,
+          phone: r.phone,
+          sub_member_status: r.sub_member_status,
+          plan_mapping_id: r.plan_mapping_id,
+          access_status: null,
+          provisioned_at: null,
+        });
+      }
+    }
 
     res.json({
       holder: {
@@ -134,11 +175,12 @@ router.post('/api/multi-member/members', async (req, res) => {
       return res.status(404).json({ error: 'Plan not found or does not allow additional members' });
     }
 
-    // Check limit per plan — not across all plans (DR-040)
+    // Check limit per plan — drafts don't consume a slot, only submitted/active do (DR-040)
     const maxMembers = planCheck.rows[0].max_members || 1;
     const currentCount = await db.query(
       `SELECT COUNT(*)::int AS cnt FROM member_identity
-       WHERE plan_holder_id = $1 AND plan_mapping_id = $2`,
+       WHERE plan_holder_id = $1 AND plan_mapping_id = $2
+         AND sub_member_status IN ('submitted', 'active')`,
       [holderId, planMappingId]
     );
     if (currentCount.rows[0].cnt >= maxMembers) {
@@ -259,6 +301,7 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
         platformMemberId: member.platform_member_id,
         sourcePlatform: 'wix',
         synthetic: true,
+        traceId: mintTraceId(),
       };
       const jobId = `revoke-multi-member-${subId}-${Date.now()}`;
       await eventQueue.add('revoke', { tenantId: member.client_id, standardEvent: syntheticEvent }, { jobId });
@@ -337,7 +380,8 @@ router.post('/api/multi-member/submit', async (req, res) => {
         planId: draft.source_plan_id,
         email: draft.email,
         name: `${draft.first_name} ${draft.last_name}`,
-        synthetic: true,  // marker so logs can distinguish from real webhooks
+        synthetic: true,
+        traceId: mintTraceId(),
       };
       const jobId = `grant-multi-member-${draft.id}-${Date.now()}`;
       await eventQueue.add('grant', { tenantId: clientId, standardEvent: syntheticEvent }, { jobId });

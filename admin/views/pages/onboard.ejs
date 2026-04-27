@@ -914,34 +914,43 @@ html, body {
       <!-- ── Step B: Wix code ── -->
       <hr class="done-divider">
       <div>
-        <div class="done-section-title">Step 2 of 2 — Add your Wix code</div>
+        <div class="done-section-title">Step 2 of 2 — Set up your Wix site</div>
         <p class="code-instructions">
-          This code connects your Wix site to AccessSync. When a member buys or cancels a plan, Wix sends AccessSync the signal automatically. Paste it once — you'll never need to touch it again.
+          Three quick pastes connect your Wix site to AccessSync. Do them in order — A is required, B and C take about a minute each.
         </p>
-        <ol class="code-steps">
-          <li>In your Wix Editor, click <strong>Dev Mode</strong> in the top menu bar to enable it</li>
-          <li>Go to <strong>Dashboard → Developer Tools → Secrets Manager</strong> and add a new secret:
-            <br>• <strong>Name:</strong> <code style="background:#F1F5F9;padding:1px 5px;border-radius:4px;font-size:12px">accesssync_webhook_secret</code>
-            <br>• <strong>Value:</strong> a secure random string (at least 32 characters — use a password generator)
-            <br>• <span style="color:var(--muted);font-size:11px">Then share this same secret with your AccessSync admin so they can verify incoming webhooks.</span>
-          </li>
-          <li>In the left panel, click <strong>Backend</strong> → <strong>+ New File</strong> → name it <strong>events.js</strong></li>
-          <li>Paste the code below, then click <strong>Publish</strong></li>
-        </ol>
-        <div class="code-block-wrap">
-          <div class="code-block-header">
-            <span class="code-block-label">backend / events.js</span>
-            <button class="btn-copy-code" onclick="copyEventsCode()">Copy</button>
-          </div>
-          <div class="code-scroll">
-            <pre id="events-code-display"></pre>
+
+        <!-- ── Part A: events.js backend ── -->
+        <div style="margin-top:18px">
+          <div style="font-size:13px;font-weight:600;color:var(--text1);margin-bottom:6px">A — Backend webhook forwarder (required)</div>
+          <p class="code-instructions" style="margin-bottom:8px">
+            This file listens for plan purchases, cancellations, and member events on your Wix site and forwards them to AccessSync automatically.
+          </p>
+          <ol class="code-steps">
+            <li>In your Wix Editor, click <strong>Dev Mode</strong> in the top menu bar to enable it</li>
+            <li>Go to <strong>Dashboard → Developer Tools → Secrets Manager</strong> and add a new secret:
+              <br>• <strong>Name:</strong> <code style="background:#F1F5F9;padding:1px 5px;border-radius:4px;font-size:12px">accesssync_webhook_secret</code>
+              <br>• <strong>Value:</strong> a secure random string (32+ characters — use a password generator)
+              <br>• <span style="color:var(--muted);font-size:11px">Copy this value — your AccessSync admin needs it to verify incoming webhooks.</span>
+            </li>
+            <li>In the left panel, click <strong>Backend</strong> → <strong>+ New File</strong> → name it <strong>events.js</strong><br><span style="color:var(--muted);font-size:11px">(If events.js already exists, replace its contents entirely)</span></li>
+            <li>Paste the code below, then click <strong>Publish</strong></li>
+          </ol>
+          <div class="code-block-wrap">
+            <div class="code-block-header">
+              <span class="code-block-label">backend / events.js</span>
+              <button class="btn-copy-code" onclick="copyEventsCode()">Copy</button>
+            </div>
+            <div class="code-scroll">
+              <pre id="events-code-display"></pre>
+            </div>
           </div>
         </div>
 
-        <div style="margin-top:20px">
-          <div class="done-section-title" style="margin-bottom:6px">Member sync redirect</div>
-          <p class="code-instructions">
-            After a member buys a plan or confirms a booking, send them to their access status screen automatically. Paste this into the <strong>page code</strong> of your Wix <strong>Plans Thank You</strong> page and your <strong>Bookings Confirmation</strong> page.
+        <!-- ── Part B: Thank You page redirect ── -->
+        <div style="margin-top:24px">
+          <div style="font-size:13px;font-weight:600;color:var(--text1);margin-bottom:6px">B — Post-purchase redirect (recommended)</div>
+          <p class="code-instructions" style="margin-bottom:8px">
+            After a member buys a plan, send them to their access status screen so they can see their door access activate in real time.
           </p>
           <ol class="code-steps">
             <li>In Wix Editor, open your <strong>Plans Thank You</strong> page</li>
@@ -956,6 +965,30 @@ html, body {
             </div>
             <div class="code-scroll">
               <pre id="thankyou-code-display"></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Part C: Member Hub page ── -->
+        <div style="margin-top:24px">
+          <div style="font-size:13px;font-weight:600;color:var(--text1);margin-bottom:6px">C — Member Hub page (recommended)</div>
+          <p class="code-instructions" style="margin-bottom:8px">
+            Gives members a page to check their door access status and manage additional members on their plan.
+          </p>
+          <ol class="code-steps">
+            <li>In Wix Editor, open the member area page where members will manage their access</li>
+            <li>Add an <strong>HTML Component</strong> to the page and set its ID to <code style="background:#F1F5F9;padding:1px 5px;border-radius:4px;font-size:12px">html1</code></li>
+            <li>Set the component's height to <strong>800px</strong> in the editor panel</li>
+            <li>Click the page → <strong>Page Code</strong> panel at the bottom</li>
+            <li>Paste the code below and click <strong>Publish</strong></li>
+          </ol>
+          <div class="code-block-wrap">
+            <div class="code-block-header">
+              <span class="code-block-label">Page code — Member Hub page</span>
+              <button class="btn-copy-code" onclick="copyMemberHubCode()">Copy</button>
+            </div>
+            <div class="code-scroll">
+              <pre id="member-hub-code-display"></pre>
             </div>
           </div>
         </div>
@@ -1638,6 +1671,29 @@ function _buildThankYouCode(clientId) {
   return THANKYOU_JS_TEMPLATE.replace(/\{\{CLIENT_ID\}\}/g, clientId);
 }
 
+// ── Step 5: Member Hub page ─────────────────────────────────────────
+const MEMBER_HUB_JS_TEMPLATE = `import wixUsers from 'wix-users';
+
+const ADMIN_HUB = 'https://accesssync-admin.up.railway.app';
+const CLIENT_ID = '{{CLIENT_ID}}'; // Your AccessSync client ID
+
+$w.onReady(async function () {
+  const user = wixUsers.currentUser;
+  if (!user.loggedIn) {
+    $w('#html1').hide();
+    return;
+  }
+  const memberId = user.id;
+  $w('#html1').src = ADMIN_HUB + '/member-hub' +
+    '?memberId=' + encodeURIComponent(memberId) +
+    '&clientId=' + encodeURIComponent(CLIENT_ID);
+  $w('#html1').show();
+});`;
+
+function _buildMemberHubCode(clientId) {
+  return MEMBER_HUB_JS_TEMPLATE.replace(/\{\{CLIENT_ID\}\}/g, clientId);
+}
+
 async function goToDone() {
   const hwLabel = state.tier === 'Connect' ? 'Kisi' : 'Seam';
   document.getElementById('done-headline').textContent =
@@ -1649,6 +1705,7 @@ async function goToDone() {
   const code = _buildEventsCode(state.clientId);
   document.getElementById('events-code-display').textContent = code;
   document.getElementById('thankyou-code-display').textContent = _buildThankYouCode(state.clientId);
+  document.getElementById('member-hub-code-display').textContent = _buildMemberHubCode(state.clientId);
 
   if (state.locations.length) {
     document.getElementById('mapping-section').classList.remove('hidden');
@@ -1806,6 +1863,16 @@ function copyThankYouCode() {
   if (!code) { toast('Code not ready yet', 'error'); return; }
   navigator.clipboard.writeText(code).then(() => {
     toast('Code copied — paste it into your Thank You and Confirmation page code', 'success');
+  }).catch(() => {
+    toast('Select the code and copy it manually', 'error');
+  });
+}
+
+function copyMemberHubCode() {
+  const code = document.getElementById('member-hub-code-display').textContent;
+  if (!code) { toast('Code not ready yet', 'error'); return; }
+  navigator.clipboard.writeText(code).then(() => {
+    toast('Code copied — paste it into your Member Hub page code', 'success');
   }).catch(() => {
     toast('Select the code and copy it manually', 'error');
   });

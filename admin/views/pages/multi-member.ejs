@@ -472,6 +472,92 @@ body {
 .toast.toast-error   { border-left: 3px solid var(--red); }
 .toast.toast-info    { border-left: 3px solid var(--brand); }
 
+/* ── Inline sync pipeline ────────────────────────────────── */
+.sync-pipeline {
+  margin-top: 10px;
+  padding: 10px 12px 10px 10px;
+  background: var(--brand-dim);
+  border: 1px solid rgba(79,110,247,0.15);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.sync-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 0;
+  position: relative;
+}
+.sync-step + .sync-step::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: -4px;
+  width: 1px;
+  height: 8px;
+  background: var(--border2);
+}
+.sync-bullet {
+  width: 21px; height: 21px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border2);
+  background: var(--card);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: var(--muted);
+  flex-shrink: 0;
+  transition: background 0.25s, border-color 0.25s;
+}
+.sync-bullet.done {
+  background: var(--green-dim);
+  border-color: var(--green);
+  color: var(--green);
+}
+.sync-bullet.active-step {
+  background: var(--brand-dim);
+  border-color: var(--brand);
+  color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(79,110,247,0.12);
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+.sync-text {
+  flex: 1;
+  min-width: 0;
+}
+.sync-label {
+  font-size: 11px; font-weight: 600;
+  color: var(--muted);
+  line-height: 1.3;
+  transition: color 0.25s;
+}
+.sync-label.active-step { color: var(--brand); }
+.sync-label.done        { color: var(--green); }
+.sync-sub {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin-top: 1px;
+}
+.sync-scan {
+  height: 2px;
+  background: var(--brand-dim);
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+.sync-scan-bar {
+  height: 100%;
+  width: 40%;
+  background: var(--brand);
+  border-radius: 2px;
+  animation: scan-slide 1.4s ease-in-out infinite;
+}
+@keyframes scan-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(280%); }
+}
+
 /* ── Keyframes ───────────────────────────────────────────── */
 @keyframes spin         { to { transform: rotate(360deg); } }
 @keyframes pulse        { 0%,100%{opacity:1} 50%{opacity:.35} }
@@ -645,6 +731,8 @@ let S = {
   maxMembers:  0,
   editingId:   null,    // sub-member id being edited inline (null = none)
   confirmingId: null,   // sub-member id showing confirm dialog
+  pollTimer:   null,    // setInterval handle for pending-member polling
+  pollCount:   0,       // number of poll cycles fired
 };
 
 // ── XSS-safe escaping ───────────────────────────────────────────
@@ -715,7 +803,7 @@ function timeAgo(iso) {
 }
 
 // ── Load ─────────────────────────────────────────────────────────
-async function loadData() {
+async function loadData(prevMembersOverride) {
   if (!platformMemberId || !clientId) {
     showState('error', 'Missing memberId or clientId in URL. Contact your gym.');
     return;
@@ -732,6 +820,7 @@ async function loadData() {
       return;
     }
     const data = await res.json();
+    const prevMembers = prevMembersOverride !== undefined ? prevMembersOverride : S.subMembers.slice();
     S.holder     = data.holder;
     S.plans      = data.plans;
     S.subMembers = data.subMembers;
@@ -746,6 +835,7 @@ async function loadData() {
 
     render();
     showState('main');
+    maybeStartPoll(prevMembers);
   } catch (e) {
     showState('error', 'Something went wrong. Try again.');
   }
@@ -879,13 +969,17 @@ function emptyStateHtml() {
 }
 
 function memberRowHtml(m) {
-  const isDraft  = m.status === 'draft';
-  const tone     = avatarTone(m);
-  const ago      = m.provisionedAt ? timeAgo(m.provisionedAt) : null;
+  const isDraft    = m.status === 'draft';
+  const isPending  = isNonTerminal(m);
+  const isDone     = pipelineState[m.id] && pipelineState[m.id].step === 5;
+  const tone       = avatarTone(m);
+  const ago        = m.provisionedAt ? timeAgo(m.provisionedAt) : null;
 
-  return '<div class="member-row' + (isDraft ? ' draft' : '') + '">' +
+  const pipeline = isPending && !isDone ? syncPipelineHtml(m.id) : '';
+
+  return '<div class="member-row' + (isDraft ? ' draft' : '') + '" style="flex-wrap:wrap">' +
     '<div class="member-avatar' + (tone ? ' ' + tone : '') + '">' + esc(initials(m.firstName, m.lastName)) + '</div>' +
-    '<div class="member-body">' +
+    '<div class="member-body" style="flex:1;min-width:0">' +
       '<div class="member-name">' + esc(m.firstName) + ' ' + esc(m.lastName) + '</div>' +
       '<div class="member-detail">' +
         badgeHtml(m) +
@@ -894,6 +988,7 @@ function memberRowHtml(m) {
           '<svg viewBox="0 0 16 16" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7.5"/></svg>' +
           esc(ago) + '</span>' : '') +
       '</div>' +
+      (pipeline ? '<div style="width:100%;margin-top:8px">' + pipeline + '</div>' : '') +
     '</div>' +
     '<div class="member-actions">' +
       (isDraft ? '<button class="icon-btn" title="Edit" onclick="beginEdit(\'' + esc(m.id) + '\')">' +
@@ -1174,6 +1269,138 @@ async function submitAll() {
     showToast('Something went wrong. Try again.', 'error');
     if (btn) btn.disabled = false;
   }
+}
+
+// ── Inline sync pipeline ─────────────────────────────────────────
+const SYNC_STEPS = [
+  { label: 'Got it',        sub: 'On it',            doneSub: 'Received' },
+  { label: 'Setting up',    sub: 'Creating account', doneSub: 'Account ready' },
+  { label: 'Matching door', sub: 'Applying rules',   doneSub: 'Door matched' },
+  { label: 'Almost there',  sub: 'Activating…',      doneSub: 'Access live' },
+];
+const STEP_DURATIONS = [1400, 2200, 2800, null]; // ms; null = waits for active status from API
+
+// Per-member pipeline state keyed by member id
+const pipelineState = {}; // { [memberId]: { step: 1-4, timers: [] } }
+
+function getPipelineStep(memberId) {
+  return pipelineState[memberId] ? pipelineState[memberId].step : 0;
+}
+
+function startPipeline(memberId) {
+  if (pipelineState[memberId]) return; // already running
+  pipelineState[memberId] = { step: 0, timers: [] };
+  advancePipeline(memberId, 1);
+}
+
+function advancePipeline(memberId, toStep) {
+  if (!pipelineState[memberId]) return;
+  pipelineState[memberId].step = toStep;
+  renderMemberList(); // re-render so the pipeline HTML reflects new step
+  notifyHeight();
+
+  const dur = STEP_DURATIONS[toStep - 1];
+  if (dur !== null && toStep < 4) {
+    const t = setTimeout(() => advancePipeline(memberId, toStep + 1), dur);
+    pipelineState[memberId].timers.push(t);
+  }
+  // Step 4 stays active until poll confirms active status — no auto-advance
+}
+
+function completePipeline(memberId) {
+  if (!pipelineState[memberId]) return;
+  pipelineState[memberId].step = 5; // 5 = all done
+  pipelineState[memberId].timers.forEach(t => clearTimeout(t));
+}
+
+function syncPipelineHtml(memberId) {
+  const step = getPipelineStep(memberId);
+  const steps = SYNC_STEPS.map((s, i) => {
+    const idx  = i + 1;
+    const done = idx < step;
+    const active = idx === step;
+    const bulletCls = done ? 'sync-bullet done' : active ? 'sync-bullet active-step' : 'sync-bullet';
+    const labelCls  = done ? 'sync-label done' : active ? 'sync-label active-step' : 'sync-label';
+    const bulletInner = done
+      ? '<svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#16A34A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      : idx;
+    const subText = done ? s.doneSub : s.sub;
+    const scanBar = active ? '<div class="sync-scan"><div class="sync-scan-bar"></div></div>' : '';
+    return '<div class="sync-step">' +
+      '<div class="' + bulletCls + '">' + bulletInner + '</div>' +
+      '<div class="sync-text">' +
+        '<div class="' + labelCls + '">' + esc(s.label) + '<span style="color:var(--muted);font-weight:400;margin-left:5px;font-size:10px">' + idx + '/4</span></div>' +
+        '<div class="sync-sub">' + esc(subText) + '</div>' +
+        scanBar +
+      '</div>' +
+    '</div>';
+  }).join('');
+  return '<div class="sync-pipeline">' + steps + '</div>';
+}
+
+// ── Polling — watch non-terminal members until all settle ────────
+const POLL_INTERVAL_MS = 4000;
+const POLL_MAX         = 75; // 5 minutes max
+
+function isNonTerminal(m) {
+  if (m.status === 'draft') return false;
+  return !m.accessStatus || m.accessStatus === 'pending_sync' || m.accessStatus === 'in_flight' || m.accessStatus === 'submitted';
+}
+
+function stopPoll() {
+  if (S.pollTimer) { clearInterval(S.pollTimer); S.pollTimer = null; }
+  S.pollCount = 0;
+}
+
+function maybeStartPoll(prevMembers) {
+  const pending = S.subMembers.filter(isNonTerminal);
+
+  // Kick off pipelines for any newly-pending members
+  pending.forEach(m => startPipeline(m.id));
+
+  // Check if anyone just flipped from pending → active
+  if (prevMembers && prevMembers.length > 0) {
+    const prevPendingIds = new Set(prevMembers.filter(isNonTerminal).map(m => m.id));
+    const newlyActive = S.subMembers.filter(m => prevPendingIds.has(m.id) && m.accessStatus === 'active');
+    newlyActive.forEach(m => {
+      completePipeline(m.id);
+    });
+    if (newlyActive.length > 0) {
+      renderMemberList();
+      showConfirmationBanner(newlyActive);
+    }
+  }
+
+  if (pending.length === 0) { stopPoll(); return; }
+  if (S.pollTimer) return; // already polling
+  S.pollTimer = setInterval(async () => {
+    S.pollCount++;
+    if (S.pollCount > POLL_MAX) { stopPoll(); return; }
+    const prev = S.subMembers.slice();
+    await loadData(prev);
+  }, POLL_INTERVAL_MS);
+}
+
+function showConfirmationBanner(activeMembers) {
+  let el = document.getElementById('confirm-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'confirm-banner';
+    el.style.cssText = 'background:var(--green-dim);border:1px solid rgba(22,163,74,0.35);border-radius:12px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:flex-start;gap:10px;animation:fade-up 0.3s ease;';
+    const main = document.getElementById('main-content');
+    main.insertBefore(el, main.firstChild);
+  }
+  const names = activeMembers.map(m => esc(m.firstName)).join(' and ');
+  el.innerHTML =
+    '<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="var(--green)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M3 8.5l3 3 7-7.5"/></svg>' +
+    '<div>' +
+      '<div style="font-size:13px;font-weight:600;color:var(--green);margin-bottom:2px">' +
+        names + (activeMembers.length === 1 ? ' is' : ' are') + ' good to go' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--text2);line-height:1.5">' +
+        'Their door access is live. Kisi will send them an email so they know they\'re all set.' +
+      '</div>' +
+    '</div>';
 }
 
 // ── Init ─────────────────────────────────────────────────────────
