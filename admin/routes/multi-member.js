@@ -58,7 +58,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
       [clientId]
     );
 
-    // 3. Get existing sub-members for this plan holder, grouped by plan (DR-037)
+    // 3. Get existing sub-members for this plan holder, grouped by plan (DR-040)
     const subMembersResult = await db.query(
       `SELECT mi.id, mi.platform_member_id, mi.first_name, mi.last_name,
               mi.email, mi.phone, mi.sub_member_status, mi.plan_mapping_id,
@@ -93,7 +93,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
         email: m.email,
         phone: m.phone,
         status: m.sub_member_status,
-        planMappingId: m.plan_mapping_id,   // DR-037: which plan this sub-member belongs to
+        planMappingId: m.plan_mapping_id,   // DR-040: which plan this sub-member belongs to
         accessStatus: m.access_status,
         provisionedAt: m.provisioned_at,
       })),
@@ -124,7 +124,7 @@ router.post('/api/multi-member/members', async (req, res) => {
       return res.status(404).json({ error: 'Plan holder not found' });
     }
 
-    // Validate plan mapping exists, belongs to this client, and allows multiple (DR-037)
+    // Validate plan mapping exists, belongs to this client, and allows multiple (DR-040)
     const planCheck = await db.query(
       `SELECT id, max_members FROM plan_mappings
        WHERE id = $1 AND client_id = $2 AND allow_multiple = true AND status = 'active'`,
@@ -134,7 +134,7 @@ router.post('/api/multi-member/members', async (req, res) => {
       return res.status(404).json({ error: 'Plan not found or does not allow additional members' });
     }
 
-    // Check limit per plan — not across all plans (DR-037)
+    // Check limit per plan — not across all plans (DR-040)
     const maxMembers = planCheck.rows[0].max_members || 1;
     const currentCount = await db.query(
       `SELECT COUNT(*)::int AS cnt FROM member_identity
@@ -288,7 +288,7 @@ router.post('/api/multi-member/submit', async (req, res) => {
   }
 
   try {
-    // Get all draft sub-members for this holder, with each sub-member's own source_plan_id (DR-037)
+    // Get all draft sub-members for this holder, with each sub-member's own source_plan_id (DR-040)
     const drafts = await db.query(
       `SELECT mi.id, mi.platform_member_id, mi.first_name, mi.last_name,
               mi.email, mi.phone, mi.plan_mapping_id, pm.source_plan_id
@@ -322,7 +322,7 @@ router.post('/api/multi-member/submit', async (req, res) => {
     }
 
     // DR-031: Enqueue synthetic grant events via BullMQ — one per sub-member.
-    // DR-037: Each sub-member carries its own plan_mapping_id — use that to look up
+    // DR-040: Each sub-member carries its own plan_mapping_id — use that to look up
     // source_plan_id so sub-members on different plans get provisioned against the
     // correct plan (not a single LIMIT 1 across all multi-member plans).
     for (const draft of drafts.rows) {

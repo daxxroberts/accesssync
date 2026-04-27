@@ -10,7 +10,7 @@
   @data PUT /api/multi-member/members/:subId
   @data DELETE /api/multi-member/members/:subId
   @data POST /api/multi-member/submit
-  @dr DR-029, DR-030, DR-031, DR-032, DR-033, DR-037
+  @dr DR-029, DR-030, DR-031, DR-032, DR-033, DR-040
   @notes Tab 1 = My Access (always visible). Tab 2 = Manage Members (gated on allowMultiple).
          Status overlay = always present, triggers on ?tab=status or in-flight access state.
          Holder name fallback: widget-data does not return firstName/lastName (AXIOM gap — OB pending).
@@ -1613,7 +1613,7 @@ const MM = {
   plans:       [],
   subMembers:  [],
   maxMembers:  0,
-  planMappingId: null,  // active plan's mapping UUID (DR-037)
+  planMappingId: null,  // active plan's mapping UUID (DR-040)
   editingId:   null,
   confirmingId: null,
 };
@@ -1700,7 +1700,7 @@ async function mmLoadData() {
     MM.plans      = data.plans;
     MM.subMembers = data.subMembers;
     MM.maxMembers = MM.plans.length > 0 ? Math.min(...MM.plans.map(p => p.maxMembers)) : 0;
-    // DR-037: use the first plan's UUID as the planMappingId for new sub-members
+    // DR-040: use the first plan's UUID as the planMappingId for new sub-members
     MM.planMappingId = MM.plans.length > 0 ? MM.plans[0].id : null;
 
     // Holder name for chip (AXIOM gap: widget-data doesn't return holder firstName/lastName)
@@ -1997,7 +1997,7 @@ async function mmSaveAdd() {
         lastName:     document.getElementById('f-last').value.trim(),
         email:        document.getElementById('f-email').value.trim(),
         phone:        document.getElementById('f-phone').value.trim(),
-        planMappingId: MM.planMappingId,  // DR-037
+        planMappingId: MM.planMappingId,  // DR-040
       }),
     });
     const data = await res.json();
