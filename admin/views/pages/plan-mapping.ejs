@@ -1181,7 +1181,7 @@
         if (!orig) { pending--; if (pending === 0) checkDone(); return; }
 
         var multiChanged   = plan.isMultiMember !== orig.isMultiMember || plan.maxMembers !== orig.maxMembers;
-        var groupChanged   = JSON.stringify(plan.groups || []) !== JSON.stringify(orig.groups || []);
+        var groupChanged   = JSON.stringify((plan.groupIds || []).slice().sort()) !== JSON.stringify((orig.groupIds || []).slice().sort());
         var statusChanged  = plan.status !== orig.status;
 
         if (!multiChanged && !groupChanged && !statusChanged) { pending--; if (pending === 0) checkDone(); return; }

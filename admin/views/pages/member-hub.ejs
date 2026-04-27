@@ -1170,7 +1170,15 @@ function switchTab(tab) {
   if (panel) panel.classList.add('active');
 
   // Load Manage Members data on first switch to that tab
-  if (tab === 'members' && !MM.loaded) mmLoadData();
+  if (tab === 'members') {
+    if (MM.loaded) {
+      document.getElementById('mm-loading').classList.add('hidden');
+      document.getElementById('mm-content').classList.remove('hidden');
+      mmRender();
+    } else {
+      mmLoadData();
+    }
+  }
 
   notifyHeight();
 }
