@@ -7,7 +7,7 @@
  * @writes locations.hardware_key_last_verified, locations.hardware_key_last_error, plan_mapping_groups.health_status, plan_mapping_groups.door_name, plan_mappings.door_name, plan_mappings.source_status
  * @calls hardware-adapter (getLocks, getGroups), wix-plans-api (listPricingPlans), resend (alerts)
  * @exports runHealthCheck
- * @dr DR-028
+ * @dr DR-028, DR-037
  *
  * hardware-health-check.js
  * Core Engine (Layer 4) — Sprint 5 ticket 5.2
@@ -33,8 +33,17 @@ const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const { decryptApiKey } = require('./crypto-utils');
 const { log } = require('./logger');
+const { runWith, mintTraceId } = require('./trace-context');
 
 async function runHealthCheck() {
+  const traceId = mintTraceId();
+  return runWith(
+    { traceId, actor: { type: 'system', id: 'hardware-health-check-cron' } },
+    () => _runHealthCheckBody()
+  );
+}
+
+async function _runHealthCheckBody() {
   log.info('health.check_start', {});
 
   // Per-location iteration: each active location gets its own key + platform check

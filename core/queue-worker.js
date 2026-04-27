@@ -5,7 +5,7 @@
  * @reads BullMQ:grant,revoke jobs
  * @calls standard-adapter, grant-revoke, retry-engine
  * @exports startWorker, processJob
- * @dr DR-022, DR-023, DR-026
+ * @dr DR-022, DR-023, DR-026, DR-037
  *
  * queue-worker.js
  * BullMQ Worker — Core Engine (Layer 4) — Layer Coordinator
@@ -40,6 +40,7 @@ const { eventQueue } = require('./webhook-processor');
 const db = require('../db');
 const { decryptApiKey } = require('./crypto-utils');
 const { log, withTrace } = require('./logger');
+const { runWith }        = require('./trace-context');
 
 const connection = getRedisConnection();
 
@@ -59,13 +60,34 @@ async function getClientApiKey(tenantId) {
 /**
  * Job processor function.
  * BullMQ calls this for every job dequeued. Returning normally = success. Throwing = retry.
+ *
+ * DR-037: ALS does not cross process boundaries. traceId is read from job payload
+ * and explicitly re-bound via runWith so all downstream log calls auto-carry it.
  */
 async function processJob(job) {
   const { tenantId, standardEvent } = job.data || {};
   const traceId  = standardEvent?.traceId  || null;
-  const clientId = tenantId;               // canonical field name — tenantId kept internally
+
+  if (!traceId) {
+    log.error('queue.job.missing_trace_id', {
+      jobId: job.id, jobName: job.name,
+      clientId: tenantId || null,
+      eventId: standardEvent?.eventId || null,
+    });
+    throw new Error('QUEUE_JOB_MISSING_TRACE_ID');
+  }
+
+  return runWith(
+    { traceId, actor: { type: 'system', id: 'queue-worker' } },
+    () => _processJobBody(job, traceId)
+  );
+}
+
+async function _processJobBody(job, traceId) {
+  const { tenantId, standardEvent } = job.data || {};
+  const clientId = tenantId;
   const eventId  = standardEvent.eventId  || null;
-  const logger   = traceId ? withTrace(traceId) : log;
+  const logger   = withTrace(traceId);     // withTrace kept for explicit traceId in log ctx fields
   const jobStart = Date.now();
 
   logger.info('queue.job.start', {
@@ -481,4 +503,4 @@ function startWorker() {
   return worker;
 }
 
-module.exports = { startWorker, processJob };
+module.exports = { startWorker, processJob, _processJobBody };

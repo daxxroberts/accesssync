@@ -7,7 +7,7 @@
  * @writes member_access_state, config_alert_log, clients (last_sync_at)
  * @calls hardware-adapter (getLocks, getManagedRoleAssignments), wix-plans-api (listActiveOrders, listConfirmedBookings), plan-mapping-resolver (resolve), BullMQ (re-queue), resend (digest)
  * @exports instance (NightlyReconciliation) — exposes runNightlySweep, _syncClient, reconcileMember
- * @dr DR-003, DR-008, DR-018, DR-020, DR-023, DR-034
+ * @dr DR-003, DR-008, DR-018, DR-020, DR-023, DR-034, DR-037
  *
  * reconciliation.js
  * Core Engine (Layer 4) - Standalone script triggered by cron
@@ -28,6 +28,7 @@ const { decryptApiKey } = require('./crypto-utils');
 const { listActiveOrders, listConfirmedBookings } = require('../adapters/wix/wix-plans-api');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { log, withTrace } = require('./logger');
+const { runWith, mintTraceId } = require('./trace-context');
 
 class NightlyReconciliation {
 
@@ -39,7 +40,14 @@ class NightlyReconciliation {
    * Main entry point for the Railway Cron Job
    */
   async runNightlySweep() {
-    const sweepTraceId = crypto.randomUUID();
+    const sweepTraceId = mintTraceId();
+    return runWith(
+      { traceId: sweepTraceId, actor: { type: 'system', id: 'reconciliation-cron' } },
+      () => this._runNightlySweepBody(sweepTraceId)
+    );
+  }
+
+  async _runNightlySweepBody(sweepTraceId) {
     const sweepLogger = withTrace(sweepTraceId);
     this._sweepTraceId = sweepTraceId;
     this._sweepLogger = sweepLogger;

@@ -18,6 +18,7 @@ const memberSyncApi = require('./core/member-sync-api');
 const db = require('./db');
 const { startWorker } = require('./core/queue-worker');
 const { log } = require('./core/logger');
+const { traceContextMiddleware } = require('./admin/middleware/trace-context');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,6 +29,8 @@ app.use(express.json({
     req.rawBody = buf.toString(); // Save raw buffer string for HMAC crypto
   }
 }));
+// Trace context — mints traceId + resolves actor on every request (DR-037)
+app.use(traceContextMiddleware);
 
 // --- Routes ---
 

@@ -146,6 +146,7 @@ const wixRestMemberDeletedPayload = {
 // These are what queue-worker receives after wix-connector → wix-adapter transforms the webhook.
 
 const planPurchasedEvent = {
+  traceId:          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   eventType:        'plan.purchased',
   wixSiteId:        'wix-site-hog-001',
   sourcePlatform:   'wix',
@@ -158,6 +159,7 @@ const planPurchasedEvent = {
 };
 
 const planCancelledEvent = {
+  traceId:          'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   eventType:        'plan.cancelled',
   wixSiteId:        'wix-site-hog-001',
   sourcePlatform:   'wix',
@@ -170,6 +172,7 @@ const planCancelledEvent = {
 };
 
 const paymentFailedEvent = {
+  traceId:          'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
   eventType:        'payment.failed',
   wixSiteId:        'wix-site-hog-001',
   sourcePlatform:   'wix',
@@ -180,6 +183,7 @@ const paymentFailedEvent = {
 };
 
 const paymentRecoveredEvent = {
+  traceId:          'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   eventType:        'payment.recovered',
   wixSiteId:        'wix-site-hog-001',
   sourcePlatform:   'wix',

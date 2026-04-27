@@ -4,6 +4,7 @@
  * @role logging
  * @writes diagnostic_log
  * @exports log, withTrace, KEDB
+ * @dr DR-037, DR-039
  *
  * Structured JSON logger for AccessSync.
  *
@@ -12,6 +13,11 @@
  *
  * warn/error/critical events are also persisted to diagnostic_log table
  * (fire-and-forget via setImmediate — never blocks the main flow).
+ *
+ * trace_id + actor_type + actor_id are auto-populated from AsyncLocalStorage
+ * (DR-037). No call-site changes needed — set context once at each entry point
+ * (Express middleware, BullMQ handler, cron starter) and all downstream log
+ * calls inherit it automatically.
  *
  * Log levels (intent-based, not mood-based):
  *   debug    → Active investigation only. Not emitted in production.
@@ -29,14 +35,16 @@
  *   const logger = require('./logger').withTrace(traceId);
  *   logger.info('queue.job.start', { jobId, tenantId });
  *
- * Trace ID convention:
- *   Generated at webhook entry (wix-connector.js) as crypto.randomUUID().
- *   Attached to the BullMQ job payload as standardEvent.traceId.
- *   Every log in the grant/revoke path carries this ID.
+ * Trace ID convention (DR-037):
+ *   Prefer runWith() at entry points — auto-propagates to all calls.
+ *   withTrace() is the legacy/explicit override — still works, kept for compat.
  *   In Railway logs: filter by traceId to replay the full lifecycle of one webhook.
  */
 
 'use strict';
+
+const { getTraceId, getActor } = require('./trace-context');
+const { redact }               = require('./log-redaction');
 
 const PRODUCTION = process.env.NODE_ENV === 'production';
 
@@ -99,8 +107,15 @@ function deriveService(event) {
 /**
  * Persist warn/error/critical events to diagnostic_log.
  * Fire-and-forget via setImmediate — never awaited, never throws into caller.
+ *
+ * @param {string}  level
+ * @param {string}  event
+ * @param {Object}  ctx       - already-redacted entry fields
+ * @param {Error}   err
+ * @param {string}  traceId
+ * @param {{ type: string, id: string } | undefined} actor
  */
-function persistToDiagnosticLog(level, event, ctx, err, traceId) {
+function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
   // Derive error_code: prefer err.code (KEDB-aligned), else humanise the event name.
   const errorCode = (err && err.code) ? err.code : event.toUpperCase().replace(/\./g, '_');
 
@@ -126,9 +141,20 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId) {
     const db = getDb();
     if (!db || typeof db.query !== 'function') return;
     db.query(
-      `INSERT INTO diagnostic_log (client_id, service, level, error_code, message, context, trace_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [clientId, deriveService(event), level, errorCode, message, JSON.stringify(context), traceId || null]
+      `INSERT INTO diagnostic_log
+       (client_id, service, level, error_code, message, context, trace_id, actor_type, actor_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        clientId,
+        deriveService(event),
+        level,
+        errorCode,
+        message,
+        JSON.stringify(context),
+        traceId || null,
+        actor?.type || null,
+        actor?.id   || null,
+      ]
     ).catch((dbErr) => {
       // Write to stdout so Railway logs capture the failure — never propagate to caller.
       process.stdout.write(JSON.stringify({
@@ -146,15 +172,21 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId) {
  * Emit a single structured log line to stdout.
  * For warn/error/critical: also persists to diagnostic_log (fire-and-forget).
  *
+ * trace_id and actor are auto-populated from ALS context (DR-037).
+ * An explicit traceId arg overrides the ALS value (withTrace() escape hatch).
+ *
  * @param {string} level     - debug | info | warn | error | critical
  * @param {string} event     - dot.namespaced event name, e.g. 'grant.complete'
- * @param {Object} ctx       - context fields: tenantId, memberId, jobId, traceId, etc.
+ * @param {Object} ctx       - context fields: tenantId, memberId, jobId, etc.
  * @param {Error}  [err]     - optional Error object — adds stack + KEDB lookup
- * @param {string} [traceId] - optional trace ID override (use withTrace() instead)
+ * @param {string} [traceId] - explicit override; use withTrace() for this path
  */
 function emit(level, event, ctx = {}, err = null, traceId = null) {
-  // Suppress debug in production
   if (level === 'debug' && PRODUCTION) return;
+
+  // Auto-pull from ALS; explicit arg wins (withTrace() path)
+  const effectiveTraceId = traceId || getTraceId();
+  const actor            = getActor();
 
   const entry = {
     ts:    new Date().toISOString(),
@@ -163,7 +195,11 @@ function emit(level, event, ctx = {}, err = null, traceId = null) {
     ...ctx,
   };
 
-  if (traceId) entry.traceId = traceId;
+  if (effectiveTraceId)  entry.traceId    = effectiveTraceId;
+  if (actor) {
+    entry.actor_type = actor.type;
+    entry.actor_id   = actor.id;
+  }
 
   if (err) {
     entry.error = {
@@ -177,12 +213,13 @@ function emit(level, event, ctx = {}, err = null, traceId = null) {
     if (err.resolution)  entry.resolution  = err.resolution;
   }
 
-  // Write single JSON line — Railway ingests this as a structured log event.
-  process.stdout.write(JSON.stringify(entry) + '\n');
+  // Redaction — applied before stdout AND before DB write (DR-039)
+  const safeEntry = redact(entry);
 
-  // Persist to diagnostic_log for warn/error/critical — powers AI analysis + Admin Hub queries.
+  process.stdout.write(JSON.stringify(safeEntry) + '\n');
+
   if (level === 'warn' || level === 'error' || level === 'critical') {
-    persistToDiagnosticLog(level, event, ctx, err, traceId);
+    persistToDiagnosticLog(level, event, safeEntry, err, effectiveTraceId, actor);
   }
 }
 
