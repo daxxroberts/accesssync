@@ -1,21 +1,20 @@
 /**
  * Velo page code — Post-Purchase Thank You page
  *
- * Drop this into the Wix Thank You / Order Confirmation page that contains
- * the HTML Component (#html1). The component src is set dynamically so the
- * logged-in member's ID is injected at runtime and the Status overlay fires
- * immediately via ?tab=status.
+ * Paste this into the Wix Thank You / Order Confirmation page.
+ * It loads the AccessSync member hub and immediately shows the sync
+ * status screen so members see their access being activated in real time.
  *
- * Setup:
- *   1. Add an HTML Component to the Thank You page, ID it "html1"
- *   2. Set its height to ~600px initially (the hub will resize it automatically)
- *   3. Paste this file into the page's Velo code panel
+ * Setup (one-time, per page):
+ *   1. In the Wix editor, add an HTML Component to this page and set its ID to "html1"
+ *   2. Set the component's initial height to around 600px — it resizes itself automatically
+ *   3. Open the Velo code panel for this page and paste this entire file
+ *   4. Save and publish
  *
- * Behavior:
- *   - ?tab=status tells member-hub.ejs to show the sync status overlay on load
- *   - The overlay polls /member/access-status, animates the 4-step pipeline,
- *     and auto-dismisses to the My Access tab once provisioning completes
- *   - Member never has to manually close anything
+ * What the member sees:
+ *   The hub opens straight to the sync screen — a 4-step animation that tracks
+ *   their access being provisioned. Once it's done, it slides over to their
+ *   My Access tab automatically. They never have to tap anything.
  */
 
 import wixUsers from 'wix-users';
