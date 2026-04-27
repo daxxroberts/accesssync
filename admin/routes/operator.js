@@ -1627,17 +1627,36 @@ router.get('/:clientId/members', async (req, res) => {
                 -- (multi-door support, DR-026). plan_names[] is the full list; plan_name is
                 -- the first for list-view display. Null when the member has no mappings yet
                 -- (e.g. reconciliation synthetic grant that parked before completeGrant).
-                (
-                  SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
-                  FROM member_role_assignments mra
-                  JOIN plan_mappings pm ON pm.id = mra.mapping_id
-                  WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
+                COALESCE(
+                  (
+                    SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
+                    FROM member_role_assignments mra
+                    JOIN plan_mappings pm ON pm.id = mra.mapping_id
+                    WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
+                  ),
+                  -- Holder-only: pull plan names from sub-members (billing identity has no own MRA)
+                  (
+                    SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
+                    FROM member_identity sub_mi
+                    JOIN member_role_assignments sub_mra ON sub_mra.member_id = sub_mi.id
+                    JOIN plan_mappings pm ON pm.id = sub_mra.mapping_id
+                    WHERE sub_mi.plan_holder_id = mi.id AND pm.plan_name IS NOT NULL
+                  )
                 )                                AS plan_names,
-                (
-                  SELECT ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)
-                  FROM member_role_assignments mra
-                  JOIN plan_mappings pm ON pm.id = mra.mapping_id
-                  WHERE mra.member_id = mi.id AND pm.source_plan_id IS NOT NULL
+                COALESCE(
+                  (
+                    SELECT ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)
+                    FROM member_role_assignments mra
+                    JOIN plan_mappings pm ON pm.id = mra.mapping_id
+                    WHERE mra.member_id = mi.id AND pm.source_plan_id IS NOT NULL
+                  ),
+                  (
+                    SELECT ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)
+                    FROM member_identity sub_mi
+                    JOIN member_role_assignments sub_mra ON sub_mra.member_id = sub_mi.id
+                    JOIN plan_mappings pm ON pm.id = sub_mra.mapping_id
+                    WHERE sub_mi.plan_holder_id = mi.id AND pm.source_plan_id IS NOT NULL
+                  )
                 )                                AS plan_ids,
                 (
                   SELECT ARRAY_AGG(mas_src.valid_until ORDER BY pm.plan_name)
@@ -1648,13 +1667,25 @@ router.get('/:clientId/members', async (req, res) => {
                     AND mas_src.mapping_id = pm.id
                   WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
                 )                                AS plan_valid_untils,
-                (
-                  SELECT pm.plan_name
-                  FROM member_role_assignments mra
-                  JOIN plan_mappings pm ON pm.id = mra.mapping_id
-                  WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
-                  ORDER BY mra.created_at ASC
-                  LIMIT 1
+                COALESCE(
+                  (
+                    SELECT pm.plan_name
+                    FROM member_role_assignments mra
+                    JOIN plan_mappings pm ON pm.id = mra.mapping_id
+                    WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
+                    ORDER BY mra.created_at ASC
+                    LIMIT 1
+                  ),
+                  -- Holder-only: pull plan name from first sub-member's assignment
+                  (
+                    SELECT pm.plan_name
+                    FROM member_identity sub_mi
+                    JOIN member_role_assignments sub_mra ON sub_mra.member_id = sub_mi.id
+                    JOIN plan_mappings pm ON pm.id = sub_mra.mapping_id
+                    WHERE sub_mi.plan_holder_id = mi.id AND pm.plan_name IS NOT NULL
+                    ORDER BY sub_mra.created_at ASC
+                    LIMIT 1
+                  )
                 )                                AS plan_name,
                 -- Count of successful hardware role assignments. When mas.status = 'failed'
                 -- but assignment_count > 0, the member has partial access (some plans provisioned,

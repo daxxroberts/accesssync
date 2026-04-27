@@ -544,11 +544,9 @@
       var holders  = filtered.filter(function(m) { return m.role === 'holder'; });
       holders.forEach(function(h) {
         sorted.push(h);
-        var plan = plans.find(function(p) { return p.id === h.planId; });
-        if (plan && plan.isMultiMember) {
-          var subs = filtered.filter(function(m) { return m.holderId === h.id; });
-          subs.forEach(function(s) { sorted.push(s); rendered[s.id] = true; });
-        }
+        // Group any sub-members directly under their holder — no plan lookup needed
+        var subs = filtered.filter(function(m) { return m.holderId === h.id; });
+        subs.forEach(function(s) { sorted.push(s); rendered[s.id] = true; });
       });
       filtered.forEach(function(m) { if (!rendered[m.id] && sorted.indexOf(m) === -1) sorted.push(m); });
 
