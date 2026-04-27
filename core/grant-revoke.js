@@ -57,6 +57,49 @@ class GrantRevokeLogic {
       //      returns 409 in both cases; the member already has the door open.
       // We intentionally still INSERT a new member_role_assignments row in
       // completeGrant with this mapping_id so the source is correctly tracked.
+      // OB-47: Pre-grant source check (DR-034).
+      // Check member_access_sources for an existing permanent row on this group.
+      // A permanent row means the member already has hardware access from another
+      // active source — making a second hardware assignRole call would be redundant
+      // (Kisi returns 409) and could corrupt valid_until on a permanent assignment.
+      // We still record the new source row so revoke tracking stays accurate.
+      if (mapping.hardwareGroupId) {
+        const sourceCheck = await db.query(
+          `SELECT mas.source_plan_id, mas.source_type, mra.role_assignment_id
+           FROM member_access_sources mas
+           JOIN member_role_assignments mra
+             ON mra.member_id = mas.member_id
+            AND mra.hardware_group_id = mas.hardware_group_id
+           WHERE mas.member_id = $1
+             AND mas.hardware_group_id = $2
+           ORDER BY mas.created_at ASC
+           LIMIT 1`,
+          [memberId, mapping.hardwareGroupId]
+        );
+        if (sourceCheck.rows.length > 0 && sourceCheck.rows[0].role_assignment_id) {
+          const priorRaId = sourceCheck.rows[0].role_assignment_id;
+          log.info('grant.role.source_exists', {
+            clientId: tenantId, memberId,
+            platformMemberId: wixEvent.platformMemberId,
+            hardwareGroupId: mapping.hardwareGroupId,
+            mappingId: mapping.mappingId,
+            priorSourcePlanId: sourceCheck.rows[0].source_plan_id,
+            priorSourceType:   sourceCheck.rows[0].source_type,
+            roleAssignmentId:  priorRaId,
+            reason: 'permanent_access_exists',
+            stage: 'grant', result: 'skipped',
+          });
+          assignments.push({
+            mappingId:        mapping.mappingId,
+            roleAssignmentId: String(priorRaId),
+            hardwareGroupId:  mapping.hardwareGroupId,
+            sourcePlanId:     wixEvent.planId || null,
+            sourceType:       wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
+          });
+          continue; // Hardware call skipped — source row recorded via completeGrant
+        }
+      }
+
       const existing = await db.query(
         `SELECT role_assignment_id, mapping_id FROM member_role_assignments
          WHERE member_id = $1

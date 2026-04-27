@@ -70,8 +70,11 @@ describe('[P1] processGrant idempotency on retry after prior partial success', (
 
   test('reuses existing role_assignment_id when member_role_assignments already has a row', async () => {
     // Simulate: prior attempt already wrote member_role_assignments + called Kisi.
+    // OB-47 source check (member_access_sources JOIN member_role_assignments): no source row yet.
+    db.query.mockResolvedValueOnce({ rows: [] });
+    // Existing idempotency guard (member_role_assignments): row exists with role_assignment_id.
     db.query.mockResolvedValueOnce({
-      rows: [{ role_assignment_id: EXISTING_RA }],
+      rows: [{ role_assignment_id: EXISTING_RA, mapping_id: MAPPING_ID }],
     });
     // No member_access_log INSERT — all assignments reused, newHardwareCallMade stays false.
 
@@ -90,7 +93,9 @@ describe('[P1] processGrant idempotency on retry after prior partial success', (
   });
 
   test('calls assignRole normally when no prior row exists (fresh grant)', async () => {
-    // No prior row
+    // OB-47 source check: no existing source row
+    db.query.mockResolvedValueOnce({ rows: [] });
+    // Existing idempotency guard: no prior row
     db.query.mockResolvedValueOnce({ rows: [] });
     // Kisi returns fresh role_assignment
     hardwareAdapter.assignRole.mockResolvedValue('kisi-new-ra-77777777');
@@ -106,8 +111,11 @@ describe('[P1] processGrant idempotency on retry after prior partial success', (
   test('prior row exists but role_assignment_id is NULL → treats as no-prior and calls assignRole', async () => {
     // Edge case: ghost row with NULL role_assignment_id (should be rare — UNIQUE constraint
     // plus NOT NULL column would normally prevent it, but defend against it).
+    // OB-47 source check: no existing source row
+    db.query.mockResolvedValueOnce({ rows: [] });
+    // Existing idempotency guard: row with null RA
     db.query.mockResolvedValueOnce({
-      rows: [{ role_assignment_id: null }],
+      rows: [{ role_assignment_id: null, mapping_id: MAPPING_ID }],
     });
     hardwareAdapter.assignRole.mockResolvedValue('kisi-fresh-ra-55555555');
     db.query.mockResolvedValueOnce({ rowCount: 1 });
@@ -120,10 +128,12 @@ describe('[P1] processGrant idempotency on retry after prior partial success', (
 
   test('mixed — one mapping with prior assignment, one fresh', async () => {
     const mapping2 = { ...mapping, mappingId: 'mapping-second', hardwareGroupId: '999999' };
-    // First mapping: prior row
-    db.query.mockResolvedValueOnce({ rows: [{ role_assignment_id: EXISTING_RA }] });
-    // Second mapping: no prior row
-    db.query.mockResolvedValueOnce({ rows: [] });
+    // First mapping: OB-47 source check empty, existing guard has prior row
+    db.query.mockResolvedValueOnce({ rows: [] }); // OB-47 source check for mapping 1
+    db.query.mockResolvedValueOnce({ rows: [{ role_assignment_id: EXISTING_RA, mapping_id: MAPPING_ID }] }); // existing guard mapping 1
+    // Second mapping: OB-47 source check empty, existing guard no prior row
+    db.query.mockResolvedValueOnce({ rows: [] }); // OB-47 source check for mapping 2
+    db.query.mockResolvedValueOnce({ rows: [] }); // existing guard mapping 2
     // Kisi assignRole for the fresh one
     hardwareAdapter.assignRole.mockResolvedValue('kisi-fresh-second');
     // member_access_log INSERT

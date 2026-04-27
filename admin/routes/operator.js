@@ -33,6 +33,7 @@ const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
+const { recordActivity } = require('../middleware/activity');
 
 // Global rate limiter on all operator read endpoints (500 req/min/IP)
 // Higher limit needed: plan-mapping page fires N parallel per-mapping requests on load
@@ -538,6 +539,7 @@ router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) =
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     log.info('operator.setup.apikey_set', { clientId });
+    recordActivity(req, 'api_key.saved', { clientId });
 
     // Wix-first flow: auto-retry any members parked as pending_hardware
     const retried = await retryPendingHardwareMembers(clientId);
@@ -670,6 +672,7 @@ router.put('/clients/:clientId/api-key', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     log.info('operator.apikey.rotated', { clientId });
+    recordActivity(req, 'api_key.rotated', { clientId });
 
     // Wix-first flow: auto-retry any members parked as pending_hardware
     const retried = await retryPendingHardwareMembers(clientId);
@@ -869,6 +872,7 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
     log.info('operator.location.apikey_set', { clientId, locationId });
+    recordActivity(req, 'api_key.saved', { clientId, locationId });
 
     // Wix-first flow: auto-retry any members parked as pending_hardware
     const retried = await retryPendingHardwareMembers(clientId);
@@ -923,6 +927,7 @@ router.post('/:clientId/locations/:locationId/suspend', async (req, res) => {
   const { clientId, locationId } = req.params;
   try {
     const result = await suspendLocationMembers(locationId, clientId, 'suspended');
+    recordActivity(req, 'location.suspended', { clientId, locationId, suspended: result.suspended });
     res.json({ ok: true, suspended: result.suspended, skipped: result.skipped, errors: result.errors });
   } catch (err) {
     log.error('operator.location.suspend_failed', { clientId, locationId }, err);
@@ -942,6 +947,7 @@ router.post('/:clientId/locations/:locationId/activate', async (req, res) => {
       [locationId, clientId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    recordActivity(req, 'location.activated', { clientId, locationId });
     res.json({ ok: true, location: result.rows[0] });
     // GAP 3: re-provision all previously active members at this location
     activateLocationMembers(clientId, locationId)
@@ -1207,6 +1213,7 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
        WHERE id = $1`,
       [errorId]
     );
+    recordActivity(req, 'error.retried', { clientId, errorId });
     res.json({ queued: true });
   } catch (err) {
     log.error('operator.error.retry_failed', { clientId, errorId }, err);
@@ -1337,6 +1344,7 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
       }
     }
 
+    recordActivity(req, 'plan_mapping.updated', { clientId, mappingId });
     res.json(mapping);
 
     // Compute new group IDs from junction table after write
@@ -2255,6 +2263,7 @@ router.post('/:clientId/members/:memberId/sync', async (req, res) => {
       granted: result.granted, revoked: result.revoked, repaired: result.repaired,
       alerts: result.alerts.length,
     });
+    recordActivity(req, 'member.synced', { clientId, memberId, action: result.action });
     res.json({ ok: true, ...result });
   } catch (err) {
     log.error('operator.member_sync.failed', { clientId, memberId }, err);
