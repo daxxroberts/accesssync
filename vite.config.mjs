@@ -18,7 +18,7 @@ export default defineConfig({
           if (chunk.name === 'planmapping') return 'plan-mapping.js';
           return '[name].js';
         },
-        chunkFileNames: 'chunk-[name].js',
+        chunkFileNames: (chunk) => `chunk-${chunk.name.toLowerCase()}.js`,
         assetFileNames: (info) => {
           if (info.name && info.name.endsWith('.css')) return '[name].css';
           return '[name][extname]';
