@@ -14,6 +14,7 @@ const db      = require('../../db');
 const { log } = require('../../core/logger');
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../../core/redis-utils');
+const { mintTraceId } = require('../../core/trace-context');
 
 const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
 
@@ -124,6 +125,7 @@ router.post('/:id/retry', async (req, res) => {
 
     const { client_id: tenantId, event_type: eventType, payload } = errorRow.rows[0];
     const standardEvent = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    if (!standardEvent.traceId) standardEvent.traceId = mintTraceId();
 
     const jobName = ['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(eventType)
       ? 'grant' : 'revoke';
@@ -167,6 +169,7 @@ router.post('/bulk-retry', async (req, res) => {
 
         const { client_id: tenantId, event_type: eventType, payload } = errorRow.rows[0];
         const standardEvent = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        if (!standardEvent.traceId) standardEvent.traceId = mintTraceId();
         const jobName = ['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(eventType)
           ? 'grant' : 'revoke';
 
