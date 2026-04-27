@@ -5,7 +5,7 @@
   @role plan-to-door-mapping
   @data GET /operator/:clientId/locations/:locationId/mappings, GET /operator/:clientId/kisi-groups
   @writes PATCH /operator/:clientId/plan-mappings/:mappingId, POST /operator/:clientId/plan-mappings/:mappingId/remap
-  @reads GET /operator/:clientId/plan-mappings/:mappingId/members (remap modal member count), GET /operator/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members (disconnect count)
+  @reads GET /operator/:clientId/plan-mappings/:mappingId/members (remap modal member count), GET /operator/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members (disconnect count), GET /operator/:clientId/plan-mappings/:mappingId/holders (active holder list for multi-member plans)
   @tab Plan Mapping
   @features multi-group, multi-member toggle, duplicate-group warning, remap confirmation modal, stale-group detection, dead-group warning with member count, archived-plan badge, disconnect member count confirmation, collapsed plan summary rows (group count, member count, Wix price), expand/collapse per plan card
 %>
@@ -1419,12 +1419,30 @@
                   p._familySuggestion = true;
                 }
               });
-              render();
-              // Show suggestion for detected family plans
-              var suggestions = plans.filter(function(p) { return p._familySuggestion; });
-              if (suggestions.length > 0) {
-                showToast('info', suggestions.length + ' plan' + (suggestions.length > 1 ? 's look' : ' looks') + ' like a family/group plan. Consider enabling multi-member access.');
-              }
+
+              // Fetch holder data for multi-member plans before first render
+              var multiPlans = plans.filter(function(p) { return p.isMultiMember; });
+              var holderFetches = multiPlans.map(function(plan) {
+                return apiFetch('/operator/' + clientId + '/plan-mappings/' + plan.id + '/holders')
+                  .then(function(r) { return r.json(); })
+                  .then(function(data) {
+                    var holders = data.holders || [];
+                    plan.activeHolders = holders.length;
+                    plan.activeMembers = holders.map(function(h) {
+                      return { holder: h.platformMemberId, subs: h.subs, status: h.status };
+                    });
+                  })
+                  .catch(function() { /* non-fatal — zeros remain */ });
+              });
+
+              Promise.all(holderFetches).then(function() {
+                render();
+                // Show suggestion for detected family plans
+                var suggestions = plans.filter(function(p) { return p._familySuggestion; });
+                if (suggestions.length > 0) {
+                  showToast('info', suggestions.length + ' plan' + (suggestions.length > 1 ? 's look' : ' looks') + ' like a family/group plan. Consider enabling multi-member access.');
+                }
+              });
             });
           }).catch(function(e) { console.error('Mappings load error:', e); });
       }

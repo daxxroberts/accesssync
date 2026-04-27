@@ -1402,6 +1402,47 @@ router.get('/:clientId/plan-mappings/:mappingId/members', async (req, res) => {
   }
 });
 
+// ── GET /operator/:clientId/plan-mappings/:mappingId/holders ────────
+// Returns plan holders with sub-member counts for Classic View active-holders panel.
+// Holders: member_identity rows with plan_holder_id IS NULL linked via member_role_assignments.
+// Sub-members: rows with plan_holder_id = holder.id.
+router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
+  try {
+    const { clientId, mappingId } = req.params;
+    const check = await db.query('SELECT id FROM plan_mappings WHERE id = $1 AND client_id = $2', [mappingId, clientId]);
+    if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+
+    const result = await db.query(
+      `SELECT mi.id, mi.platform_member_id,
+              mas.status,
+              COUNT(sub.id)::int AS sub_count
+       FROM member_role_assignments mra
+       JOIN member_identity mi ON mi.id = mra.member_id
+       LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+       LEFT JOIN member_identity sub ON sub.plan_holder_id = mi.id AND sub.client_id = mi.client_id
+       WHERE mra.mapping_id = $1
+         AND mi.client_id = $2
+         AND mi.plan_holder_id IS NULL
+       GROUP BY mi.id, mi.platform_member_id, mas.status
+       ORDER BY mi.platform_member_id`,
+      [mappingId, clientId]
+    );
+    res.json({
+      holders: result.rows.map(function(r) {
+        return {
+          id:               r.id,
+          platformMemberId: r.platform_member_id,
+          subs:             r.sub_count,
+          status:           r.status || 'active',
+        };
+      }),
+    });
+  } catch (err) {
+    log.error('operator.mapping.holders_failed', { clientId, mappingId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── GET /operator/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members ──
 // Returns count of members assigned to a specific group within a mapping.
 // Used by wire graph and classic UI for disconnect confirmation dialogs.
