@@ -7,7 +7,8 @@
  *
  * Setup (one-time, per page):
  *   1. In the Wix editor, add an HTML Component to this page and set its ID to "html1"
- *   2. Set the component's initial height to around 600px — it resizes itself automatically
+ *   2. Set the component's height to 800px in the editor — Wix does not allow
+ *      code to change the height of an HTML Component, so set it manually
  *   3. Open the Velo code panel for this page and paste this entire file
  *   4. Save and publish
  *
@@ -33,11 +34,4 @@ $w.onReady(function () {
   const src = `${ADMIN_HUB}/member-hub?memberId=${encodeURIComponent(memberId)}&clientId=${encodeURIComponent(CLIENT_ID)}`;
 
   $w('#html1').src = src;
-
-  // Auto-resize the iframe to match the widget's content height
-  $w('#html1').onMessage((event) => {
-    if (event.data?.type === 'resize' && typeof event.data.height === 'number') {
-      $w('#html1').height = event.data.height;
-    }
-  });
 });
