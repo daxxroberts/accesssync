@@ -2246,12 +2246,15 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
     if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
 
     const reconciliation = require('../../core/reconciliation');
-    const { granted, revoked } = await reconciliation._syncClient(clientResult.rows[0]);
+    const { granted, revoked, aborted, reason } = await reconciliation._syncClient(clientResult.rows[0]);
 
-    await db.query(`UPDATE clients SET last_sync_at = NOW() WHERE id = $1`, [clientId]);
+    // Don't stamp last_sync_at on an aborted sync — the timestamp would lie about freshness
+    if (!aborted) {
+      await db.query(`UPDATE clients SET last_sync_at = NOW() WHERE id = $1`, [clientId]);
+    }
 
-    log.info('operator.sync.manual_run', { clientId, granted, revoked });
-    res.json({ ok: true, granted, revoked });
+    log.info('operator.sync.manual_run', { clientId, granted, revoked, aborted: !!aborted, reason: reason || null });
+    res.json({ ok: true, granted, revoked, aborted: !!aborted, reason: reason || null });
   } catch (err) {
     log.error('operator.sync.manual_run_failed', { clientId }, err);
     res.status(500).json({ error: 'Sync failed' });

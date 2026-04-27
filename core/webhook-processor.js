@@ -3,7 +3,7 @@
  * @layer core/layer4
  * @role deduplication, enqueue
  * @reads processed_event_ids, clients
- * @writes processed_event_ids, BullMQ, diagnostic_log (via logger)
+ * @writes processed_event_ids, clients.last_webhook_at, BullMQ, diagnostic_log (via logger)
  * @exports eventQueue
  * @dr DR-010, DR-012
  *
@@ -125,6 +125,11 @@ class WebhookProcessor {
       await this._logToAlertLog(eventId, standardEvent, classification);
       return;
     }
+
+    // 4c. Stamp clients.last_webhook_at — drives the dashboard's "Webhooks active" pill.
+    // Fault-tolerant: a failed timestamp update must never block enqueue.
+    db.query(`UPDATE clients SET last_webhook_at = NOW() WHERE id = $1`, [tenantId])
+      .catch((err) => log.warn('webhook.last_webhook_at_update_failed', { clientId: tenantId, eventId }, err));
 
     // 5. Classify and enqueue (DR-012)
     if (['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(standardEvent.eventType)) {
