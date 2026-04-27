@@ -161,7 +161,7 @@ router.post('/api/multi-member/members', async (req, res) => {
       `INSERT INTO member_identity
        (client_id, platform_member_id, source_platform, hardware_platform, source_tag,
         plan_holder_id, plan_mapping_id, first_name, last_name, email, phone, sub_member_status)
-       VALUES ($1, $2, 'wix', $3, 'accesssync', $4, $5, $6, $7, $8, $9, $10, 'draft')
+       VALUES ($1, $2, 'wix', $3, 'accesssync', $4, $5, $6, $7, $8, $9, 'draft')
        RETURNING id, platform_member_id, first_name, last_name, email, phone, sub_member_status, plan_mapping_id, created_at`,
       [clientId, subPlatformMemberId, holderCheck.rows[0].hardware_platform,
        holderId, planMappingId, firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim()]
