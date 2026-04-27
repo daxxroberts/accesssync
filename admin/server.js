@@ -24,6 +24,7 @@ const operatorRoutes    = require('./routes/operator');
 const multiMemberRoutes = require('./routes/multi-member');
 const portalRoutes      = require('./routes/portal');
 const { requireAuth, requireAuthPage, requireAuthPageOrOperator } = require('./middleware/auth');
+const { traceContextMiddleware } = require('./middleware/trace-context');
 const { log } = require('../core/logger');
 
 const app  = express();
@@ -52,6 +53,12 @@ app.use(morgan(function (tokens, req, res) {
 }));
 app.use(express.json());
 app.use(cookieParser());
+// Trace context — mounts after cookieParser so auth cookies are parsed first.
+// Auth middleware runs per-route (requireAuth / requireAuthPageOrOperator), so
+// actor resolution here reflects whatever req.admin is already set by the
+// per-route middleware. For routes that are pre-auth (login, /health), actor
+// defaults to system:anonymous — correct behavior.
+app.use(traceContextMiddleware);
 
 // ── Wix iframe — allow framing from manage.wix.com only ───────
 // Helmet sets X-Frame-Options: sameorigin globally, which blocks the Wix
@@ -137,9 +144,12 @@ app.get('/member/access-status', async (req, res) => {
     const upstream = await fetch(`${coreUrl}/member/access-status?${qs}`, {
       headers: { 'x-internal-proxy': '1' }
     });
-    const data = await upstream.json();
+    const text = await upstream.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { error: 'upstream unavailable' }; }
     res.status(upstream.status).json(data);
   } catch (err) {
+    log.warn('admin.member_status_proxy_failed', {}, err);
     res.status(502).json({ error: 'upstream unavailable' });
   }
 });
