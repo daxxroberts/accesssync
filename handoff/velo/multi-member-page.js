@@ -1,20 +1,18 @@
 /**
  * Velo page code — Member Hub (member area page)
  *
- * Drop this into the Wix page that contains the HTML Component (#html1).
- * The HTML Component src is left blank in the editor — this code sets it
- * dynamically so the logged-in member's ID is always injected at runtime.
+ * This goes on the Wix member area page where your members check their
+ * door access and manage additional members on their plan. One component
+ * on one page handles everything — access status, plan info, and member management.
  *
- * Replaces the old multi-member, my-access, and sync-status iframes.
- * One HTML Component on one Wix page covers all three interactions.
+ * Setup (one-time, per page):
+ *   1. In the Wix editor, add an HTML Component to this page and set its ID to "html1"
+ *   2. Set the component's initial height to around 600px — it resizes itself automatically
+ *   3. Open the Velo code panel for this page and paste this entire file
+ *   4. Save and publish
  *
- * Setup:
- *   1. Add an HTML Component to the page, ID it "html1"
- *   2. Set its height to ~600px initially (the widget will resize it automatically)
- *   3. Paste this file into the page's Velo code panel
- *
- * For the post-purchase Thank You page: append &tab=status to the src URL
- * so the sync status overlay fires immediately on load.
+ * That's it. When a logged-in member opens this page, the component loads
+ * automatically with their account already connected — no extra config needed.
  */
 
 import wixUsers from 'wix-users';
