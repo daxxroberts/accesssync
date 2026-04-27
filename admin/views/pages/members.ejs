@@ -592,7 +592,7 @@
             planCell += '<button class="plan-detail-btn" id="' + planDetailBtnId + '" onclick="togglePlanDetail(\'' + m.id + '\')">' +
               'View plan details <span class="pdb-chevron">&#9660;</span></button>';
           }
-          if (isMulti && subCount > 0) {
+          if (subCount > 0) {
             planCell += '<button class="view-members-btn" id="' + viewMembersBtnId + '" onclick="toggleSubMembers(\'' + m.id + '\')">' +
               '&#128101; View additional members <span class="vmb-chevron">&#9660;</span></button>' +
               '<div class="submember-panel" id="' + subMemberPanelId + '"></div>';
@@ -621,6 +621,12 @@
           childTr.innerHTML = '<td colspan="6"><div class="plan-cards-wrap"></div></td>';
           tbody.appendChild(childTr);
         }
+      });
+
+      // Auto-expand sub-member panels for all holders that have subs
+      holders.forEach(function(h) {
+        var subCount = allMembers.filter(function(s) { return s.holderId === h.id; }).length;
+        if (subCount > 0) toggleSubMembers(h.id);
       });
     }
 
