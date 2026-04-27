@@ -833,6 +833,8 @@ async function loadData(prevMembersOverride) {
       return;
     }
 
+    // Start pipelines before render so pipelineState is populated when rows draw
+    S.subMembers.filter(isNonTerminal).forEach(m => startPipeline(m.id));
     render();
     showState('main');
     maybeStartPoll(prevMembers);
