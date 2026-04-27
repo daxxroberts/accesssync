@@ -1,20 +1,20 @@
-# Graph Report - .  (2026-04-24)
+# Graph Report - .  (2026-04-26)
 
 ## Corpus Check
-- 72 files · ~96,148 words
+- 74 files Â· ~102,010 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 304 nodes · 344 edges · 67 communities detected
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
-- Token cost: 0 input · 0 output
+- 307 nodes Â· 345 edges Â· 69 communities detected
+- Extraction: 100% EXTRACTED Â· 0% INFERRED Â· 0% AMBIGUOUS
+- Token cost: 0 input Â· 0 output
 
 ## God Nodes (most connected - your core abstractions)
 1. `HardwareAdapter` - 14 edges
 2. `StandardAdapter` - 12 edges
 3. `KisiAdapter` - 11 edges
-4. `SeamAdapter` - 10 edges
-5. `NightlyReconciliation` - 10 edges
+4. `NightlyReconciliation` - 11 edges
+5. `SeamAdapter` - 10 edges
 6. `_checkLocation()` - 7 edges
 7. `TenantResolver` - 7 edges
 8. `WebhookProcessor` - 7 edges
@@ -47,12 +47,12 @@ Cohesion: 0.17
 Nodes (1): KisiAdapter
 
 ### Community 5 - "Community 5"
-Cohesion: 0.18
-Nodes (1): SeamAdapter
+Cohesion: 0.27
+Nodes (1): NightlyReconciliation
 
 ### Community 6 - "Community 6"
-Cohesion: 0.31
-Nodes (1): NightlyReconciliation
+Cohesion: 0.18
+Nodes (1): SeamAdapter
 
 ### Community 7 - "Community 7"
 Cohesion: 0.38
@@ -294,6 +294,14 @@ Nodes (0):
 Cohesion: 1.0
 Nodes (0): 
 
+### Community 67 - "Community 67"
+Cohesion: 1.0
+Nodes (0): 
+
+### Community 68 - "Community 68"
+Cohesion: 1.0
+Nodes (0): 
+
 ## Knowledge Gaps
 - **Thin community `Community 38`** (2 nodes): `seed.js`, `seed()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -337,21 +345,25 @@ Nodes (0):
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 58`** (1 nodes): `plan-mapping-entry.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 59`** (1 nodes): `audit-summary.js`
+- **Thin community `Community 59`** (1 nodes): `multi-member-page.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 60`** (1 nodes): `fixtures.js`
+- **Thin community `Community 60`** (1 nodes): `thank-you-page.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 61`** (1 nodes): `grant-retry-idempotency.test.js`
+- **Thin community `Community 61`** (1 nodes): `audit-summary.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 62`** (1 nodes): `member-pays-gets-access.test.js`
+- **Thin community `Community 62`** (1 nodes): `fixtures.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 63`** (1 nodes): `ob-89-two-gate.test.js`
+- **Thin community `Community 63`** (1 nodes): `grant-retry-idempotency.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (1 nodes): `api-key-encryption.test.js`
+- **Thin community `Community 64`** (1 nodes): `member-pays-gets-access.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (1 nodes): `rate-limiter.test.js`
+- **Thin community `Community 65`** (1 nodes): `ob-89-two-gate.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 66`** (1 nodes): `wix-adapter-parsing.test.js`
+- **Thin community `Community 66`** (1 nodes): `api-key-encryption.test.js`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 67`** (1 nodes): `rate-limiter.test.js`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 68`** (1 nodes): `wix-adapter-parsing.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions

@@ -1,0 +1,1 @@
+{"nodes": [{"id": "thank_you_page", "label": "thank-you-page.js", "file_type": "code", "source_file": "handoff\\velo\\thank-you-page.js", "source_location": "L1"}], "edges": [{"source": "thank_you_page", "target": "wix_users", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "handoff\\velo\\thank-you-page.js", "source_location": "L21", "weight": 1.0}]}

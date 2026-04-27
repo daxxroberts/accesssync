@@ -241,7 +241,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L1",
       "id": "seam_adapter",
-      "community": 5
+      "community": 6
     },
     {
       "label": "standard-adapter.js",
@@ -497,7 +497,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L10",
       "id": "seam_adapter_seamadapter",
-      "community": 5
+      "community": 6
     },
     {
       "label": ".findUserByEmail()",
@@ -505,7 +505,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L11",
       "id": "seam_adapter_seamadapter_finduserbyemail",
-      "community": 5
+      "community": 6
     },
     {
       "label": ".createUser()",
@@ -513,7 +513,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L15",
       "id": "seam_adapter_seamadapter_createuser",
-      "community": 5
+      "community": 6
     },
     {
       "label": ".assignRole()",
@@ -521,7 +521,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L19",
       "id": "seam_adapter_seamadapter_assignrole",
-      "community": 5
+      "community": 6
     },
     {
       "label": ".removeRole()",
@@ -529,7 +529,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L24",
       "id": "seam_adapter_seamadapter_removerole",
-      "community": 5
+      "community": 6
     },
     {
       "label": ".suspendAccess()",
@@ -537,7 +537,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L28",
       "id": "seam_adapter_seamadapter_suspendaccess",
-      "community": 5
+      "community": 6
     },
     {
       "label": ".enableAccess()",
@@ -545,7 +545,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L32",
       "id": "seam_adapter_seamadapter_enableaccess",
-      "community": 5
+      "community": 6
     },
     {
       "label": ".deleteUser()",
@@ -553,7 +553,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L37",
       "id": "seam_adapter_seamadapter_deleteuser",
-      "community": 5
+      "community": 6
     },
     {
       "label": ".getLocks()",
@@ -561,7 +561,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L41",
       "id": "seam_adapter_seamadapter_getlocks",
-      "community": 5
+      "community": 6
     },
     {
       "label": ".getGroups()",
@@ -569,7 +569,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L47",
       "id": "seam_adapter_seamadapter_getgroups",
-      "community": 5
+      "community": 6
     },
     {
       "label": "seam-connector.js",
@@ -1287,7 +1287,7 @@
       "label": "resolveApiKey()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L65",
+      "source_location": "L66",
       "id": "operator_resolveapikey",
       "community": 14
     },
@@ -1295,7 +1295,7 @@
       "label": "syncMappingMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L93",
+      "source_location": "L94",
       "id": "operator_syncmappingmembers",
       "community": 14
     },
@@ -1303,7 +1303,7 @@
       "label": "activateLocationMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L254",
+      "source_location": "L255",
       "id": "operator_activatelocationmembers",
       "community": 14
     },
@@ -1311,7 +1311,7 @@
       "label": "validateApiKeyGroups()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L279",
+      "source_location": "L280",
       "id": "operator_validateapikeygroups",
       "community": 14
     },
@@ -1319,7 +1319,7 @@
       "label": "retryPendingHardwareMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L317",
+      "source_location": "L318",
       "id": "operator_retrypendinghardwaremembers",
       "community": 14
     },
@@ -1327,7 +1327,7 @@
       "label": "requireInviteToken()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L376",
+      "source_location": "L377",
       "id": "operator_requireinvitetoken",
       "community": 14
     },
@@ -1809,87 +1809,95 @@
       "source_file": "core\\reconciliation.js",
       "source_location": "L1",
       "id": "reconciliation",
-      "community": 6
+      "community": 5
     },
     {
       "label": "NightlyReconciliation",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L31",
+      "source_location": "L32",
       "id": "reconciliation_nightlyreconciliation",
-      "community": 6
+      "community": 5
     },
     {
       "label": ".constructor()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L33",
+      "source_location": "L34",
       "id": "reconciliation_nightlyreconciliation_constructor",
-      "community": 6
+      "community": 5
     },
     {
       "label": ".runNightlySweep()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L40",
+      "source_location": "L41",
       "id": "reconciliation_nightlyreconciliation_runnightlysweep",
-      "community": 6
+      "community": 5
     },
     {
       "label": "._syncTrueSources()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L106",
+      "source_location": "L107",
       "id": "reconciliation_nightlyreconciliation_synctruesources",
-      "community": 6
+      "community": 5
     },
     {
       "label": "._syncClient()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L142",
+      "source_location": "L143",
       "id": "reconciliation_nightlyreconciliation_syncclient",
-      "community": 6
+      "community": 5
+    },
+    {
+      "label": ".reconcileMember()",
+      "file_type": "code",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L322",
+      "id": "reconciliation_nightlyreconciliation_reconcilemember",
+      "community": 5
     },
     {
       "label": "._syncDoorLockdownStates()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L289",
+      "source_location": "L619",
       "id": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
-      "community": 6
+      "community": 5
     },
     {
       "label": "._fetchActionableRecords()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L321",
+      "source_location": "L651",
       "id": "reconciliation_nightlyreconciliation_fetchactionablerecords",
-      "community": 6
+      "community": 5
     },
     {
       "label": "._processRecordTargeted()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L333",
+      "source_location": "L663",
       "id": "reconciliation_nightlyreconciliation_processrecordtargeted",
-      "community": 6
+      "community": 5
     },
     {
       "label": "._generateAndSendDigest()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L365",
+      "source_location": "L695",
       "id": "reconciliation_nightlyreconciliation_generateandsenddigest",
-      "community": 6
+      "community": 5
     },
     {
       "label": "._sleep()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L428",
+      "source_location": "L758",
       "id": "reconciliation_nightlyreconciliation_sleep",
-      "community": 6
+      "community": 5
     },
     {
       "label": "redis-utils.js",
@@ -2055,7 +2063,7 @@
       "label": "._validateStructure()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L153",
+      "source_location": "L158",
       "id": "webhook_processor_webhookprocessor_validatestructure",
       "community": 10
     },
@@ -2063,7 +2071,7 @@
       "label": "._checkIfDuplicate()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L162",
+      "source_location": "L167",
       "id": "webhook_processor_webhookprocessor_checkifduplicate",
       "community": 10
     },
@@ -2071,7 +2079,7 @@
       "label": "._markEventProcessed()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L170",
+      "source_location": "L175",
       "id": "webhook_processor_webhookprocessor_markeventprocessed",
       "community": 10
     },
@@ -2079,7 +2087,7 @@
       "label": "._logToAlertLog()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L177",
+      "source_location": "L182",
       "id": "webhook_processor_webhookprocessor_logtoalertlog",
       "community": 10
     },
@@ -2087,9 +2095,25 @@
       "label": ".logWebhookAttempt()",
       "file_type": "code",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L200",
+      "source_location": "L205",
       "id": "webhook_processor_webhookprocessor_logwebhookattempt",
       "community": 10
+    },
+    {
+      "label": "multi-member-page.js",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\multi-member-page.js",
+      "source_location": "L1",
+      "id": "multi_member_page",
+      "community": 59
+    },
+    {
+      "label": "thank-you-page.js",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\thank-you-page.js",
+      "source_location": "L1",
+      "id": "thank_you_page",
+      "community": 60
     },
     {
       "label": "audit-by-internal-id.js",
@@ -2145,7 +2169,7 @@
       "source_file": "scripts\\audit-summary.js",
       "source_location": "L1",
       "id": "audit_summary",
-      "community": 59
+      "community": 61
     },
     {
       "label": "db-check.js",
@@ -2201,7 +2225,7 @@
       "source_file": "test\\helpers\\fixtures.js",
       "source_location": "L1",
       "id": "fixtures",
-      "community": 60
+      "community": 62
     },
     {
       "label": "grant-retry-idempotency.test.js",
@@ -2209,7 +2233,7 @@
       "source_file": "test\\p1-critical-path\\grant-retry-idempotency.test.js",
       "source_location": "L1",
       "id": "grant_retry_idempotency_test",
-      "community": 61
+      "community": 63
     },
     {
       "label": "member-cancels-loses-access.test.js",
@@ -2233,7 +2257,7 @@
       "source_file": "test\\p1-critical-path\\member-pays-gets-access.test.js",
       "source_location": "L1",
       "id": "member_pays_gets_access_test",
-      "community": 62
+      "community": 64
     },
     {
       "label": "ob-89-two-gate.test.js",
@@ -2241,7 +2265,7 @@
       "source_file": "test\\p1-critical-path\\ob-89-two-gate.test.js",
       "source_location": "L1",
       "id": "ob_89_two_gate_test",
-      "community": 63
+      "community": 65
     },
     {
       "label": "queue-worker-coordination.test.js",
@@ -2273,7 +2297,7 @@
       "source_file": "test\\p2-onboarding\\api-key-encryption.test.js",
       "source_location": "L1",
       "id": "api_key_encryption_test",
-      "community": 64
+      "community": 66
     },
     {
       "label": "plan-mapping-resolver.test.js",
@@ -2321,7 +2345,7 @@
       "source_file": "test\\p3-data-integrity\\rate-limiter.test.js",
       "source_location": "L1",
       "id": "rate_limiter_test",
-      "community": 65
+      "community": 67
     },
     {
       "label": "wix-adapter-parsing.test.js",
@@ -2329,7 +2353,7 @@
       "source_file": "test\\p3-data-integrity\\wix-adapter-parsing.test.js",
       "source_location": "L1",
       "id": "wix_adapter_parsing_test",
-      "community": 66
+      "community": 68
     },
     {
       "label": "wix-members-api-normalization.test.js",
@@ -4865,7 +4889,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L65",
+      "source_location": "L66",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_resolveapikey",
@@ -4877,7 +4901,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L93",
+      "source_location": "L94",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_syncmappingmembers",
@@ -4889,7 +4913,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L254",
+      "source_location": "L255",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_activatelocationmembers",
@@ -4901,7 +4925,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L279",
+      "source_location": "L280",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_validateapikeygroups",
@@ -4913,7 +4937,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L317",
+      "source_location": "L318",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_retrypendinghardwaremembers",
@@ -4925,7 +4949,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L376",
+      "source_location": "L377",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_requireinvitetoken",
@@ -4937,7 +4961,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L104",
+      "source_location": "L105",
       "weight": 1.0,
       "_src": "operator_syncmappingmembers",
       "_tgt": "operator_resolveapikey",
@@ -4949,7 +4973,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L266",
+      "source_location": "L267",
       "weight": 1.0,
       "_src": "operator_activatelocationmembers",
       "_tgt": "operator_syncmappingmembers",
@@ -5681,7 +5705,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L31",
+      "source_location": "L32",
       "weight": 1.0,
       "_src": "reconciliation",
       "_tgt": "reconciliation_nightlyreconciliation",
@@ -5693,7 +5717,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L33",
+      "source_location": "L34",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_constructor",
@@ -5705,7 +5729,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L40",
+      "source_location": "L41",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_runnightlysweep",
@@ -5717,7 +5741,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L106",
+      "source_location": "L107",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_synctruesources",
@@ -5729,7 +5753,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L142",
+      "source_location": "L143",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_syncclient",
@@ -5741,7 +5765,19 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L289",
+      "source_location": "L322",
+      "weight": 1.0,
+      "_src": "reconciliation_nightlyreconciliation",
+      "_tgt": "reconciliation_nightlyreconciliation_reconcilemember",
+      "source": "reconciliation_nightlyreconciliation",
+      "target": "reconciliation_nightlyreconciliation_reconcilemember",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L619",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
@@ -5753,7 +5789,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L321",
+      "source_location": "L651",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_fetchactionablerecords",
@@ -5765,7 +5801,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L333",
+      "source_location": "L663",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_processrecordtargeted",
@@ -5777,7 +5813,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L365",
+      "source_location": "L695",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_generateandsenddigest",
@@ -5789,7 +5825,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L428",
+      "source_location": "L758",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_sleep",
@@ -5801,7 +5837,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L63",
+      "source_location": "L64",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_synctruesources",
@@ -5813,7 +5849,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L75",
+      "source_location": "L76",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
@@ -5825,7 +5861,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L78",
+      "source_location": "L79",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_fetchactionablerecords",
@@ -5837,7 +5873,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L83",
+      "source_location": "L84",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_processrecordtargeted",
@@ -5849,7 +5885,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L84",
+      "source_location": "L85",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_sleep",
@@ -5861,7 +5897,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L88",
+      "source_location": "L89",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
       "_tgt": "reconciliation_nightlyreconciliation_generateandsenddigest",
@@ -5873,7 +5909,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L121",
+      "source_location": "L122",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_synctruesources",
       "_tgt": "reconciliation_nightlyreconciliation_syncclient",
@@ -6113,7 +6149,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L153",
+      "source_location": "L158",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_validatestructure",
@@ -6125,7 +6161,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L162",
+      "source_location": "L167",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_checkifduplicate",
@@ -6137,7 +6173,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L170",
+      "source_location": "L175",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_markeventprocessed",
@@ -6149,7 +6185,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L177",
+      "source_location": "L182",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_logtoalertlog",
@@ -6161,7 +6197,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\webhook-processor.js",
-      "source_location": "L200",
+      "source_location": "L205",
       "weight": 1.0,
       "_src": "webhook_processor_webhookprocessor",
       "_tgt": "webhook_processor_webhookprocessor_logwebhookattempt",

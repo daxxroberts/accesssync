@@ -8,7 +8,8 @@
  * @writes clients, locations, plan_mappings, plan_mapping_groups,
  *         member_role_assignments, member_access_sources, error_queue, config_alert_log
  * @calls hardware-adapter, kisi-adapter, kisi-connector, wix-plans-api,
- *        location-lapse, webhook-processor, crypto-utils, logger
+ *        location-lapse, webhook-processor, crypto-utils, logger,
+ *        reconciliation (sync/run, /members/:id/sync)
  * @exports router (Express)
  * @dr DR-022, DR-026, DR-027, DR-028, DR-034, DR-035
  *
@@ -2227,6 +2228,37 @@ router.post('/:clientId/members/:memberId/unlock', async (req, res) => {
   } catch (err) {
     log.error('operator.member.unlock_failed', { clientId, memberId }, err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /:clientId/members/:memberId/sync ─────────────────────────
+// Manual per-member reconciliation. Triggered from the member drawer
+// "Reconcile Member" button. Runs the full Wix ↔ DB ↔ hardware diff
+// for one member and surfaces integrity issues that need operator action.
+//
+// Closes OB-49 at the per-member level (global level remains open).
+//
+// Returns:
+//   { ok: true, action, granted, revoked, repaired, alerts: [...] }
+//
+// Possible actions: ok | repaired | access_restored | access_removed |
+//                   needs_attention | wix_unavailable | no_identity |
+//                   sub_member_skipped
+router.post('/:clientId/members/:memberId/sync', async (req, res) => {
+  const { clientId, memberId } = req.params;
+  if (!clientId || !memberId) return res.status(400).json({ error: 'clientId and memberId required' });
+  try {
+    const reconciliation = require('../../core/reconciliation');
+    const result = await reconciliation.reconcileMember(memberId, clientId);
+    log.info('operator.member_sync.run', {
+      clientId, memberId, action: result.action,
+      granted: result.granted, revoked: result.revoked, repaired: result.repaired,
+      alerts: result.alerts.length,
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    log.error('operator.member_sync.failed', { clientId, memberId }, err);
+    res.status(500).json({ error: 'Reconcile failed' });
   }
 });
 

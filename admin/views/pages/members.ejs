@@ -834,8 +834,12 @@
         '<div id="drawerTabDiagnose" class="drawer-tab-content"><div style="color:var(--muted);font-size:13px;padding:16px 0;">Click Diagnose to run checks.</div></div>' +
         '<div id="drawerTabTimeline" class="drawer-tab-content"><div style="color:var(--muted);font-size:13px;padding:16px 0;">Click Timeline to load events.</div></div>';
 
+      // Members API returns plan holders only (sub-members deferred — family plan post-HOG).
+      // reconcileMember server-side guards against sub-members anyway, so this is belt-and-suspenders.
+      var canReconcile = !!_drawerClientId;
       document.getElementById('drawerFooter').innerHTML =
         '<button class="drawer-btn secondary" onclick="closeDrawer()">Close</button>' +
+        (canReconcile ? '<button class="drawer-btn secondary" id="reconcileBtn" onclick="reconcileMember(\'' + m.id + '\')" title="Re-check Wix and the hardware system, repair any database drift">Reconcile Member</button>' : '') +
         (m.status === 'failed'    ? '<button class="drawer-btn primary" onclick="retryMember(\''  + m.id + '\');closeDrawer()">Retry</button>' : '') +
         (m.status === 'in_flight' ? '<button class="drawer-btn primary" onclick="unlockMember(\'' + m.id + '\');closeDrawer()">Clear Stuck Lock</button>' : '');
 
@@ -919,6 +923,135 @@
         renderStats(); applyFilters();
         showToast('success', m.firstName + ' now has access');
       }, 2500);
+    }
+
+    // Build the humanized result panel from /members/:id/sync response
+    function renderReconcileResult(data) {
+      var actionMap = {
+        ok: {
+          tone: 'healthy',
+          title: 'All clear',
+          body: 'Everything checks out. This member’s access matches what they’re paying for, and the database is in sync with the hardware.',
+        },
+        repaired: {
+          tone: 'healthy',
+          title: 'Repaired ' + (data.repaired || 0) + ' issue' + ((data.repaired || 0) === 1 ? '' : 's'),
+          body: 'Found and fixed missing database entries for this member. Hardware access wasn’t affected — we just rebuilt the tracking records. The repair runs in the background and should finish within a minute.',
+        },
+        access_restored: {
+          tone: 'healthy',
+          title: 'Access restored',
+          body: 'We restored door access for this member. They had an active plan but weren’t provisioned in the hardware. They should have access within a minute or two.',
+        },
+        access_removed: {
+          tone: 'degraded',
+          title: 'Access removed',
+          body: 'We removed door access for this member. Their plan is no longer active, but they were still in the hardware system.',
+        },
+        needs_attention: {
+          tone: 'degraded',
+          title: 'Needs your attention',
+          body: 'We found something that needs a human decision before we change anything. See the details below.',
+        },
+        wix_unavailable: {
+          tone: 'failed',
+          title: 'Couldn’t reach Wix',
+          body: 'We couldn’t pull this member’s plan information from Wix right now. No changes were made. Try again in a few minutes.',
+        },
+        no_identity: {
+          tone: 'degraded',
+          title: 'Member not provisioned',
+          body: 'No record of this member in AccessSync yet. They may not have purchased a plan, or onboarding may not be complete.',
+        },
+        sub_member_skipped: {
+          tone: 'degraded',
+          title: 'Reconcile the plan holder instead',
+          body: 'This is a sub-member on a multi-member plan. Their access is managed through the plan holder — reconcile the holder to fix this member’s access.',
+        },
+      };
+      var spec = actionMap[data.action] || {
+        tone: 'failed',
+        title: 'Unexpected response',
+        body: 'AccessSync returned a result it didn’t recognize. Refresh and try again, or contact support.',
+      };
+
+      var html = '<div class="verdict-banner ' + spec.tone + '" style="margin-top:8px;">' + esc(spec.title) + '</div>';
+      html += '<div style="font-size:12.5px;color:var(--text);line-height:1.55;margin-bottom:14px;">' + esc(spec.body) + '</div>';
+
+      // Action counts (only for grant/revoke/repair actions)
+      var counts = [];
+      if (data.granted)  counts.push(data.granted  + ' grant'  + (data.granted  === 1 ? '' : 's')  + ' queued');
+      if (data.revoked)  counts.push(data.revoked  + ' revoke' + (data.revoked  === 1 ? '' : 's') + ' queued');
+      if (data.repaired) counts.push(data.repaired + ' repair' + (data.repaired === 1 ? '' : 's') + ' queued');
+      if (counts.length) {
+        html += '<div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">' + esc(counts.join(' · ')) + '</div>';
+      }
+
+      // Alerts list
+      if (data.alerts && data.alerts.length) {
+        html += '<div class="drawer-section-label" style="margin-top:8px;">What we found</div>';
+        data.alerts.forEach(function(a) {
+          var level = (data.action === 'wix_unavailable') ? 'error' : 'warn';
+          html += '<div class="finding-item">' +
+            '<span class="finding-level ' + level + '">' + (level === 'error' ? 'Issue' : 'Review') + '</span>' +
+            '<span class="finding-msg">' + esc(a.detail || a.code) + '</span>' +
+          '</div>';
+        });
+
+        // Add a contextual link for known integrity codes
+        var hasMappingIssue = data.alerts.some(function(a) {
+          return a.code === 'no_mapping_for_plan' ||
+                 a.code === 'mapping_missing_group' ||
+                 a.code === 'duplicate_mappings_for_plan';
+        });
+        if (hasMappingIssue && _drawerClientId) {
+          html += '<div style="margin-top:12px;">' +
+            '<a href="/plan-mapping?clientId=' + esc(_drawerClientId) + '" ' +
+            'style="font-size:12px;color:var(--brand);text-decoration:none;font-weight:600;">' +
+            'Open Plan Mappings →</a></div>';
+        }
+      }
+
+      return html;
+    }
+
+    function reconcileMember(memberId) {
+      if (!_drawerClientId) { showToast('error', 'No client context — refresh and try again.'); return; }
+      var btn = document.getElementById('reconcileBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Reconciling…'; }
+
+      // Insert result panel above the tabs so it's the first thing the operator sees
+      var body = document.getElementById('drawerBody');
+      var existing = document.getElementById('reconcileResultPanel');
+      if (existing) existing.remove();
+      var panel = document.createElement('div');
+      panel.id = 'reconcileResultPanel';
+      panel.style.padding = '0 24px 12px';
+      panel.innerHTML = '<div style="color:var(--muted);font-size:12.5px;padding:14px 0;">Re-checking Wix and the hardware system…</div>';
+      body.insertBefore(panel, body.firstChild);
+
+      var url = '/operator/' + _drawerClientId + '/members/' + memberId + '/sync';
+      apiFetch(url, { method: 'POST' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (!data || !data.ok) {
+            panel.innerHTML = '<div class="verdict-banner failed" style="margin-top:8px;">Reconcile failed</div>' +
+              '<div style="font-size:12.5px;color:var(--text);line-height:1.55;">' +
+              esc((data && data.error) || 'AccessSync couldn’t complete the reconcile. Try again, or check the error queue.') +
+              '</div>';
+            return;
+          }
+          panel.innerHTML = renderReconcileResult(data);
+        })
+        .catch(function() {
+          panel.innerHTML = '<div class="verdict-banner failed" style="margin-top:8px;">Request failed</div>' +
+            '<div style="font-size:12.5px;color:var(--text);line-height:1.55;">' +
+            'We couldn’t reach AccessSync to run the reconcile. Check your connection and try again.' +
+            '</div>';
+        })
+        .then(function() {
+          if (btn) { btn.disabled = false; btn.textContent = 'Reconcile Member'; }
+        });
     }
 
     function unlockMember(memberId) {
