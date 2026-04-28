@@ -34,7 +34,11 @@ const als = new AsyncLocalStorage();
 
 let _db = null;
 function getDb() {
-  if (!_db) _db = require('../db');
+  if (_db !== null) return _db;
+  // Tolerate environments without DATABASE_URL (tests, isolated tooling).
+  // db.js process.exit(1)s if the env var is missing, so we guard the require.
+  if (!process.env.DATABASE_URL) { _db = false; return null; }
+  try { _db = require('../db'); } catch (_e) { _db = false; return null; }
   return _db;
 }
 
@@ -130,9 +134,12 @@ function mintTraceId() {
  */
 function registerTrace(traceId, opts = {}) {
   if (!traceId) return;
+  // Skip entirely when no DB is configured — keeps tests / isolated tooling clean.
+  if (!process.env.DATABASE_URL) return;
   setImmediate(async () => {
     try {
       const db = getDb();
+      if (!db || typeof db.query !== 'function') return;
 
       let clientName = null;
       let memberName = null;
