@@ -32,6 +32,7 @@ const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const { decryptApiKey } = require('./crypto-utils');
 const { log } = require('./logger');
+const { getTraceId, getActor } = require('./trace-context');
 
 /**
  * Suspend all active member access at a location.
@@ -120,10 +121,11 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
         [row.member_id]
       );
 
+      const _actor = getActor() || {};
       await db.query(
-        `INSERT INTO member_access_log (member_id, client_id, event_type, credential_type, created_at)
-         VALUES ($1, $2, 'location_suspended', 'location_lapse', NOW())`,
-        [row.member_id, clientId]
+        `INSERT INTO member_access_log (member_id, client_id, event_type, credential_type, created_at, trace_id, actor_type, actor_id)
+         VALUES ($1, $2, 'location_suspended', 'location_lapse', NOW(), $3, $4, $5)`,
+        [row.member_id, clientId, getTraceId() || null, _actor.type || null, _actor.id || null]
       );
 
       suspended++;

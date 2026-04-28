@@ -20,6 +20,7 @@ const { suspendLocationMembers } = require('../../core/location-lapse');
 const { logAdminAction } = require('../middleware/audit');
 const { log } = require('../../core/logger');
 const hardwareAdapter = require('../../adapters/hardware-adapter');
+const { getTraceId, getActor } = require('../../core/trace-context');
 
 // hardware_platform is intentionally excluded — blocked once members are provisioned (GAP 1/2)
 const EDITABLE_FIELDS = ['name', 'tier', 'notification_email', 'status', 'source_site_id', 'source_site_name', 'platform'];
@@ -576,11 +577,14 @@ router.delete('/:id', async (req, res) => {
     await pgClient.query('BEGIN');
 
     // Log deletion before cascade (adapter_admin_log has no CASCADE — survives)
-    await pgClient.query(
-      `INSERT INTO adapter_admin_log (client_id, event_type, admin_action, details, target_entity, target_id, result, configured_at)
-       VALUES ($1, 'client_deleted', 'client_deleted', $2, 'client', $1, 'success', NOW())`,
-      [id, JSON.stringify({ name: clientName, deleted_at: new Date().toISOString() })]
-    );
+    {
+      const _actor = getActor() || {};
+      await pgClient.query(
+        `INSERT INTO adapter_admin_log (client_id, event_type, admin_action, details, target_entity, target_id, result, configured_at, trace_id, actor_type, actor_id)
+         VALUES ($1, 'client_deleted', 'client_deleted', $2, 'client', $1, 'success', NOW(), $3, $4, $5)`,
+        [id, JSON.stringify({ name: clientName, deleted_at: new Date().toISOString() }), getTraceId() || null, _actor.type || null, _actor.id || null]
+      );
+    }
 
     // Clean orphan-safe tables before cascade
     await pgClient.query('DELETE FROM webhook_log WHERE client_id = $1', [id]);

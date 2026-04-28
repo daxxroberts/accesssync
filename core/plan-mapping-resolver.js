@@ -20,6 +20,7 @@
 const db = require('../db');
 const { decryptApiKey } = require('./crypto-utils');
 const { log } = require('./logger');
+const { getTraceId, getActor, setTraceContext } = require('./trace-context');
 
 class PlanMappingResolver {
 
@@ -45,6 +46,8 @@ class PlanMappingResolver {
               COALESCE(pmg.hardware_group_id, pm.hardware_group_id) AS hardware_group_id,
               pm.tier_name,
               pm.access_type,
+              pm.plan_name,
+              pm.door_name,
               COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform,
               COALESCE(l.hardware_api_key, c.hardware_api_key) AS hardware_api_key_enc
        FROM plan_mappings pm
@@ -74,12 +77,28 @@ class PlanMappingResolver {
       }
 
       log.warn('plan.not_mapped', { tenantId, planId });
+      const _actor = getActor() || {};
       await db.query(
-        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
-         VALUES ($1, 'missing_group', $2)`,
-        [tenantId, planId]
+        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+         VALUES ($1, 'missing_group', $2, $3, $4, $5)`,
+        [tenantId, planId, getTraceId() || null, _actor.type || null, _actor.id || null]
       ).catch(e => log.error('plan.alert_log_failed', { tenantId, planId }, e));
       return null;
+    }
+
+    // Enrich trace_context with plan/door/mapping context now that they're resolved.
+    // Use the first row (typical case: single plan, single door). For multi-door
+    // mappings we still surface the first door's name — log viewer cards can show
+    // the full set on demand from member_role_assignments.
+    const _tid = getTraceId();
+    if (_tid && result.rows[0]) {
+      const r0 = result.rows[0];
+      setTraceContext(_tid, {
+        clientId:  tenantId,
+        planName:  r0.plan_name || null,
+        doorName:  r0.door_name || null,
+        mappingId: r0.id        || null,
+      });
     }
 
     return result.rows.map(row => ({

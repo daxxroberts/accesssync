@@ -7,6 +7,7 @@
 
 const db = require('../../db');
 const { log } = require('../../core/logger');
+const { getTraceId, getActor } = require('../../core/trace-context');
 
 /**
  * Log an admin action for audit trail.
@@ -18,10 +19,11 @@ const { log } = require('../../core/logger');
  */
 async function logAdminAction(clientId, action, details, targetEntity = 'client', targetId = null) {
   try {
+    const _actor = getActor() || {};
     await db.query(
-      `INSERT INTO adapter_admin_log (client_id, event_type, admin_action, details, target_entity, target_id, result, configured_at)
-       VALUES ($1, $2, $2, $3, $4, $5, 'success', NOW())`,
-      [clientId, action, JSON.stringify(details), targetEntity, targetId || clientId]
+      `INSERT INTO adapter_admin_log (client_id, event_type, admin_action, details, target_entity, target_id, result, configured_at, trace_id, actor_type, actor_id)
+       VALUES ($1, $2, $2, $3, $4, $5, 'success', NOW(), $6, $7, $8)`,
+      [clientId, action, JSON.stringify(details), targetEntity, targetId || clientId, getTraceId() || null, _actor.type || null, _actor.id || null]
     );
   } catch (err) {
     log.error('admin.audit_log_failed', { clientId, action }, err);

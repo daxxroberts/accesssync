@@ -15,6 +15,7 @@
 const db = require('../db');
 const hardwareAdapter = require('./hardware-adapter');
 const { log } = require('../core/logger');
+const { getTraceId, setTraceContext } = require('../core/trace-context');
 
 class StandardAdapter {
 
@@ -141,6 +142,11 @@ class StandardAdapter {
       this._incrementActivity(tenantId, 'events_received').catch(err =>
         log.warn('adapter.activity_update_failed', { field: 'events_received' }, err)
       );
+
+      // Enrich trace_context with the resolved memberId so the log viewer's
+      // member_name / hardware_user_id / etc. populate. Fire-and-forget.
+      const _tid = getTraceId();
+      if (_tid && memberId) setTraceContext(_tid, { clientId: tenantId, memberId });
 
       if (hardwarePlatform !== null) {
         return { memberId };

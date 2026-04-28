@@ -28,7 +28,7 @@ const { decryptApiKey } = require('./crypto-utils');
 const { listActiveOrders, listConfirmedBookings } = require('../adapters/wix/wix-plans-api');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { log, withTrace } = require('./logger');
-const { runWith, mintTraceId } = require('./trace-context');
+const { runWith, mintTraceId, getTraceId, getActor } = require('./trace-context');
 
 class NightlyReconciliation {
 
@@ -176,10 +176,11 @@ class NightlyReconciliation {
         wixStatus: err.status || null,
         wixCode:   err.code || null,
       }, err);
+      const _actor = getActor() || {};
       await db.query(
-        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
-         VALUES ($1, 'wix_api_unavailable', $2)`,
-        [client.id, `status=${err.status || 'unknown'} code=${err.code || 'unknown'}`]
+        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+         VALUES ($1, 'wix_api_unavailable', $2, $3, $4, $5)`,
+        [client.id, `status=${err.status || 'unknown'} code=${err.code || 'unknown'}`, getTraceId() || null, _actor.type || null, _actor.id || null]
       ).catch(() => {}); // Fault-tolerant — never block digest
       // Abort this client's sync. Do NOT fall through to compare/revoke.
       return { granted: 0, revoked: 0, aborted: true, reason: 'wix_api_unavailable' };
@@ -329,6 +330,13 @@ class NightlyReconciliation {
    */
   async reconcileMember(memberId, clientId) {
     const traceId = crypto.randomUUID();
+    return runWith(
+      { traceId, actor: { type: 'system', id: 'reconcileMember' } },
+      () => this._reconcileMemberBody(memberId, clientId, traceId)
+    );
+  }
+
+  async _reconcileMemberBody(memberId, clientId, traceId) {
     const result = { action: null, granted: 0, revoked: 0, repaired: 0, alerts: [] };
 
     // 1. Load client + verify active and configured
@@ -475,9 +483,9 @@ class NightlyReconciliation {
       // Log to config_alert_log so the nightly digest surfaces unresolved issues
       for (const a of result.alerts) {
         await db.query(
-          `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
-           VALUES ($1, $2, $3)`,
-          [clientId, a.code, a.planId || platformMemberId]
+          `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+           VALUES ($1, $2, $3, $4, 'system', 'reconcileMember')`,
+          [clientId, a.code, a.planId || platformMemberId, traceId]
         ).catch(e => log.error('reconcileMember.alert_log_failed', { clientId, code: a.code }, e));
       }
       result.action = 'needs_attention';
@@ -526,9 +534,9 @@ class NightlyReconciliation {
         detail: 'This member has door access in the hardware system, but we can’t find a reason for it — no active plan, no booking, no operator override. Review the member’s history and decide whether to keep or remove their access.',
       });
       await db.query(
-        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
-         VALUES ($1, 'untraceable_hardware_access', $2)`,
-        [clientId, platformMemberId]
+        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+         VALUES ($1, 'untraceable_hardware_access', $2, $3, 'system', 'reconcileMember')`,
+        [clientId, platformMemberId, traceId]
       ).catch(e => log.error('reconcileMember.alert_log_failed', { clientId }, e));
       result.action = 'needs_attention';
       log.info('reconcileMember.untraceable', { clientId, memberId, platformMemberId, traceId });
@@ -647,10 +655,11 @@ class NightlyReconciliation {
       // 'locked' is the canonical field. Adapters are responsible for mapping platform-specific fields.
       const lockedDoors = locks.filter(l => l.locked === true);
       for (const door of lockedDoors) {
+        const _actor = getActor() || {};
         await db.query(
-          `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, last_seen_at)
-           VALUES ($1, 'lockdown_detected', $2, NOW())`,
-          [loc.client_id, String(door.id || door.name || 'unknown')]
+          `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, last_seen_at, trace_id, actor_type, actor_id)
+           VALUES ($1, 'lockdown_detected', $2, NOW(), $3, $4, $5)`,
+          [loc.client_id, String(door.id || door.name || 'unknown'), getTraceId() || null, _actor.type || null, _actor.id || null]
         ).catch(e => log.error('reconciliation.lockdown_alert_failed', { clientId: loc.client_id }, e));
       }
     }

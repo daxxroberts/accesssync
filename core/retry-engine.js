@@ -18,6 +18,7 @@
 
 const db = require('../db');
 const { log } = require('./logger');
+const { getTraceId, getActor } = require('./trace-context');
 
 class RetryEngine {
   constructor() {
@@ -120,6 +121,7 @@ class RetryEngine {
         }
       }
 
+      const _actor = getActor() || {};
       await db.query(
         `INSERT INTO error_queue
            (client_id, member_id, event_type, payload, error_reason,
@@ -127,8 +129,9 @@ class RetryEngine {
             http_status, raw_api_body,
             retry_count, status,
             plan_name, door_name, location_id,
-            occurred_count, last_occurred_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'failed',$13,$14,$15,1,NOW())`,
+            occurred_count, last_occurred_at,
+            trace_id, actor_type, actor_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'failed',$13,$14,$15,1,NOW(),$16,$17,$18)`,
         [
           tenantId          || null,
           memberId          || null,
@@ -145,6 +148,9 @@ class RetryEngine {
           planName          || null,
           doorName          || null,
           locationId        || null,
+          getTraceId()      || null,
+          _actor.type       || null,
+          _actor.id         || null,
         ]
       );
     } catch (dbErr) {
@@ -204,10 +210,11 @@ class RetryEngine {
     } catch (notifyErr) {
       // Notification failure → write to config_alert_log so nightly digest catches it
       log.error('retry.notify.send_failed', { tenantId }, notifyErr);
+      const _actor = getActor() || {};
       await db.query(
-        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
-         VALUES ($1, 'notification_delivery_failed', $2)`,
-        [tenantId || null, notifyErr.message]
+        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+         VALUES ($1, 'notification_delivery_failed', $2, $3, $4, $5)`,
+        [tenantId || null, notifyErr.message, getTraceId() || null, _actor.type || null, _actor.id || null]
       ).catch(() => {}); // Best-effort — never crash on notification failure
     }
   }

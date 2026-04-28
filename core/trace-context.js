@@ -213,6 +213,115 @@ function registerTrace(traceId, opts = {}) {
   });
 }
 
+/**
+ * Update an existing trace_context row with member/plan/door context
+ * resolved AFTER the entry point. Fire-and-forget; never throws.
+ *
+ * Use this from L3/L4 sites where memberId/planName/doorName/mappingId
+ * become known mid-request (resolveAndLock, plan-mapping-resolver, etc.).
+ * Re-resolves member name + hardware identifiers from member_identity
+ * when memberId is provided, mirroring registerTrace.
+ *
+ * @param {string} traceId
+ * @param {Object} opts
+ * @param {string} [opts.clientId]   - upgrade NULL clientId once tenant is resolved
+ * @param {string} [opts.memberId]   - member_identity.id (UUID) — triggers name lookup
+ * @param {string} [opts.planName]
+ * @param {string} [opts.doorName]
+ * @param {string} [opts.mappingId]
+ */
+function setTraceContext(traceId, opts = {}) {
+  if (!traceId) return;
+  setImmediate(async () => {
+    try {
+      const db = getDb();
+      if (!db || typeof db.query !== 'function') return;
+
+      // Resolve member fields if memberId given. We re-resolve here (rather than
+      // requiring the caller to pass names) so any caller who knows the memberId
+      // gets full enrichment for free.
+      let memberFields = null;
+      if (opts.memberId) {
+        const mr = await db.query(
+          `SELECT first_name, last_name, display_name, email,
+                  platform_member_id, source_platform,
+                  hardware_platform, hardware_user_id
+           FROM member_identity WHERE id = $1 LIMIT 1`,
+          [opts.memberId]
+        );
+        if (mr.rows[0]) {
+          const m = mr.rows[0];
+          memberFields = {
+            member_id:          opts.memberId,
+            member_name:        m.display_name || [m.first_name, m.last_name].filter(Boolean).join(' ') || null,
+            member_email:       m.email,
+            platform_member_id: m.platform_member_id,
+            source_platform:    m.source_platform,
+            hardware_platform:  m.hardware_platform,
+            hardware_user_id:   m.hardware_user_id,
+          };
+        } else {
+          memberFields = { member_id: opts.memberId };
+        }
+      }
+
+      // Build SET clauses dynamically. COALESCE preserves any value already
+      // populated by the entry-point registerTrace — we only fill nulls,
+      // never overwrite a known-good value.
+      const sets = [];
+      const params = [traceId];
+      const push = (col, val) => {
+        if (val === undefined || val === null) return;
+        params.push(val);
+        sets.push(`${col} = COALESCE(${col}, $${params.length})`);
+      };
+
+      push('client_id',  opts.clientId);
+      if (memberFields) {
+        push('member_id',          memberFields.member_id);
+        push('member_name',        memberFields.member_name);
+        push('member_email',       memberFields.member_email);
+        push('platform_member_id', memberFields.platform_member_id);
+        push('source_platform',    memberFields.source_platform);
+        push('hardware_platform',  memberFields.hardware_platform);
+        push('hardware_user_id',   memberFields.hardware_user_id);
+      }
+      push('plan_name',  opts.planName);
+      push('door_name',  opts.doorName);
+      push('mapping_id', opts.mappingId);
+
+      // Resolve client_name if clientId is being upgraded and we have one.
+      if (opts.clientId) {
+        const cr = await db.query(
+          'SELECT name FROM clients WHERE id = $1 LIMIT 1',
+          [opts.clientId]
+        );
+        const clientName = cr.rows[0]?.name || null;
+        if (clientName) {
+          params.push(clientName);
+          sets.push(`client_name = COALESCE(client_name, $${params.length})`);
+        }
+      }
+
+      if (sets.length === 0) return; // nothing to update
+
+      await db.query(
+        `UPDATE trace_context SET ${sets.join(', ')} WHERE trace_id = $1`,
+        params
+      );
+    } catch (err) {
+      try {
+        process.stdout.write(JSON.stringify({
+          ts: new Date().toISOString(), level: 'warn',
+          event: 'trace_context.update_failed',
+          error: { message: err.message, code: err.code },
+          traceId,
+        }) + '\n');
+      } catch (_) { /* stdout closed */ }
+    }
+  });
+}
+
 module.exports = {
   runWith,
   setActor,
@@ -221,4 +330,5 @@ module.exports = {
   getActor,
   mintTraceId,
   registerTrace,
+  setTraceContext,
 };

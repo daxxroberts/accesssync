@@ -33,6 +33,7 @@ const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
+const { getTraceId, getActor } = require('../../core/trace-context');
 const { recordActivity } = require('../middleware/activity');
 
 // Global rate limiter on all operator read endpoints (500 req/min/IP)
@@ -296,11 +297,13 @@ async function validateApiKeyGroups(clientId, apiKey, hardwarePlatform) {
     } catch (err) {
       const isAuthError = err.statusCode === 401 || err.statusCode === 403;
       if (isAuthError) {
+        const _actor = getActor() || {};
+        const _tid = getTraceId() || null;
         for (const { hardware_group_id } of groups.rows) {
           await db.query(
-            `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, created_at)
-             VALUES ($1, 'api_key_invalid_after_rotation', $2, NOW())`,
-            [clientId, hardware_group_id]
+            `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, created_at, trace_id, actor_type, actor_id)
+             VALUES ($1, 'api_key_invalid_after_rotation', $2, NOW(), $3, $4, $5)`,
+            [clientId, hardware_group_id, _tid, _actor.type || null, _actor.id || null]
           );
         }
         log.warn('operator.apikey.key_invalid_after_rotation', { clientId, groupCount: groups.rows.length });

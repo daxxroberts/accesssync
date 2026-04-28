@@ -22,6 +22,7 @@ const db = require('../db');
 const tenantResolver = require('./tenant-resolver');
 const { getRedisConnection } = require('./redis-utils');
 const { log } = require('./logger');
+const { getTraceId, getActor, setTraceContext } = require('./trace-context');
 
 const connection = getRedisConnection();
 
@@ -78,6 +79,10 @@ class WebhookProcessor {
     if (!tenantId && standardEvent.platformClientIdHint) {
       tenantId = await tenantResolver.resolveByClientId(standardEvent.platformClientIdHint);
     }
+
+    // Backfill trace_context.client_id once tenant resolves. Webhook entry-point
+    // didn't know the clientId at mint time. Fire-and-forget; never blocks.
+    if (tenantId && traceId) setTraceContext(traceId, { clientId: tenantId });
 
     // 4b. Log to webhook_log for Admin Hub Webhook Inspector (after tenant known)
     await this.logWebhookAttempt({
@@ -188,13 +193,17 @@ class WebhookProcessor {
         ? reason
         : 'malformed_payload';
 
+      const _actor = getActor() || {};
       await db.query(
-        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
-         VALUES ($1, $2, $3)`,
+        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           process.env.DEFAULT_TENANT_ID || null,
           alertType,
-          eventId
+          eventId,
+          getTraceId() || null,
+          _actor.type || null,
+          _actor.id   || null,
         ]
       );
     } catch (err) {

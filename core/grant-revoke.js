@@ -26,6 +26,7 @@ const hardwareAdapter = require('../adapters/hardware-adapter');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { decryptApiKey } = require('./crypto-utils');
 const { log } = require('./logger');
+const { getTraceId, getActor } = require('./trace-context');
 
 class GrantRevokeLogic {
 
@@ -182,6 +183,8 @@ class GrantRevokeLogic {
             stage: 'grant', result: 'failed',
           }, err);
           // Flag the specific dead group — mapping stays active, other groups keep working
+          const _tid = getTraceId() || null;
+          const _actor = getActor() || {};
           setImmediate(() => {
             db.query(
               `UPDATE plan_mapping_groups SET health_status = 'not_found'
@@ -189,9 +192,9 @@ class GrantRevokeLogic {
               [mapping.mappingId, mapping.hardwareGroupId]
             ).catch(() => {});
             db.query(
-              `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
-               VALUES ($1, 'group_not_found', $2)`,
-              [tenantId, mapping.hardwareGroupId]
+              `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+               VALUES ($1, 'group_not_found', $2, $3, $4, $5)`,
+              [tenantId, mapping.hardwareGroupId, _tid, _actor.type || null, _actor.id || null]
             ).catch(() => {});
           });
           failedGroups.push({ mapping, err });
@@ -222,10 +225,11 @@ class GrantRevokeLogic {
     // not produce a new provisioned entry — they are duplicates from Wix multi-firing
     // the same purchase event (orderCreated / orderPurchased / orderStarted).
     if (newHardwareCallMade) {
+      const _actor = getActor() || {};
       await db.query(
-        `INSERT INTO member_access_log (member_id, client_id, event_type)
-         VALUES ($1, $2, 'provisioned')`,
-        [memberId, tenantId]
+        `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id)
+         VALUES ($1, $2, 'provisioned', $3, $4, $5)`,
+        [memberId, tenantId, getTraceId() || null, _actor.type || null, _actor.id || null]
       );
     } else {
       log.info('grant.log.skipped_duplicate', {
@@ -265,10 +269,13 @@ class GrantRevokeLogic {
           hardwarePlatform, apiKey, hardwareUserId,
           `Payment failed on ${new Date().toISOString()}`
         );
-        await db.query(
-          `INSERT INTO member_access_log (member_id, client_id, event_type) VALUES ($1, $2, 'disabled')`,
-          [memberId, tenantId]
-        );
+        {
+          const _actor = getActor() || {};
+          await db.query(
+            `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id) VALUES ($1, $2, 'disabled', $3, $4, $5)`,
+            [memberId, tenantId, getTraceId() || null, _actor.type || null, _actor.id || null]
+          );
+        }
         return 'disabled';
       }
 
@@ -339,10 +346,13 @@ class GrantRevokeLogic {
           }
         }
 
-        await db.query(
-          `INSERT INTO member_access_log (member_id, client_id, event_type) VALUES ($1, $2, 'revoked')`,
-          [memberId, tenantId]
-        );
+        {
+          const _actor = getActor() || {};
+          await db.query(
+            `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id) VALUES ($1, $2, 'revoked', $3, $4, $5)`,
+            [memberId, tenantId, getTraceId() || null, _actor.type || null, _actor.id || null]
+          );
+        }
         return 'revoked';
       }
 
@@ -350,15 +360,19 @@ class GrantRevokeLogic {
         if (hardwareUserId) {
           await hardwareAdapter.deleteUser(hardwarePlatform, apiKey, hardwareUserId);
         }
-        await db.query(
-          `INSERT INTO member_access_log (member_id, client_id, event_type) VALUES ($1, $2, 'deleted')`,
-          [memberId, tenantId]
-        );
-        await db.query(
-          `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref)
-           VALUES ($1, 'member_deleted_review', $2)`,
-          [tenantId, hardwareUserId || wixEvent.platformMemberId]
-        );
+        {
+          const _actor = getActor() || {};
+          const _tid   = getTraceId() || null;
+          await db.query(
+            `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id) VALUES ($1, $2, 'deleted', $3, $4, $5)`,
+            [memberId, tenantId, _tid, _actor.type || null, _actor.id || null]
+          );
+          await db.query(
+            `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+             VALUES ($1, 'member_deleted_review', $2, $3, $4, $5)`,
+            [tenantId, hardwareUserId || wixEvent.platformMemberId, _tid, _actor.type || null, _actor.id || null]
+          );
+        }
         return 'deleted';
       }
 
