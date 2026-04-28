@@ -21,7 +21,7 @@
 
 'use strict';
 
-const { runWith, mintTraceId } = require('../../core/trace-context');
+const { runWith, mintTraceId, registerTrace } = require('../../core/trace-context');
 
 const VALID_TRACE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -63,6 +63,24 @@ function traceContextMiddleware(req, res, next) {
   const actor = resolveActor(req);
 
   res.setHeader('x-trace-id', traceId);
+
+  // Resolve clientId from auth context for trace_context enrichment
+  const clientId = req.admin?.clientId
+    || req.wixOperator?.clientId
+    || req.params?.clientId
+    || null;
+
+  const entryPoint = req.path?.startsWith('/webhook') ? 'webhook'
+    : req.admin?.email ? 'admin_ui'
+    : clientId ? 'operator_ui'
+    : 'api';
+
+  registerTrace(traceId, {
+    entryPoint,
+    clientId,
+    actorType: actor.type,
+    actorId:   actor.id,
+  });
 
   runWith({ traceId, actor }, () => {
     next();

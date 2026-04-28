@@ -40,7 +40,7 @@ const { eventQueue } = require('./webhook-processor');
 const db = require('../db');
 const { decryptApiKey } = require('./crypto-utils');
 const { log, withTrace } = require('./logger');
-const { runWith }        = require('./trace-context');
+const { runWith, registerTrace } = require('./trace-context');
 
 const connection = getRedisConnection();
 
@@ -279,6 +279,18 @@ async function _processJobBody(job, traceId) {
         clientId, memberId, eventId, hardwareUserId,
         platformMemberId: standardEvent.platformMemberId,
         stage: 'identity', result: 'success',
+      });
+
+      // Enrich trace_context now that we have full member + hardware context (DR-041)
+      registerTrace(traceId, {
+        entryPoint:   'queue',
+        clientId,
+        memberId,
+        actorType:    'system',
+        actorId:      'queue-worker',
+        planName:     mappings[0]?.planName   || null,
+        doorName:     mappings[0]?.doorName   || null,
+        mappingId:    mappings[0]?.mappingId  || null,
       });
       // Two-phase provisioning: if startDate is more than 1 minute in the future,
       // park as pending_start — Kisi user exists but group assignment is deferred.

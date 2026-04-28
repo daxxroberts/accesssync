@@ -43,34 +43,37 @@ function getDb() {
  * @param {Object}  ctx    - { clientId, ...any other relevant fields }
  */
 function recordActivity(req, event, ctx = {}) {
-  const traceId = getTraceId();
-  const actor   = getActor();
+  const traceId  = getTraceId();
+  const actor    = getActor();
   const clientId = ctx.clientId || null;
 
-  // Build context — strip clientId to avoid duplication in the row
-  const context = { ...ctx };
-  delete context.clientId;
+  // diff — everything except clientId, stored in the activity_event.diff column
+  const diff = { ...ctx };
+  delete diff.clientId;
 
-  // Augment with request metadata when useful
-  if (req) {
-    const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null);
-    if (ip) context.ip = ip;
-  }
+  // request_meta — standard HTTP context for audit trail
+  const requestMeta = req ? {
+    method:     req.method,
+    path:       req.originalUrl || req.path,
+    ip:         req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null,
+    user_agent: req.headers?.['user-agent'] || null,
+  } : null;
 
   setImmediate(() => {
     const db = getDb();
     if (!db || typeof db.query !== 'function') return;
     db.query(
       `INSERT INTO activity_event
-         (client_id, event, actor_type, actor_id, trace_id, context)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+         (client_id, action, actor_type, actor_id, trace_id, diff, request_meta)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         clientId,
         event,
         actor?.type || null,
         actor?.id   || null,
         traceId     || null,
-        JSON.stringify(context),
+        Object.keys(diff).length ? JSON.stringify(diff) : null,
+        requestMeta ? JSON.stringify(requestMeta) : null,
       ]
     ).catch((err) => {
       // Never propagate — activity logging must never break the main path.
