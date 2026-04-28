@@ -179,13 +179,7 @@ function App() {
             type="text"
             placeholder="Search by name, email, or plan…"
             value={query}
-            onChange={e => {
-              console.log("[members search] onChange fired:", JSON.stringify(e.target.value), "members.length=", members.length);
-              setQuery(e.target.value);
-              setPage(1);
-            }}
-            onFocus={() => console.log("[members search] focus")}
-            onBlur={() => console.log("[members search] blur")}
+            onChange={e => { setQuery(e.target.value); setPage(1); }}
           />
           {!query && <kbd>⌘K</kbd>}
           {query && (
