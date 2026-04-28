@@ -129,17 +129,35 @@ class MemberSyncApi {
         [identity.id]
       );
 
-      // Return raw fields — Velo (OB-07) maps these to UI states:
-      //   status='active' + provisionedAt → "YOUR ACCESS IS ACTIVE"
-      //   status='in_flight'              → "SYNCING"
-      //   status='failed' || lastEvent.errorCode → "ERROR"
-      //   status=null (not found)         → "PENDING" (webhook not yet processed)
+      const access = rolesResult.rows.map(r => ({
+        planName:     r.plan_name,
+        doorName:     r.door_name,
+        locationName: r.location_name,
+        groupId:      r.hardware_group_id,
+      }));
+
+      // Invariant: status='active' requires at least one role assignment.
+      // If state says active but assignments resolve to none, the record is
+      // orphaned (state-only grant, missing assignment row, or all mappings
+      // archived). Demote to 'pending' so the UI does not lie.
+      let status = state?.status || null;
+      let stateOrphaned = false;
+      if (status === 'active' && access.length === 0) {
+        log.warn('member.state_orphaned', {
+          memberId: identity.id, platformMemberId, clientId,
+          provisionedAt: state?.provisioned_at,
+        });
+        status = 'pending';
+        stateOrphaned = true;
+      }
+
       return res.status(200).json({
         platformMemberId,
         clientId,
         hardwarePlatform: identity.hardware_platform,
         sourcePlatform:   identity.source_platform,
-        status:               state?.status || null,
+        status,
+        stateOrphaned,
         provisionedAt:        state?.provisioned_at || null,
         updatedAt:            state?.updated_at || null,
         scheduledStartDate:   state?.scheduled_start_date || null,
@@ -149,12 +167,7 @@ class MemberSyncApi {
           errorCode:      lastEvent.error_code,
           createdAt:      lastEvent.created_at,
         } : null,
-        access: rolesResult.rows.map(r => ({
-          planName:     r.plan_name,
-          doorName:     r.door_name,
-          locationName: r.location_name,
-          groupId:      r.hardware_group_id,
-        })),
+        access,
       });
 
     } catch (error) {

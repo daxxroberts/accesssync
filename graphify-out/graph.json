@@ -9,7 +9,7 @@
       "source_file": "db.js",
       "source_location": "L1",
       "id": "db",
-      "community": 19
+      "community": 25
     },
     {
       "label": "getLog()",
@@ -17,7 +17,7 @@
       "source_file": "db.js",
       "source_location": "L21",
       "id": "db_getlog",
-      "community": 19
+      "community": 25
     },
     {
       "label": "query()",
@@ -25,7 +25,7 @@
       "source_file": "db.js",
       "source_location": "L70",
       "id": "db_query",
-      "community": 19
+      "community": 25
     },
     {
       "label": "getClient()",
@@ -33,7 +33,7 @@
       "source_file": "db.js",
       "source_location": "L105",
       "id": "db_getclient",
-      "community": 19
+      "community": 25
     },
     {
       "label": "healthCheck()",
@@ -41,7 +41,7 @@
       "source_file": "db.js",
       "source_location": "L115",
       "id": "db_healthcheck",
-      "community": 19
+      "community": 25
     },
     {
       "label": "jest.config.js",
@@ -49,7 +49,7 @@
       "source_file": "jest.config.js",
       "source_location": "L1",
       "id": "jest_config",
-      "community": 49
+      "community": 64
     },
     {
       "label": "seed.js",
@@ -57,7 +57,7 @@
       "source_file": "seed.js",
       "source_location": "L1",
       "id": "seed",
-      "community": 38
+      "community": 49
     },
     {
       "label": "seed()",
@@ -65,7 +65,7 @@
       "source_file": "seed.js",
       "source_location": "L100",
       "id": "seed_seed",
-      "community": 38
+      "community": 49
     },
     {
       "label": "server.js",
@@ -73,7 +73,7 @@
       "source_file": "admin\\server.js",
       "source_location": "L1",
       "id": "server",
-      "community": 26
+      "community": 32
     },
     {
       "label": "simulate.js",
@@ -81,7 +81,7 @@
       "source_file": "simulate.js",
       "source_location": "L1",
       "id": "simulate",
-      "community": 39
+      "community": 50
     },
     {
       "label": "runSimulation()",
@@ -89,7 +89,7 @@
       "source_file": "simulate.js",
       "source_location": "L35",
       "id": "simulate_runsimulation",
-      "community": 39
+      "community": 50
     },
     {
       "label": "test-screens.js",
@@ -97,7 +97,7 @@
       "source_file": "test-screens.js",
       "source_location": "L1",
       "id": "test_screens",
-      "community": 50
+      "community": 65
     },
     {
       "label": "hardware-adapter.js",
@@ -233,7 +233,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L1",
       "id": "kisi_adapter",
-      "community": 4
+      "community": 6
     },
     {
       "label": "seam-adapter.js",
@@ -241,7 +241,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L1",
       "id": "seam_adapter",
-      "community": 6
+      "community": 8
     },
     {
       "label": "standard-adapter.js",
@@ -353,7 +353,7 @@
       "source_file": "adapters\\wix\\wix-adapter.js",
       "source_location": "L1",
       "id": "wix_adapter",
-      "community": 25
+      "community": 33
     },
     {
       "label": "KisiAdapter",
@@ -361,7 +361,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L15",
       "id": "kisi_adapter_kisiadapter",
-      "community": 4
+      "community": 6
     },
     {
       "label": ".findUserByEmail()",
@@ -369,7 +369,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L20",
       "id": "kisi_adapter_kisiadapter_finduserbyemail",
-      "community": 4
+      "community": 6
     },
     {
       "label": ".createUser()",
@@ -377,7 +377,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L35",
       "id": "kisi_adapter_kisiadapter_createuser",
-      "community": 4
+      "community": 6
     },
     {
       "label": ".assignRole()",
@@ -385,7 +385,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L52",
       "id": "kisi_adapter_kisiadapter_assignrole",
-      "community": 4
+      "community": 6
     },
     {
       "label": ".removeRole()",
@@ -393,7 +393,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L90",
       "id": "kisi_adapter_kisiadapter_removerole",
-      "community": 4
+      "community": 6
     },
     {
       "label": ".suspendAccess()",
@@ -401,7 +401,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L101",
       "id": "kisi_adapter_kisiadapter_suspendaccess",
-      "community": 4
+      "community": 6
     },
     {
       "label": ".enableAccess()",
@@ -409,7 +409,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L113",
       "id": "kisi_adapter_kisiadapter_enableaccess",
-      "community": 4
+      "community": 6
     },
     {
       "label": ".deleteUser()",
@@ -417,7 +417,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L125",
       "id": "kisi_adapter_kisiadapter_deleteuser",
-      "community": 4
+      "community": 6
     },
     {
       "label": ".getGroups()",
@@ -425,7 +425,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L134",
       "id": "kisi_adapter_kisiadapter_getgroups",
-      "community": 4
+      "community": 6
     },
     {
       "label": ".getManagedRoleAssignments()",
@@ -433,7 +433,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L157",
       "id": "kisi_adapter_kisiadapter_getmanagedroleassignments",
-      "community": 4
+      "community": 6
     },
     {
       "label": ".getLocks()",
@@ -441,7 +441,7 @@
       "source_file": "adapters\\kisi\\kisi-adapter.js",
       "source_location": "L201",
       "id": "kisi_adapter_kisiadapter_getlocks",
-      "community": 4
+      "community": 6
     },
     {
       "label": "kisi-connector.js",
@@ -449,7 +449,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L1",
       "id": "kisi_connector",
-      "community": 15
+      "community": 20
     },
     {
       "label": "KisiConnector",
@@ -457,7 +457,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L16",
       "id": "kisi_connector_kisiconnector",
-      "community": 15
+      "community": 20
     },
     {
       "label": ".constructor()",
@@ -465,7 +465,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L17",
       "id": "kisi_connector_kisiconnector_constructor",
-      "community": 15
+      "community": 20
     },
     {
       "label": ".getHeaders()",
@@ -473,7 +473,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L24",
       "id": "kisi_connector_kisiconnector_getheaders",
-      "community": 15
+      "community": 20
     },
     {
       "label": ".enforceRateLimit()",
@@ -481,7 +481,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L36",
       "id": "kisi_connector_kisiconnector_enforceratelimit",
-      "community": 15
+      "community": 20
     },
     {
       "label": ".makeRequest()",
@@ -489,7 +489,7 @@
       "source_file": "adapters\\kisi\\kisi-connector.js",
       "source_location": "L61",
       "id": "kisi_connector_kisiconnector_makerequest",
-      "community": 15
+      "community": 20
     },
     {
       "label": "SeamAdapter",
@@ -497,7 +497,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L10",
       "id": "seam_adapter_seamadapter",
-      "community": 6
+      "community": 8
     },
     {
       "label": ".findUserByEmail()",
@@ -505,7 +505,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L11",
       "id": "seam_adapter_seamadapter_finduserbyemail",
-      "community": 6
+      "community": 8
     },
     {
       "label": ".createUser()",
@@ -513,7 +513,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L15",
       "id": "seam_adapter_seamadapter_createuser",
-      "community": 6
+      "community": 8
     },
     {
       "label": ".assignRole()",
@@ -521,7 +521,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L19",
       "id": "seam_adapter_seamadapter_assignrole",
-      "community": 6
+      "community": 8
     },
     {
       "label": ".removeRole()",
@@ -529,7 +529,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L24",
       "id": "seam_adapter_seamadapter_removerole",
-      "community": 6
+      "community": 8
     },
     {
       "label": ".suspendAccess()",
@@ -537,7 +537,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L28",
       "id": "seam_adapter_seamadapter_suspendaccess",
-      "community": 6
+      "community": 8
     },
     {
       "label": ".enableAccess()",
@@ -545,7 +545,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L32",
       "id": "seam_adapter_seamadapter_enableaccess",
-      "community": 6
+      "community": 8
     },
     {
       "label": ".deleteUser()",
@@ -553,7 +553,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L37",
       "id": "seam_adapter_seamadapter_deleteuser",
-      "community": 6
+      "community": 8
     },
     {
       "label": ".getLocks()",
@@ -561,7 +561,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L41",
       "id": "seam_adapter_seamadapter_getlocks",
-      "community": 6
+      "community": 8
     },
     {
       "label": ".getGroups()",
@@ -569,7 +569,7 @@
       "source_file": "adapters\\seam\\seam-adapter.js",
       "source_location": "L47",
       "id": "seam_adapter_seamadapter_getgroups",
-      "community": 6
+      "community": 8
     },
     {
       "label": "seam-connector.js",
@@ -577,7 +577,7 @@
       "source_file": "adapters\\seam\\seam-connector.js",
       "source_location": "L1",
       "id": "seam_connector",
-      "community": 20
+      "community": 26
     },
     {
       "label": "SeamConnector",
@@ -585,7 +585,7 @@
       "source_file": "adapters\\seam\\seam-connector.js",
       "source_location": "L9",
       "id": "seam_connector_seamconnector",
-      "community": 20
+      "community": 26
     },
     {
       "label": ".getHeaders()",
@@ -593,7 +593,7 @@
       "source_file": "adapters\\seam\\seam-connector.js",
       "source_location": "L10",
       "id": "seam_connector_seamconnector_getheaders",
-      "community": 20
+      "community": 26
     },
     {
       "label": ".enforceRateLimit()",
@@ -601,7 +601,7 @@
       "source_file": "adapters\\seam\\seam-connector.js",
       "source_location": "L14",
       "id": "seam_connector_seamconnector_enforceratelimit",
-      "community": 20
+      "community": 26
     },
     {
       "label": ".makeRequest()",
@@ -609,7 +609,7 @@
       "source_file": "adapters\\seam\\seam-connector.js",
       "source_location": "L18",
       "id": "seam_connector_seamconnector_makerequest",
-      "community": 20
+      "community": 26
     },
     {
       "label": "WixAdapter",
@@ -617,7 +617,7 @@
       "source_file": "adapters\\wix\\wix-adapter.js",
       "source_location": "L15",
       "id": "wix_adapter_wixadapter",
-      "community": 25
+      "community": 33
     },
     {
       "label": "._normalizeEventType()",
@@ -625,7 +625,7 @@
       "source_file": "adapters\\wix\\wix-adapter.js",
       "source_location": "L30",
       "id": "wix_adapter_wixadapter_normalizeeventtype",
-      "community": 25
+      "community": 33
     },
     {
       "label": ".parseEvent()",
@@ -633,7 +633,7 @@
       "source_file": "adapters\\wix\\wix-adapter.js",
       "source_location": "L56",
       "id": "wix_adapter_wixadapter_parseevent",
-      "community": 25
+      "community": 33
     },
     {
       "label": "wix-connector.js",
@@ -641,7 +641,7 @@
       "source_file": "adapters\\wix\\wix-connector.js",
       "source_location": "L1",
       "id": "wix_connector",
-      "community": 21
+      "community": 27
     },
     {
       "label": "WixConnector",
@@ -649,7 +649,7 @@
       "source_file": "adapters\\wix\\wix-connector.js",
       "source_location": "L23",
       "id": "wix_connector_wixconnector",
-      "community": 21
+      "community": 27
     },
     {
       "label": ".constructor()",
@@ -657,7 +657,7 @@
       "source_file": "adapters\\wix\\wix-connector.js",
       "source_location": "L24",
       "id": "wix_connector_wixconnector_constructor",
-      "community": 21
+      "community": 27
     },
     {
       "label": ".handleWebhook()",
@@ -665,7 +665,7 @@
       "source_file": "adapters\\wix\\wix-connector.js",
       "source_location": "L35",
       "id": "wix_connector_wixconnector_handlewebhook",
-      "community": 21
+      "community": 27
     },
     {
       "label": "._verifySignature()",
@@ -673,7 +673,7 @@
       "source_file": "adapters\\wix\\wix-connector.js",
       "source_location": "L132",
       "id": "wix_connector_wixconnector_verifysignature",
-      "community": 21
+      "community": 27
     },
     {
       "label": "wix-members-api.js",
@@ -681,7 +681,7 @@
       "source_file": "adapters\\wix\\wix-members-api.js",
       "source_location": "L1",
       "id": "wix_members_api",
-      "community": 12
+      "community": 17
     },
     {
       "label": "wixFetch()",
@@ -689,7 +689,7 @@
       "source_file": "adapters\\wix\\wix-members-api.js",
       "source_location": "L28",
       "id": "wix_members_api_wixfetch",
-      "community": 12
+      "community": 17
     },
     {
       "label": "_isSyntheticEmail()",
@@ -697,7 +697,7 @@
       "source_file": "adapters\\wix\\wix-members-api.js",
       "source_location": "L81",
       "id": "wix_members_api_issyntheticemail",
-      "community": 12
+      "community": 17
     },
     {
       "label": "_collectContactEmails()",
@@ -705,7 +705,7 @@
       "source_file": "adapters\\wix\\wix-members-api.js",
       "source_location": "L90",
       "id": "wix_members_api_collectcontactemails",
-      "community": 12
+      "community": 17
     },
     {
       "label": "_extractName()",
@@ -713,7 +713,7 @@
       "source_file": "adapters\\wix\\wix-members-api.js",
       "source_location": "L111",
       "id": "wix_members_api_extractname",
-      "community": 12
+      "community": 17
     },
     {
       "label": "_getContactById()",
@@ -721,7 +721,7 @@
       "source_file": "adapters\\wix\\wix-members-api.js",
       "source_location": "L151",
       "id": "wix_members_api_getcontactbyid",
-      "community": 12
+      "community": 17
     },
     {
       "label": "getMemberById()",
@@ -729,7 +729,7 @@
       "source_file": "adapters\\wix\\wix-members-api.js",
       "source_location": "L164",
       "id": "wix_members_api_getmemberbyid",
-      "community": 12
+      "community": 17
     },
     {
       "label": "wix-plans-api.js",
@@ -737,7 +737,7 @@
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L1",
       "id": "wix_plans_api",
-      "community": 8
+      "community": 12
     },
     {
       "label": "wixFetch()",
@@ -745,7 +745,7 @@
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L26",
       "id": "wix_plans_api_wixfetch",
-      "community": 8
+      "community": 12
     },
     {
       "label": "extractWixPrice()",
@@ -753,7 +753,7 @@
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L80",
       "id": "wix_plans_api_extractwixprice",
-      "community": 8
+      "community": 12
     },
     {
       "label": "listPricingPlans()",
@@ -761,7 +761,7 @@
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L129",
       "id": "wix_plans_api_listpricingplans",
-      "community": 8
+      "community": 12
     },
     {
       "label": "listBookingServices()",
@@ -769,7 +769,7 @@
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L154",
       "id": "wix_plans_api_listbookingservices",
-      "community": 8
+      "community": 12
     },
     {
       "label": "listAllMappable()",
@@ -777,7 +777,7 @@
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L180",
       "id": "wix_plans_api_listallmappable",
-      "community": 8
+      "community": 12
     },
     {
       "label": "listActiveOrders()",
@@ -785,7 +785,7 @@
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L198",
       "id": "wix_plans_api_listactiveorders",
-      "community": 8
+      "community": 12
     },
     {
       "label": "listConfirmedBookings()",
@@ -793,7 +793,7 @@
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L234",
       "id": "wix_plans_api_listconfirmedbookings",
-      "community": 8
+      "community": 12
     },
     {
       "label": "testApiKey()",
@@ -801,31 +801,55 @@
       "source_file": "adapters\\wix\\wix-plans-api.js",
       "source_location": "L281",
       "id": "wix_plans_api_testapikey",
-      "community": 8
+      "community": 12
     },
     {
       "label": "allowWixFrame()",
       "file_type": "code",
       "source_file": "admin\\server.js",
-      "source_location": "L59",
+      "source_location": "L66",
       "id": "server_allowwixframe",
-      "community": 26
+      "community": 32
     },
     {
       "label": "sessionMeta()",
       "file_type": "code",
       "source_file": "admin\\server.js",
-      "source_location": "L94",
+      "source_location": "L101",
       "id": "server_sessionmeta",
-      "community": 26
+      "community": 32
     },
     {
       "label": "allowMemberFrame()",
       "file_type": "code",
       "source_file": "admin\\server.js",
-      "source_location": "L120",
+      "source_location": "L127",
       "id": "server_allowmemberframe",
-      "community": 26
+      "community": 32
+    },
+    {
+      "label": "activity.js",
+      "file_type": "code",
+      "source_file": "admin\\middleware\\activity.js",
+      "source_location": "L1",
+      "id": "activity",
+      "community": 38
+    },
+    {
+      "label": "getDb()",
+      "file_type": "code",
+      "source_file": "admin\\middleware\\activity.js",
+      "source_location": "L32",
+      "id": "activity_getdb",
+      "community": 38
+    },
+    {
+      "label": "recordActivity()",
+      "file_type": "code",
+      "source_file": "admin\\middleware\\activity.js",
+      "source_location": "L45",
+      "id": "activity_recordactivity",
+      "community": 38
     },
     {
       "label": "audit.js",
@@ -833,7 +857,7 @@
       "source_file": "admin\\middleware\\audit.js",
       "source_location": "L1",
       "id": "audit",
-      "community": 40
+      "community": 51
     },
     {
       "label": "logAdminAction()",
@@ -841,7 +865,7 @@
       "source_file": "admin\\middleware\\audit.js",
       "source_location": "L19",
       "id": "audit_logadminaction",
-      "community": 40
+      "community": 51
     },
     {
       "label": "auth.js",
@@ -849,7 +873,7 @@
       "source_file": "admin\\routes\\auth.js",
       "source_location": "L1",
       "id": "auth",
-      "community": 13
+      "community": 18
     },
     {
       "label": "requireAuth()",
@@ -857,7 +881,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L21",
       "id": "auth_requireauth",
-      "community": 13
+      "community": 18
     },
     {
       "label": "signToken()",
@@ -865,7 +889,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L37",
       "id": "auth_signtoken",
-      "community": 13
+      "community": 18
     },
     {
       "label": "signOperatorToken()",
@@ -873,7 +897,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L45",
       "id": "auth_signoperatortoken",
-      "community": 13
+      "community": 18
     },
     {
       "label": "requireAuthPage()",
@@ -881,7 +905,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L53",
       "id": "auth_requireauthpage",
-      "community": 13
+      "community": 18
     },
     {
       "label": "requireAuthOrOperator()",
@@ -889,7 +913,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L70",
       "id": "auth_requireauthoroperator",
-      "community": 13
+      "community": 18
     },
     {
       "label": "requireAuthPageOrOperator()",
@@ -897,7 +921,31 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L92",
       "id": "auth_requireauthpageoroperator",
-      "community": 13
+      "community": 18
+    },
+    {
+      "label": "trace-context.js",
+      "file_type": "code",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L1",
+      "id": "trace_context",
+      "community": 9
+    },
+    {
+      "label": "resolveActor()",
+      "file_type": "code",
+      "source_file": "admin\\middleware\\trace-context.js",
+      "source_location": "L35",
+      "id": "trace_context_resolveactor",
+      "community": 9
+    },
+    {
+      "label": "traceContextMiddleware()",
+      "file_type": "code",
+      "source_file": "admin\\middleware\\trace-context.js",
+      "source_location": "L59",
+      "id": "trace_context_tracecontextmiddleware",
+      "community": 9
     },
     {
       "label": "wix-instance.js",
@@ -905,7 +953,7 @@
       "source_file": "admin\\middleware\\wix-instance.js",
       "source_location": "L1",
       "id": "wix_instance",
-      "community": 27
+      "community": 34
     },
     {
       "label": "verifySignedInstance()",
@@ -913,7 +961,7 @@
       "source_file": "admin\\middleware\\wix-instance.js",
       "source_location": "L44",
       "id": "wix_instance_verifysignedinstance",
-      "community": 27
+      "community": 34
     },
     {
       "label": "extractSiteIdFromAuthCode()",
@@ -921,7 +969,7 @@
       "source_file": "admin\\middleware\\wix-instance.js",
       "source_location": "L100",
       "id": "wix_instance_extractsiteidfromauthcode",
-      "community": 27
+      "community": 34
     },
     {
       "label": "requireWixInstance()",
@@ -929,7 +977,7 @@
       "source_file": "admin\\middleware\\wix-instance.js",
       "source_location": "L123",
       "id": "wix_instance_requirewixinstance",
-      "community": 27
+      "community": 34
     },
     {
       "label": "app.js",
@@ -1132,6 +1180,230 @@
       "community": 0
     },
     {
+      "label": "members-app.jsx",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-app.jsx",
+      "source_location": "L1",
+      "id": "members_app",
+      "community": 52
+    },
+    {
+      "label": "App()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-app.jsx",
+      "source_location": "L10",
+      "id": "members_app_app",
+      "community": 52
+    },
+    {
+      "label": "members-bridge.js",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L1",
+      "id": "members_bridge",
+      "community": 7
+    },
+    {
+      "label": "mapStatus()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L20",
+      "id": "members_bridge_mapstatus",
+      "community": 7
+    },
+    {
+      "label": "mapAccessStatus()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L34",
+      "id": "members_bridge_mapaccessstatus",
+      "community": 7
+    },
+    {
+      "label": "deriveExpiresLabel()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L43",
+      "id": "members_bridge_deriveexpireslabel",
+      "community": 7
+    },
+    {
+      "label": "formatDate()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L49",
+      "id": "members_bridge_formatdate",
+      "community": 7
+    },
+    {
+      "label": "relativeAgo()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L56",
+      "id": "members_bridge_relativeago",
+      "community": 7
+    },
+    {
+      "label": "shapeMember()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L68",
+      "id": "members_bridge_shapemember",
+      "community": 7
+    },
+    {
+      "label": "buildMembersArray()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L91",
+      "id": "members_bridge_buildmembersarray",
+      "community": 7
+    },
+    {
+      "label": "attachErrors()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L115",
+      "id": "members_bridge_attacherrors",
+      "community": 7
+    },
+    {
+      "label": "resolveClientId()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L135",
+      "id": "members_bridge_resolveclientid",
+      "community": 7
+    },
+    {
+      "label": "fetchJSON()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L148",
+      "id": "members_bridge_fetchjson",
+      "community": 7
+    },
+    {
+      "label": "loadMembers()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L155",
+      "id": "members_bridge_loadmembers",
+      "community": 7
+    },
+    {
+      "label": "members-data.jsx",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-data.jsx",
+      "source_location": "L1",
+      "id": "members_data",
+      "community": 39
+    },
+    {
+      "label": "memberInitials()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-data.jsx",
+      "source_location": "L16",
+      "id": "members_data_memberinitials",
+      "community": 39
+    },
+    {
+      "label": "memberFullName()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-data.jsx",
+      "source_location": "L20",
+      "id": "members_data_memberfullname",
+      "community": 39
+    },
+    {
+      "label": "members-icons.jsx",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-icons.jsx",
+      "source_location": "L1",
+      "id": "members_icons",
+      "community": 53
+    },
+    {
+      "label": "Icon()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-icons.jsx",
+      "source_location": "L3",
+      "id": "members_icons_icon",
+      "community": 53
+    },
+    {
+      "label": "members-parts.jsx",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L1",
+      "id": "members_parts",
+      "community": 13
+    },
+    {
+      "label": "Avatar()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L5",
+      "id": "members_parts_avatar",
+      "community": 13
+    },
+    {
+      "label": "StatusPill()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L10",
+      "id": "members_parts_statuspill",
+      "community": 13
+    },
+    {
+      "label": "PlanBadge()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L26",
+      "id": "members_parts_planbadge",
+      "community": 13
+    },
+    {
+      "label": "useClickOutside()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L33",
+      "id": "members_parts_useclickoutside",
+      "community": 13
+    },
+    {
+      "label": "ActionsMenu()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L45",
+      "id": "members_parts_actionsmenu",
+      "community": 13
+    },
+    {
+      "label": "MemberDrawer()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L67",
+      "id": "members_parts_memberdrawer",
+      "community": 13
+    },
+    {
+      "label": "ErrorPopover()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L191",
+      "id": "members_parts_errorpopover",
+      "community": 13
+    },
+    {
+      "label": "RemoveModal()",
+      "file_type": "code",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L204",
+      "id": "members_parts_removemodal",
+      "community": 13
+    },
+    {
       "label": "operator-nav.js",
       "file_type": "code",
       "source_file": "admin\\public\\operator-nav.js",
@@ -1236,12 +1508,116 @@
       "community": 3
     },
     {
+      "label": "tweaks-panel.jsx",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L1",
+      "id": "tweaks_panel",
+      "community": 4
+    },
+    {
+      "label": "useTweaks()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L139",
+      "id": "tweaks_panel_usetweaks",
+      "community": 4
+    },
+    {
+      "label": "TweaksPanel()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L160",
+      "id": "tweaks_panel_tweakspanel",
+      "community": 4
+    },
+    {
+      "label": "TweakSection()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L250",
+      "id": "tweaks_panel_tweaksection",
+      "community": 4
+    },
+    {
+      "label": "TweakRow()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L259",
+      "id": "tweaks_panel_tweakrow",
+      "community": 4
+    },
+    {
+      "label": "TweakSlider()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L273",
+      "id": "tweaks_panel_tweakslider",
+      "community": 4
+    },
+    {
+      "label": "TweakToggle()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L282",
+      "id": "tweaks_panel_tweaktoggle",
+      "community": 4
+    },
+    {
+      "label": "TweakRadio()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L293",
+      "id": "tweaks_panel_tweakradio",
+      "community": 4
+    },
+    {
+      "label": "TweakSelect()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L347",
+      "id": "tweaks_panel_tweakselect",
+      "community": 4
+    },
+    {
+      "label": "TweakText()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L361",
+      "id": "tweaks_panel_tweaktext",
+      "community": 4
+    },
+    {
+      "label": "TweakNumber()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L370",
+      "id": "tweaks_panel_tweaknumber",
+      "community": 4
+    },
+    {
+      "label": "TweakColor()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L404",
+      "id": "tweaks_panel_tweakcolor",
+      "community": 4
+    },
+    {
+      "label": "TweakButton()",
+      "file_type": "code",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L414",
+      "id": "tweaks_panel_tweakbutton",
+      "community": 4
+    },
+    {
       "label": "clients.js",
       "file_type": "code",
       "source_file": "admin\\routes\\clients.js",
       "source_location": "L1",
       "id": "clients",
-      "community": 41
+      "community": 54
     },
     {
       "label": "activateLocationMembersAdmin()",
@@ -1249,7 +1625,7 @@
       "source_file": "admin\\routes\\clients.js",
       "source_location": "L31",
       "id": "clients_activatelocationmembersadmin",
-      "community": 41
+      "community": 54
     },
     {
       "label": "errors.js",
@@ -1257,7 +1633,7 @@
       "source_file": "admin\\routes\\errors.js",
       "source_location": "L1",
       "id": "errors",
-      "community": 51
+      "community": 66
     },
     {
       "label": "members.js",
@@ -1265,7 +1641,7 @@
       "source_file": "admin\\routes\\members.js",
       "source_location": "L1",
       "id": "members",
-      "community": 52
+      "community": 67
     },
     {
       "label": "multi-member.js",
@@ -1273,7 +1649,7 @@
       "source_file": "admin\\routes\\multi-member.js",
       "source_location": "L1",
       "id": "multi_member",
-      "community": 53
+      "community": 68
     },
     {
       "label": "operator.js",
@@ -1281,55 +1657,55 @@
       "source_file": "admin\\routes\\operator.js",
       "source_location": "L1",
       "id": "operator",
-      "community": 14
+      "community": 19
     },
     {
       "label": "resolveApiKey()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L66",
+      "source_location": "L67",
       "id": "operator_resolveapikey",
-      "community": 14
+      "community": 19
     },
     {
       "label": "syncMappingMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L94",
+      "source_location": "L95",
       "id": "operator_syncmappingmembers",
-      "community": 14
+      "community": 19
     },
     {
       "label": "activateLocationMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L255",
+      "source_location": "L256",
       "id": "operator_activatelocationmembers",
-      "community": 14
+      "community": 19
     },
     {
       "label": "validateApiKeyGroups()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L280",
+      "source_location": "L281",
       "id": "operator_validateapikeygroups",
-      "community": 14
+      "community": 19
     },
     {
       "label": "retryPendingHardwareMembers()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L318",
+      "source_location": "L319",
       "id": "operator_retrypendinghardwaremembers",
-      "community": 14
+      "community": 19
     },
     {
       "label": "requireInviteToken()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L377",
+      "source_location": "L378",
       "id": "operator_requireinvitetoken",
-      "community": 14
+      "community": 19
     },
     {
       "label": "portal.js",
@@ -1337,7 +1713,7 @@
       "source_file": "admin\\routes\\portal.js",
       "source_location": "L1",
       "id": "portal",
-      "community": 54
+      "community": 69
     },
     {
       "label": "queue.js",
@@ -1345,7 +1721,7 @@
       "source_file": "admin\\routes\\queue.js",
       "source_location": "L1",
       "id": "queue",
-      "community": 55
+      "community": 70
     },
     {
       "label": "webhooks.js",
@@ -1353,7 +1729,7 @@
       "source_file": "admin\\routes\\webhooks.js",
       "source_location": "L1",
       "id": "webhooks",
-      "community": 56
+      "community": 71
     },
     {
       "label": "main.js",
@@ -1361,7 +1737,7 @@
       "source_file": "admin\\svelte\\main.js",
       "source_location": "L1",
       "id": "main",
-      "community": 57
+      "community": 72
     },
     {
       "label": "plan-mapping-entry.js",
@@ -1369,7 +1745,7 @@
       "source_file": "admin\\svelte\\plan-mapping-entry.js",
       "source_location": "L1",
       "id": "plan_mapping_entry",
-      "community": 58
+      "community": 73
     },
     {
       "label": "toast.js",
@@ -1377,7 +1753,7 @@
       "source_file": "admin\\svelte\\stores\\toast.js",
       "source_location": "L1",
       "id": "toast",
-      "community": 42
+      "community": 55
     },
     {
       "label": "showToast()",
@@ -1385,7 +1761,7 @@
       "source_file": "admin\\svelte\\stores\\toast.js",
       "source_location": "L15",
       "id": "toast_showtoast",
-      "community": 42
+      "community": 55
     },
     {
       "label": "crypto-utils.js",
@@ -1393,7 +1769,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L1",
       "id": "crypto_utils",
-      "community": 28
+      "community": 35
     },
     {
       "label": "_getKey()",
@@ -1401,7 +1777,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L25",
       "id": "crypto_utils_getkey",
-      "community": 28
+      "community": 35
     },
     {
       "label": "encryptApiKey()",
@@ -1409,7 +1785,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L38",
       "id": "crypto_utils_encryptapikey",
-      "community": 28
+      "community": 35
     },
     {
       "label": "decryptApiKey()",
@@ -1417,7 +1793,7 @@
       "source_file": "core\\crypto-utils.js",
       "source_location": "L52",
       "id": "crypto_utils_decryptapikey",
-      "community": 28
+      "community": 35
     },
     {
       "label": "diagnostics.js",
@@ -1425,7 +1801,7 @@
       "source_file": "core\\diagnostics.js",
       "source_location": "L1",
       "id": "diagnostics",
-      "community": 31
+      "community": 40
     },
     {
       "label": "diagnoseMember()",
@@ -1433,7 +1809,7 @@
       "source_file": "core\\diagnostics.js",
       "source_location": "L20",
       "id": "diagnostics_diagnosemember",
-      "community": 31
+      "community": 40
     },
     {
       "label": "getTimeline()",
@@ -1441,7 +1817,7 @@
       "source_file": "core\\diagnostics.js",
       "source_location": "L136",
       "id": "diagnostics_gettimeline",
-      "community": 31
+      "community": 40
     },
     {
       "label": "grant-revoke.js",
@@ -1449,7 +1825,7 @@
       "source_file": "core\\grant-revoke.js",
       "source_location": "L1",
       "id": "grant_revoke",
-      "community": 22
+      "community": 28
     },
     {
       "label": "GrantRevokeLogic",
@@ -1457,7 +1833,7 @@
       "source_file": "core\\grant-revoke.js",
       "source_location": "L30",
       "id": "grant_revoke_grantrevokelogic",
-      "community": 22
+      "community": 28
     },
     {
       "label": ".processGrant()",
@@ -1465,23 +1841,23 @@
       "source_file": "core\\grant-revoke.js",
       "source_location": "L43",
       "id": "grant_revoke_grantrevokelogic_processgrant",
-      "community": 22
+      "community": 28
     },
     {
       "label": "._getClientApiKey()",
       "file_type": "code",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L202",
+      "source_location": "L245",
       "id": "grant_revoke_grantrevokelogic_getclientapikey",
-      "community": 22
+      "community": 28
     },
     {
       "label": ".processRevoke()",
       "file_type": "code",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L209",
+      "source_location": "L252",
       "id": "grant_revoke_grantrevokelogic_processrevoke",
-      "community": 22
+      "community": 28
     },
     {
       "label": "hardware-health-check.js",
@@ -1489,79 +1865,87 @@
       "source_file": "core\\hardware-health-check.js",
       "source_location": "L1",
       "id": "hardware_health_check",
-      "community": 7
+      "community": 10
     },
     {
       "label": "runHealthCheck()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L37",
+      "source_location": "L38",
       "id": "hardware_health_check_runhealthcheck",
-      "community": 7
+      "community": 10
+    },
+    {
+      "label": "_runHealthCheckBody()",
+      "file_type": "code",
+      "source_file": "core\\hardware-health-check.js",
+      "source_location": "L46",
+      "id": "hardware_health_check_runhealthcheckbody",
+      "community": 10
     },
     {
       "label": "_checkLocation()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L59",
+      "source_location": "L68",
       "id": "hardware_health_check_checklocation",
-      "community": 7
+      "community": 10
     },
     {
       "label": "_reconcileGroups()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L119",
+      "source_location": "L128",
       "id": "hardware_health_check_reconcilegroups",
-      "community": 7
+      "community": 10
     },
     {
       "label": "_notifyOrphanedGroups()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L248",
+      "source_location": "L257",
       "id": "hardware_health_check_notifyorphanedgroups",
-      "community": 7
+      "community": 10
     },
     {
       "label": "_reconcileWixPlans()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L299",
+      "source_location": "L308",
       "id": "hardware_health_check_reconcilewixplans",
-      "community": 7
+      "community": 10
     },
     {
       "label": "_notifyArchivedPlans()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L384",
+      "source_location": "L393",
       "id": "hardware_health_check_notifyarchivedplans",
-      "community": 7
+      "community": 10
     },
     {
       "label": "_diagnose()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L424",
+      "source_location": "L433",
       "id": "hardware_health_check_diagnose",
-      "community": 7
+      "community": 10
     },
     {
       "label": "_updateLocationVerification()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L437",
+      "source_location": "L446",
       "id": "hardware_health_check_updatelocationverification",
-      "community": 7
+      "community": 10
     },
     {
       "label": "_notifyFailure()",
       "file_type": "code",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L447",
+      "source_location": "L456",
       "id": "hardware_health_check_notifyfailure",
-      "community": 7
+      "community": 10
     },
     {
       "label": "hmac-monitor.js",
@@ -1569,7 +1953,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L1",
       "id": "hmac_monitor",
-      "community": 32
+      "community": 41
     },
     {
       "label": "recordFailure()",
@@ -1577,7 +1961,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L33",
       "id": "hmac_monitor_recordfailure",
-      "community": 32
+      "community": 41
     },
     {
       "label": "_sendAlert()",
@@ -1585,7 +1969,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L68",
       "id": "hmac_monitor_sendalert",
-      "community": 32
+      "community": 41
     },
     {
       "label": "location-lapse.js",
@@ -1593,7 +1977,7 @@
       "source_file": "core\\location-lapse.js",
       "source_location": "L1",
       "id": "location_lapse",
-      "community": 33
+      "community": 42
     },
     {
       "label": "suspendLocationMembers()",
@@ -1601,7 +1985,7 @@
       "source_file": "core\\location-lapse.js",
       "source_location": "L45",
       "id": "location_lapse_suspendlocationmembers",
-      "community": 33
+      "community": 42
     },
     {
       "label": "_setLocationStatus()",
@@ -1609,7 +1993,55 @@
       "source_file": "core\\location-lapse.js",
       "source_location": "L143",
       "id": "location_lapse_setlocationstatus",
-      "community": 33
+      "community": 42
+    },
+    {
+      "label": "log-redaction.js",
+      "file_type": "code",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L1",
+      "id": "log_redaction",
+      "community": 21
+    },
+    {
+      "label": "redactString()",
+      "file_type": "code",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L88",
+      "id": "log_redaction_redactstring",
+      "community": 21
+    },
+    {
+      "label": "redactValue()",
+      "file_type": "code",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L97",
+      "id": "log_redaction_redactvalue",
+      "community": 21
+    },
+    {
+      "label": "redactObject()",
+      "file_type": "code",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L105",
+      "id": "log_redaction_redactobject",
+      "community": 21
+    },
+    {
+      "label": "redact()",
+      "file_type": "code",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L118",
+      "id": "log_redaction_redact",
+      "community": 21
+    },
+    {
+      "label": "registerSecretField()",
+      "file_type": "code",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L127",
+      "id": "log_redaction_registersecretfield",
+      "community": 21
     },
     {
       "label": "logger.js",
@@ -1617,47 +2049,47 @@
       "source_file": "core\\logger.js",
       "source_location": "L1",
       "id": "logger",
-      "community": 16
+      "community": 22
     },
     {
       "label": "getDb()",
       "file_type": "code",
       "source_file": "core\\logger.js",
-      "source_location": "L70",
+      "source_location": "L78",
       "id": "logger_getdb",
-      "community": 16
+      "community": 22
     },
     {
       "label": "deriveService()",
       "file_type": "code",
       "source_file": "core\\logger.js",
-      "source_location": "L80",
+      "source_location": "L88",
       "id": "logger_deriveservice",
-      "community": 16
+      "community": 22
     },
     {
       "label": "persistToDiagnosticLog()",
       "file_type": "code",
       "source_file": "core\\logger.js",
-      "source_location": "L103",
+      "source_location": "L118",
       "id": "logger_persisttodiagnosticlog",
-      "community": 16
+      "community": 22
     },
     {
       "label": "emit()",
       "file_type": "code",
       "source_file": "core\\logger.js",
-      "source_location": "L155",
+      "source_location": "L184",
       "id": "logger_emit",
-      "community": 16
+      "community": 22
     },
     {
       "label": "withTrace()",
       "file_type": "code",
       "source_file": "core\\logger.js",
-      "source_location": "L209",
+      "source_location": "L246",
       "id": "logger_withtrace",
-      "community": 16
+      "community": 22
     },
     {
       "label": "member-sync-api.js",
@@ -1665,7 +2097,7 @@
       "source_file": "core\\member-sync-api.js",
       "source_location": "L1",
       "id": "member_sync_api",
-      "community": 17
+      "community": 23
     },
     {
       "label": "MemberSyncApi",
@@ -1673,7 +2105,7 @@
       "source_file": "core\\member-sync-api.js",
       "source_location": "L37",
       "id": "member_sync_api_membersyncapi",
-      "community": 17
+      "community": 23
     },
     {
       "label": ".getAccessStatus()",
@@ -1681,31 +2113,31 @@
       "source_file": "core\\member-sync-api.js",
       "source_location": "L48",
       "id": "member_sync_api_membersyncapi_getaccessstatus",
-      "community": 17
+      "community": 23
     },
     {
       "label": "._verifyWixJWT()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L181",
+      "source_location": "L194",
       "id": "member_sync_api_membersyncapi_verifywixjwt",
-      "community": 17
+      "community": 23
     },
     {
       "label": "._getWixPublicKey()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L233",
+      "source_location": "L246",
       "id": "member_sync_api_membersyncapi_getwixpublickey",
-      "community": 17
+      "community": 23
     },
     {
       "label": "._fetchWixJwks()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L248",
+      "source_location": "L261",
       "id": "member_sync_api_membersyncapi_fetchwixjwks",
-      "community": 17
+      "community": 23
     },
     {
       "label": "plan-mapping-resolver.js",
@@ -1713,7 +2145,7 @@
       "source_file": "core\\plan-mapping-resolver.js",
       "source_location": "L1",
       "id": "plan_mapping_resolver",
-      "community": 34
+      "community": 43
     },
     {
       "label": "PlanMappingResolver",
@@ -1721,7 +2153,7 @@
       "source_file": "core\\plan-mapping-resolver.js",
       "source_location": "L24",
       "id": "plan_mapping_resolver_planmappingresolver",
-      "community": 34
+      "community": 43
     },
     {
       "label": ".resolve()",
@@ -1729,7 +2161,7 @@
       "source_file": "core\\plan-mapping-resolver.js",
       "source_location": "L40",
       "id": "plan_mapping_resolver_planmappingresolver_resolve",
-      "community": 34
+      "community": 43
     },
     {
       "label": "queue-worker.js",
@@ -1743,7 +2175,7 @@
       "label": "getClientApiKey()",
       "file_type": "code",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L52",
+      "source_location": "L53",
       "id": "queue_worker_getclientapikey",
       "community": 29
     },
@@ -1751,15 +2183,23 @@
       "label": "processJob()",
       "file_type": "code",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L63",
+      "source_location": "L67",
       "id": "queue_worker_processjob",
+      "community": 29
+    },
+    {
+      "label": "_processJobBody()",
+      "file_type": "code",
+      "source_file": "core\\queue-worker.js",
+      "source_location": "L86",
+      "id": "queue_worker_processjobbody",
       "community": 29
     },
     {
       "label": "startWorker()",
       "file_type": "code",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L400",
+      "source_location": "L434",
       "id": "queue_worker_startworker",
       "community": 29
     },
@@ -1769,7 +2209,7 @@
       "source_file": "core\\rate-limiter.js",
       "source_location": "L1",
       "id": "rate_limiter",
-      "community": 23
+      "community": 30
     },
     {
       "label": "RateLimiter",
@@ -1777,7 +2217,7 @@
       "source_file": "core\\rate-limiter.js",
       "source_location": "L26",
       "id": "rate_limiter_ratelimiter",
-      "community": 23
+      "community": 30
     },
     {
       "label": ".constructor()",
@@ -1785,7 +2225,7 @@
       "source_file": "core\\rate-limiter.js",
       "source_location": "L33",
       "id": "rate_limiter_ratelimiter_constructor",
-      "community": 23
+      "community": 30
     },
     {
       "label": ".acquire()",
@@ -1793,7 +2233,7 @@
       "source_file": "core\\rate-limiter.js",
       "source_location": "L50",
       "id": "rate_limiter_ratelimiter_acquire",
-      "community": 23
+      "community": 30
     },
     {
       "label": ".currentCount()",
@@ -1801,7 +2241,7 @@
       "source_file": "core\\rate-limiter.js",
       "source_location": "L75",
       "id": "rate_limiter_ratelimiter_currentcount",
-      "community": 23
+      "community": 30
     },
     {
       "label": "reconciliation.js",
@@ -1815,7 +2255,7 @@
       "label": "NightlyReconciliation",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L32",
+      "source_location": "L33",
       "id": "reconciliation_nightlyreconciliation",
       "community": 5
     },
@@ -1823,7 +2263,7 @@
       "label": ".constructor()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L34",
+      "source_location": "L35",
       "id": "reconciliation_nightlyreconciliation_constructor",
       "community": 5
     },
@@ -1831,15 +2271,23 @@
       "label": ".runNightlySweep()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L41",
+      "source_location": "L42",
       "id": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "community": 5
+    },
+    {
+      "label": "._runNightlySweepBody()",
+      "file_type": "code",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L50",
+      "id": "reconciliation_nightlyreconciliation_runnightlysweepbody",
       "community": 5
     },
     {
       "label": "._syncTrueSources()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L107",
+      "source_location": "L115",
       "id": "reconciliation_nightlyreconciliation_synctruesources",
       "community": 5
     },
@@ -1847,7 +2295,7 @@
       "label": "._syncClient()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L143",
+      "source_location": "L151",
       "id": "reconciliation_nightlyreconciliation_syncclient",
       "community": 5
     },
@@ -1855,7 +2303,7 @@
       "label": ".reconcileMember()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L322",
+      "source_location": "L330",
       "id": "reconciliation_nightlyreconciliation_reconcilemember",
       "community": 5
     },
@@ -1863,7 +2311,7 @@
       "label": "._syncDoorLockdownStates()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L619",
+      "source_location": "L627",
       "id": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
       "community": 5
     },
@@ -1871,7 +2319,7 @@
       "label": "._fetchActionableRecords()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L651",
+      "source_location": "L659",
       "id": "reconciliation_nightlyreconciliation_fetchactionablerecords",
       "community": 5
     },
@@ -1879,7 +2327,7 @@
       "label": "._processRecordTargeted()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L663",
+      "source_location": "L671",
       "id": "reconciliation_nightlyreconciliation_processrecordtargeted",
       "community": 5
     },
@@ -1887,7 +2335,7 @@
       "label": "._generateAndSendDigest()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L695",
+      "source_location": "L703",
       "id": "reconciliation_nightlyreconciliation_generateandsenddigest",
       "community": 5
     },
@@ -1895,7 +2343,7 @@
       "label": "._sleep()",
       "file_type": "code",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L758",
+      "source_location": "L766",
       "id": "reconciliation_nightlyreconciliation_sleep",
       "community": 5
     },
@@ -1905,7 +2353,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L1",
       "id": "redis_utils",
-      "community": 35
+      "community": 44
     },
     {
       "label": "parseRedisUrl()",
@@ -1913,7 +2361,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L15",
       "id": "redis_utils_parseredisurl",
-      "community": 35
+      "community": 44
     },
     {
       "label": "getRedisConnection()",
@@ -1921,7 +2369,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L29",
       "id": "redis_utils_getredisconnection",
-      "community": 35
+      "community": 44
     },
     {
       "label": "retry-engine.js",
@@ -1929,7 +2377,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L1",
       "id": "retry_engine",
-      "community": 18
+      "community": 24
     },
     {
       "label": "RetryEngine",
@@ -1937,7 +2385,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L22",
       "id": "retry_engine_retryengine",
-      "community": 18
+      "community": 24
     },
     {
       "label": ".constructor()",
@@ -1945,7 +2393,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L23",
       "id": "retry_engine_retryengine_constructor",
-      "community": 18
+      "community": 24
     },
     {
       "label": ".handleFailure()",
@@ -1953,7 +2401,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L34",
       "id": "retry_engine_retryengine_handlefailure",
-      "community": 18
+      "community": 24
     },
     {
       "label": "._moveToDeadLetter()",
@@ -1961,7 +2409,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L53",
       "id": "retry_engine_retryengine_movetodeadletter",
-      "community": 18
+      "community": 24
     },
     {
       "label": "._notifyOperator()",
@@ -1969,7 +2417,7 @@
       "source_file": "core\\retry-engine.js",
       "source_location": "L160",
       "id": "retry_engine_retryengine_notifyoperator",
-      "community": 18
+      "community": 24
     },
     {
       "label": "tenant-resolver.js",
@@ -1977,7 +2425,7 @@
       "source_file": "core\\tenant-resolver.js",
       "source_location": "L1",
       "id": "tenant_resolver",
-      "community": 9
+      "community": 14
     },
     {
       "label": "TenantResolver",
@@ -1985,7 +2433,7 @@
       "source_file": "core\\tenant-resolver.js",
       "source_location": "L28",
       "id": "tenant_resolver_tenantresolver",
-      "community": 9
+      "community": 14
     },
     {
       "label": ".constructor()",
@@ -1993,7 +2441,7 @@
       "source_file": "core\\tenant-resolver.js",
       "source_location": "L29",
       "id": "tenant_resolver_tenantresolver_constructor",
-      "community": 9
+      "community": 14
     },
     {
       "label": ".resolve()",
@@ -2001,7 +2449,7 @@
       "source_file": "core\\tenant-resolver.js",
       "source_location": "L41",
       "id": "tenant_resolver_tenantresolver_resolve",
-      "community": 9
+      "community": 14
     },
     {
       "label": ".resolveByClientId()",
@@ -2009,7 +2457,7 @@
       "source_file": "core\\tenant-resolver.js",
       "source_location": "L106",
       "id": "tenant_resolver_tenantresolver_resolvebyclientid",
-      "community": 9
+      "community": 14
     },
     {
       "label": ".registerSiteId()",
@@ -2017,7 +2465,7 @@
       "source_file": "core\\tenant-resolver.js",
       "source_location": "L139",
       "id": "tenant_resolver_tenantresolver_registersiteid",
-      "community": 9
+      "community": 14
     },
     {
       "label": ".invalidate()",
@@ -2025,7 +2473,7 @@
       "source_file": "core\\tenant-resolver.js",
       "source_location": "L160",
       "id": "tenant_resolver_tenantresolver_invalidate",
-      "community": 9
+      "community": 14
     },
     {
       "label": ".clearCache()",
@@ -2033,6 +2481,70 @@
       "source_file": "core\\tenant-resolver.js",
       "source_location": "L167",
       "id": "tenant_resolver_tenantresolver_clearcache",
+      "community": 14
+    },
+    {
+      "label": "getDb()",
+      "file_type": "code",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L36",
+      "id": "trace_context_getdb",
+      "community": 9
+    },
+    {
+      "label": "runWith()",
+      "file_type": "code",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L53",
+      "id": "trace_context_runwith",
+      "community": 9
+    },
+    {
+      "label": "setActor()",
+      "file_type": "code",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L73",
+      "id": "trace_context_setactor",
+      "community": 9
+    },
+    {
+      "label": "getContext()",
+      "file_type": "code",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L83",
+      "id": "trace_context_getcontext",
+      "community": 9
+    },
+    {
+      "label": "getTraceId()",
+      "file_type": "code",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L91",
+      "id": "trace_context_gettraceid",
+      "community": 9
+    },
+    {
+      "label": "getActor()",
+      "file_type": "code",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L100",
+      "id": "trace_context_getactor",
+      "community": 9
+    },
+    {
+      "label": "mintTraceId()",
+      "file_type": "code",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L109",
+      "id": "trace_context_minttraceid",
+      "community": 9
+    },
+    {
+      "label": "registerTrace()",
+      "file_type": "code",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L131",
+      "id": "trace_context_registertrace",
       "community": 9
     },
     {
@@ -2041,7 +2553,7 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L1",
       "id": "webhook_processor",
-      "community": 10
+      "community": 15
     },
     {
       "label": "WebhookProcessor",
@@ -2049,7 +2561,7 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L41",
       "id": "webhook_processor_webhookprocessor",
-      "community": 10
+      "community": 15
     },
     {
       "label": ".processIncoming()",
@@ -2057,7 +2569,7 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L43",
       "id": "webhook_processor_webhookprocessor_processincoming",
-      "community": 10
+      "community": 15
     },
     {
       "label": "._validateStructure()",
@@ -2065,7 +2577,7 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L158",
       "id": "webhook_processor_webhookprocessor_validatestructure",
-      "community": 10
+      "community": 15
     },
     {
       "label": "._checkIfDuplicate()",
@@ -2073,7 +2585,7 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L167",
       "id": "webhook_processor_webhookprocessor_checkifduplicate",
-      "community": 10
+      "community": 15
     },
     {
       "label": "._markEventProcessed()",
@@ -2081,7 +2593,7 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L175",
       "id": "webhook_processor_webhookprocessor_markeventprocessed",
-      "community": 10
+      "community": 15
     },
     {
       "label": "._logToAlertLog()",
@@ -2089,7 +2601,7 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L182",
       "id": "webhook_processor_webhookprocessor_logtoalertlog",
-      "community": 10
+      "community": 15
     },
     {
       "label": ".logWebhookAttempt()",
@@ -2097,7 +2609,95 @@
       "source_file": "core\\webhook-processor.js",
       "source_location": "L205",
       "id": "webhook_processor_webhookprocessor_logwebhookattempt",
-      "community": 10
+      "community": 15
+    },
+    {
+      "label": "events.js",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L1",
+      "id": "events",
+      "community": 11
+    },
+    {
+      "label": "_send()",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L31",
+      "id": "events_send",
+      "community": 11
+    },
+    {
+      "label": "wixPricingPlans_onOrderPurchased()",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L50",
+      "id": "events_wixpricingplans_onorderpurchased",
+      "community": 11
+    },
+    {
+      "label": "wixPricingPlans_onOrderStarted()",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L51",
+      "id": "events_wixpricingplans_onorderstarted",
+      "community": 11
+    },
+    {
+      "label": "wixPricingPlans_onOrderCanceled()",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L52",
+      "id": "events_wixpricingplans_onordercanceled",
+      "community": 11
+    },
+    {
+      "label": "wixPricingPlans_onOrderAutoRenewCanceled()",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L53",
+      "id": "events_wixpricingplans_onorderautorenewcanceled",
+      "community": 11
+    },
+    {
+      "label": "wixPricingPlans_onOrderEnded()",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L54",
+      "id": "events_wixpricingplans_onorderended",
+      "community": 11
+    },
+    {
+      "label": "wixPricingPlans_onOrderUpdated()",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L55",
+      "id": "events_wixpricingplans_onorderupdated",
+      "community": 11
+    },
+    {
+      "label": "wixBookings_onBookingConfirmed()",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L58",
+      "id": "events_wixbookings_onbookingconfirmed",
+      "community": 11
+    },
+    {
+      "label": "wixBookings_onBookingCanceled()",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L59",
+      "id": "events_wixbookings_onbookingcanceled",
+      "community": 11
+    },
+    {
+      "label": "wixMembers_onMemberDeleted()",
+      "file_type": "code",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L62",
+      "id": "events_wixmembers_onmemberdeleted",
+      "community": 11
     },
     {
       "label": "multi-member-page.js",
@@ -2105,7 +2705,7 @@
       "source_file": "handoff\\velo\\multi-member-page.js",
       "source_location": "L1",
       "id": "multi_member_page",
-      "community": 59
+      "community": 74
     },
     {
       "label": "thank-you-page.js",
@@ -2113,7 +2713,7 @@
       "source_file": "handoff\\velo\\thank-you-page.js",
       "source_location": "L1",
       "id": "thank_you_page",
-      "community": 60
+      "community": 75
     },
     {
       "label": "audit-by-internal-id.js",
@@ -2121,7 +2721,7 @@
       "source_file": "scripts\\audit-by-internal-id.js",
       "source_location": "L1",
       "id": "audit_by_internal_id",
-      "community": 43
+      "community": 56
     },
     {
       "label": "section()",
@@ -2129,7 +2729,7 @@
       "source_file": "scripts\\audit-by-internal-id.js",
       "source_location": "L11",
       "id": "audit_by_internal_id_section",
-      "community": 43
+      "community": 56
     },
     {
       "label": "audit-kisi.js",
@@ -2137,7 +2737,7 @@
       "source_file": "scripts\\audit-kisi.js",
       "source_location": "L1",
       "id": "audit_kisi",
-      "community": 44
+      "community": 57
     },
     {
       "label": "header()",
@@ -2145,7 +2745,7 @@
       "source_file": "scripts\\audit-kisi.js",
       "source_location": "L21",
       "id": "audit_kisi_header",
-      "community": 44
+      "community": 57
     },
     {
       "label": "audit-member.js",
@@ -2153,7 +2753,7 @@
       "source_file": "scripts\\audit-member.js",
       "source_location": "L1",
       "id": "audit_member",
-      "community": 45
+      "community": 58
     },
     {
       "label": "section()",
@@ -2161,7 +2761,7 @@
       "source_file": "scripts\\audit-member.js",
       "source_location": "L15",
       "id": "audit_member_section",
-      "community": 45
+      "community": 58
     },
     {
       "label": "audit-summary.js",
@@ -2169,7 +2769,7 @@
       "source_file": "scripts\\audit-summary.js",
       "source_location": "L1",
       "id": "audit_summary",
-      "community": 61
+      "community": 76
     },
     {
       "label": "db-check.js",
@@ -2177,7 +2777,7 @@
       "source_file": "scripts\\db-check.js",
       "source_location": "L1",
       "id": "db_check",
-      "community": 46
+      "community": 59
     },
     {
       "label": "run()",
@@ -2185,7 +2785,15 @@
       "source_file": "scripts\\db-check.js",
       "source_location": "L4",
       "id": "db_check_run",
-      "community": 46
+      "community": 59
+    },
+    {
+      "label": "repair-brittany.js",
+      "file_type": "code",
+      "source_file": "scripts\\repair-brittany.js",
+      "source_location": "L1",
+      "id": "repair_brittany",
+      "community": 77
     },
     {
       "label": "priority-sequencer.js",
@@ -2193,7 +2801,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L1",
       "id": "priority_sequencer",
-      "community": 30
+      "community": 36
     },
     {
       "label": "PrioritySequencer",
@@ -2201,7 +2809,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L11",
       "id": "priority_sequencer_prioritysequencer",
-      "community": 30
+      "community": 36
     },
     {
       "label": ".sort()",
@@ -2209,7 +2817,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L16",
       "id": "priority_sequencer_prioritysequencer_sort",
-      "community": 30
+      "community": 36
     },
     {
       "label": ".cacheResults()",
@@ -2217,7 +2825,7 @@
       "source_file": "test\\priority-sequencer.js",
       "source_location": "L31",
       "id": "priority_sequencer_prioritysequencer_cacheresults",
-      "community": 30
+      "community": 36
     },
     {
       "label": "fixtures.js",
@@ -2225,7 +2833,7 @@
       "source_file": "test\\helpers\\fixtures.js",
       "source_location": "L1",
       "id": "fixtures",
-      "community": 62
+      "community": 78
     },
     {
       "label": "grant-retry-idempotency.test.js",
@@ -2233,7 +2841,7 @@
       "source_file": "test\\p1-critical-path\\grant-retry-idempotency.test.js",
       "source_location": "L1",
       "id": "grant_retry_idempotency_test",
-      "community": 63
+      "community": 79
     },
     {
       "label": "member-cancels-loses-access.test.js",
@@ -2241,7 +2849,7 @@
       "source_file": "test\\p1-critical-path\\member-cancels-loses-access.test.js",
       "source_location": "L1",
       "id": "member_cancels_loses_access_test",
-      "community": 47
+      "community": 60
     },
     {
       "label": "mockClientApiKey()",
@@ -2249,7 +2857,7 @@
       "source_file": "test\\p1-critical-path\\member-cancels-loses-access.test.js",
       "source_location": "L53",
       "id": "member_cancels_loses_access_test_mockclientapikey",
-      "community": 47
+      "community": 60
     },
     {
       "label": "member-pays-gets-access.test.js",
@@ -2257,7 +2865,7 @@
       "source_file": "test\\p1-critical-path\\member-pays-gets-access.test.js",
       "source_location": "L1",
       "id": "member_pays_gets_access_test",
-      "community": 64
+      "community": 80
     },
     {
       "label": "ob-89-two-gate.test.js",
@@ -2265,7 +2873,7 @@
       "source_file": "test\\p1-critical-path\\ob-89-two-gate.test.js",
       "source_location": "L1",
       "id": "ob_89_two_gate_test",
-      "community": 65
+      "community": 81
     },
     {
       "label": "queue-worker-coordination.test.js",
@@ -2273,7 +2881,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
       "source_location": "L1",
       "id": "queue_worker_coordination_test",
-      "community": 36
+      "community": 45
     },
     {
       "label": "constructor()",
@@ -2281,7 +2889,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
       "source_location": "L21",
       "id": "queue_worker_coordination_test_constructor",
-      "community": 36
+      "community": 45
     },
     {
       "label": "makeJob()",
@@ -2289,7 +2897,55 @@
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
       "source_location": "L85",
       "id": "queue_worker_coordination_test_makejob",
-      "community": 36
+      "community": 45
+    },
+    {
+      "label": "queue-worker-failure-modes.test.js",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\queue-worker-failure-modes.test.js",
+      "source_location": "L1",
+      "id": "queue_worker_failure_modes_test",
+      "community": 46
+    },
+    {
+      "label": "constructor()",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\queue-worker-failure-modes.test.js",
+      "source_location": "L41",
+      "id": "queue_worker_failure_modes_test_constructor",
+      "community": 46
+    },
+    {
+      "label": "makeJob()",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\queue-worker-failure-modes.test.js",
+      "source_location": "L76",
+      "id": "queue_worker_failure_modes_test_makejob",
+      "community": 46
+    },
+    {
+      "label": "queue-worker-trace.test.js",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\queue-worker-trace.test.js",
+      "source_location": "L1",
+      "id": "queue_worker_trace_test",
+      "community": 47
+    },
+    {
+      "label": "constructor()",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\queue-worker-trace.test.js",
+      "source_location": "L45",
+      "id": "queue_worker_trace_test_constructor",
+      "community": 47
+    },
+    {
+      "label": "makeJob()",
+      "file_type": "code",
+      "source_file": "test\\p1-critical-path\\queue-worker-trace.test.js",
+      "source_location": "L80",
+      "id": "queue_worker_trace_test_makejob",
+      "community": 47
     },
     {
       "label": "api-key-encryption.test.js",
@@ -2297,7 +2953,23 @@
       "source_file": "test\\p2-onboarding\\api-key-encryption.test.js",
       "source_location": "L1",
       "id": "api_key_encryption_test",
-      "community": 66
+      "community": 82
+    },
+    {
+      "label": "middleware-actor-edge-cases.test.js",
+      "file_type": "code",
+      "source_file": "test\\p2-onboarding\\middleware-actor-edge-cases.test.js",
+      "source_location": "L1",
+      "id": "middleware_actor_edge_cases_test",
+      "community": 61
+    },
+    {
+      "label": "runMiddleware()",
+      "file_type": "code",
+      "source_file": "test\\p2-onboarding\\middleware-actor-edge-cases.test.js",
+      "source_location": "L147",
+      "id": "middleware_actor_edge_cases_test_runmiddleware",
+      "community": 61
     },
     {
       "label": "plan-mapping-resolver.test.js",
@@ -2305,7 +2977,7 @@
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
       "source_location": "L1",
       "id": "plan_mapping_resolver_test",
-      "community": 48
+      "community": 62
     },
     {
       "label": "mockMappingRow()",
@@ -2313,7 +2985,71 @@
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
       "source_location": "L43",
       "id": "plan_mapping_resolver_test_mockmappingrow",
-      "community": 48
+      "community": 62
+    },
+    {
+      "label": "trace-middleware.test.js",
+      "file_type": "code",
+      "source_file": "test\\p2-onboarding\\trace-middleware.test.js",
+      "source_location": "L1",
+      "id": "trace_middleware_test",
+      "community": 37
+    },
+    {
+      "label": "makeApp()",
+      "file_type": "code",
+      "source_file": "test\\p2-onboarding\\trace-middleware.test.js",
+      "source_location": "L24",
+      "id": "trace_middleware_test_makeapp",
+      "community": 37
+    },
+    {
+      "label": "request()",
+      "file_type": "code",
+      "source_file": "test\\p2-onboarding\\trace-middleware.test.js",
+      "source_location": "L43",
+      "id": "trace_middleware_test_request",
+      "community": 37
+    },
+    {
+      "label": "mockReq()",
+      "file_type": "code",
+      "source_file": "test\\p2-onboarding\\trace-middleware.test.js",
+      "source_location": "L116",
+      "id": "trace_middleware_test_mockreq",
+      "community": 37
+    },
+    {
+      "label": "cron-trace.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\cron-trace.test.js",
+      "source_location": "L1",
+      "id": "cron_trace_test",
+      "community": 83
+    },
+    {
+      "label": "diagnostic-log-db-sync.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\diagnostic-log-db-sync.test.js",
+      "source_location": "L1",
+      "id": "diagnostic_log_db_sync_test",
+      "community": 63
+    },
+    {
+      "label": "flushImmediate()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\diagnostic-log-db-sync.test.js",
+      "source_location": "L52",
+      "id": "diagnostic_log_db_sync_test_flushimmediate",
+      "community": 63
+    },
+    {
+      "label": "logger-context-redaction.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\logger-context-redaction.test.js",
+      "source_location": "L1",
+      "id": "logger_context_redaction_test",
+      "community": 84
     },
     {
       "label": "no-raw-console.test.js",
@@ -2321,7 +3057,7 @@
       "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
       "source_location": "L1",
       "id": "no_raw_console_test",
-      "community": 37
+      "community": 48
     },
     {
       "label": "collectJsFiles()",
@@ -2329,7 +3065,7 @@
       "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
       "source_location": "L34",
       "id": "no_raw_console_test_collectjsfiles",
-      "community": 37
+      "community": 48
     },
     {
       "label": "findOffenders()",
@@ -2337,7 +3073,7 @@
       "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
       "source_location": "L57",
       "id": "no_raw_console_test_findoffenders",
-      "community": 37
+      "community": 48
     },
     {
       "label": "rate-limiter.test.js",
@@ -2345,7 +3081,31 @@
       "source_file": "test\\p3-data-integrity\\rate-limiter.test.js",
       "source_location": "L1",
       "id": "rate_limiter_test",
-      "community": 67
+      "community": 85
+    },
+    {
+      "label": "redaction-edge-cases.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\redaction-edge-cases.test.js",
+      "source_location": "L1",
+      "id": "redaction_edge_cases_test",
+      "community": 86
+    },
+    {
+      "label": "trace-context-unhappy.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\trace-context-unhappy.test.js",
+      "source_location": "L1",
+      "id": "trace_context_unhappy_test",
+      "community": 87
+    },
+    {
+      "label": "trace-propagation.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\trace-propagation.test.js",
+      "source_location": "L1",
+      "id": "trace_propagation_test",
+      "community": 88
     },
     {
       "label": "wix-adapter-parsing.test.js",
@@ -2353,7 +3113,7 @@
       "source_file": "test\\p3-data-integrity\\wix-adapter-parsing.test.js",
       "source_location": "L1",
       "id": "wix_adapter_parsing_test",
-      "community": 68
+      "community": 89
     },
     {
       "label": "wix-members-api-normalization.test.js",
@@ -2361,7 +3121,7 @@
       "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
       "source_location": "L1",
       "id": "wix_members_api_normalization_test",
-      "community": 24
+      "community": 31
     },
     {
       "label": "constructor()",
@@ -2369,7 +3129,7 @@
       "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
       "source_location": "L23",
       "id": "wix_members_api_normalization_test_constructor",
-      "community": 24
+      "community": 31
     },
     {
       "label": "acquire()",
@@ -2377,7 +3137,7 @@
       "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
       "source_location": "L24",
       "id": "wix_members_api_normalization_test_acquire",
-      "community": 24
+      "community": 31
     },
     {
       "label": "currentCount()",
@@ -2385,7 +3145,7 @@
       "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
       "source_location": "L25",
       "id": "wix_members_api_normalization_test_currentcount",
-      "community": 24
+      "community": 31
     },
     {
       "label": "stubFetchPair()",
@@ -2393,7 +3153,7 @@
       "source_file": "test\\p3-data-integrity\\wix-members-api-normalization.test.js",
       "source_location": "L37",
       "id": "wix_members_api_normalization_test_stubfetchpair",
-      "community": 24
+      "community": 31
     },
     {
       "label": "business-risk-reporter.js",
@@ -2401,7 +3161,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L1",
       "id": "business_risk_reporter",
-      "community": 11
+      "community": 16
     },
     {
       "label": "getTierForPath()",
@@ -2409,7 +3169,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L26",
       "id": "business_risk_reporter_gettierforpath",
-      "community": 11
+      "community": 16
     },
     {
       "label": "formatDivider()",
@@ -2417,7 +3177,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L31",
       "id": "business_risk_reporter_formatdivider",
-      "community": 11
+      "community": 16
     },
     {
       "label": "BusinessRiskReporter",
@@ -2425,7 +3185,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L35",
       "id": "business_risk_reporter_businessriskreporter",
-      "community": 11
+      "community": 16
     },
     {
       "label": ".constructor()",
@@ -2433,7 +3193,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L36",
       "id": "business_risk_reporter_businessriskreporter_constructor",
-      "community": 11
+      "community": 16
     },
     {
       "label": ".onTestResult()",
@@ -2441,7 +3201,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L44",
       "id": "business_risk_reporter_businessriskreporter_ontestresult",
-      "community": 11
+      "community": 16
     },
     {
       "label": ".onRunComplete()",
@@ -2449,7 +3209,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L61",
       "id": "business_risk_reporter_businessriskreporter_onruncomplete",
-      "community": 11
+      "community": 16
     },
     {
       "label": "._printAllClear()",
@@ -2457,7 +3217,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L120",
       "id": "business_risk_reporter_businessriskreporter_printallclear",
-      "community": 11
+      "community": 16
     }
   ],
   "links": [
@@ -2561,7 +3321,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\server.js",
-      "source_location": "L59",
+      "source_location": "L66",
       "weight": 1.0,
       "_src": "server",
       "_tgt": "server_allowwixframe",
@@ -2573,7 +3333,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\server.js",
-      "source_location": "L94",
+      "source_location": "L101",
       "weight": 1.0,
       "_src": "server",
       "_tgt": "server_sessionmeta",
@@ -2585,7 +3345,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\server.js",
-      "source_location": "L120",
+      "source_location": "L127",
       "weight": 1.0,
       "_src": "server",
       "_tgt": "server_allowmemberframe",
@@ -4060,6 +4820,30 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "admin\\middleware\\activity.js",
+      "source_location": "L32",
+      "weight": 1.0,
+      "_src": "activity",
+      "_tgt": "activity_getdb",
+      "source": "activity",
+      "target": "activity_getdb",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\middleware\\activity.js",
+      "source_location": "L45",
+      "weight": 1.0,
+      "_src": "activity",
+      "_tgt": "activity_recordactivity",
+      "source": "activity",
+      "target": "activity_recordactivity",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "admin\\middleware\\audit.js",
       "source_location": "L19",
       "weight": 1.0,
@@ -4139,6 +4923,138 @@
       "_tgt": "auth_requireauthpageoroperator",
       "source": "auth",
       "target": "auth_requireauthpageoroperator",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\middleware\\trace-context.js",
+      "source_location": "L35",
+      "weight": 1.0,
+      "_src": "trace_context",
+      "_tgt": "trace_context_resolveactor",
+      "source": "trace_context",
+      "target": "trace_context_resolveactor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\middleware\\trace-context.js",
+      "source_location": "L59",
+      "weight": 1.0,
+      "_src": "trace_context",
+      "_tgt": "trace_context_tracecontextmiddleware",
+      "source": "trace_context",
+      "target": "trace_context_tracecontextmiddleware",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L36",
+      "weight": 1.0,
+      "_src": "trace_context",
+      "_tgt": "trace_context_getdb",
+      "source": "trace_context",
+      "target": "trace_context_getdb",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L53",
+      "weight": 1.0,
+      "_src": "trace_context",
+      "_tgt": "trace_context_runwith",
+      "source": "trace_context",
+      "target": "trace_context_runwith",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L73",
+      "weight": 1.0,
+      "_src": "trace_context",
+      "_tgt": "trace_context_setactor",
+      "source": "trace_context",
+      "target": "trace_context_setactor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L83",
+      "weight": 1.0,
+      "_src": "trace_context",
+      "_tgt": "trace_context_getcontext",
+      "source": "trace_context",
+      "target": "trace_context_getcontext",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L91",
+      "weight": 1.0,
+      "_src": "trace_context",
+      "_tgt": "trace_context_gettraceid",
+      "source": "trace_context",
+      "target": "trace_context_gettraceid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L100",
+      "weight": 1.0,
+      "_src": "trace_context",
+      "_tgt": "trace_context_getactor",
+      "source": "trace_context",
+      "target": "trace_context_getactor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L109",
+      "weight": 1.0,
+      "_src": "trace_context",
+      "_tgt": "trace_context_minttraceid",
+      "source": "trace_context",
+      "target": "trace_context_minttraceid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\trace-context.js",
+      "source_location": "L131",
+      "weight": 1.0,
+      "_src": "trace_context",
+      "_tgt": "trace_context_registertrace",
+      "source": "trace_context",
+      "target": "trace_context_registertrace",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\middleware\\trace-context.js",
+      "source_location": "L63",
+      "weight": 1.0,
+      "_src": "trace_context_tracecontextmiddleware",
+      "_tgt": "trace_context_resolveactor",
+      "source": "trace_context_resolveactor",
+      "target": "trace_context_tracecontextmiddleware",
       "confidence_score": 1.0
     },
     {
@@ -4696,6 +5612,438 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-app.jsx",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_src": "members_app",
+      "_tgt": "members_app_app",
+      "source": "members_app",
+      "target": "members_app_app",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L20",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_mapstatus",
+      "source": "members_bridge",
+      "target": "members_bridge_mapstatus",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L34",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_mapaccessstatus",
+      "source": "members_bridge",
+      "target": "members_bridge_mapaccessstatus",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L43",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_deriveexpireslabel",
+      "source": "members_bridge",
+      "target": "members_bridge_deriveexpireslabel",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L49",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_formatdate",
+      "source": "members_bridge",
+      "target": "members_bridge_formatdate",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L56",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_relativeago",
+      "source": "members_bridge",
+      "target": "members_bridge_relativeago",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L68",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_shapemember",
+      "source": "members_bridge",
+      "target": "members_bridge_shapemember",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L91",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_buildmembersarray",
+      "source": "members_bridge",
+      "target": "members_bridge_buildmembersarray",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L115",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_attacherrors",
+      "source": "members_bridge",
+      "target": "members_bridge_attacherrors",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L135",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_resolveclientid",
+      "source": "members_bridge",
+      "target": "members_bridge_resolveclientid",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L148",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_fetchjson",
+      "source": "members_bridge",
+      "target": "members_bridge_fetchjson",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L155",
+      "weight": 1.0,
+      "_src": "members_bridge",
+      "_tgt": "members_bridge_loadmembers",
+      "source": "members_bridge",
+      "target": "members_bridge_loadmembers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L77",
+      "weight": 1.0,
+      "_src": "members_bridge_shapemember",
+      "_tgt": "members_bridge_mapstatus",
+      "source": "members_bridge_mapstatus",
+      "target": "members_bridge_shapemember",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L78",
+      "weight": 1.0,
+      "_src": "members_bridge_shapemember",
+      "_tgt": "members_bridge_mapaccessstatus",
+      "source": "members_bridge_mapaccessstatus",
+      "target": "members_bridge_shapemember",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L80",
+      "weight": 1.0,
+      "_src": "members_bridge_shapemember",
+      "_tgt": "members_bridge_deriveexpireslabel",
+      "source": "members_bridge_deriveexpireslabel",
+      "target": "members_bridge_shapemember",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L79",
+      "weight": 1.0,
+      "_src": "members_bridge_shapemember",
+      "_tgt": "members_bridge_formatdate",
+      "source": "members_bridge_formatdate",
+      "target": "members_bridge_shapemember",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L128",
+      "weight": 1.0,
+      "_src": "members_bridge_attacherrors",
+      "_tgt": "members_bridge_formatdate",
+      "source": "members_bridge_formatdate",
+      "target": "members_bridge_attacherrors",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L200",
+      "weight": 1.0,
+      "_src": "members_bridge_loadmembers",
+      "_tgt": "members_bridge_relativeago",
+      "source": "members_bridge_relativeago",
+      "target": "members_bridge_loadmembers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L101",
+      "weight": 1.0,
+      "_src": "members_bridge_buildmembersarray",
+      "_tgt": "members_bridge_shapemember",
+      "source": "members_bridge_shapemember",
+      "target": "members_bridge_buildmembersarray",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L182",
+      "weight": 1.0,
+      "_src": "members_bridge_loadmembers",
+      "_tgt": "members_bridge_buildmembersarray",
+      "source": "members_bridge_buildmembersarray",
+      "target": "members_bridge_loadmembers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L188",
+      "weight": 1.0,
+      "_src": "members_bridge_loadmembers",
+      "_tgt": "members_bridge_attacherrors",
+      "source": "members_bridge_attacherrors",
+      "target": "members_bridge_loadmembers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L156",
+      "weight": 1.0,
+      "_src": "members_bridge_loadmembers",
+      "_tgt": "members_bridge_resolveclientid",
+      "source": "members_bridge_resolveclientid",
+      "target": "members_bridge_loadmembers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-bridge.js",
+      "source_location": "L172",
+      "weight": 1.0,
+      "_src": "members_bridge_loadmembers",
+      "_tgt": "members_bridge_fetchjson",
+      "source": "members_bridge_fetchjson",
+      "target": "members_bridge_loadmembers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-data.jsx",
+      "source_location": "L16",
+      "weight": 1.0,
+      "_src": "members_data",
+      "_tgt": "members_data_memberinitials",
+      "source": "members_data",
+      "target": "members_data_memberinitials",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-data.jsx",
+      "source_location": "L20",
+      "weight": 1.0,
+      "_src": "members_data",
+      "_tgt": "members_data_memberfullname",
+      "source": "members_data",
+      "target": "members_data_memberfullname",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-icons.jsx",
+      "source_location": "L3",
+      "weight": 1.0,
+      "_src": "members_icons",
+      "_tgt": "members_icons_icon",
+      "source": "members_icons",
+      "target": "members_icons_icon",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L5",
+      "weight": 1.0,
+      "_src": "members_parts",
+      "_tgt": "members_parts_avatar",
+      "source": "members_parts",
+      "target": "members_parts_avatar",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_src": "members_parts",
+      "_tgt": "members_parts_statuspill",
+      "source": "members_parts",
+      "target": "members_parts_statuspill",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L26",
+      "weight": 1.0,
+      "_src": "members_parts",
+      "_tgt": "members_parts_planbadge",
+      "source": "members_parts",
+      "target": "members_parts_planbadge",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L33",
+      "weight": 1.0,
+      "_src": "members_parts",
+      "_tgt": "members_parts_useclickoutside",
+      "source": "members_parts",
+      "target": "members_parts_useclickoutside",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L45",
+      "weight": 1.0,
+      "_src": "members_parts",
+      "_tgt": "members_parts_actionsmenu",
+      "source": "members_parts",
+      "target": "members_parts_actionsmenu",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L67",
+      "weight": 1.0,
+      "_src": "members_parts",
+      "_tgt": "members_parts_memberdrawer",
+      "source": "members_parts",
+      "target": "members_parts_memberdrawer",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L191",
+      "weight": 1.0,
+      "_src": "members_parts",
+      "_tgt": "members_parts_errorpopover",
+      "source": "members_parts",
+      "target": "members_parts_errorpopover",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L204",
+      "weight": 1.0,
+      "_src": "members_parts",
+      "_tgt": "members_parts_removemodal",
+      "source": "members_parts",
+      "target": "members_parts_removemodal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L47",
+      "weight": 1.0,
+      "_src": "members_parts_actionsmenu",
+      "_tgt": "members_parts_useclickoutside",
+      "source": "members_parts_useclickoutside",
+      "target": "members_parts_actionsmenu",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\members-parts.jsx",
+      "source_location": "L193",
+      "weight": 1.0,
+      "_src": "members_parts_errorpopover",
+      "_tgt": "members_parts_useclickoutside",
+      "source": "members_parts_useclickoutside",
+      "target": "members_parts_errorpopover",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "admin\\public\\operator-nav.js",
       "source_location": "L12",
       "weight": 1.0,
@@ -4876,6 +6224,150 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L139",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_usetweaks",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_usetweaks",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L160",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweakspanel",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweakspanel",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L250",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweaksection",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweaksection",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L259",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweakrow",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweakrow",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L273",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweakslider",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweakslider",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L282",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweaktoggle",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweaktoggle",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L293",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweakradio",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweakradio",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L347",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweakselect",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweakselect",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L361",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweaktext",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweaktext",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L370",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweaknumber",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweaknumber",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L404",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweakcolor",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweakcolor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\public\\tweaks-panel.jsx",
+      "source_location": "L414",
+      "weight": 1.0,
+      "_src": "tweaks_panel",
+      "_tgt": "tweaks_panel_tweakbutton",
+      "source": "tweaks_panel",
+      "target": "tweaks_panel_tweakbutton",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\clients.js",
       "source_location": "L31",
       "weight": 1.0,
@@ -4889,7 +6381,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L66",
+      "source_location": "L67",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_resolveapikey",
@@ -4901,7 +6393,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L94",
+      "source_location": "L95",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_syncmappingmembers",
@@ -4913,7 +6405,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L255",
+      "source_location": "L256",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_activatelocationmembers",
@@ -4925,7 +6417,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L280",
+      "source_location": "L281",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_validateapikeygroups",
@@ -4937,7 +6429,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L318",
+      "source_location": "L319",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_retrypendinghardwaremembers",
@@ -4949,7 +6441,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L377",
+      "source_location": "L378",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_requireinvitetoken",
@@ -4961,7 +6453,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L105",
+      "source_location": "L106",
       "weight": 1.0,
       "_src": "operator_syncmappingmembers",
       "_tgt": "operator_resolveapikey",
@@ -4973,7 +6465,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L267",
+      "source_location": "L268",
       "weight": 1.0,
       "_src": "operator_activatelocationmembers",
       "_tgt": "operator_syncmappingmembers",
@@ -5105,7 +6597,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L202",
+      "source_location": "L245",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic",
       "_tgt": "grant_revoke_grantrevokelogic_getclientapikey",
@@ -5117,7 +6609,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L209",
+      "source_location": "L252",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic",
       "_tgt": "grant_revoke_grantrevokelogic_processrevoke",
@@ -5129,7 +6621,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\grant-revoke.js",
-      "source_location": "L216",
+      "source_location": "L259",
       "weight": 1.0,
       "_src": "grant_revoke_grantrevokelogic_processrevoke",
       "_tgt": "grant_revoke_grantrevokelogic_getclientapikey",
@@ -5141,7 +6633,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L37",
+      "source_location": "L38",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_runhealthcheck",
@@ -5153,7 +6645,19 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L59",
+      "source_location": "L46",
+      "weight": 1.0,
+      "_src": "hardware_health_check",
+      "_tgt": "hardware_health_check_runhealthcheckbody",
+      "source": "hardware_health_check",
+      "target": "hardware_health_check_runhealthcheckbody",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\hardware-health-check.js",
+      "source_location": "L68",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_checklocation",
@@ -5165,7 +6669,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L119",
+      "source_location": "L128",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_reconcilegroups",
@@ -5177,7 +6681,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L248",
+      "source_location": "L257",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_notifyorphanedgroups",
@@ -5189,7 +6693,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L299",
+      "source_location": "L308",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_reconcilewixplans",
@@ -5201,7 +6705,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L384",
+      "source_location": "L393",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_notifyarchivedplans",
@@ -5213,7 +6717,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L424",
+      "source_location": "L433",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_diagnose",
@@ -5225,7 +6729,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L437",
+      "source_location": "L446",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_updatelocationverification",
@@ -5237,7 +6741,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L447",
+      "source_location": "L456",
       "weight": 1.0,
       "_src": "hardware_health_check",
       "_tgt": "hardware_health_check_notifyfailure",
@@ -5249,11 +6753,11 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L53",
+      "source_location": "L62",
       "weight": 1.0,
-      "_src": "hardware_health_check_runhealthcheck",
+      "_src": "hardware_health_check_runhealthcheckbody",
       "_tgt": "hardware_health_check_checklocation",
-      "source": "hardware_health_check_runhealthcheck",
+      "source": "hardware_health_check_runhealthcheckbody",
       "target": "hardware_health_check_checklocation",
       "confidence_score": 1.0
     },
@@ -5261,7 +6765,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L66",
+      "source_location": "L75",
       "weight": 1.0,
       "_src": "hardware_health_check_checklocation",
       "_tgt": "hardware_health_check_notifyfailure",
@@ -5273,7 +6777,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L67",
+      "source_location": "L76",
       "weight": 1.0,
       "_src": "hardware_health_check_checklocation",
       "_tgt": "hardware_health_check_updatelocationverification",
@@ -5285,7 +6789,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L97",
+      "source_location": "L106",
       "weight": 1.0,
       "_src": "hardware_health_check_checklocation",
       "_tgt": "hardware_health_check_diagnose",
@@ -5297,7 +6801,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L107",
+      "source_location": "L116",
       "weight": 1.0,
       "_src": "hardware_health_check_checklocation",
       "_tgt": "hardware_health_check_reconcilegroups",
@@ -5309,7 +6813,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L111",
+      "source_location": "L120",
       "weight": 1.0,
       "_src": "hardware_health_check_checklocation",
       "_tgt": "hardware_health_check_reconcilewixplans",
@@ -5321,7 +6825,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L241",
+      "source_location": "L250",
       "weight": 1.0,
       "_src": "hardware_health_check_reconcilegroups",
       "_tgt": "hardware_health_check_notifyorphanedgroups",
@@ -5333,7 +6837,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\hardware-health-check.js",
-      "source_location": "L380",
+      "source_location": "L389",
       "weight": 1.0,
       "_src": "hardware_health_check_reconcilewixplans",
       "_tgt": "hardware_health_check_notifyarchivedplans",
@@ -5416,8 +6920,104 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L88",
+      "weight": 1.0,
+      "_src": "log_redaction",
+      "_tgt": "log_redaction_redactstring",
+      "source": "log_redaction",
+      "target": "log_redaction_redactstring",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L97",
+      "weight": 1.0,
+      "_src": "log_redaction",
+      "_tgt": "log_redaction_redactvalue",
+      "source": "log_redaction",
+      "target": "log_redaction_redactvalue",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L105",
+      "weight": 1.0,
+      "_src": "log_redaction",
+      "_tgt": "log_redaction_redactobject",
+      "source": "log_redaction",
+      "target": "log_redaction_redactobject",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L118",
+      "weight": 1.0,
+      "_src": "log_redaction",
+      "_tgt": "log_redaction_redact",
+      "source": "log_redaction",
+      "target": "log_redaction_redact",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L127",
+      "weight": 1.0,
+      "_src": "log_redaction",
+      "_tgt": "log_redaction_registersecretfield",
+      "source": "log_redaction",
+      "target": "log_redaction_registersecretfield",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L99",
+      "weight": 1.0,
+      "_src": "log_redaction_redactvalue",
+      "_tgt": "log_redaction_redactstring",
+      "source": "log_redaction_redactstring",
+      "target": "log_redaction_redactvalue",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L108",
+      "weight": 1.0,
+      "_src": "log_redaction_redactobject",
+      "_tgt": "log_redaction_redactvalue",
+      "source": "log_redaction_redactvalue",
+      "target": "log_redaction_redactobject",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\log-redaction.js",
+      "source_location": "L120",
+      "weight": 1.0,
+      "_src": "log_redaction_redact",
+      "_tgt": "log_redaction_redactobject",
+      "source": "log_redaction_redactobject",
+      "target": "log_redaction_redact",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "core\\logger.js",
-      "source_location": "L70",
+      "source_location": "L78",
       "weight": 1.0,
       "_src": "logger",
       "_tgt": "logger_getdb",
@@ -5429,7 +7029,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\logger.js",
-      "source_location": "L80",
+      "source_location": "L88",
       "weight": 1.0,
       "_src": "logger",
       "_tgt": "logger_deriveservice",
@@ -5441,7 +7041,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\logger.js",
-      "source_location": "L103",
+      "source_location": "L118",
       "weight": 1.0,
       "_src": "logger",
       "_tgt": "logger_persisttodiagnosticlog",
@@ -5453,7 +7053,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\logger.js",
-      "source_location": "L155",
+      "source_location": "L184",
       "weight": 1.0,
       "_src": "logger",
       "_tgt": "logger_emit",
@@ -5465,7 +7065,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\logger.js",
-      "source_location": "L209",
+      "source_location": "L246",
       "weight": 1.0,
       "_src": "logger",
       "_tgt": "logger_withtrace",
@@ -5477,7 +7077,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\logger.js",
-      "source_location": "L185",
+      "source_location": "L222",
       "weight": 1.0,
       "_src": "logger_emit",
       "_tgt": "logger_persisttodiagnosticlog",
@@ -5513,7 +7113,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L181",
+      "source_location": "L194",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_verifywixjwt",
@@ -5525,7 +7125,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L233",
+      "source_location": "L246",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_getwixpublickey",
@@ -5537,7 +7137,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L248",
+      "source_location": "L261",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_fetchwixjwks",
@@ -5561,7 +7161,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L201",
+      "source_location": "L214",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_verifywixjwt",
       "_tgt": "member_sync_api_membersyncapi_getwixpublickey",
@@ -5573,7 +7173,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L236",
+      "source_location": "L249",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_getwixpublickey",
       "_tgt": "member_sync_api_membersyncapi_fetchwixjwks",
@@ -5609,7 +7209,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L52",
+      "source_location": "L53",
       "weight": 1.0,
       "_src": "queue_worker",
       "_tgt": "queue_worker_getclientapikey",
@@ -5621,7 +7221,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L63",
+      "source_location": "L67",
       "weight": 1.0,
       "_src": "queue_worker",
       "_tgt": "queue_worker_processjob",
@@ -5633,7 +7233,19 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L400",
+      "source_location": "L86",
+      "weight": 1.0,
+      "_src": "queue_worker",
+      "_tgt": "queue_worker_processjobbody",
+      "source": "queue_worker",
+      "target": "queue_worker_processjobbody",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\queue-worker.js",
+      "source_location": "L434",
       "weight": 1.0,
       "_src": "queue_worker",
       "_tgt": "queue_worker_startworker",
@@ -5645,12 +7257,12 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\queue-worker.js",
-      "source_location": "L102",
+      "source_location": "L124",
       "weight": 1.0,
-      "_src": "queue_worker_processjob",
+      "_src": "queue_worker_processjobbody",
       "_tgt": "queue_worker_getclientapikey",
       "source": "queue_worker_getclientapikey",
-      "target": "queue_worker_processjob",
+      "target": "queue_worker_processjobbody",
       "confidence_score": 1.0
     },
     {
@@ -5705,7 +7317,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L32",
+      "source_location": "L33",
       "weight": 1.0,
       "_src": "reconciliation",
       "_tgt": "reconciliation_nightlyreconciliation",
@@ -5717,7 +7329,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L34",
+      "source_location": "L35",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_constructor",
@@ -5729,7 +7341,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L41",
+      "source_location": "L42",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_runnightlysweep",
@@ -5741,7 +7353,19 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L107",
+      "source_location": "L50",
+      "weight": 1.0,
+      "_src": "reconciliation_nightlyreconciliation",
+      "_tgt": "reconciliation_nightlyreconciliation_runnightlysweepbody",
+      "source": "reconciliation_nightlyreconciliation",
+      "target": "reconciliation_nightlyreconciliation_runnightlysweepbody",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L115",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_synctruesources",
@@ -5753,7 +7377,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L143",
+      "source_location": "L151",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_syncclient",
@@ -5765,7 +7389,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L322",
+      "source_location": "L330",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_reconcilemember",
@@ -5777,7 +7401,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L619",
+      "source_location": "L627",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
@@ -5789,7 +7413,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L651",
+      "source_location": "L659",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_fetchactionablerecords",
@@ -5801,7 +7425,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L663",
+      "source_location": "L671",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_processrecordtargeted",
@@ -5813,7 +7437,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L695",
+      "source_location": "L703",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_generateandsenddigest",
@@ -5825,7 +7449,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L758",
+      "source_location": "L766",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation",
       "_tgt": "reconciliation_nightlyreconciliation_sleep",
@@ -5837,36 +7461,12 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L64",
+      "source_location": "L72",
       "weight": 1.0,
-      "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "_src": "reconciliation_nightlyreconciliation_runnightlysweepbody",
       "_tgt": "reconciliation_nightlyreconciliation_synctruesources",
-      "source": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "source": "reconciliation_nightlyreconciliation_runnightlysweepbody",
       "target": "reconciliation_nightlyreconciliation_synctruesources",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "source_file": "core\\reconciliation.js",
-      "source_location": "L76",
-      "weight": 1.0,
-      "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
-      "_tgt": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
-      "source": "reconciliation_nightlyreconciliation_runnightlysweep",
-      "target": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "source_file": "core\\reconciliation.js",
-      "source_location": "L79",
-      "weight": 1.0,
-      "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
-      "_tgt": "reconciliation_nightlyreconciliation_fetchactionablerecords",
-      "source": "reconciliation_nightlyreconciliation_runnightlysweep",
-      "target": "reconciliation_nightlyreconciliation_fetchactionablerecords",
       "confidence_score": 1.0
     },
     {
@@ -5875,9 +7475,33 @@
       "source_file": "core\\reconciliation.js",
       "source_location": "L84",
       "weight": 1.0,
-      "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "_src": "reconciliation_nightlyreconciliation_runnightlysweepbody",
+      "_tgt": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
+      "source": "reconciliation_nightlyreconciliation_runnightlysweepbody",
+      "target": "reconciliation_nightlyreconciliation_syncdoorlockdownstates",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L87",
+      "weight": 1.0,
+      "_src": "reconciliation_nightlyreconciliation_runnightlysweepbody",
+      "_tgt": "reconciliation_nightlyreconciliation_fetchactionablerecords",
+      "source": "reconciliation_nightlyreconciliation_runnightlysweepbody",
+      "target": "reconciliation_nightlyreconciliation_fetchactionablerecords",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "core\\reconciliation.js",
+      "source_location": "L92",
+      "weight": 1.0,
+      "_src": "reconciliation_nightlyreconciliation_runnightlysweepbody",
       "_tgt": "reconciliation_nightlyreconciliation_processrecordtargeted",
-      "source": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "source": "reconciliation_nightlyreconciliation_runnightlysweepbody",
       "target": "reconciliation_nightlyreconciliation_processrecordtargeted",
       "confidence_score": 1.0
     },
@@ -5885,11 +7509,11 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L85",
+      "source_location": "L93",
       "weight": 1.0,
-      "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "_src": "reconciliation_nightlyreconciliation_runnightlysweepbody",
       "_tgt": "reconciliation_nightlyreconciliation_sleep",
-      "source": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "source": "reconciliation_nightlyreconciliation_runnightlysweepbody",
       "target": "reconciliation_nightlyreconciliation_sleep",
       "confidence_score": 1.0
     },
@@ -5897,11 +7521,11 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L89",
+      "source_location": "L97",
       "weight": 1.0,
-      "_src": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "_src": "reconciliation_nightlyreconciliation_runnightlysweepbody",
       "_tgt": "reconciliation_nightlyreconciliation_generateandsenddigest",
-      "source": "reconciliation_nightlyreconciliation_runnightlysweep",
+      "source": "reconciliation_nightlyreconciliation_runnightlysweepbody",
       "target": "reconciliation_nightlyreconciliation_generateandsenddigest",
       "confidence_score": 1.0
     },
@@ -5909,7 +7533,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\reconciliation.js",
-      "source_location": "L122",
+      "source_location": "L130",
       "weight": 1.0,
       "_src": "reconciliation_nightlyreconciliation_synctruesources",
       "_tgt": "reconciliation_nightlyreconciliation_syncclient",
@@ -6268,6 +7892,234 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L31",
+      "weight": 1.0,
+      "_src": "events",
+      "_tgt": "events_send",
+      "source": "events",
+      "target": "events_send",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L50",
+      "weight": 1.0,
+      "_src": "events",
+      "_tgt": "events_wixpricingplans_onorderpurchased",
+      "source": "events",
+      "target": "events_wixpricingplans_onorderpurchased",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L51",
+      "weight": 1.0,
+      "_src": "events",
+      "_tgt": "events_wixpricingplans_onorderstarted",
+      "source": "events",
+      "target": "events_wixpricingplans_onorderstarted",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L52",
+      "weight": 1.0,
+      "_src": "events",
+      "_tgt": "events_wixpricingplans_onordercanceled",
+      "source": "events",
+      "target": "events_wixpricingplans_onordercanceled",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L53",
+      "weight": 1.0,
+      "_src": "events",
+      "_tgt": "events_wixpricingplans_onorderautorenewcanceled",
+      "source": "events",
+      "target": "events_wixpricingplans_onorderautorenewcanceled",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L54",
+      "weight": 1.0,
+      "_src": "events",
+      "_tgt": "events_wixpricingplans_onorderended",
+      "source": "events",
+      "target": "events_wixpricingplans_onorderended",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L55",
+      "weight": 1.0,
+      "_src": "events",
+      "_tgt": "events_wixpricingplans_onorderupdated",
+      "source": "events",
+      "target": "events_wixpricingplans_onorderupdated",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L58",
+      "weight": 1.0,
+      "_src": "events",
+      "_tgt": "events_wixbookings_onbookingconfirmed",
+      "source": "events",
+      "target": "events_wixbookings_onbookingconfirmed",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L59",
+      "weight": 1.0,
+      "_src": "events",
+      "_tgt": "events_wixbookings_onbookingcanceled",
+      "source": "events",
+      "target": "events_wixbookings_onbookingcanceled",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L62",
+      "weight": 1.0,
+      "_src": "events",
+      "_tgt": "events_wixmembers_onmemberdeleted",
+      "source": "events",
+      "target": "events_wixmembers_onmemberdeleted",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L50",
+      "weight": 1.0,
+      "_src": "events_wixpricingplans_onorderpurchased",
+      "_tgt": "events_send",
+      "source": "events_send",
+      "target": "events_wixpricingplans_onorderpurchased",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L51",
+      "weight": 1.0,
+      "_src": "events_wixpricingplans_onorderstarted",
+      "_tgt": "events_send",
+      "source": "events_send",
+      "target": "events_wixpricingplans_onorderstarted",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L52",
+      "weight": 1.0,
+      "_src": "events_wixpricingplans_onordercanceled",
+      "_tgt": "events_send",
+      "source": "events_send",
+      "target": "events_wixpricingplans_onordercanceled",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L53",
+      "weight": 1.0,
+      "_src": "events_wixpricingplans_onorderautorenewcanceled",
+      "_tgt": "events_send",
+      "source": "events_send",
+      "target": "events_wixpricingplans_onorderautorenewcanceled",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L54",
+      "weight": 1.0,
+      "_src": "events_wixpricingplans_onorderended",
+      "_tgt": "events_send",
+      "source": "events_send",
+      "target": "events_wixpricingplans_onorderended",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L55",
+      "weight": 1.0,
+      "_src": "events_wixpricingplans_onorderupdated",
+      "_tgt": "events_send",
+      "source": "events_send",
+      "target": "events_wixpricingplans_onorderupdated",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L58",
+      "weight": 1.0,
+      "_src": "events_wixbookings_onbookingconfirmed",
+      "_tgt": "events_send",
+      "source": "events_send",
+      "target": "events_wixbookings_onbookingconfirmed",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L59",
+      "weight": 1.0,
+      "_src": "events_wixbookings_onbookingcanceled",
+      "_tgt": "events_send",
+      "source": "events_send",
+      "target": "events_wixbookings_onbookingcanceled",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "handoff\\velo\\events.js",
+      "source_location": "L62",
+      "weight": 1.0,
+      "_src": "events_wixmembers_onmemberdeleted",
+      "_tgt": "events_send",
+      "source": "events_send",
+      "target": "events_wixmembers_onmemberdeleted",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "scripts\\audit-by-internal-id.js",
       "source_location": "L11",
       "weight": 1.0,
@@ -6388,6 +8240,66 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "test\\p1-critical-path\\queue-worker-failure-modes.test.js",
+      "source_location": "L41",
+      "weight": 1.0,
+      "_src": "queue_worker_failure_modes_test",
+      "_tgt": "queue_worker_failure_modes_test_constructor",
+      "source": "queue_worker_failure_modes_test",
+      "target": "queue_worker_failure_modes_test_constructor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p1-critical-path\\queue-worker-failure-modes.test.js",
+      "source_location": "L76",
+      "weight": 1.0,
+      "_src": "queue_worker_failure_modes_test",
+      "_tgt": "queue_worker_failure_modes_test_makejob",
+      "source": "queue_worker_failure_modes_test",
+      "target": "queue_worker_failure_modes_test_makejob",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p1-critical-path\\queue-worker-trace.test.js",
+      "source_location": "L45",
+      "weight": 1.0,
+      "_src": "queue_worker_trace_test",
+      "_tgt": "queue_worker_trace_test_constructor",
+      "source": "queue_worker_trace_test",
+      "target": "queue_worker_trace_test_constructor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p1-critical-path\\queue-worker-trace.test.js",
+      "source_location": "L80",
+      "weight": 1.0,
+      "_src": "queue_worker_trace_test",
+      "_tgt": "queue_worker_trace_test_makejob",
+      "source": "queue_worker_trace_test",
+      "target": "queue_worker_trace_test_makejob",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p2-onboarding\\middleware-actor-edge-cases.test.js",
+      "source_location": "L147",
+      "weight": 1.0,
+      "_src": "middleware_actor_edge_cases_test",
+      "_tgt": "middleware_actor_edge_cases_test_runmiddleware",
+      "source": "middleware_actor_edge_cases_test",
+      "target": "middleware_actor_edge_cases_test_runmiddleware",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
       "source_location": "L43",
       "weight": 1.0,
@@ -6395,6 +8307,54 @@
       "_tgt": "plan_mapping_resolver_test_mockmappingrow",
       "source": "plan_mapping_resolver_test",
       "target": "plan_mapping_resolver_test_mockmappingrow",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p2-onboarding\\trace-middleware.test.js",
+      "source_location": "L24",
+      "weight": 1.0,
+      "_src": "trace_middleware_test",
+      "_tgt": "trace_middleware_test_makeapp",
+      "source": "trace_middleware_test",
+      "target": "trace_middleware_test_makeapp",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p2-onboarding\\trace-middleware.test.js",
+      "source_location": "L43",
+      "weight": 1.0,
+      "_src": "trace_middleware_test",
+      "_tgt": "trace_middleware_test_request",
+      "source": "trace_middleware_test",
+      "target": "trace_middleware_test_request",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p2-onboarding\\trace-middleware.test.js",
+      "source_location": "L116",
+      "weight": 1.0,
+      "_src": "trace_middleware_test",
+      "_tgt": "trace_middleware_test_mockreq",
+      "source": "trace_middleware_test",
+      "target": "trace_middleware_test_mockreq",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\diagnostic-log-db-sync.test.js",
+      "source_location": "L52",
+      "weight": 1.0,
+      "_src": "diagnostic_log_db_sync_test",
+      "_tgt": "diagnostic_log_db_sync_test_flushimmediate",
+      "source": "diagnostic_log_db_sync_test",
+      "target": "diagnostic_log_db_sync_test_flushimmediate",
       "confidence_score": 1.0
     },
     {
