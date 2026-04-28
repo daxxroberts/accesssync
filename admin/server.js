@@ -105,7 +105,7 @@ function sessionMeta(req) {
 }
 
 app.get('/dashboard',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/dashboard',   { activeTab: 'overview',     ...sessionMeta(req) }));
-app.get('/members',      allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/members',      { activeTab: 'members',      ...sessionMeta(req) }));
+app.get('/members',      allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/members',      { activeTab: 'members',      clientId: req.admin?.clientId || '', ...sessionMeta(req) }));
 app.get('/plan-mapping', allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/plan-mapping', { activeTab: 'plan-mapping', ...sessionMeta(req) }));
 app.get('/access',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/access',       { activeTab: 'access',       ...sessionMeta(req) }));
 app.get('/locations',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/locations',    { activeTab: 'config',       ...sessionMeta(req) }));
