@@ -164,6 +164,33 @@ body {
   box-shadow: inset 0 0 0 1px var(--border2);
 }
 
+/* ── Holder self-CTA (Add me to this plan) ──────────────── */
+.holder-self-cta {
+  margin-top: 18px;
+  padding: 14px 16px;
+  display: flex; align-items: center; gap: 14px;
+  background: linear-gradient(135deg, rgba(79,110,247,0.06), rgba(79,110,247,0.02));
+  border: 1px solid rgba(79,110,247,0.18);
+  border-radius: 12px;
+}
+.holder-self-cta-text { flex: 1; min-width: 0; }
+.holder-self-cta-title { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.holder-self-cta-sub { font-size: 12px; color: var(--text2); line-height: 1.4; }
+.holder-self-cta .btn-primary { white-space: nowrap; flex-shrink: 0; }
+
+.holder-self-status {
+  margin-top: 14px;
+  padding: 10px 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: rgba(74,222,128,0.07);
+  border: 1px solid rgba(74,222,128,0.22);
+  border-radius: 10px;
+}
+.holder-self-status-text { font-size: 12.5px; color: var(--text); font-weight: 500; }
+.btn-small {
+  font-size: 11.5px; padding: 6px 12px; border-radius: 8px; height: auto;
+}
+
 /* ── Section header ──────────────────────────────────────── */
 .section-row {
   margin-top: 22px;
@@ -630,6 +657,25 @@ body {
         </div>
       </div>
 
+      <!-- Holder self-CTA: shown when the buyer doesn't currently occupy a slot.
+           Default state for new buyers (we no longer auto-add them). -->
+      <div id="holder-self-cta" class="holder-self-cta hidden">
+        <div class="holder-self-cta-text">
+          <div class="holder-self-cta-title" id="holder-self-cta-title">Want to use this plan yourself?</div>
+          <div class="holder-self-cta-sub" id="holder-self-cta-sub">Add yourself to take one of the spots. You'll get your own door access. You can remove yourself at any time.</div>
+        </div>
+        <button class="btn-primary" id="btn-holder-claim" onclick="claimHolderSlot()">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+          Add me to this plan
+        </button>
+      </div>
+
+      <!-- Holder is on the plan: small "Remove me" affordance -->
+      <div id="holder-self-status" class="holder-self-status hidden">
+        <div class="holder-self-status-text" id="holder-self-status-text">You're on this plan</div>
+        <button class="btn-secondary btn-small" id="btn-holder-release" onclick="releaseHolderSlot()">Remove me</button>
+      </div>
+
       <!-- Section header -->
       <div class="section-row">
         <div>
@@ -897,6 +943,25 @@ function render() {
   document.getElementById('section-sub').textContent =
     used === 0 ? 'No members yet — add up to ' + max
                : used + ' of ' + max + ' spot' + (max === 1 ? '' : 's') + ' used';
+
+  // Holder self-CTA — show "Add me" if buyer hasn't claimed a slot, "Remove me" if they have.
+  // The CTA is hidden entirely when the plan is full and the holder isn't on it (no spots to claim).
+  const holderCta    = document.getElementById('holder-self-cta');
+  const holderStatus = document.getElementById('holder-self-status');
+  const holderHasSlot = !!plan.holderHasSlot;
+  if (holderHasSlot) {
+    holderCta.classList.add('hidden');
+    holderStatus.classList.remove('hidden');
+    document.getElementById('holder-self-status-text').textContent =
+      "You're on this plan — your access is active.";
+  } else if (atLimit) {
+    // No slot for the holder, plan is full
+    holderCta.classList.add('hidden');
+    holderStatus.classList.add('hidden');
+  } else {
+    holderCta.classList.remove('hidden');
+    holderStatus.classList.add('hidden');
+  }
 
   // Draft chip
   const draftChip = document.getElementById('draft-chip');
@@ -1247,6 +1312,59 @@ async function doRemove(subId) {
   }
 }
 
+// ── API: Holder claims a slot for themselves ───────────────────
+async function claimHolderSlot() {
+  const plan = S.plans[0] || {};
+  if (!plan.id) return;
+  const btn = document.getElementById('btn-holder-claim');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(BASE + '/api/multi-member/holder-claim-slot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ holderId: S.holder.id, clientId, planMappingId: plan.id }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Could not add you to this plan.', 'error');
+      if (btn) btn.disabled = false;
+      return;
+    }
+    showToast(data.message || 'Adding you to this plan…', 'info');
+    await loadData();
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── API: Holder releases their own slot ────────────────────────
+async function releaseHolderSlot() {
+  const plan = S.plans[0] || {};
+  if (!plan.id) return;
+  if (!confirm('Remove yourself from this plan? You will lose door access.')) return;
+  const btn = document.getElementById('btn-holder-release');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(BASE + '/api/multi-member/holder-release-slot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ holderId: S.holder.id, clientId, planMappingId: plan.id }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Could not remove you from this plan.', 'error');
+      if (btn) btn.disabled = false;
+      return;
+    }
+    showToast(data.message || 'Removing your access…', 'info');
+    await loadData();
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
 // ── API: Submit ──────────────────────────────────────────────────
 async function submitAll() {
   const drafts = S.subMembers.filter(m => m.status === 'draft');
@@ -1275,10 +1393,10 @@ async function submitAll() {
 
 // ── Inline sync pipeline ─────────────────────────────────────────
 const SYNC_STEPS = [
-  { label: 'Got it',        sub: 'On it',            doneSub: 'Received' },
-  { label: 'Setting up',    sub: 'Creating account', doneSub: 'Account ready' },
-  { label: 'Matching door', sub: 'Applying rules',   doneSub: 'Door matched' },
-  { label: 'Almost there',  sub: 'Activating…',      doneSub: 'Access live' },
+  { label: 'Got it',     sub: '',          doneSub: 'Received' },
+  { label: 'Setting up', sub: 'Account…',  doneSub: 'Account ready' },
+  { label: 'Door',       sub: 'Matching…', doneSub: 'Door matched' },
+  { label: 'Activating', sub: 'Almost…',   doneSub: 'Live' },
 ];
 const STEP_DURATIONS = [1400, 2200, 2800, null]; // ms; null = waits for active status from API
 
@@ -1346,7 +1464,10 @@ const POLL_MAX         = 75; // 5 minutes max
 
 function isNonTerminal(m) {
   if (m.status === 'draft') return false;
-  return !m.accessStatus || m.accessStatus === 'pending_sync' || m.accessStatus === 'in_flight' || m.accessStatus === 'submitted';
+  if (m.accessStatus === 'active') return false;
+  if (m.accessStatus === 'failed' || m.accessStatus === 'error') return false;
+  if (m.accessStatus === 'suspended' || m.accessStatus === 'revoked') return false;
+  return true;
 }
 
 function stopPoll() {

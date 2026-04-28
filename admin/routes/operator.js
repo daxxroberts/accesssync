@@ -1412,9 +1412,10 @@ router.get('/:clientId/plan-mappings/:mappingId/members', async (req, res) => {
 });
 
 // ── GET /operator/:clientId/plan-mappings/:mappingId/holders ────────
-// Returns plan holders with sub-member counts for Classic View active-holders panel.
-// Holders: member_identity rows with plan_holder_id IS NULL linked via member_role_assignments.
-// Sub-members: rows with plan_holder_id = holder.id.
+// Returns active members on this plan-mapping for the Classic View panel.
+// Counts every member with a role assignment for this mapping — holder OR sub-member —
+// since the buyer (holder) only occupies a slot if they explicitly claimed one.
+// Buyers who didn't claim a slot do not appear here (correct: they have no hardware access).
 router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
   try {
     const { clientId, mappingId } = req.params;
@@ -1422,18 +1423,20 @@ router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
     if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
 
     const result = await db.query(
-      `SELECT mi.id, mi.platform_member_id,
+      `SELECT mi.id,
+              mi.platform_member_id,
+              mi.first_name,
+              mi.last_name,
+              mi.plan_holder_id,
               mas.status,
-              COUNT(sub.id)::int AS sub_count
+              CASE WHEN mi.plan_holder_id IS NULL THEN 'holder' ELSE 'sub' END AS role
        FROM member_role_assignments mra
        JOIN member_identity mi ON mi.id = mra.member_id
        LEFT JOIN member_access_state mas ON mas.member_id = mi.id
-       LEFT JOIN member_identity sub ON sub.plan_holder_id = mi.id AND sub.client_id = mi.client_id
        WHERE mra.mapping_id = $1
          AND mi.client_id = $2
-         AND mi.plan_holder_id IS NULL
-       GROUP BY mi.id, mi.platform_member_id, mas.status
-       ORDER BY mi.platform_member_id`,
+       GROUP BY mi.id, mi.platform_member_id, mi.first_name, mi.last_name, mi.plan_holder_id, mas.status
+       ORDER BY mi.plan_holder_id NULLS FIRST, mi.platform_member_id`,
       [mappingId, clientId]
     );
     res.json({
@@ -1441,7 +1444,10 @@ router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
         return {
           id:               r.id,
           platformMemberId: r.platform_member_id,
-          subs:             r.sub_count,
+          firstName:        r.first_name,
+          lastName:         r.last_name,
+          role:             r.role,           // 'holder' or 'sub'
+          planHolderId:     r.plan_holder_id, // null for the buyer-as-slot-occupant
           status:           r.status || 'active',
         };
       }),

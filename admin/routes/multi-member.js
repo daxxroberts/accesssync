@@ -71,45 +71,22 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
       [holder.id]
     );
 
-    // 4. Auto-insert the holder as a draft sub-member on first open (zero sub-members).
-    // Holder occupies a slot by default but can remove themselves (business owner case).
-    // Only fires when a multi-member plan exists for this client.
-    if (subMembersResult.rows.length === 0 && plansResult.rows.length > 0) {
-      const plan = plansResult.rows[0];
-      const holderPlatformId = holder.platform_member_id;
-      const subPlatformMemberId = `${holderPlatformId}###as001`;
-      // Pull holder name/email from their own member_identity row
-      const holderInfoResult = await db.query(
-        `SELECT first_name, last_name, email, phone FROM member_identity WHERE id = $1`,
-        [holder.id]
-      );
-      const hi = holderInfoResult.rows[0] || {};
-      const inserted = await db.query(
-        `INSERT INTO member_identity
-           (client_id, platform_member_id, source_platform, hardware_platform, source_tag,
-            plan_holder_id, plan_mapping_id, first_name, last_name, email, phone, sub_member_status)
-         VALUES ($1, $2, 'wix', $3, 'accesssync', $4, $5, $6, $7, $8, $9, 'draft')
-         ON CONFLICT (client_id, source_platform, platform_member_id) DO NOTHING
-         RETURNING id, platform_member_id, first_name, last_name, email, phone, sub_member_status, plan_mapping_id`,
-        [clientId, subPlatformMemberId, holder.hardware_platform,
-         holder.id, plan.id, hi.first_name || '', hi.last_name || '', hi.email || '', hi.phone || '']
-      );
-      if (inserted.rows.length > 0) {
-        const r = inserted.rows[0];
-        subMembersResult.rows.push({
-          id: r.id,
-          platform_member_id: r.platform_member_id,
-          first_name: r.first_name,
-          last_name: r.last_name,
-          email: r.email,
-          phone: r.phone,
-          sub_member_status: r.sub_member_status,
-          plan_mapping_id: r.plan_mapping_id,
-          access_status: null,
-          provisioned_at: null,
-        });
-      }
-    }
+    // 4. For each plan, check whether the holder currently has a role assignment.
+    // The buyer is NOT auto-added to the plan — they must explicitly opt in via the
+    // "Add me to this plan" CTA on the Member Hub. This supports the business-owner
+    // case where the buyer assigns all seats to others.
+    const holderRoleResult = await db.query(
+      `SELECT mapping_id FROM member_role_assignments WHERE member_id = $1`,
+      [holder.id]
+    );
+    const holderMappingIds = new Set(holderRoleResult.rows.map(r => r.mapping_id));
+
+    // Holder name/contact for the "add me" UX prefill
+    const holderInfoResult = await db.query(
+      `SELECT first_name, last_name, email, phone FROM member_identity WHERE id = $1`,
+      [holder.id]
+    );
+    const hi = holderInfoResult.rows[0] || {};
 
     res.json({
       holder: {
@@ -117,6 +94,10 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
         platformMemberId: holder.platform_member_id,
         accessStatus: holder.access_status,
         provisionedAt: holder.provisioned_at,
+        firstName: hi.first_name || null,
+        lastName:  hi.last_name  || null,
+        email:     hi.email      || null,
+        phone:     hi.phone      || null,
       },
       plans: plansResult.rows.map(p => ({
         id: p.id,
@@ -125,6 +106,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
         allowMultiple: p.allow_multiple,
         maxMembers: p.max_members,
         doorName: p.door_name,
+        holderHasSlot: holderMappingIds.has(p.id), // true → buyer occupies a seat on this plan
       })),
       subMembers: subMembersResult.rows.map(m => ({
         id: m.id,
@@ -402,6 +384,121 @@ router.post('/api/multi-member/submit', async (req, res) => {
     });
   } catch (err) {
     log.error('admin.multi_member_submit_error', {}, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /api/multi-member/holder-claim-slot ────────────────────────
+// The buyer claims a slot for themselves on this plan.
+// Enqueues a synthetic plan.purchased grant for the holder's own platform_member_id
+// so the standard provisioning path runs and writes a member_role_assignments row.
+// Body: { holderId, clientId, planMappingId }
+router.post('/api/multi-member/holder-claim-slot', async (req, res) => {
+  const { holderId, clientId, planMappingId } = req.body;
+  if (!holderId || !clientId || !planMappingId) {
+    return res.status(400).json({ error: 'holderId, clientId, and planMappingId are required' });
+  }
+
+  try {
+    const holderResult = await db.query(
+      `SELECT mi.id, mi.platform_member_id, mi.first_name, mi.last_name, mi.email
+       FROM member_identity mi
+       WHERE mi.id = $1 AND mi.client_id = $2 AND mi.plan_holder_id IS NULL`,
+      [holderId, clientId]
+    );
+    if (!holderResult.rows.length) return res.status(404).json({ error: 'Plan holder not found' });
+
+    const planResult = await db.query(
+      `SELECT id, source_plan_id, max_members FROM plan_mappings
+       WHERE id = $1 AND client_id = $2 AND allow_multiple = true AND status = 'active'`,
+      [planMappingId, clientId]
+    );
+    if (!planResult.rows.length) return res.status(404).json({ error: 'Plan not found or does not allow additional members' });
+
+    // Slot count includes holder's own slot + every sub-member with status submitted/active
+    const slotsTaken = await db.query(
+      `SELECT
+         (SELECT COUNT(*) FROM member_role_assignments mra
+            JOIN member_identity mi ON mi.id = mra.member_id
+            WHERE mra.mapping_id = $1 AND mi.plan_holder_id IS NULL AND mi.id = $2)::int AS holder_has_slot,
+         (SELECT COUNT(*) FROM member_identity
+            WHERE plan_holder_id = $2 AND plan_mapping_id = $1
+              AND sub_member_status IN ('submitted', 'active'))::int AS sub_count`,
+      [planMappingId, holderId]
+    );
+    const totalOccupied = slotsTaken.rows[0].holder_has_slot + slotsTaken.rows[0].sub_count;
+    if (slotsTaken.rows[0].holder_has_slot > 0) {
+      return res.status(409).json({ error: 'Already on this plan' });
+    }
+    if (totalOccupied >= planResult.rows[0].max_members) {
+      return res.status(409).json({ error: `Plan is full — ${planResult.rows[0].max_members} member limit reached` });
+    }
+
+    const holder = holderResult.rows[0];
+    const syntheticEvent = {
+      eventType: 'plan.purchased',
+      platformMemberId: holder.platform_member_id,
+      sourcePlatform: 'wix',
+      planId: planResult.rows[0].source_plan_id,
+      email: holder.email,
+      name: `${holder.first_name || ''} ${holder.last_name || ''}`.trim(),
+      synthetic: true,
+      traceId: mintTraceId(),
+    };
+    const jobId = `grant-holder-claim-${holderId}-${planMappingId}-${Date.now()}`;
+    await eventQueue.add('grant', { tenantId: clientId, standardEvent: syntheticEvent }, { jobId });
+
+    log.info('admin.holder_claim_slot_queued', { holderId, planMappingId, jobId });
+    res.json({ ok: true, message: 'Adding you to this plan — access will be active shortly', jobId });
+  } catch (err) {
+    log.error('admin.holder_claim_slot_error', {}, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /api/multi-member/holder-release-slot ──────────────────────
+// The buyer releases their own slot on this plan.
+// Enqueues a synthetic plan.cancelled revoke targeted at the specific role assignment
+// for this mapping — leaves any other plans the holder is on untouched.
+// Body: { holderId, clientId, planMappingId }
+router.post('/api/multi-member/holder-release-slot', async (req, res) => {
+  const { holderId, clientId, planMappingId } = req.body;
+  if (!holderId || !clientId || !planMappingId) {
+    return res.status(400).json({ error: 'holderId, clientId, and planMappingId are required' });
+  }
+
+  try {
+    const holderResult = await db.query(
+      `SELECT mi.id, mi.platform_member_id
+       FROM member_identity mi
+       WHERE mi.id = $1 AND mi.client_id = $2 AND mi.plan_holder_id IS NULL`,
+      [holderId, clientId]
+    );
+    if (!holderResult.rows.length) return res.status(404).json({ error: 'Plan holder not found' });
+
+    const assignmentResult = await db.query(
+      `SELECT role_assignment_id FROM member_role_assignments
+       WHERE member_id = $1 AND mapping_id = $2`,
+      [holderId, planMappingId]
+    );
+    if (!assignmentResult.rows.length) return res.status(409).json({ error: 'Not currently on this plan' });
+
+    const holder = holderResult.rows[0];
+    const syntheticEvent = {
+      eventType: 'plan.cancelled',
+      platformMemberId: holder.platform_member_id,
+      sourcePlatform: 'wix',
+      mappingId: planMappingId,             // hint to the revoke path: only this mapping
+      synthetic: true,
+      traceId: mintTraceId(),
+    };
+    const jobId = `revoke-holder-release-${holderId}-${planMappingId}-${Date.now()}`;
+    await eventQueue.add('revoke', { tenantId: clientId, standardEvent: syntheticEvent }, { jobId });
+
+    log.info('admin.holder_release_slot_queued', { holderId, planMappingId, jobId });
+    res.json({ ok: true, message: 'Removing you from this plan — access will be revoked shortly', jobId });
+  } catch (err) {
+    log.error('admin.holder_release_slot_error', {}, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

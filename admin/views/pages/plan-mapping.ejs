@@ -511,8 +511,8 @@
 
     function getToggleSublabel(plan) {
       if (plan.isMultiMember) {
-        var h = plan.activeHolders || 0;
-        if (h > 0) return 'Currently active — ' + h + ' plan holder' + (h !== 1 ? 's' : '') + ' can add members up to the limit below.';
+        var n = plan.activeHolders || 0;
+        if (n > 0) return 'Currently active — ' + n + ' member' + (n !== 1 ? 's' : '') + ' on this plan.';
         return 'Enabled — plan holders can add additional members who each receive their own access credentials.';
       }
       return 'Enable this if the plan covers more than one person (couples, families, groups).';
@@ -752,38 +752,43 @@
         '</div>';
       }
 
-      // ── Active holders table (collapsible) ──
+      // ── Active members table (collapsible) ──
+      // Counts every occupant with a role assignment — buyer-as-slot + sub-members.
       if (plan.isMultiMember) {
-        var holders = plan.activeMembers || [];
-        var totalSubs = holders.reduce(function(sum, am) { return sum + am.subs; }, 0);
-        var holderLabel = (plan.activeHolders || 0) + ' active holder' + (plan.activeHolders !== 1 ? 's' : '');
-        var countLabel = totalSubs + ' additional member' + (totalSubs !== 1 ? 's' : '');
+        var occupants = plan.activeMembers || [];
+        var holderCount = occupants.filter(function(o) { return o.role === 'holder'; }).length;
+        var subCount    = occupants.filter(function(o) { return o.role === 'sub'; }).length;
+        var primaryLabel = occupants.length + ' active member' + (occupants.length !== 1 ? 's' : '');
+        var detailLabel  = holderCount + ' holder' + (holderCount !== 1 ? 's' : '') +
+                           ' · ' + subCount + ' additional';
 
         bodyHTML +=
           '<div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">' +
             '<button class="collapse-toggle" onclick="toggleCollapse(\'holders-' + plan.id + '\')">' +
-              '<span><span class="collapse-label">' + holderLabel + '</span><span class="collapse-count">' + countLabel + '</span></span>' +
+              '<span><span class="collapse-label">' + primaryLabel + '</span><span class="collapse-count">' + detailLabel + '</span></span>' +
               '<span class="collapse-chevron" id="chevron-holders-' + plan.id + '">&#9660;</span>' +
             '</button>' +
             '<div class="collapse-body" id="holders-' + plan.id + '">';
 
-        if (holders.length > 0) {
+        if (occupants.length > 0) {
           var rows = '';
-          holders.forEach(function(am) {
+          occupants.forEach(function(o) {
+            var roleLabel = o.role === 'holder' ? 'Plan holder' : 'Additional';
+            var status = o.status || 'active';
             rows +=
               '<tr>' +
-                '<td><strong>' + esc(am.holder) + '</strong></td>' +
-                '<td>' + am.subs + ' of ' + (plan.maxMembers - 1) + '</td>' +
-                '<td><span class="member-status-dot ' + am.status + '"></span>' + am.status.charAt(0).toUpperCase() + am.status.slice(1) + '</td>' +
+                '<td><strong>' + esc(o.name) + '</strong></td>' +
+                '<td>' + roleLabel + '</td>' +
+                '<td><span class="member-status-dot ' + status + '"></span>' + status.charAt(0).toUpperCase() + status.slice(1) + '</td>' +
               '</tr>';
           });
           bodyHTML +=
             '<table class="members-table">' +
-              '<thead><tr><th>Plan Holder</th><th>Additional Members</th><th>Status</th></tr></thead>' +
+              '<thead><tr><th>Member</th><th>Role</th><th>Status</th></tr></thead>' +
               '<tbody>' + rows + '</tbody>' +
             '</table>';
         } else {
-          bodyHTML += '<div class="empty-state"><div class="empty-state-icon">&#128101;</div><div>No active plan holders yet.</div></div>';
+          bodyHTML += '<div class="empty-state"><div class="empty-state-icon">&#128101;</div><div>No members on this plan yet.</div></div>';
         }
         bodyHTML += '</div></div>'; // close collapse-body + wrapper
       }
@@ -905,7 +910,7 @@
 
     function handleMultiMemberToggle(planId, checked, el) {
       var plan = plans.find(function(p) { return p.id === planId; });
-      if (!checked && plan.activeHolders > 0 && plan.activeMembers && plan.activeMembers.length > 0) {
+      if (!checked && plan.activeMembers && plan.activeMembers.length > 0) {
         el.checked = true;
         pendingAction = function() {
           plan.isMultiMember = false;
@@ -913,10 +918,13 @@
           markDirty();
           render();
         };
-        var h = plan.activeHolders || 0;
-        var totalSubs = (plan.activeMembers || []).reduce(function(sum, am) { return sum + am.subs; }, 0);
+        var occupants = plan.activeMembers || [];
+        var holderCount = occupants.filter(function(o) { return o.role === 'holder'; }).length;
+        var subCount    = occupants.filter(function(o) { return o.role === 'sub'; }).length;
         showModal('warning', 'Disable multi-member?',
-          'This plan has ' + h + ' active holder' + (h !== 1 ? 's' : '') + ' with ' + totalSubs + ' additional member' + (totalSubs !== 1 ? 's' : '') + '. Existing members keep access, but no new members can be added.',
+          'This plan has ' + holderCount + ' holder' + (holderCount !== 1 ? 's' : '') +
+          ' and ' + subCount + ' additional member' + (subCount !== 1 ? 's' : '') +
+          '. Existing members keep access, but no new members can be added.',
           'Disable', 'warning');
         return;
       }
@@ -1420,16 +1428,25 @@
                 }
               });
 
-              // Fetch holder data for multi-member plans before first render
+              // Fetch occupant data for multi-member plans before first render.
+              // The endpoint returns one row per role assignment (holder OR sub).
+              // We display counts as "N members" — the union of buyer-as-slot + sub-members.
               var multiPlans = plans.filter(function(p) { return p.isMultiMember; });
               var holderFetches = multiPlans.map(function(plan) {
                 return apiFetch('/operator/' + clientId + '/plan-mappings/' + plan.id + '/holders')
                   .then(function(r) { return r.json(); })
                   .then(function(data) {
-                    var holders = data.holders || [];
-                    plan.activeHolders = holders.length;
-                    plan.activeMembers = holders.map(function(h) {
-                      return { holder: h.platformMemberId, subs: h.subs, status: h.status };
+                    var rows = data.holders || [];
+                    plan.activeHolders = rows.length;  // total occupied slots
+                    plan.activeMembers = rows.map(function(h) {
+                      var name = [h.firstName, h.lastName].filter(Boolean).join(' ') || h.platformMemberId;
+                      return {
+                        id:        h.id,
+                        name:      name,
+                        role:      h.role,
+                        status:    h.status,
+                        platformMemberId: h.platformMemberId,
+                      };
                     });
                   })
                   .catch(function() { /* non-fatal — zeros remain */ });
