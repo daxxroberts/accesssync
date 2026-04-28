@@ -34,11 +34,9 @@ const als = new AsyncLocalStorage();
 
 let _db = null;
 function getDb() {
-  if (_db !== null) return _db;
-  // Tolerate environments without DATABASE_URL (tests, isolated tooling).
-  // db.js process.exit(1)s if the env var is missing, so we guard the require.
-  if (!process.env.DATABASE_URL) { _db = false; return null; }
-  try { _db = require('../db'); } catch (_e) { _db = false; return null; }
+  if (!_db) {
+    try { _db = require('../db'); } catch (_e) { return null; }
+  }
   return _db;
 }
 
@@ -134,8 +132,6 @@ function mintTraceId() {
  */
 function registerTrace(traceId, opts = {}) {
   if (!traceId) return;
-  // Skip entirely when no DB is configured — keeps tests / isolated tooling clean.
-  if (!process.env.DATABASE_URL) return;
   setImmediate(async () => {
     try {
       const db = getDb();
@@ -203,13 +199,16 @@ function registerTrace(traceId, opts = {}) {
         ]
       );
     } catch (err) {
-      // Never propagate — trace registration must never break the main path
-      process.stdout.write(JSON.stringify({
-        ts: new Date().toISOString(), level: 'warn',
-        event: 'trace_context.write_failed',
-        error: { message: err.message, code: err.code },
-        traceId,
-      }) + '\n');
+      // Never propagate — trace registration must never break the main path.
+      // stdout.write itself can throw post-teardown in test workers; swallow.
+      try {
+        process.stdout.write(JSON.stringify({
+          ts: new Date().toISOString(), level: 'warn',
+          event: 'trace_context.write_failed',
+          error: { message: err.message, code: err.code },
+          traceId,
+        }) + '\n');
+      } catch (_) { /* stdout closed — nothing to do */ }
     }
   });
 }

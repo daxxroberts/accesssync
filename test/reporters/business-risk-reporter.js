@@ -62,6 +62,18 @@ class BusinessRiskReporter {
     const allFailures = Object.values(this._failuresByTier).flat();
     const hasBlockingFailure = allFailures.some(f => f.tier.deployBlock);
 
+    // Detect suites that FAILED TO LOAD (e.g. worker crash, syntax error,
+    // require() throw). These never trigger onTestResult, so allFailures
+    // can be empty even when Jest itself is reporting failure. Without
+    // this check the reporter prints DEPLOY SAFE while CI exits with code 1.
+    const suiteLoadFailures = (results.numFailedTestSuites || 0) - (results.testResults || [])
+      .filter(r => (r.testResults || []).some(t => t.status === 'failed')).length;
+
+    if (suiteLoadFailures > 0) {
+      this._printSuiteLoadFailures(results, suiteLoadFailures);
+      return;
+    }
+
     // Only print the business risk section if there are failures
     if (allFailures.length === 0) {
       this._printAllClear();
@@ -112,6 +124,30 @@ class BusinessRiskReporter {
       console.log(`    Critical path: ${priorities.tiers.p1.criticalPath}`);
     } else {
       console.log(`⚠️   Deploy unblocked (no P1/P2/P3 failures) but review warnings above`);
+    }
+    console.log(formatDivider());
+    console.log('');
+  }
+
+  _printSuiteLoadFailures(results, count) {
+    console.log('');
+    console.log(formatDivider());
+    console.log('  ACCESSSYNC — TEST SUITE LOAD FAILURE');
+    console.log(formatDivider());
+    console.log('');
+    console.log(`⛔  DO NOT DEPLOY — ${count} test suite(s) failed to load`);
+    console.log('   Suite-load failures usually mean a worker crash, syntax error,');
+    console.log('   or a fire-and-forget side effect calling process.exit during teardown.');
+    console.log('   No tests in the failing suite(s) ran. Inspect output above.');
+    console.log('');
+    // Surface which suites failed
+    const failedFiles = (results.testResults || [])
+      .filter(r => r.failureMessage && (!r.testResults || r.testResults.length === 0))
+      .map(r => path.relative(process.cwd(), r.testFilePath));
+    if (failedFiles.length > 0) {
+      console.log('   Failed to load:');
+      failedFiles.forEach(f => console.log(`     • ${f}`));
+      console.log('');
     }
     console.log(formatDivider());
     console.log('');

@@ -76,7 +76,9 @@ const KEDB = {
 // Lazy-require db to avoid circular dependency issues at module load time.
 let _db = null;
 function getDb() {
-  if (!_db) _db = require('../db');
+  if (!_db) {
+    try { _db = require('../db'); } catch (_e) { return null; }
+  }
   return _db;
 }
 
@@ -116,6 +118,7 @@ function deriveService(event) {
  * @param {{ type: string, id: string } | undefined} actor
  */
 function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
+  try {
   // Derive error_code: prefer err.code (KEDB-aligned), else humanise the event name.
   const errorCode = (err && err.code) ? err.code : event.toUpperCase().replace(/\./g, '_');
 
@@ -138,32 +141,47 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
   delete context.clientId;
 
   setImmediate(() => {
-    const db = getDb();
-    if (!db || typeof db.query !== 'function') return;
-    db.query(
-      `INSERT INTO diagnostic_log
-       (client_id, service, level, error_code, message, context, trace_id, actor_type, actor_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        clientId,
-        deriveService(event),
-        level,
-        errorCode,
-        message,
-        JSON.stringify(context),
-        traceId || null,
-        actor?.type || null,
-        actor?.id   || null,
-      ]
-    ).catch((dbErr) => {
-      // Write to stdout so Railway logs capture the failure — never propagate to caller.
-      process.stdout.write(JSON.stringify({
-        ts: new Date().toISOString(), level: 'error',
-        event: 'logger.diagnostic_log_write_failed',
-        error: { message: dbErr.message, code: dbErr.code },
-      }) + '\n');
-    });
+    // Catch every failure mode — including post-teardown require errors in tests
+    // ("trying to import a file after the Jest environment has been torn down").
+    // Never propagate to caller; never crash the worker.
+    try {
+      const db = getDb();
+      if (!db || typeof db.query !== 'function') return;
+      const result = db.query(
+        `INSERT INTO diagnostic_log
+         (client_id, service, level, error_code, message, context, trace_id, actor_type, actor_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          clientId,
+          deriveService(event),
+          level,
+          errorCode,
+          message,
+          JSON.stringify(context),
+          traceId || null,
+          actor?.type || null,
+          actor?.id   || null,
+        ]
+      );
+      // db.query may return a Promise (real pg) or any value (test mocks)
+      if (result && typeof result.catch === 'function') {
+        result.catch((dbErr) => {
+          try {
+            process.stdout.write(JSON.stringify({
+              ts: new Date().toISOString(), level: 'error',
+              event: 'logger.diagnostic_log_write_failed',
+              error: { message: dbErr.message, code: dbErr.code },
+            }) + '\n');
+          } catch (_) { /* stdout closed — nothing to do */ }
+        });
+      }
+    } catch (_) {
+      /* swallow — log persistence is fire-and-forget by contract */
+    }
   });
+  } catch (_) {
+    /* swallow — entire persist function is fire-and-forget; never crash callers */
+  }
 }
 
 // ── Core emit ─────────────────────────────────────────────────────
