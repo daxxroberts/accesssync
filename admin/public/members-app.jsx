@@ -176,9 +176,16 @@ function App() {
         <div className="search">
           <Icon name="search" className="ic-16" />
           <input
+            type="text"
             placeholder="Search by name, email, or plan…"
             value={query}
-            onChange={e => { setQuery(e.target.value); setPage(1); }}
+            onChange={e => {
+              console.log("[members search] onChange fired:", JSON.stringify(e.target.value), "members.length=", members.length);
+              setQuery(e.target.value);
+              setPage(1);
+            }}
+            onFocus={() => console.log("[members search] focus")}
+            onBlur={() => console.log("[members search] blur")}
           />
           {!query && <kbd>⌘K</kbd>}
           {query && (
