@@ -119,10 +119,39 @@ const MemberDrawer = ({ member, open, onClose }) => {
             <h3>Plan & billing</h3>
             <dl className="kv">
               <dt>Plan</dt><dd>{member.plan} <span style={{color:"var(--muted)",fontWeight:400,marginLeft:4}}>· {member.planType}</span></dd>
-              <dt>Rate</dt><dd className="tabular">{member.rate}</dd>
+              <dt>Rate</dt>
+              <dd className="tabular">
+                {member.rate}
+                {member.coupon && (
+                  <span style={{display:"block",fontSize:11,color:"var(--muted)",fontWeight:400,marginTop:2}}>{member.coupon}</span>
+                )}
+              </dd>
               <dt>Role</dt><dd>{member.role}</dd>
               <dt>Member since</dt><dd>{member.since}</dd>
-              <dt>Renewal</dt><dd style={{color: member.status === "suspended" ? "var(--red)" : "var(--text)"}}>{member.expiresLabel}</dd>
+              <dt>Renewal</dt>
+              <dd style={{color: member.autoRenewCanceled ? "var(--amber, #d97706)" : (member.status === "suspended" ? "var(--red)" : "var(--text)")}}>
+                {member.autoRenewCanceled ? "Cancels at period end" : member.expiresLabel}
+              </dd>
+              {member.lastPaymentStatus && member.lastPaymentStatus !== "PAID" && (
+                <>
+                  <dt>Payment</dt>
+                  <dd style={{color: member.lastPaymentStatus === "FAILED" ? "var(--red)" : "var(--muted)"}}>
+                    {member.lastPaymentStatus.toLowerCase().replace(/_/g, " ")}
+                  </dd>
+                </>
+              )}
+              {member.subscriptionId && (
+                <>
+                  <dt>Wix</dt>
+                  <dd>
+                    <a href={`https://manage.wix.com/dashboard/_/pricing-plans/orders/${member.orderId || member.subscriptionId}`}
+                       target="_blank" rel="noopener noreferrer"
+                       style={{color:"var(--brand)",fontSize:12,fontWeight:500}}>
+                      View order →
+                    </a>
+                  </dd>
+                </>
+              )}
             </dl>
           </div>
 

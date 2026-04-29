@@ -225,6 +225,7 @@ CREATE TABLE member_role_assignments (
     mapping_id          UUID NOT NULL REFERENCES plan_mappings(id)   ON DELETE CASCADE,
     role_assignment_id  VARCHAR(255) NOT NULL,
     hardware_group_id   VARCHAR(255),                   -- which specific group this assignment is for
+    billing_snapshot    JSONB,                          -- DR-042: snapshot of billing fields from latest plan.purchased webhook (display-only; shape in core/billing-snapshot.js)
     created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (member_id, mapping_id, hardware_group_id)
 );

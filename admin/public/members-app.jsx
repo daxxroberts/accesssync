@@ -327,12 +327,15 @@ function App() {
                         <div className="pd-cell">
                           <div className="pd-label">Rate</div>
                           <div className="pd-value tabular">{m.rate}</div>
+                          {m.coupon && (
+                            <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{m.coupon}</div>
+                          )}
                         </div>
                         <div className="pd-cell">
                           <div className="pd-label">Renewal</div>
                           <div className={`pd-value ${m.expiresLabel.startsWith("No") ? "muted" : ""}`}
                             style={{color: m.status === "suspended" ? "var(--rose)" : undefined}}>
-                            {m.expiresLabel}
+                            {m.autoRenewCanceled ? "Cancels at period end" : m.expiresLabel}
                           </div>
                         </div>
                         <div className="pd-cell">

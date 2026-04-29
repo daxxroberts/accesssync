@@ -1696,6 +1696,25 @@ router.get('/:clientId/members', async (req, res) => {
                     LIMIT 1
                   )
                 )                                AS plan_name,
+                -- DR-042: latest billing snapshot. Holder-only members inherit their first sub's snapshot
+                -- so plan-holder cards still show rate/coupon for the family they pay for.
+                COALESCE(
+                  (
+                    SELECT mra.billing_snapshot
+                    FROM member_role_assignments mra
+                    WHERE mra.member_id = mi.id AND mra.billing_snapshot IS NOT NULL
+                    ORDER BY mra.created_at DESC
+                    LIMIT 1
+                  ),
+                  (
+                    SELECT sub_mra.billing_snapshot
+                    FROM member_identity sub_mi
+                    JOIN member_role_assignments sub_mra ON sub_mra.member_id = sub_mi.id
+                    WHERE sub_mi.plan_holder_id = mi.id AND sub_mra.billing_snapshot IS NOT NULL
+                    ORDER BY sub_mra.created_at DESC
+                    LIMIT 1
+                  )
+                )                                AS billing_snapshot,
                 -- Count of successful hardware role assignments. When mas.status = 'failed'
                 -- but assignment_count > 0, the member has partial access (some plans provisioned,
                 -- some failed). The UI uses this to show 'partial' rather than blanket 'failed'.

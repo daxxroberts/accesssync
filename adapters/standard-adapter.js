@@ -279,15 +279,21 @@ class StandardAdapter {
    * @param {string} memberId
    * @param {string} tenantId
    * @param {Array}  assignments  [{ mappingId, roleAssignmentId, hardwareGroupId, sourcePlanId, sourceType }]
+   * @param {object} [billingSnapshot]  Optional canonical billing snapshot (DR-042) — written to
+   *                                    every MRA row in this grant pass. Refreshed on renewal.
+   *                                    Display-only — never used to gate grant decisions.
    */
-  async completeGrant(memberId, tenantId, assignments) {
+  async completeGrant(memberId, tenantId, assignments, billingSnapshot = null) {
+    const snapshotJson = billingSnapshot ? JSON.stringify(billingSnapshot) : null;
     for (const { mappingId, roleAssignmentId, hardwareGroupId, sourcePlanId, sourceType } of assignments) {
-      // ON CONFLICT DO NOTHING — idempotent on retry (UNIQUE constraint on member_id, mapping_id, hardware_group_id)
+      // DR-042: ON CONFLICT updates billing_snapshot so renewals refresh it. role_assignment_id
+      // is preserved (it's the live Kisi reference; idempotent retries must not change it).
       await db.query(
-        `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (member_id, mapping_id, hardware_group_id) DO NOTHING`,
-        [memberId, mappingId, roleAssignmentId, hardwareGroupId || null]
+        `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id, billing_snapshot)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (member_id, mapping_id, hardware_group_id)
+         DO UPDATE SET billing_snapshot = COALESCE(EXCLUDED.billing_snapshot, member_role_assignments.billing_snapshot)`,
+        [memberId, mappingId, roleAssignmentId, hardwareGroupId || null, snapshotJson]
       );
 
       // DR-034: Record why this member is in this group.

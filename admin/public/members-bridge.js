@@ -46,6 +46,52 @@
     return "No expiry";
   }
 
+  // ── Billing formatting (DR-042) ────────────────────────────────────
+  // Snapshot shape: { planPrice, cycleUnit, cycleCount, currency, total, subtotal,
+  //   discount, coupon: { code, amount } | null, autoRenewCanceled, lastPaymentStatus,
+  //   subscriptionId, orderMethod, orderId, capturedAt }
+  function formatRate(snap) {
+    if (!snap || !snap.planPrice) return "—";
+    var amount = parseFloat(snap.planPrice);
+    if (!isFinite(amount)) return "—";
+    var symbol = snap.currency === "USD" || !snap.currency ? "$" : snap.currency + " ";
+    var amountStr = amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2);
+    var unit = (snap.cycleUnit || "MONTH").toLowerCase();
+    var count = snap.cycleCount || 1;
+    var period;
+    if (count === 1) {
+      period = unit.indexOf("year") === 0 ? "yr"
+             : unit.indexOf("week") === 0 ? "wk"
+             : unit.indexOf("day")  === 0 ? "day"
+             : "mo";
+    } else {
+      period = count + " " + unit + "s";
+    }
+    return symbol + amountStr + "/" + period;
+  }
+
+  function formatCouponLine(snap) {
+    if (!snap || !snap.coupon || !snap.coupon.code) return null;
+    var amt = snap.coupon.amount ? parseFloat(snap.coupon.amount) : null;
+    var amtStr = (amt != null && isFinite(amt))
+      ? "−$" + (amt % 1 === 0 ? amt.toFixed(0) : amt.toFixed(2))
+      : "discount";
+    return snap.coupon.code + " · " + amtStr;
+  }
+
+  function shapeBilling(rawSnap) {
+    var snap = rawSnap || null;
+    return {
+      raw:               snap,
+      rate:              formatRate(snap),
+      coupon:            formatCouponLine(snap),
+      autoRenewCanceled: !!(snap && snap.autoRenewCanceled),
+      lastPaymentStatus: snap ? snap.lastPaymentStatus : null,
+      subscriptionId:    snap ? snap.subscriptionId : null,
+      orderId:           snap ? snap.orderId : null,
+    };
+  }
+
   function formatDate(ts) {
     if (!ts) return "—";
     try {
@@ -66,24 +112,31 @@
 
   // ── Per-row shape ──────────────────────────────────────────────────
   function shapeMember(r) {
+    var billing = shapeBilling(r.billing_snapshot);
     return {
-      id:           r.id,
-      first:        r.first_name || "",
-      last:         r.last_name  || "",
-      email:        r.email      || "",
-      plan:         r.plan_name  || "Unknown Plan",
-      planType:     "Pricing Plan",
-      role:         r.role === "holder" ? "Plan Holder" : "Additional Member",
-      status:       mapStatus(r.effective_status),
-      accessStatus: mapAccessStatus(r.effective_status, r.role),
-      since:        formatDate(r.provisioned_at),
-      expiresLabel: deriveExpiresLabel(r),
-      rate:         "—",
-      lastVisit:    "—",
-      visits30d:    0,
-      error:        null,
-      additional:   [],
-      _raw:         r,
+      id:                r.id,
+      first:             r.first_name || "",
+      last:              r.last_name  || "",
+      email:             r.email      || "",
+      plan:              r.plan_name  || "Unknown Plan",
+      planType:          "Pricing Plan",
+      role:              r.role === "holder" ? "Plan Holder" : "Additional Member",
+      status:            mapStatus(r.effective_status),
+      accessStatus:      mapAccessStatus(r.effective_status, r.role),
+      since:             formatDate(r.provisioned_at),
+      expiresLabel:      deriveExpiresLabel(r),
+      rate:              billing.rate,
+      coupon:            billing.coupon,
+      autoRenewCanceled: billing.autoRenewCanceled,
+      lastPaymentStatus: billing.lastPaymentStatus,
+      subscriptionId:    billing.subscriptionId,
+      orderId:           billing.orderId,
+      billing:           billing,
+      lastVisit:         "—",
+      visits30d:         0,
+      error:             null,
+      additional:        [],
+      _raw:              r,
     };
   }
 
@@ -106,7 +159,24 @@
 
     return holders.map(function (h) {
       var shaped = shapeMember(h);
-      shaped.additional = subsByHolder[h.id] || [];
+      var subs = subsByHolder[h.id] || [];
+      // DR-042: subs inherit holder's billing snapshot when their own is missing.
+      // Subs typically don't carry their own order — the holder paid for the family.
+      if (shaped.billing && shaped.billing.raw) {
+        subs = subs.map(function (s) {
+          if (s.billing && s.billing.raw) return s;
+          return Object.assign({}, s, {
+            rate:              shaped.rate,
+            coupon:            shaped.coupon,
+            autoRenewCanceled: shaped.autoRenewCanceled,
+            lastPaymentStatus: shaped.lastPaymentStatus,
+            subscriptionId:    shaped.subscriptionId,
+            orderId:           shaped.orderId,
+            billing:           shaped.billing,
+          });
+        });
+      }
+      shaped.additional = subs;
       return shaped;
     });
   }

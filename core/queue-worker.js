@@ -39,6 +39,7 @@ const { getRedisConnection } = require('./redis-utils');
 const { eventQueue } = require('./webhook-processor');
 const db = require('../db');
 const { decryptApiKey } = require('./crypto-utils');
+const { extractBillingSnapshot } = require('./billing-snapshot');
 const { log, withTrace } = require('./logger');
 const { runWith, registerTrace, setTraceContext } = require('./trace-context');
 
@@ -179,7 +180,8 @@ async function _processJobBody(job, traceId) {
         );
 
         lastStep = 'grant.started.complete_grant';
-        await standardAdapter.completeGrant(memberId, tenantId, startedAssignments);
+        const startedBilling = extractBillingSnapshot(standardEvent.rawPayload);
+        await standardAdapter.completeGrant(memberId, tenantId, startedAssignments, startedBilling);
         logger.info('queue.grant.started.complete', {
           clientId, memberId, eventId,
           platformMemberId: standardEvent.platformMemberId,
@@ -333,7 +335,8 @@ async function _processJobBody(job, traceId) {
 
       // Step 6: Record success — writes all assignments to member_role_assignments
       lastStep = 'grant.complete_grant';
-      await standardAdapter.completeGrant(memberId, tenantId, assignments);
+      const billingSnapshot = extractBillingSnapshot(standardEvent.rawPayload);
+      await standardAdapter.completeGrant(memberId, tenantId, assignments, billingSnapshot);
       logger.info('queue.grant.complete', {
         clientId, memberId, eventId,
         platformMemberId: standardEvent.platformMemberId,

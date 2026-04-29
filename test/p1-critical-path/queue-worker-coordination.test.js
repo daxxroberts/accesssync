@@ -169,9 +169,10 @@ describe('[P1] Queue worker grant flow — resolve → lock → provision → co
       resolvedMappings, expect.objectContaining({ planId: CONNECT_PLAN_ID })
     );
 
-    // Step 5: success recorded
+    // Step 5: success recorded — 4th arg is billing snapshot (DR-042). Test event has
+    // no pricing block, so extractor returns null.
     expect(standardAdapter.completeGrant).toHaveBeenCalledWith(
-      MEMBER_INTERNAL_ID, HOG_CLIENT_ID, expect.any(Array)
+      MEMBER_INTERNAL_ID, HOG_CLIENT_ID, expect.any(Array), null
     );
   });
 
