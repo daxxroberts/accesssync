@@ -415,7 +415,7 @@ function App() {
                     <span key={s} title={SOURCES[s]?.label} style={{width:7,height:7,borderRadius:'50%',background:SOURCES[s]?.color || 'var(--muted)'}}/>
                   ))}
                 </div>
-                <span className="tnum" style={{fontSize:10.5,color:'var(--muted)'}}>{g.events.length} events</span>
+                <span className="tnum" style={{fontSize:10.5,color:'var(--muted)'}}>{g.events.length} {g.events.length === 1 ? 'event' : 'events'}</span>
               </div>
               {expandedTraces.has(g.id) && g.events.map((e,i) => (
                 <Row key={i} ev={e} sel={selected && selected.trace_id === e.trace_id && selected.ts === e.ts}
@@ -676,7 +676,7 @@ function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
         <div className="mono" style={{fontSize:12,fontWeight:600,wordBreak:'break-word'}}>{ev.event}</div>
         <div style={{fontSize:11,color:'var(--text2)',marginTop:5,lineHeight:1.5}}>{humanize(ev)}</div>
         <div style={{display:'flex',gap:12,marginTop:8,fontSize:10.5,color:'var(--muted)'}}>
-          <div>actor: <span style={{color:'var(--text2)'}}>{ev.actor_type}/{ev.actor_id}</span></div>
+          <div>actor: <span style={{color:'var(--text2)'}}>{ev.actor_type || ev.actor_id ? `${ev.actor_type || ''}${ev.actor_id ? '/' + ev.actor_id : ''}` : '—'}</span></div>
           <div>at: <span className="mono tnum">{fmtClock(ev.ts)}</span></div>
         </div>
       </div>
@@ -686,7 +686,7 @@ function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
           <h3>Context</h3>
           <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'3px 10px',fontSize:10.5}}>
             {traceDetail.context.client_name && <><span style={{color:'var(--muted)'}}>Client</span><span>{traceDetail.context.client_name}</span></>}
-            {traceDetail.context.member_name && <><span style={{color:'var(--muted)'}}>Member</span><span>{traceDetail.context.member_name}</span></>}
+            {traceDetail.context.member_name && traceDetail.context.member_name !== traceDetail.context.member_email && <><span style={{color:'var(--muted)'}}>Member</span><span>{traceDetail.context.member_name}</span></>}
             {traceDetail.context.member_email && <><span style={{color:'var(--muted)'}}>Email</span><span className="mono" style={{fontSize:10}}>{traceDetail.context.member_email}</span></>}
             {traceDetail.context.plan_name && <><span style={{color:'var(--muted)'}}>Plan</span><span>{traceDetail.context.plan_name}</span></>}
             {traceDetail.context.door_name && <><span style={{color:'var(--muted)'}}>Door</span><span>{traceDetail.context.door_name}</span></>}
@@ -698,7 +698,7 @@ function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
 
       {traceDetail?.events && (
         <div className="drawer-section">
-          <h3>Trace · {traceDetail.events.length} events</h3>
+          <h3>Trace · {traceDetail.events.length} {traceDetail.events.length === 1 ? 'event' : 'events'}</h3>
           <div className="mono" style={{fontSize:10,color:'var(--brand)',marginBottom:8}}>{ev.trace_id}</div>
           {traceDetail.events.map((e,i) => {
             const isSel = e.ts === ev.ts && e.event === ev.event;
