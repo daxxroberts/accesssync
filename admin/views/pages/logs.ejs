@@ -1,0 +1,131 @@
+<%#
+  @file logs.ejs
+  @layer admin/pages
+  @route /logs
+  @role trace-timeline-ui
+  @data GET /admin/logs/events, GET /admin/logs/typeahead, GET /admin/logs/trace/:id
+  @tab Logs
+  @features events feed, plain/technical voice toggle, grouped/stream layout, drawer detail, source+severity filters, member/client/trace typeahead
+  @stack React 18 + Babel-standalone (CDN) — Trace Timeline UI v1 (2026-04-29). Sprint 6 Phase 3.
+  @dr DR-014 (color tokens), DR-037 (trace context), DR-041 (v_trace_timeline)
+  @ob OB-119 stack consolidation post-HOG
+%>
+<!DOCTYPE html>
+<html lang="en" data-mode="light">
+<head>
+  <%- include('../partials/head', { title: 'Logs · AccessSync' }) %>
+  <style>
+    :root{
+      --brand:#4F6EF7; --brand-dark:#3D5BD4;
+      --brand-dim:rgba(79,110,247,.11); --brand-glow:rgba(79,110,247,.22);
+      --sage:#4ADE80; --sage-dark:#22C55E; --sage-dim:rgba(74,222,128,.11);
+      --red:#FF4D6A; --red-dim:rgba(255,77,106,.10);
+      --amber:#F5A623; --amber-dim:rgba(245,166,35,.10);
+      --bg:#F2F4F7; --surface:#F9FAFB; --card:#FFFFFF;
+      --border:#E2E5EA; --border2:#D0D5DD;
+      --text:#1A2130; --text2:#4A5568; --muted:#8896A8;
+      --shadow:0 1px 4px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
+      /* Source accent palette — pending DR-014 amendment (OB-116). Restricted
+         to log-source pills/dots/borders only — never CTAs or status. */
+      --src-activity:#4F6EF7; --src-webhook:#8B5CF6; --src-member_access:#4ADE80;
+      --src-error_queue:#FF4D6A; --src-diagnostic:#F5A623; --src-admin_audit:#06B6D4;
+      --src-config_alert:#EC4899;
+    }
+    [data-mode="dark"]{
+      --bg:#0D0F12; --surface:#13161B; --card:#1A1E25;
+      --border:#252B35; --border2:#2E3644;
+      --text:#E8ECF2; --text2:#8B96A8; --muted:#4A5568;
+    }
+    *,*::before,*::after{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text)}
+    body{font-family:'Sora',ui-sans-serif,system-ui,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased;min-height:100vh}
+    .mono{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+    .tnum{font-variant-numeric:tabular-nums}
+    button{font-family:inherit;cursor:pointer}
+
+    .page{max-width:1400px;margin:0 auto;padding:24px 28px 80px}
+    .page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:20px}
+    .page-title{font-size:24px;font-weight:600;letter-spacing:-0.3px;margin:0 0 4px}
+    .page-sub{font-size:13px;color:var(--muted)}
+
+    .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 0 16px;border-bottom:1px solid var(--border)}
+    .seg{display:flex;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0 3px;height:30px}
+    .seg button{padding:0 11px;height:24px;border-radius:5px;border:none;background:transparent;color:var(--text2);font-size:12.5px;font-weight:500;display:inline-flex;align-items:center;gap:5px}
+    .seg button.on{background:var(--card);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.06)}
+    .btn-g{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;background:transparent;border:1px solid var(--border);border-radius:8px;font-size:12.5px;font-weight:500;color:var(--text2)}
+    .btn-g:hover{background:var(--surface)}
+
+    .search-box{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 14px;height:40px}
+    .search-box input{flex:1;border:none;outline:none;background:transparent;color:var(--text);font:inherit;font-size:13.5px}
+    .kbd{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:4px;background:var(--surface);border:1px solid var(--border);border-bottom-width:2px;font-size:10.5px;font-weight:500;color:var(--text2)}
+
+    .filter-rail{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0}
+    .src-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;border:1px solid var(--border);font-size:11.5px;font-weight:500;color:var(--text2);cursor:pointer}
+    .src-pill .dot{width:6px;height:6px;border-radius:50%;background:var(--muted)}
+    .src-pill.off{opacity:.45;text-decoration:line-through}
+    .src-pill.on{color:var(--text)}
+
+    .stat-strip{display:flex;gap:24px;padding:14px 0;align-items:center;font-size:12.5px}
+    .stat .v{font-size:17px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+    .stat .l{font-size:11.5px;color:var(--muted);margin-left:5px}
+    .stat.err .v{color:var(--red)} .stat.warn .v{color:var(--amber)}
+
+    .body{display:flex;gap:14px;align-items:flex-start;padding:8px 0 0}
+    .feed{flex:1;min-width:0}
+    .drawer{width:420px;flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 200px)}
+    .drawer-section{padding:14px 16px;border-bottom:1px solid var(--border)}
+    .drawer-section:last-child{border-bottom:none}
+    .drawer h3{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin:0 0 8px}
+
+    .group{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px}
+    .group-head{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;background:var(--surface);border-bottom:1px solid var(--border)}
+    .group-head.collapsed{border-bottom:none}
+    .row{display:grid;grid-template-columns:60px 130px 22px minmax(180px,1fr) 70px;gap:10px;padding:0 14px;height:38px;align-items:center;border-bottom:1px solid var(--border);cursor:pointer;position:relative;font-size:12.5px}
+    .row:last-child{border-bottom:none}
+    .row.sel{background:var(--brand-dim)}
+    .row .accent{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--src-diagnostic)}
+    .stream-row{grid-template-columns:100px 130px 22px minmax(180px,1fr) 130px 70px}
+    .pill{display:inline-flex;align-items:center;gap:5px;padding:1px 7px;border-radius:5px;font-size:10.5px;font-weight:500;letter-spacing:.01em;border:1px solid currentColor;background:transparent}
+    .sev-dot{display:inline-block;width:7px;height:7px;border-radius:50%}
+    .sev-error{background:var(--red)} .sev-warn{background:var(--amber)} .sev-info{background:var(--border2);width:5px;height:5px}
+
+    .typeahead{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 32px rgba(20,30,60,0.14);z-index:50;max-height:380px;overflow:auto}
+    .ta-group-label{padding:10px 14px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted)}
+    .ta-row{display:flex;align-items:center;gap:10px;width:100%;padding:9px 14px;background:transparent;border:none;cursor:pointer;text-align:left;border-top:1px solid var(--border);font:inherit;color:inherit}
+    .ta-row:hover{background:var(--surface)}
+    .avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;background:var(--brand-dim);color:var(--brand)}
+
+    .empty{padding:40px;text-align:center;color:var(--muted);font-size:14px;background:var(--card);border:1px dashed var(--border);border-radius:14px}
+    .loading{padding:40px;text-align:center;color:var(--muted);font-size:13px}
+    .err{padding:14px 18px;background:var(--red-dim);border:1px solid rgba(255,77,106,.25);border-radius:10px;color:var(--red);font-size:13px;margin-bottom:14px}
+    .scroll::-webkit-scrollbar{width:10px;height:10px} .scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:8px;border:2px solid transparent;background-clip:content-box}
+  </style>
+</head>
+<body>
+  <%- include('../partials/topbar') %>
+  <%- include('../partials/subnav', { activeTab: activeTab }) %>
+
+  <div class="page">
+    <div id="logs-root">
+      <div class="loading">Loading…</div>
+    </div>
+  </div>
+
+  <script src="/operator-nav.js"></script>
+  <script>
+    // Bootstrap nav + dark mode (matches other operator pages)
+    if (typeof renderNav === 'function') renderNav();
+
+    function doLogout() {
+      document.cookie = 'adminToken=; Path=/; Max-Age=0; SameSite=Lax';
+      window.location.href = '/auth/login';
+    }
+  </script>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+
+  <script type="text/babel" src="/logs-app.jsx"></script>
+</body>
+</html>

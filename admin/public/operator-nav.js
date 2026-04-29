@@ -36,6 +36,7 @@ function renderNav() {
     { label: 'Members',       href: '/members',      key: 'members' },
     { label: 'Plan Mapping',  href: '/plan-mapping', key: 'plan-mapping' },
     { label: 'Access',        href: '/access',       key: 'access' },
+    { label: 'Logs',          href: '/logs',         key: 'logs' },
     { label: 'Errors',        href: '/errors',       key: 'errors' },
     { label: 'System Config', href: '/locations',    key: 'config' },
     { label: 'Admin',         href: '/admin-panel',  key: 'admin' },
