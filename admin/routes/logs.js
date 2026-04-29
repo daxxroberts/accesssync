@@ -109,7 +109,7 @@ router.get('/events', async (req, res) => {
          AND ($3::text IS NULL OR source = $3)
          AND ($4::text IS NULL OR result = $4)
          AND ($5::uuid IS NULL OR client_id = $5)
-         AND ($6::uuid IS NULL OR trace_id = $6)
+         AND ($6::text IS NULL OR trace_id = $6)
        ORDER BY ts DESC
        LIMIT $7 OFFSET $8`,
       [sinceTs, untilTs, source || null, resultFilter || null,
