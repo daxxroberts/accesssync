@@ -55,9 +55,41 @@ class WixAdapter {
 
   parseEvent(eventType, wixSiteId, body) {
     // Normalize Wix REST webhook event type strings to internal names
-    const normalizedEventType = this._normalizeEventType(eventType);
+    let normalizedEventType = this._normalizeEventType(eventType);
     if (normalizedEventType !== eventType) {
       log.info('wix.parse.event_type_normalized', { raw: eventType, normalized: normalizedEventType });
+    }
+
+    // Payment-status guard. Wix fires plan.purchased / plan.started / plan.purchased
+    // (from orderUpdated) for orders in any state — including DRAFT/UNPAID, which
+    // happens when checkout fails (e.g., billing-address validation). Without this
+    // guard, AccessSync would provision access for an order the member never paid for.
+    //
+    // Rule: a Wix order grants access only when status='ACTIVE' AND lastPaymentStatus
+    // ∈ {PAID, TRIAL}. Anything else is dropped — the eventType is rewritten to
+    // 'plan.unpaid_order' so the row still lands in webhook_log (audit trail
+    // preserved) but queue-worker has no case for it, so no grant fires.
+    const GRANT_TRIGGERS = ['plan.purchased', 'plan.started'];
+    if (GRANT_TRIGGERS.includes(normalizedEventType)) {
+      const orderEntity = body?.data?.entity || body?.data;
+      const orderStatus = orderEntity?.status || null;
+      const paymentStatus = orderEntity?.lastPaymentStatus || null;
+      const ALLOWED_STATUS  = new Set(['ACTIVE']);
+      const ALLOWED_PAYMENT = new Set(['PAID', 'TRIAL', null]); // null = not yet set on free plans
+      const statusOk  = !orderStatus  || ALLOWED_STATUS.has(orderStatus);
+      const paymentOk = ALLOWED_PAYMENT.has(paymentStatus);
+      if (!statusOk || !paymentOk) {
+        log.warn('wix.parse.unpaid_order_dropped', {
+          rawEventType:    eventType,
+          normalizedEvent: normalizedEventType,
+          orderStatus,
+          paymentStatus,
+          orderId:         orderEntity?._id || null,
+          planId:          orderEntity?.planId || null,
+          memberId:        orderEntity?.buyer?.memberId || null,
+        });
+        normalizedEventType = 'plan.unpaid_order';
+      }
     }
 
     // P6: Field paths resolved for Wix Velo backend event handlers.
