@@ -113,7 +113,8 @@ describe('[P1] Gate 1 — hardware adapter refuses calls with missing required f
   test('createUser passes through when both fields present', async () => {
     kisiAdapter.createUser.mockResolvedValue({ id: KISI_USER_ID });
     await hardwareAdapter.createUser('kisi', 'api-key', RECOVERED_EMAIL, RECOVERED_NAME);
-    expect(kisiAdapter.createUser).toHaveBeenCalledWith('api-key', RECOVERED_EMAIL, RECOVERED_NAME);
+    // hardware-adapter.js passes options={} through to the Layer 6 adapter (DR-043)
+    expect(kisiAdapter.createUser).toHaveBeenCalledWith('api-key', RECOVERED_EMAIL, RECOVERED_NAME, {});
   });
 });
 
@@ -124,6 +125,8 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
   test('recovers email from Wix Members API and retries createUser', async () => {
     // Arrange: cache miss, Wix Members API returns valid email, retry succeeds.
     db.query
+      // kisi_user_pattern lookup (DR-043 — resolveIdentity reads this first when tenantId provided)
+      .mockResolvedValueOnce({ rows: [{ kisi_user_pattern: 'invited' }] })
       // member_identity cache lookup — no hardware_user_id yet
       .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })
       // clients lookup for wix api key + site id
@@ -152,7 +155,7 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
     // Assert
     expect(hardwareUserId).toBe(String(KISI_USER_ID));
     expect(wixMembersApi.getMemberById).toHaveBeenCalledWith('plaintext-enc-wix-key', 'site-123', PLATFORM_MEMBER_ID);
-    expect(kisiAdapter.createUser).toHaveBeenCalledWith('kisi-api-key', RECOVERED_EMAIL, RECOVERED_NAME);
+    expect(kisiAdapter.createUser).toHaveBeenCalledWith('kisi-api-key', RECOVERED_EMAIL, RECOVERED_NAME, { userPattern: 'invited' });
   });
 
   test('parks as pending_identity when Wix Members API returns null email AND DB cache empty', async () => {
@@ -195,6 +198,8 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
 
   test('falls back to DB cache when Wix Members API throws', async () => {
     db.query
+      // kisi_user_pattern lookup (DR-043)
+      .mockResolvedValueOnce({ rows: [{ kisi_user_pattern: 'invited' }] })
       .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })
       // clients lookup succeeds
       .mockResolvedValueOnce({ rows: [{ source_api_key: 'enc-wix-key', source_site_id: 'site-123' }] })
@@ -219,7 +224,7 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
     );
 
     expect(hardwareUserId).toBe(String(KISI_USER_ID));
-    expect(kisiAdapter.createUser).toHaveBeenCalledWith('kisi-api-key', RECOVERED_EMAIL, RECOVERED_NAME);
+    expect(kisiAdapter.createUser).toHaveBeenCalledWith('kisi-api-key', RECOVERED_EMAIL, RECOVERED_NAME, { userPattern: 'invited' });
   });
 
   test('parks pending_identity when tenantId missing (cannot call Wix Members API)', async () => {
@@ -280,6 +285,8 @@ describe('[P1] Gate 2 — synthetic @users.wix.com emails are rejected as unqual
 
   test('Wix Members API returning a @users.wix.com email → Gate 2 falls through to DB cache', async () => {
     db.query
+      // kisi_user_pattern lookup (DR-043)
+      .mockResolvedValueOnce({ rows: [{ kisi_user_pattern: 'invited' }] })
       .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })            // cache miss
       .mockResolvedValueOnce({ rows: [{ source_api_key: 'enc-wix-key', source_site_id: 'site-123' }] })
       // DB cache has a real email from a prior event
@@ -309,7 +316,7 @@ describe('[P1] Gate 2 — synthetic @users.wix.com emails are rejected as unqual
 
     expect(hardwareUserId).toBe(String(KISI_USER_ID));
     expect(kisiAdapter.createUser).toHaveBeenCalledWith(
-      'kisi-api-key', 'chad@houseofgains.com', 'Chad Owner'
+      'kisi-api-key', 'chad@houseofgains.com', 'Chad Owner', { userPattern: 'invited' }
     );
   });
 });
