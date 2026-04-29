@@ -56,6 +56,10 @@ const ActionsMenu = ({ open, onClose, onAction, member }) => {
           <div className="menu-sep"/>
         </>
       )}
+      <button className="menu-item" onClick={() => onAction("bundle")}>
+        <Icon name="copy" />Copy bundle for AI
+      </button>
+      <div className="menu-sep"/>
       <button className="menu-item danger" onClick={() => onAction("remove")}>
         <Icon name="trash" />Remove member
       </button>
@@ -98,9 +102,19 @@ const MemberDrawer = ({ member, open, onClose }) => {
               </div>
             </div>
           </div>
-          <button className="btn-icon btn" onClick={onClose} aria-label="Close">
-            <Icon name="x" />
-          </button>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <button
+              className="btn"
+              onClick={() => window.triggerMemberBundle && window.triggerMemberBundle(member.id)}
+              title="Copy member bundle for AI analysis"
+              style={{padding:"5px 10px",fontSize:11.5,fontWeight:500}}
+            >
+              ⧉ Bundle
+            </button>
+            <button className="btn-icon btn" onClick={onClose} aria-label="Close">
+              <Icon name="x" />
+            </button>
+          </div>
         </div>
         <div className="drawer-body">
 

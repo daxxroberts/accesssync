@@ -153,6 +153,7 @@
       '      <button id="mid-voice-plain" class="on" type="button">✨ Plain</button>',
       '      <button id="mid-voice-tech"  type="button">Technical</button>',
       '    </div>',
+      '    <button class="mid-x" id="mid-bundle" type="button" title="Copy member bundle for AI analysis" style="font-size:11px;padding:4px 8px">⧉ Bundle</button>',
       '    <button class="mid-x" id="mid-close" type="button" aria-label="Close">✕</button>',
       '  </div>',
       '  <div class="mid-body" id="mid-body"></div>',
@@ -206,6 +207,8 @@
 
     document.getElementById('mid-overlay').onclick = close;
     document.getElementById('mid-close').onclick = close;
+    var bundleBtn = document.getElementById('mid-bundle');
+    if (bundleBtn) bundleBtn.onclick = onBundleClick;
     document.getElementById('mid-voice-plain').onclick = function () { setVoice('plain'); };
     document.getElementById('mid-voice-tech').onclick  = function () { setVoice('technical'); };
     document.addEventListener('keydown', escListener);
@@ -477,6 +480,61 @@
         showToast('Reconcile failed');
         if (btn) { btn.disabled = false; btn.textContent = 'Re-check this member'; }
       });
+  }
+
+  // Fetch a member bundle for the current member, copy to clipboard, and
+  // offer the optional log-stub follow-up.
+  function onBundleClick() {
+    if (!state.memberId) return;
+    var btn = document.getElementById('mid-bundle');
+    if (btn) { btn.disabled = true; btn.textContent = 'Building…'; }
+
+    fetch('/admin/logs/bundle/member/' + encodeURIComponent(state.memberId), { credentials: 'include' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+      .then(function (j) {
+        return navigator.clipboard.writeText(j.text).then(function () { return j; });
+      })
+      .then(function (j) {
+        if (btn) { btn.disabled = false; btn.textContent = '⧉ Bundle'; }
+        showStubDialog(j);
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.textContent = 'Bundle failed'; setTimeout(function(){ btn.textContent = '⧉ Bundle'; }, 1500); }
+      });
+  }
+
+  // Two-step UX: bundle is on the clipboard; ask if Daxx wants to log it.
+  function showStubDialog(bundleResp) {
+    var existing = document.getElementById('mid-stub-dialog');
+    if (existing) existing.remove();
+    var d = document.createElement('div');
+    d.id = 'mid-stub-dialog';
+    d.style.cssText = 'position:fixed;inset:0;background:rgba(15,25,35,0.45);backdrop-filter:blur(2px);z-index:9050;display:flex;align-items:center;justify-content:center;font-family:Sora,sans-serif';
+    d.innerHTML = [
+      '<div style="background:#fff;border:1px solid #E2E5EA;border-radius:10px;padding:18px 20px;width:480px;max-width:92vw;color:#1A2130">',
+      '  <div style="font-size:14px;font-weight:600;margin-bottom:6px">Bundle copied to clipboard</div>',
+      '  <div style="font-size:11.5px;color:#4A5568;margin-bottom:14px;line-height:1.5">' + (bundleResp.chars||'?').toLocaleString() + ' characters · ' + (bundleResp.trace_count||0) + ' traces · paste into Claude.ai for analysis.</div>',
+      '  <div style="font-size:11px;color:#4A5568;margin-bottom:8px">Want to log this for the AI review team?</div>',
+      '  <div style="display:flex;gap:8px;justify-content:flex-end">',
+      '    <button id="mid-stub-no" style="padding:6px 12px;border-radius:6px;border:1px solid #E2E5EA;background:#fff;font:inherit;font-size:11.5px;cursor:pointer">✗ No log</button>',
+      '    <button id="mid-stub-yes" style="padding:6px 12px;border-radius:6px;border:1px solid #4F6EF7;background:#4F6EF7;color:#fff;font:inherit;font-size:11.5px;font-weight:600;cursor:pointer">✓ Yes — copy log stub</button>',
+      '  </div>',
+      '</div>',
+    ].join('');
+    document.body.appendChild(d);
+    document.getElementById('mid-stub-no').onclick = function () { d.remove(); };
+    document.getElementById('mid-stub-yes').onclick = function () {
+      var btn = document.getElementById('mid-stub-yes');
+      navigator.clipboard.writeText(bundleResp.stub || '')
+        .then(function () {
+          btn.textContent = '✓ Stub copied — paste into bundle_gap_log.md';
+          setTimeout(function () { d.remove(); }, 1400);
+        })
+        .catch(function () {
+          btn.textContent = 'Stub copy failed';
+          setTimeout(function () { d.remove(); }, 1400);
+        });
+    };
   }
 
   window.MemberIncidentDrawer = { open: open, close: close };

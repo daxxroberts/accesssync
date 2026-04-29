@@ -305,6 +305,7 @@ function App() {
                             setOpenMenu(null);
                             if (a === "error") setOpenError(m.id);
                             if (a === "remove") setRemoveTarget(m);
+                            if (a === "bundle" && window.triggerMemberBundle) window.triggerMemberBundle(m.id);
                           }}
                           member={m}
                         />

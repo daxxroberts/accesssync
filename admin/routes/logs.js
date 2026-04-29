@@ -281,4 +281,110 @@ router.get('/trace/:trace_id', async (req, res) => {
   }
 });
 
+// ─── GET /admin/logs/bundle/trace/:trace_id ─────────────────────
+// Assemble a paste-ready bundle for one trace. Returns the bundle text +
+// metadata (chars, template_version, generated_at) + a pre-formatted stub
+// the UI can show in the "log this?" modal if Daxx hits ✓.
+const { buildTraceBundle, buildMemberBundle } = require('../../core/ai/bundle-assembler');
+
+function buildStubText({ id, idField, bundleType, chars, templateVersion, generatedAt }) {
+  const stubId = require('node:crypto').randomUUID();
+  return [
+    '<!-- ENTRY-START -->',
+    `id: ${stubId}`,
+    `timestamp: ${generatedAt}`,
+    `bundle_type: ${bundleType}`,
+    `${idField}: ${id}`,
+    `template_version: ${templateVersion}`,
+    `character_count: ${chars}`,
+    'status: pending',
+    '',
+    '## claude_ai_response',
+    '<!-- paste Claude.ai initial response here -->',
+    '',
+    '## claude_code_outcome',
+    '<!-- paste Claude Code conclusion here after deeper investigation -->',
+    '',
+    '<!-- ENTRY-END -->',
+    '',
+  ].join('\n');
+}
+
+router.get('/bundle/trace/:trace_id', async (req, res) => {
+  try {
+    const { trace_id: traceId } = req.params;
+    if (!UUID_RE.test(traceId)) {
+      return res.status(400).json({ error: 'invalid_trace_id' });
+    }
+    // Tenant scope check — block cross-tenant bundle access for operators.
+    const scopeId = scopedClientId(req, null);
+    if (scopeId !== null) {
+      const check = await db.query(
+        'SELECT 1 FROM v_trace_timeline WHERE trace_id = $1 AND client_id = $2 LIMIT 1',
+        [traceId, scopeId]
+      );
+      if (check.rows.length === 0) {
+        return res.status(404).json({ error: 'trace_not_found', trace_id: traceId });
+      }
+    }
+
+    const bundle = await buildTraceBundle(traceId);
+    const stub = buildStubText({
+      id: traceId, idField: 'trace_id', bundleType: 'trace',
+      chars: bundle.chars, templateVersion: bundle.template_version, generatedAt: bundle.generated_at,
+    });
+    res.json({
+      trace_id: traceId,
+      text: bundle.text,
+      chars: bundle.chars,
+      template_version: bundle.template_version,
+      generated_at: bundle.generated_at,
+      stub,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) return res.status(404).json({ error: err.message });
+    log.error('admin.logs.bundle_trace_failed', { trace_id: req.params.trace_id }, err);
+    res.status(500).json({ error: 'bundle_trace_failed' });
+  }
+});
+
+// ─── GET /admin/logs/bundle/member/:member_id ──────────────────
+router.get('/bundle/member/:member_id', async (req, res) => {
+  try {
+    const { member_id: memberId } = req.params;
+    if (!UUID_RE.test(memberId)) {
+      return res.status(400).json({ error: 'invalid_member_id' });
+    }
+    const scopeId = scopedClientId(req, null);
+    if (scopeId !== null) {
+      const check = await db.query(
+        'SELECT 1 FROM member_identity WHERE id = $1 AND client_id = $2 LIMIT 1',
+        [memberId, scopeId]
+      );
+      if (check.rows.length === 0) {
+        return res.status(404).json({ error: 'member_not_found', member_id: memberId });
+      }
+    }
+
+    const bundle = await buildMemberBundle(memberId);
+    const stub = buildStubText({
+      id: memberId, idField: 'member_id', bundleType: 'member',
+      chars: bundle.chars, templateVersion: bundle.template_version, generatedAt: bundle.generated_at,
+    });
+    res.json({
+      member_id: memberId,
+      text: bundle.text,
+      chars: bundle.chars,
+      trace_count: bundle.trace_count,
+      template_version: bundle.template_version,
+      generated_at: bundle.generated_at,
+      stub,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) return res.status(404).json({ error: err.message });
+    log.error('admin.logs.bundle_member_failed', { member_id: req.params.member_id }, err);
+    res.status(500).json({ error: 'bundle_member_failed' });
+  }
+});
+
 module.exports = router;
