@@ -118,7 +118,8 @@ class NightlyReconciliation {
     sweepLogger.info('reconciliation.wix_sync_start', { traceId: sweepTraceId, stage: 'cron', result: 'start' });
 
     const clientsResult = await db.query(
-      `SELECT id, source_site_id, source_api_key, hardware_api_key, hardware_platform
+      `SELECT id, source_site_id, source_api_key, hardware_api_key, hardware_platform,
+              last_active_member_count
        FROM clients
        WHERE status = 'active'
          AND source_api_key IS NOT NULL
@@ -127,7 +128,7 @@ class NightlyReconciliation {
 
     for (const client of clientsResult.rows) {
       try {
-        await this._syncClient(client);
+        await this._syncClient(client, { triggeredBy: 'cron' });
       } catch (err) {
         log.error('reconciliation.client_sync_failed', { clientId: client.id }, err);
         // One client failure must not abort the full sweep
@@ -139,7 +140,7 @@ class NightlyReconciliation {
 
   /**
    * Diff a single client's Wix active members against live Kisi state, queue corrections.
-   * Returns { granted, revoked } so callers (manual sync endpoint) can surface the counts.
+   * Returns { granted, revoked, skippedHolderOptin, runId } so callers (manual sync endpoint) can surface the counts.
    *
    * Sources of truth:
    *   Wix  — who should have access (active orders + confirmed bookings)
@@ -147,15 +148,36 @@ class NightlyReconciliation {
    *
    * The DB is used only as a bridge: member_identity.hardware_user_id maps Kisi user IDs
    * back to Wix platform_member_ids, and source_tag = 'accesssync' filters out staff/contractors.
+   *
+   * Hardening (2026-04-28):
+   *  - Opens a reconciliation_run audit row at start, closes at end with full counts
+   *  - Respects opt-in holder rule (DR-040): does NOT auto-grant a multi-member plan holder
+   *    who has not claimed a seat. Holder slot must be claimed via the Member Hub.
+   *  - Mass-revoke sanity gate: if would-be revoke count >= 25% of yesterday's active count,
+   *    waits 30s, re-fetches Wix, aborts revoke phase if drop persists. Grants always proceed.
    */
-  async _syncClient(client) {
+  async _syncClient(client, opts = {}) {
+    const triggeredBy        = opts.triggeredBy || 'cron';
+    const triggeredByActor   = opts.triggeredByActor || { type: 'system', id: 'reconciliation-cron' };
     const wixApiKey      = decryptApiKey(client.source_api_key);
     const hardwareApiKey = decryptApiKey(client.hardware_api_key);
     const hardwarePlatform = client.hardware_platform || 'kisi';
     const siteId = client.source_site_id;
+    const traceId = this._sweepTraceId || null;
 
     let granted = 0;
     let revoked = 0;
+    let skippedHolderOptin = 0;
+
+    // Open the audit row immediately so even an early abort is recorded
+    const runRowResult = await db.query(
+      `INSERT INTO reconciliation_run
+         (client_id, trace_id, triggered_by, triggered_by_actor_type, triggered_by_actor_id, status)
+       VALUES ($1, $2, $3, $4, $5, 'running')
+       RETURNING id`,
+      [client.id, traceId, triggeredBy, triggeredByActor.type, triggeredByActor.id]
+    ).catch(e => { log.error('reconciliation.run_open_failed', { clientId: client.id }, e); return { rows: [{ id: null }] }; });
+    const runId = runRowResult.rows[0]?.id || null;
 
     // 1. Pull Wix side — active plan orders + confirmed bookings.
     //
@@ -182,8 +204,13 @@ class NightlyReconciliation {
          VALUES ($1, 'wix_api_unavailable', $2, $3, $4, $5)`,
         [client.id, `status=${err.status || 'unknown'} code=${err.code || 'unknown'}`, getTraceId() || null, _actor.type || null, _actor.id || null]
       ).catch(() => {}); // Fault-tolerant — never block digest
+      // Close the audit row as aborted before returning
+      if (runId) await db.query(
+        `UPDATE reconciliation_run SET status = 'aborted', abort_reason = 'wix_api_unavailable', completed_at = NOW() WHERE id = $1`,
+        [runId]
+      ).catch(() => {});
       // Abort this client's sync. Do NOT fall through to compare/revoke.
-      return { granted: 0, revoked: 0, aborted: true, reason: 'wix_api_unavailable' };
+      return { granted: 0, revoked: 0, skippedHolderOptin: 0, runId, aborted: true, reason: 'wix_api_unavailable' };
     }
 
     // Map: wixMemberId → { planId, email, name }
@@ -224,11 +251,37 @@ class NightlyReconciliation {
     }
 
     // 3A. In Wix, not in Kisi → paid but not provisioned → queue grant
+    //     EXCEPT: opt-in holder rule (DR-040). If a Wix order is for a multi-member plan
+    //     and the buyer is the would-be plan holder, do NOT auto-grant. The holder must
+    //     claim a seat explicitly via the Member Hub.
+    //
+    //     Detection: pull all active multi-member plan_mappings for this client.
+    //     A Wix order whose planId maps to one of these is a "holder situation."
+    //     Skip the grant — the holder will claim through the UI when they want a seat.
+    const multiMemberPlans = await db.query(
+      `SELECT source_plan_id FROM plan_mappings
+       WHERE client_id = $1 AND status = 'active' AND allow_multiple = true`,
+      [client.id]
+    ).catch(() => ({ rows: [] }));
+    const multiMemberPlanIds = new Set(multiMemberPlans.rows.map(r => r.source_plan_id));
+
     for (const [memberId, wixData] of wixMembers) {
       if (kisiMembers.has(memberId)) continue;
 
       if (!wixData.planId) {
         log.warn('reconciliation.wix_order_no_plan_id', { clientId: client.id, memberId });
+        continue;
+      }
+
+      // Opt-in guard: skip grant for would-be holders on multi-member plans
+      if (multiMemberPlanIds.has(wixData.planId)) {
+        log.info('reconciliation.grant_skipped_optin', {
+          clientId: client.id, platformMemberId: memberId,
+          planId: wixData.planId, traceId: this._sweepTraceId,
+          reason: 'multi_member_plan_holder_must_claim',
+          sourceType: 'cron', stage: 'cron', result: 'skipped',
+        });
+        skippedHolderOptin++;
         continue;
       }
 
@@ -260,40 +313,149 @@ class NightlyReconciliation {
     }
 
     // 3B. In Kisi (AccessSync-managed, primary members only), not in Wix → cancelled/lapsed → queue revoke
+    //
+    // Sanity gate: if would-be revokes >= 25% of yesterday's active count (and yesterday > 5),
+    // wait 30s and re-fetch Wix once. If second snapshot agrees, proceed. If it disagrees,
+    // abort revoke phase entirely. Grants always proceed (additive ops are safe).
+    const wouldRevokeIds = [];
     for (const [memberId, kisiData] of kisiMembers) {
-      if (kisiData.isSubMember) continue;     // Operator-managed — never revoke based on Wix absence
-      if (wixMembers.has(memberId)) continue; // Still active in Wix
-
-      const recoEventId = `recon-${client.id}-${memberId}-${Date.now()}`;
-      const syntheticEvent = {
-        eventType:        'plan.cancelled',
-        sourcePlatform:   'wix',
-        platformMemberId: memberId,
-        wixSiteId:        siteId,
-        synthetic:        true,
-        syntheticSource:  'reconciliation.true_source_sync',
-        traceId:          this._sweepTraceId,
-        eventId:          recoEventId,
-      };
-
-      const jobId = `revoke-wix-sync-${client.id}-${memberId}-${Date.now()}`;
-      await eventQueue.add('revoke', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
-      log.info('reconciliation.revoke_queued', {
-        clientId: client.id, platformMemberId: memberId,
-        jobId, eventId: recoEventId,
-        traceId: this._sweepTraceId,
-        sourceType: 'cron', stage: 'cron', result: 'success',
-      });
-      revoked++;
+      if (kisiData.isSubMember) continue;
+      if (wixMembers.has(memberId)) continue;
+      wouldRevokeIds.push(memberId);
     }
 
+    let sanityGateTriggered = false;
+    let sanityGateResolved  = null;
+    let revokesProceed      = true;
+
+    const yesterdayCount = client.last_active_member_count || null;
+    const SANITY_THRESHOLD = 0.25;
+    const SANITY_FLOOR     = 5;
+
+    if (wouldRevokeIds.length > 0
+        && yesterdayCount && yesterdayCount > SANITY_FLOOR
+        && (wouldRevokeIds.length / yesterdayCount) >= SANITY_THRESHOLD) {
+
+      sanityGateTriggered = true;
+      log.warn('reconciliation.sanity_gate_triggered', {
+        clientId: client.id, traceId: this._sweepTraceId,
+        wouldRevoke: wouldRevokeIds.length, yesterday: yesterdayCount,
+        threshold: SANITY_THRESHOLD,
+      });
+
+      // Wait then re-fetch once
+      await new Promise(r => setTimeout(r, 30000));
+
+      let secondOrders, secondBookings;
+      try {
+        [secondOrders, secondBookings] = await Promise.all([
+          listActiveOrders(wixApiKey, siteId),
+          listConfirmedBookings(wixApiKey, siteId),
+        ]);
+      } catch (e) {
+        log.error('reconciliation.sanity_gate_requery_failed', { clientId: client.id }, e);
+        revokesProceed = false;
+        sanityGateResolved = false;
+      }
+
+      if (revokesProceed) {
+        const secondMembers = new Map();
+        for (const o of secondOrders || []) if (o.memberId) secondMembers.set(o.memberId, true);
+        for (const b of secondBookings || []) if (b.memberId && !secondMembers.has(b.memberId)) secondMembers.set(b.memberId, true);
+
+        // Recompute would-revoke against the second snapshot
+        const secondWouldRevoke = wouldRevokeIds.filter(id => !secondMembers.has(id));
+        const secondRatio = yesterdayCount ? secondWouldRevoke.length / yesterdayCount : 0;
+
+        if (secondRatio >= SANITY_THRESHOLD) {
+          sanityGateResolved = true;
+          log.info('reconciliation.sanity_gate_resolved_proceed', {
+            clientId: client.id, secondRevokes: secondWouldRevoke.length,
+          });
+        } else {
+          revokesProceed = false;
+          sanityGateResolved = false;
+          log.warn('reconciliation.sanity_gate_aborted', {
+            clientId: client.id,
+            firstWouldRevoke: wouldRevokeIds.length,
+            secondWouldRevoke: secondWouldRevoke.length,
+            yesterday: yesterdayCount,
+          });
+          const _actor = getActor() || {};
+          await db.query(
+            `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+             VALUES ($1, 'wix_snapshot_anomaly', $2, $3, $4, $5)`,
+            [
+              client.id,
+              `first=${wouldRevokeIds.length} second=${secondWouldRevoke.length} yesterday=${yesterdayCount}`,
+              this._sweepTraceId || getTraceId() || null,
+              _actor.type || null,
+              _actor.id || null,
+            ]
+          ).catch(() => {});
+        }
+      }
+    }
+
+    if (revokesProceed) {
+      for (const memberId of wouldRevokeIds) {
+        const recoEventId = `recon-${client.id}-${memberId}-${Date.now()}`;
+        const syntheticEvent = {
+          eventType:        'plan.cancelled',
+          sourcePlatform:   'wix',
+          platformMemberId: memberId,
+          wixSiteId:        siteId,
+          synthetic:        true,
+          syntheticSource:  'reconciliation.true_source_sync',
+          traceId:          this._sweepTraceId,
+          eventId:          recoEventId,
+        };
+
+        const jobId = `revoke-wix-sync-${client.id}-${memberId}-${Date.now()}`;
+        await eventQueue.add('revoke', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
+        log.info('reconciliation.revoke_queued', {
+          clientId: client.id, platformMemberId: memberId,
+          jobId, eventId: recoEventId,
+          traceId: this._sweepTraceId,
+          sourceType: 'cron', stage: 'cron', result: 'success',
+        });
+        revoked++;
+      }
+    }
+
+    // Update last_active_member_count for next sweep's sanity gate baseline
+    await db.query(
+      `UPDATE clients SET last_active_member_count = $1 WHERE id = $2`,
+      [wixMembers.size, client.id]
+    ).catch(() => {});
+
+    // Close the audit row
+    if (runId) await db.query(
+      `UPDATE reconciliation_run
+         SET status = $1, completed_at = NOW(),
+             wix_active_count = $2, kisi_managed_count = $3,
+             grants_queued = $4, revokes_queued = $5, grants_skipped_optin = $6,
+             sanity_gate_triggered = $7, sanity_gate_resolved = $8,
+             abort_reason = $9
+       WHERE id = $10`,
+      [
+        sanityGateTriggered && !revokesProceed ? 'aborted' : 'success',
+        wixMembers.size, kisiMembers.size,
+        granted, revoked, skippedHolderOptin,
+        sanityGateTriggered, sanityGateResolved,
+        sanityGateTriggered && !revokesProceed ? 'sanity_gate_tripped' : null,
+        runId,
+      ]
+    ).catch(e => log.error('reconciliation.run_close_failed', { runId }, e));
+
     log.info('reconciliation.client_sync_complete', {
-      clientId: client.id, siteId,
+      clientId: client.id, siteId, runId,
       wixActive: wixMembers.size, kisiManaged: kisiMembers.size,
-      granted, revoked,
+      granted, revoked, skippedHolderOptin,
+      sanityGateTriggered, sanityGateResolved,
     });
 
-    return { granted, revoked };
+    return { granted, revoked, skippedHolderOptin, runId, sanityGateTriggered, sanityGateResolved };
   }
 
   /**

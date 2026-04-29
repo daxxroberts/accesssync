@@ -2332,22 +2332,37 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
   try {
     const clientResult = await db.query(
-      `SELECT id, source_site_id, source_api_key, hardware_api_key, hardware_platform
+      `SELECT id, source_site_id, source_api_key, hardware_api_key, hardware_platform,
+              last_active_member_count
        FROM clients WHERE id = $1 AND status = 'active'`,
       [clientId]
     );
     if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
 
     const reconciliation = require('../../core/reconciliation');
-    const { granted, revoked, aborted, reason } = await reconciliation._syncClient(clientResult.rows[0]);
+    const operatorActor = req.admin?.email || req.admin?.userId || 'operator';
+    const { granted, revoked, skippedHolderOptin, runId, aborted, reason, sanityGateTriggered } = await reconciliation._syncClient(
+      clientResult.rows[0],
+      { triggeredBy: 'manual', triggeredByActor: { type: 'operator', id: String(operatorActor) } }
+    );
 
     // Don't stamp last_sync_at on an aborted sync — the timestamp would lie about freshness
     if (!aborted) {
       await db.query(`UPDATE clients SET last_sync_at = NOW() WHERE id = $1`, [clientId]);
     }
 
-    log.info('operator.sync.manual_run', { clientId, granted, revoked, aborted: !!aborted, reason: reason || null });
-    res.json({ ok: true, granted, revoked, aborted: !!aborted, reason: reason || null });
+    log.info('operator.sync.manual_run', {
+      clientId, runId, granted, revoked,
+      skippedHolderOptin: skippedHolderOptin || 0,
+      sanityGateTriggered: !!sanityGateTriggered,
+      aborted: !!aborted, reason: reason || null,
+    });
+    res.json({
+      ok: true, runId, granted, revoked,
+      skippedHolderOptin: skippedHolderOptin || 0,
+      sanityGateTriggered: !!sanityGateTriggered,
+      aborted: !!aborted, reason: reason || null,
+    });
   } catch (err) {
     log.error('operator.sync.manual_run_failed', { clientId }, err);
     res.status(500).json({ error: 'Sync failed' });

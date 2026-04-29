@@ -7,6 +7,8 @@
 
 > **SAGE Approval Rule:** Before implementing any non-trivial change — new feature, architecture decision, schema change, UI redesign, or anything with cross-cutting impact — invoke the business-operating-team skill and pull SAGE for approval. SAGE determines which additional agents are needed to best vet the change (NOVA for engineering, ORION for schema, ATLAS for architecture, FAULT for risk, etc.). If SAGE determines the change is UX or UI in nature, bring in FORGE, LENS, PIXEL, REAM, and any other relevant design agents without hesitation. Do not proceed with implementation until SAGE has explicitly approved. Bug fixes and purely mechanical changes (typos, config values, log message wording) are exempt.
 
+> **Operator FAQ Rule:** Any customer-facing change — operator dashboard, member-facing screens (sync status, my access, manage members), embedded Wix widgets, onboarding wizard, install instructions, or any text a member or operator could read — requires a corresponding update to `docs/OPERATOR_FAQ.md` before the session closes. The FAQ is the single source of truth for operator-facing answers; onboarding material, install guides, and external help content all pull from it. A feature is not done until the FAQ entry exists. KEEPER flags any session that ships a customer-facing change without an FAQ update.
+
 ---
 
 ## What This Is
