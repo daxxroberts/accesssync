@@ -263,7 +263,7 @@ function App() {
             }
           />
           {(activeMember || activeClient) && (
-            <button className="btn-g" style={{height:24,padding:'0 8px',fontSize:11.5}}
+            <button className="btn-g" style={{height:22,padding:'0 7px',fontSize:10.5}}
               onClick={() => { setActiveMember(null); setActiveClient(null); }}>
               Clear filter
             </button>
@@ -279,8 +279,8 @@ function App() {
                   <button key={m.member_id} className="ta-row" onMouseDown={() => pickResult('member', m)}>
                     <div className="avatar">{(m.member_name||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
                     <div style={{flex:1, minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:600}}>{m.member_name} <span style={{color:'var(--muted)',fontWeight:400,fontSize:11.5}}> · {m.client_name}</span></div>
-                      <div style={{fontSize:11.5,color:'var(--text2)'}}>{m.member_email}</div>
+                      <div style={{fontSize:11.5,fontWeight:600}}>{m.member_name} <span style={{color:'var(--muted)',fontWeight:400,fontSize:10.5}}> · {m.client_name}</span></div>
+                      <div style={{fontSize:10.5,color:'var(--text2)'}}>{m.member_email}</div>
                     </div>
                   </button>
                 ))}
@@ -292,7 +292,7 @@ function App() {
                 {ta.clients.map(c => (
                   <button key={c.client_id} className="ta-row" onMouseDown={() => pickResult('client', c)}>
                     <div className="avatar" style={{background:'var(--brand-dim)',color:'var(--brand)'}}>{c.client_name.split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
-                    <div style={{fontSize:13,fontWeight:600}}>{c.client_name}</div>
+                    <div style={{fontSize:11.5,fontWeight:600}}>{c.client_name}</div>
                   </button>
                 ))}
               </>
@@ -304,8 +304,8 @@ function App() {
                   <button key={t.trace_id} className="ta-row" onMouseDown={() => pickResult('trace', t)}>
                     <span style={{width:10,height:10,borderRadius:'50%',background:'var(--brand)',flexShrink:0}}></span>
                     <div style={{flex:1, minWidth:0}}>
-                      <div className="mono" style={{fontSize:11.5}}>{t.trace_id}</div>
-                      <div style={{fontSize:11.5,color:'var(--muted)'}}>{[t.client_name, t.member_name, t.plan_name].filter(Boolean).join(' · ')}</div>
+                      <div className="mono" style={{fontSize:10.5}}>{t.trace_id}</div>
+                      <div style={{fontSize:10.5,color:'var(--muted)'}}>{[t.client_name, t.member_name, t.plan_name].filter(Boolean).join(' · ')}</div>
                     </div>
                   </button>
                 ))}
@@ -317,13 +317,13 @@ function App() {
                 {ta.untraced.map((u,i) => (
                   <button key={i} className="ta-row" onMouseDown={() => { setExpandedTraces(new Set([u.trace_id])); setTaOpen(false); setQuery(''); }}>
                     <span style={{width:10,height:10,borderRadius:'50%',background:'var(--amber)',flexShrink:0}}></span>
-                    <div style={{flex:1, minWidth:0,fontSize:12}}>{u.event} <span style={{color:'var(--muted)'}}>· {fmtRel(u.ts)}</span></div>
+                    <div style={{flex:1, minWidth:0,fontSize:11}}>{u.event} <span style={{color:'var(--muted)'}}>· {fmtRel(u.ts)}</span></div>
                   </button>
                 ))}
               </>
             )}
             {(!ta.members || ta.members.length === 0) && (!ta.clients || ta.clients.length === 0) && (!ta.traces || ta.traces.length === 0) && (!ta.untraced || ta.untraced.length === 0) && (
-              <div style={{padding:'14px 16px',fontSize:12.5,color:'var(--muted)',textAlign:'center'}}>No matches.</div>
+              <div style={{padding:'12px 14px',fontSize:11,color:'var(--muted)',textAlign:'center'}}>No matches.</div>
             )}
           </div>
         )}
@@ -354,7 +354,7 @@ function App() {
         <div style={{flex:1}}/>
 
         {(activeMember || activeClient) && (
-          <span style={{fontSize:12, color:'var(--text2)'}}>
+          <span style={{fontSize:11, color:'var(--text2)'}}>
             Filtered by: {activeMember && <strong>{activeMember.name}</strong>} {activeClient && <strong>{activeClient.name}</strong>}
           </span>
         )}
@@ -369,7 +369,7 @@ function App() {
       )}
 
       <div className="stat-strip">
-        <span style={{color:'var(--muted)',fontSize:11.5,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.05em'}}>Last 24h</span>
+        <span style={{color:'var(--muted)',fontSize:10.5,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.05em'}}>Last 24h</span>
         <span className="stat"><span className="v">{filtered.length}</span><span className="l">{plain ? 'things happened' : 'events'}</span></span>
         <span className="stat"><span className="v">{traceCount}</span><span className="l">{plain ? 'requests' : 'traces'}</span></span>
         <span className="stat err"><span className="v">{errCount}</span><span className="l">{plain ? 'failures' : 'errors'}</span></span>
@@ -383,9 +383,9 @@ function App() {
           {loading && <div className="loading">Loading…</div>}
           {!loading && filtered.length === 0 && (
             <div className="empty">
-              <div style={{fontSize:32,opacity:.4,marginBottom:10}}>—</div>
+              <div style={{fontSize:28,opacity:.4,marginBottom:8}}>—</div>
               <div>No events in the last 24 hours match the current filters.</div>
-              <div style={{fontSize:12, color:'var(--muted)', marginTop:8}}>
+              <div style={{fontSize:11, color:'var(--muted)', marginTop:7}}>
                 Pre-trace-fix history isn't shown — events from before the trace plumbing fix have no trace_id and are invisible to this view.
               </div>
             </div>
@@ -398,15 +398,15 @@ function App() {
                 <span style={{width:8,height:8,borderRadius:'50%',background: g.sev === 'error' ? 'var(--red)' : g.sev === 'warn' ? 'var(--amber)' : 'var(--sage-dark)'}}/>
                 {plain ? (
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13.5, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                    <div style={{fontSize:11.5, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                       {humanize(g.top)}
                     </div>
-                    <div style={{fontSize:11, color:'var(--muted)', marginTop:3}}>{fmtRel(g.first)} · {g.events.length} steps</div>
+                    <div style={{fontSize:10, color:'var(--muted)', marginTop:2}}>{fmtRel(g.first)} · {g.events.length} steps</div>
                   </div>
                 ) : (
                   <>
-                    <span className="mono" style={{fontSize:12,fontWeight:600}}>{g.id.slice(0,8)}</span>
-                    <span style={{fontSize:12.5,color:'var(--text2)'}}>· {g.top.client_name || '(no client)'} · {g.top.member_name || g.top.member_email || '—'}</span>
+                    <span className="mono" style={{fontSize:11,fontWeight:600}}>{g.id.slice(0,8)}</span>
+                    <span style={{fontSize:11,color:'var(--text2)'}}>· {g.top.client_name || '(no client)'} · {g.top.member_name || g.top.member_email || '—'}</span>
                     <div style={{flex:1}}/>
                   </>
                 )}
@@ -415,7 +415,7 @@ function App() {
                     <span key={s} title={SOURCES[s]?.label} style={{width:7,height:7,borderRadius:'50%',background:SOURCES[s]?.color || 'var(--muted)'}}/>
                   ))}
                 </div>
-                <span className="tnum" style={{fontSize:11.5,color:'var(--muted)'}}>{g.events.length} events</span>
+                <span className="tnum" style={{fontSize:10.5,color:'var(--muted)'}}>{g.events.length} events</span>
               </div>
               {expandedTraces.has(g.id) && g.events.map((e,i) => (
                 <Row key={i} ev={e} sel={selected && selected.trace_id === e.trace_id && selected.ts === e.ts}
@@ -426,7 +426,7 @@ function App() {
 
           {!loading && layout === 'stream' && (
             <div className="group">
-              <div style={{display:'grid',gridTemplateColumns:'100px 130px 22px minmax(180px,1fr) 130px 70px',gap:10,padding:'9px 14px',background:'var(--surface)',borderBottom:'1px solid var(--border)',fontSize:10.5,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:'var(--muted)'}}>
+              <div style={{display:'grid',gridTemplateColumns:'90px 120px 20px minmax(180px,1fr) 120px 64px',gap:9,padding:'8px 12px',background:'var(--surface)',borderBottom:'1px solid var(--border)',fontSize:9.5,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:'var(--muted)'}}>
                 <span>{plain ? 'When' : 'Time'}</span><span>{plain ? 'Where from' : 'Source'}</span><span/><span>{plain ? 'What' : 'Event'}</span><span>{plain ? 'Request' : 'Trace'}</span><span style={{textAlign:'right'}}>Sev</span>
               </div>
               {filtered.map((e,i) => (
@@ -451,11 +451,11 @@ function Row({ ev, sel, onSelect, relativeTo, plain, mode }) {
     <div className={'row ' + (mode === 'stream' ? 'stream-row ' : '') + (sel ? 'sel' : '')} onClick={onSelect}>
       <div className="accent" style={{background: s.color, opacity: sel ? 1 : 0.6}}/>
       {mode === 'grouped' ? (
-        <span className="mono tnum" style={{color:'var(--muted)',fontSize:11}}>+{dt}ms</span>
+        <span className="mono tnum" style={{color:'var(--muted)',fontSize:10}}>+{dt}ms</span>
       ) : (
-        <span className="mono tnum" style={{color:'var(--muted)',fontSize:11}}>{plain ? fmtRel(ev.ts) : fmtClock(ev.ts)}</span>
+        <span className="mono tnum" style={{color:'var(--muted)',fontSize:10}}>{plain ? fmtRel(ev.ts) : fmtClock(ev.ts)}</span>
       )}
-      <span className={plain ? '' : 'mono'} style={{display:'inline-flex',alignItems:'center',gap:5, color: s.color, fontSize: 11, padding:'1px 7px', border:`1px solid ${s.color}55`, borderRadius:5, justifySelf:'start'}}>
+      <span className={plain ? '' : 'mono'} style={{display:'inline-flex',alignItems:'center',gap:4, color: s.color, fontSize: 10, padding:'1px 6px', border:`1px solid ${s.color}55`, borderRadius:4, justifySelf:'start'}}>
         <span style={{width:5,height:5,borderRadius:'50%',background:s.color}}/>
         {plain ? s.plain : s.short}
       </span>
@@ -463,13 +463,13 @@ function Row({ ev, sel, onSelect, relativeTo, plain, mode }) {
       <span style={{color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
         {plain ? humanize(ev) : (
           <>
-            <span className="mono" style={{color:s.color,fontSize:11.5,marginRight:8}}>{ev.event}</span>
+            <span className="mono" style={{color:s.color,fontSize:10.5,marginRight:7}}>{ev.event}</span>
             <span style={{color:'var(--text2)'}}>{ev.client_name || ''}{ev.member_name ? ' · ' + ev.member_name : ''}</span>
           </>
         )}
       </span>
-      {mode === 'stream' && <span className="mono" style={{color:'var(--text2)',fontSize:11}}>{ev.trace_id?.slice(0,10)}</span>}
-      <span className="mono tnum" style={{color:'var(--muted)',fontSize:11,textAlign:'right'}}>{ev.result || '—'}</span>
+      {mode === 'stream' && <span className="mono" style={{color:'var(--text2)',fontSize:10}}>{ev.trace_id?.slice(0,10)}</span>}
+      <span className="mono tnum" style={{color:'var(--muted)',fontSize:10,textAlign:'right'}}>{ev.result || '—'}</span>
     </div>
   );
 }
@@ -480,20 +480,20 @@ function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
     <div className="drawer scroll">
       <div className="drawer-section">
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-          <span style={{padding:'1px 7px',borderRadius:5,fontSize:10.5,fontWeight:500,color:s.color,border:`1px solid ${s.color}55`}}>
+          <span style={{padding:'1px 6px',borderRadius:4,fontSize:9.5,fontWeight:500,color:s.color,border:`1px solid ${s.color}55`}}>
             {s.short || ev.source}
           </span>
-          <span style={{padding:'1px 7px',borderRadius:5,fontSize:10.5,fontWeight:500,
+          <span style={{padding:'1px 6px',borderRadius:4,fontSize:9.5,fontWeight:500,
             color: severityOf(ev) === 'error' ? 'var(--red)' : severityOf(ev) === 'warn' ? 'var(--amber)' : 'var(--text2)',
             background: severityOf(ev) === 'error' ? 'var(--red-dim)' : severityOf(ev) === 'warn' ? 'var(--amber-dim)' : 'var(--surface)'}}>
             {ev.result || severityOf(ev)}
           </span>
           <div style={{flex:1}}/>
-          <button onClick={onClose} className="btn-g" style={{height:24,padding:'0 8px'}}>✕</button>
+          <button onClick={onClose} className="btn-g" style={{height:22,padding:'0 7px'}}>✕</button>
         </div>
-        <div className="mono" style={{fontSize:13.5,fontWeight:600,wordBreak:'break-word'}}>{ev.event}</div>
-        <div style={{fontSize:12.5,color:'var(--text2)',marginTop:6,lineHeight:1.5}}>{humanize(ev)}</div>
-        <div style={{display:'flex',gap:14,marginTop:10,fontSize:11.5,color:'var(--muted)'}}>
+        <div className="mono" style={{fontSize:12,fontWeight:600,wordBreak:'break-word'}}>{ev.event}</div>
+        <div style={{fontSize:11,color:'var(--text2)',marginTop:5,lineHeight:1.5}}>{humanize(ev)}</div>
+        <div style={{display:'flex',gap:12,marginTop:8,fontSize:10.5,color:'var(--muted)'}}>
           <div>actor: <span style={{color:'var(--text2)'}}>{ev.actor_type}/{ev.actor_id}</span></div>
           <div>at: <span className="mono tnum">{fmtClock(ev.ts)}</span></div>
         </div>
@@ -502,13 +502,13 @@ function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
       {traceDetail?.context && (
         <div className="drawer-section">
           <h3>Context</h3>
-          <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'4px 12px',fontSize:12}}>
+          <div style={{display:'grid',gridTemplateColumns:'auto 1fr',gap:'3px 10px',fontSize:10.5}}>
             {traceDetail.context.client_name && <><span style={{color:'var(--muted)'}}>Client</span><span>{traceDetail.context.client_name}</span></>}
             {traceDetail.context.member_name && <><span style={{color:'var(--muted)'}}>Member</span><span>{traceDetail.context.member_name}</span></>}
-            {traceDetail.context.member_email && <><span style={{color:'var(--muted)'}}>Email</span><span className="mono" style={{fontSize:11}}>{traceDetail.context.member_email}</span></>}
+            {traceDetail.context.member_email && <><span style={{color:'var(--muted)'}}>Email</span><span className="mono" style={{fontSize:10}}>{traceDetail.context.member_email}</span></>}
             {traceDetail.context.plan_name && <><span style={{color:'var(--muted)'}}>Plan</span><span>{traceDetail.context.plan_name}</span></>}
             {traceDetail.context.door_name && <><span style={{color:'var(--muted)'}}>Door</span><span>{traceDetail.context.door_name}</span></>}
-            {traceDetail.context.hardware_user_id && <><span style={{color:'var(--muted)'}}>Hardware ID</span><span className="mono" style={{fontSize:11}}>{traceDetail.context.hardware_user_id}</span></>}
+            {traceDetail.context.hardware_user_id && <><span style={{color:'var(--muted)'}}>Hardware ID</span><span className="mono" style={{fontSize:10}}>{traceDetail.context.hardware_user_id}</span></>}
             {traceDetail.context.entry_point && <><span style={{color:'var(--muted)'}}>Entry</span><span>{traceDetail.context.entry_point}</span></>}
           </div>
         </div>
@@ -517,14 +517,14 @@ function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
       {traceDetail?.events && (
         <div className="drawer-section">
           <h3>Trace · {traceDetail.events.length} events</h3>
-          <div className="mono" style={{fontSize:11,color:'var(--brand)',marginBottom:10}}>{ev.trace_id}</div>
+          <div className="mono" style={{fontSize:10,color:'var(--brand)',marginBottom:8}}>{ev.trace_id}</div>
           {traceDetail.events.map((e,i) => {
             const isSel = e.ts === ev.ts && e.event === ev.event;
             const ss = SOURCES[e.source] || {};
             return (
               <div key={i} onClick={() => onSelectEvent(e)} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',cursor:'pointer',borderLeft:`2px solid ${ss.color || 'var(--border)'}`,paddingLeft:12,marginLeft:4,background:isSel ? 'var(--brand-dim)' : 'transparent',borderRadius:'0 6px 6px 0'}}>
-                <span className="mono tnum" style={{fontSize:10.5,color:'var(--muted)',width:36}}>+{i === 0 ? 0 : Math.round(new Date(e.ts) - new Date(traceDetail.events[0].ts))}ms</span>
-                <span className="mono" style={{fontSize:11.5,color: ss.color, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{e.event}</span>
+                <span className="mono tnum" style={{fontSize:9.5,color:'var(--muted)',width:34}}>+{i === 0 ? 0 : Math.round(new Date(e.ts) - new Date(traceDetail.events[0].ts))}ms</span>
+                <span className="mono" style={{fontSize:10.5,color: ss.color, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{e.event}</span>
                 {severityOf(e) !== 'info' && <SeverityDot sev={severityOf(e)}/>}
               </div>
             );
@@ -534,7 +534,7 @@ function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
 
       <div className="drawer-section">
         <h3>Payload</h3>
-        <pre className="mono scroll" style={{margin:0,padding:'10px 12px',background:'var(--bg)',borderRadius:8,fontSize:11,color:'var(--text2)',lineHeight:1.55,whiteSpace:'pre-wrap',wordBreak:'break-word',maxHeight:200,overflow:'auto'}}>
+        <pre className="mono scroll" style={{margin:0,padding:'9px 11px',background:'var(--bg)',borderRadius:7,fontSize:10,color:'var(--text2)',lineHeight:1.55,whiteSpace:'pre-wrap',wordBreak:'break-word',maxHeight:180,overflow:'auto'}}>
 {JSON.stringify(ev.detail, null, 2)}
         </pre>
       </div>
