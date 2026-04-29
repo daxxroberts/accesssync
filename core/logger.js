@@ -213,6 +213,10 @@ function emit(level, event, ctx = {}, err = null, traceId = null) {
     ...ctx,
   };
 
+  // Top-level `message` for log aggregators (Railway, etc.) that key off it.
+  // Priority: caller-provided ctx.message > err.message > event name fallback.
+  entry.message = (ctx && ctx.message) || (err && err.message) || event;
+
   if (effectiveTraceId)  entry.traceId    = effectiveTraceId;
   if (actor) {
     entry.actor_type = actor.type;

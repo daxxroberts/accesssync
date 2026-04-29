@@ -286,6 +286,7 @@ class NightlyReconciliation {
       }
 
       const recoEventId = `recon-${client.id}-${memberId}-${Date.now()}`;
+      const traceId = this._sweepTraceId || crypto.randomUUID();
       const syntheticEvent = {
         eventType:        'plan.purchased',
         sourcePlatform:   'wix',
@@ -296,7 +297,7 @@ class NightlyReconciliation {
         wixSiteId:        siteId,
         synthetic:        true,
         syntheticSource:  'reconciliation.true_source_sync',
-        traceId:          this._sweepTraceId,
+        traceId,
         eventId:          recoEventId,
       };
 
@@ -400,6 +401,7 @@ class NightlyReconciliation {
     if (revokesProceed) {
       for (const memberId of wouldRevokeIds) {
         const recoEventId = `recon-${client.id}-${memberId}-${Date.now()}`;
+        const traceId = this._sweepTraceId || crypto.randomUUID();
         const syntheticEvent = {
           eventType:        'plan.cancelled',
           sourcePlatform:   'wix',
@@ -407,7 +409,7 @@ class NightlyReconciliation {
           wixSiteId:        siteId,
           synthetic:        true,
           syntheticSource:  'reconciliation.true_source_sync',
-          traceId:          this._sweepTraceId,
+          traceId,
           eventId:          recoEventId,
         };
 
@@ -865,6 +867,13 @@ class NightlyReconciliation {
     const jobName = ['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(eventType)
       ? 'grant'
       : 'revoke';
+
+    // Guard: never re-queue a job without a traceId — worker rejects at queue-worker.js:77
+    // and BullMQ marks it exhausted on attempt 1. If the original payload predates traceId
+    // discipline, mint one so the job can run rather than dying immediately.
+    if (!standardEvent.traceId) {
+      standardEvent.traceId = this._sweepTraceId || crypto.randomUUID();
+    }
 
     // 2. Re-queue to BullMQ — respects in_flight lock and concurrency controls (not direct grant-revoke call)
     await eventQueue.add(jobName, { tenantId: record.client_id, standardEvent });
