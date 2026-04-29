@@ -171,8 +171,10 @@ function App() {
   const [ta, setTa] = useState(null);
   const [activeMember, setActiveMember] = useState(null); // { id, name }
   const [activeClient, setActiveClient] = useState(null); // { id, name }
+  const [role, setRole] = useState(null); // 'owner' | 'operator' — set by first events response
 
   const plain = voice === 'plain';
+  const isOperator = role === 'operator';
 
   // Persist voice toggle
   useEffect(() => { setVoiceCookie(voice); }, [voice]);
@@ -188,6 +190,7 @@ function App() {
       if (!res.ok) throw new Error('events ' + res.status);
       const json = await res.json();
       setEvents(json.events || []);
+      if (json.role) setRole(json.role);
       // Auto-expand first 3 traces for grouped view
       const traces = [...new Set((json.events || []).map(e => e.trace_id))].slice(0, 3);
       setExpandedTraces(new Set(traces));
@@ -284,7 +287,15 @@ function App() {
       <div className="page-head">
         <div>
           <h1 className="page-title">{plain ? 'Activity' : 'Trace Timeline'}</h1>
-          <div className="page-sub">{plain ? 'Plain-English view of every webhook, grant, and alert in the last 24 hours.' : 'v_trace_timeline · last 24h'}</div>
+          <div className="page-sub">
+            {plain
+              ? (isOperator
+                  ? 'Plain-English view of every webhook, grant, and alert at your gym in the last 24 hours.'
+                  : 'Plain-English view of every webhook, grant, and alert across all clients in the last 24 hours.')
+              : (isOperator
+                  ? 'v_trace_timeline · scoped to your gym · last 24h'
+                  : 'v_trace_timeline · all clients · last 24h')}
+          </div>
         </div>
         <div style={{display:'flex',gap:8}}>
           <button className="btn-g" onClick={loadEvents} title="Refresh">↻ Refresh</button>
@@ -302,7 +313,11 @@ function App() {
             onChange={e => { setQuery(e.target.value); setTaOpen(true); }}
             onFocus={() => setTaOpen(true)}
             onBlur={() => setTimeout(() => setTaOpen(false), 160)}
-            placeholder={plain ? "Search a member, client, or request" : "Search trace_id, member_id, client name…"}
+            placeholder={
+              plain
+                ? (isOperator ? "Search a member or request" : "Search a member, client, or request")
+                : (isOperator ? "Search trace_id, member_id, member email…" : "Search trace_id, member_id, client name…")
+            }
           />
           {(activeMember || activeClient) && (
             <button className="btn-g" style={{height:24,padding:'0 8px',fontSize:11.5}}

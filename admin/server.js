@@ -24,7 +24,7 @@ const operatorRoutes    = require('./routes/operator');
 const multiMemberRoutes = require('./routes/multi-member');
 const portalRoutes      = require('./routes/portal');
 const logsRoutes        = require('./routes/logs');
-const { requireAuth, requireAuthPage, requireAuthPageOrOperator } = require('./middleware/auth');
+const { requireAuth, requireAuthOrOperator, requireAuthPage, requireAuthPageOrOperator } = require('./middleware/auth');
 const { traceContextMiddleware } = require('./middleware/trace-context');
 const { log } = require('../core/logger');
 
@@ -79,7 +79,10 @@ app.use('/admin/members',  requireAuth, membersRoutes);
 app.use('/admin/webhooks', requireAuth, webhooksRoutes);
 app.use('/admin/queue',    requireAuth, queueRoutes);
 app.use('/admin/clients',  requireAuth, clientsRoutes);
-app.use('/admin/logs',     requireAuth, logsRoutes);
+// Trace Timeline API — accepts admin (Daxx, cross-client) or operator (Chad,
+// scoped to their own client by the route handler). Tenant scope is enforced
+// inside admin/routes/logs.js via scopedClientId(req).
+app.use('/admin/logs',     requireAuthOrOperator, logsRoutes);
 
 // ── Operator dashboard API (auth handled inside router — signup endpoints exempt) ──
 app.use('/operator', operatorRoutes);
@@ -112,7 +115,9 @@ app.get('/plan-mapping', allowWixFrame, requireAuthPageOrOperator, (req, res) =>
 app.get('/access',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/access',       { activeTab: 'access',       ...sessionMeta(req) }));
 app.get('/locations',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/locations',    { activeTab: 'config',       ...sessionMeta(req) }));
 app.get('/errors',       allowWixFrame, requireAuthPage,          (req, res) => res.render('pages/errors',       { activeTab: 'errors',       ...sessionMeta(req) }));
-app.get('/logs',         allowWixFrame, requireAuthPage,          (req, res) => res.render('pages/logs',         { activeTab: 'logs',         ...sessionMeta(req) }));
+// Trace Timeline operator page — accepts owner OR operator. Tenant scope is
+// enforced server-side inside admin/routes/logs.js via scopedClientId(req).
+app.get('/logs',         allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/logs',         { activeTab: 'logs',         clientId: req.admin?.clientId || '', ...sessionMeta(req) }));
 // Admin panel — owner only (no iframe — no allowWixFrame)
 app.get('/admin-panel',  requireAuthPage, (req, res) => res.render('pages/admin-panel',  { activeTab: 'admin', ...sessionMeta(req) }));
 // Admin error queue — full cross-tenant view with raw payload, owner only

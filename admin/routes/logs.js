@@ -34,6 +34,28 @@ const VALID_SOURCES = new Set([
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/**
+ * Tenant-scope a request. Returns the client_id this caller is allowed to see:
+ *   - Owner (no role or role !== 'operator'): may pass any client_id, may pass
+ *     null to see all clients.
+ *   - Operator (role === 'operator'): forced to their own clientId. Any
+ *     client_id query param is ignored; they cannot cross tenants.
+ *
+ * This is the security boundary for the Trace Timeline. Without it, an
+ * operator could pass ?client_id=<another-tenant-id> and read another
+ * client's logs. With it, the parameter is silently overridden.
+ */
+function scopedClientId(req, requestedClientId) {
+  if (req.admin?.role === 'operator') {
+    return req.admin.clientId || null;
+  }
+  return requestedClientId || null;
+}
+
+function isOperator(req) {
+  return req.admin?.role === 'operator';
+}
+
 // ─── GET /admin/logs/events ─────────────────────────────────────
 // Paginated trace timeline feed. Bounded by `since` (required default 24h)
 // and `until` (optional). Hard cap on `limit` server-side at 500.
@@ -68,6 +90,10 @@ router.get('/events', async (req, res) => {
       return res.status(400).json({ error: 'invalid_trace_id' });
     }
 
+    // Tenant scope — operators are forced to their own clientId. Owners may
+    // pass any clientId or omit it to see all clients.
+    const effectiveClientId = scopedClientId(req, clientId);
+
     const limit  = Math.min(parseInt(rawLimit, 10) || 100, 500);
     const offset = Math.max(parseInt(rawOffset, 10) || 0, 0);
 
@@ -87,7 +113,7 @@ router.get('/events', async (req, res) => {
        ORDER BY ts DESC
        LIMIT $7 OFFSET $8`,
       [sinceTs, untilTs, source || null, resultFilter || null,
-       clientId || null, traceIdParam || null, limit, offset]
+       effectiveClientId, traceIdParam || null, limit, offset]
     );
 
     res.json({
@@ -95,9 +121,10 @@ router.get('/events', async (req, res) => {
       filters: {
         source: source || null,
         result: resultFilter || null,
-        client_id: clientId || null,
+        client_id: effectiveClientId,
         trace_id: traceIdParam || null,
       },
+      role: isOperator(req) ? 'operator' : 'owner',
       pagination: { limit, offset, returned: result.rows.length },
       events: result.rows,
     });
@@ -117,8 +144,11 @@ router.get('/typeahead', async (req, res) => {
       return res.json({ members: [], clients: [], traces: [], untraced: [] });
     }
 
+    // Tenant scope — for operators, every query gets WHERE client_id = their_id
+    // injected. Owners pass null and see everything.
+    const scopeId = scopedClientId(req, null);
+
     // 1. Members (FTS via trace_context GIN index, idx_trace_context_fts).
-    //    Note: `websearch_to_tsquery` is forgiving of bare words, quotes, and OR.
     const memberRes = await db.query(
       `SELECT DISTINCT ON (member_id)
               member_id, member_name, member_email,
@@ -126,6 +156,7 @@ router.get('/typeahead', async (req, res) => {
               MAX(started_at) OVER (PARTITION BY member_id) AS last_seen
        FROM trace_context
        WHERE member_id IS NOT NULL
+         AND ($2::uuid IS NULL OR client_id = $2)
          AND to_tsvector('english',
               coalesce(client_name,'') || ' ' || coalesce(member_name,'') || ' ' ||
               coalesce(member_email,'') || ' ' || coalesce(platform_member_id,'') || ' ' ||
@@ -134,31 +165,36 @@ router.get('/typeahead', async (req, res) => {
             ) @@ websearch_to_tsquery('english', $1)
        ORDER BY member_id, last_seen DESC
        LIMIT 5`,
-      [q]
+      [q, scopeId]
     );
 
-    // 2. Clients (small table — ILIKE is fine).
-    const clientRes = await db.query(
-      `SELECT id AS client_id, name AS client_name
-       FROM clients
-       WHERE name ILIKE '%' || $1 || '%' AND status = 'active'
-       LIMIT 3`,
-      [q]
-    );
+    // 2. Clients — owners only. Operators have a single client (their own);
+    //    surfacing it via search would imply multi-client capability they
+    //    don't have.
+    let clientRes = { rows: [] };
+    if (!isOperator(req)) {
+      clientRes = await db.query(
+        `SELECT id AS client_id, name AS client_name
+         FROM clients
+         WHERE name ILIKE '%' || $1 || '%' AND status = 'active'
+         LIMIT 3`,
+        [q]
+      );
+    }
 
-    // 3. Traces (UUID prefix only — UUIDs aren't real text).
+    // 3. Traces — scoped for operators.
     const traceRes = await db.query(
       `SELECT trace_id, started_at, client_name, member_name,
               plan_name, door_name, entry_point
        FROM trace_context
        WHERE trace_id::text LIKE $1 || '%'
+         AND ($2::uuid IS NULL OR client_id = $2)
        ORDER BY started_at DESC
        LIMIT 4`,
-      [q]
+      [q, scopeId]
     );
 
-    // 4. Untraced fallback (FAULT.2): when no resolved-member match,
-    //    search raw payloads. Skipped if we found members already.
+    // 4. Untraced fallback (FAULT.2). Scoped for operators.
     let untracedRes = { rows: [] };
     if (memberRes.rows.length === 0) {
       untracedRes = await db.query(
@@ -166,10 +202,11 @@ router.get('/typeahead', async (req, res) => {
          FROM v_trace_timeline
          WHERE ts > NOW() - INTERVAL '7 days'
            AND member_name IS NULL
+           AND ($2::uuid IS NULL OR client_id = $2)
            AND detail::text ILIKE '%' || $1 || '%'
          ORDER BY ts DESC
          LIMIT 5`,
-        [q]
+        [q, scopeId]
       );
     }
 
@@ -178,6 +215,7 @@ router.get('/typeahead', async (req, res) => {
       clients:  clientRes.rows,
       traces:   traceRes.rows,
       untraced: untracedRes.rows,
+      role:     isOperator(req) ? 'operator' : 'owner',
     });
   } catch (err) {
     log.error('admin.logs.typeahead_failed', { q: req.query.q }, err);
@@ -195,6 +233,8 @@ router.get('/trace/:trace_id', async (req, res) => {
       return res.status(400).json({ error: 'invalid_trace_id' });
     }
 
+    const scopeId = scopedClientId(req, null);
+
     const result = await db.query(
       `SELECT trace_id, ts, source, actor_type, actor_id, event,
               target_type, target_id, result, detail, client_id,
@@ -203,11 +243,14 @@ router.get('/trace/:trace_id', async (req, res) => {
               plan_name, door_name, entry_point
        FROM v_trace_timeline
        WHERE trace_id = $1
+         AND ($2::uuid IS NULL OR client_id = $2)
        ORDER BY ts ASC`,
-      [traceId]
+      [traceId, scopeId]
     );
 
     if (result.rows.length === 0) {
+      // Operators get the same 404 whether the trace truly doesn't exist or
+      // belongs to a different tenant — never confirm cross-tenant existence.
       return res.status(404).json({ error: 'trace_not_found', trace_id: traceId });
     }
 
@@ -218,8 +261,10 @@ router.get('/trace/:trace_id', async (req, res) => {
               source_platform, hardware_platform, hardware_user_id,
               plan_name, door_name, mapping_id,
               actor_type, actor_id, entry_point
-       FROM trace_context WHERE trace_id = $1`,
-      [traceId]
+       FROM trace_context
+       WHERE trace_id = $1
+         AND ($2::uuid IS NULL OR client_id = $2)`,
+      [traceId, scopeId]
     );
 
     res.json({
