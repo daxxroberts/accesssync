@@ -26,9 +26,10 @@ function getLog() {
 // --- Startup Validation ---
 
 if (!process.env.DATABASE_URL) {
-  console.error('[DB] FATAL: DATABASE_URL environment variable is not set.');
-  console.error('[DB] Set DATABASE_URL in your .env file (local) or Railway environment (production).');
-  process.exit(1);
+  throw new Error(
+    '[DB] FATAL: DATABASE_URL environment variable is not set. ' +
+    'Set DATABASE_URL in your .env file (local) or Railway environment (production).'
+  );
 }
 
 // --- Connection Pool ---
@@ -78,7 +79,12 @@ async function query(text, params) {
     }
     return result;
   } catch (err) {
-    getLog().error('db.query_error', { query: text, params, code: err.code }, err);
+    // Avoid recursion: a failing INSERT into diagnostic_log must not trigger
+    // another log.error() call, which would try to INSERT into diagnostic_log
+    // again. The logger has its own internal stdout fallback for this case.
+    if (!/INSERT INTO diagnostic_log/i.test(text)) {
+      getLog().error('db.query_error', { query: text, params, code: err.code }, err);
+    }
     throw err; // Re-throw so calling module can handle or route to retry engine
   }
 }
