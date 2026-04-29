@@ -15,10 +15,45 @@
 (function () {
   'use strict';
 
+  // Postgres SQLSTATE class + common code translations.
+  // Class is the first 2 chars of the 5-char code; full codes that come up
+  // in AccessSync hot paths get more specific copy.
+  // Reference: https://www.postgresql.org/docs/current/errcodes-appendix.html
+  var SQLSTATE_CODES = {
+    '42883': 'Postgres rejected a query — operator/type mismatch (e.g. comparing varchar to uuid).',
+    '42703': 'Postgres rejected a query — undefined column referenced.',
+    '42P01': 'Postgres rejected a query — undefined table referenced.',
+    '23505': 'Postgres rejected a write — UNIQUE constraint violated (duplicate row).',
+    '23503': 'Postgres rejected a write — FOREIGN KEY constraint violated (referenced row missing).',
+    '23502': 'Postgres rejected a write — NOT NULL constraint violated.',
+    '23514': 'Postgres rejected a write — CHECK constraint violated.',
+    '40001': 'Postgres rolled back a transaction — serialization failure (concurrent write conflict).',
+    '40P01': 'Postgres detected a deadlock and rolled back this transaction.',
+    '57014': 'Postgres cancelled the query (statement timeout).',
+    '53300': 'Postgres rejected the connection — too many clients.',
+    '08006': "Postgres connection failed — the database wasn't reachable.",
+    '08003': 'Postgres connection was already closed when the query ran.',
+  };
+  var SQLSTATE_CLASSES = {
+    '08': 'Postgres connection problem.',
+    '22': 'Postgres rejected the query — bad data value.',
+    '23': 'Postgres rejected the query — constraint violation.',
+    '40': 'Postgres rolled back a transaction.',
+    '42': 'Postgres rejected the query — schema or syntax problem.',
+    '53': 'Postgres resource limit hit.',
+    '57': 'Postgres operator action (e.g. cancellation, shutdown).',
+  };
+  function isSqlstate(s) {
+    return typeof s === 'string' && /^[0-9A-Z]{5}$/.test(s);
+  }
+  function describeSqlstate(code) {
+    return SQLSTATE_CODES[code] || SQLSTATE_CLASSES[code.slice(0, 2)] || ('Postgres returned SQLSTATE ' + code + '.');
+  }
+
   /**
    * Translate one event row into a Plain-English sentence.
    * @param {Object} ev — must have .event; may have .member_name, .member_email,
-   *   .client_name, .plan_name, .door_name, .actor_id, .payload
+   *   .client_name, .plan_name, .door_name, .actor_id, .payload, .detail
    * @returns {string}
    */
   function humanize(ev) {
@@ -34,7 +69,17 @@
     var at     = c.client ? ' at ' + c.client : '';
     var onPlan = c.plan ? ' on the ' + c.plan + ' plan' : '';
     var door   = c.door ? ' (' + c.door + ')' : '';
+
+    // Some sources (notably diagnostic_log) carry a 5-char SQLSTATE in the
+    // `event` slot when the underlying error is a Postgres failure. The real
+    // event name lives one level deeper in detail.event (or payload.event).
+    // Prefer the deeper name when present so the catalog matches against
+    // structured event strings instead of opaque error codes.
     var e = ev.event || '';
+    var inner = (ev.detail && ev.detail.event) || (ev.payload && ev.payload.event) || null;
+    if (isSqlstate(e) && inner) {
+      e = inner;
+    }
 
     // Webhook events
     if (e === 'plan.purchased' || e === 'wixPricingPlans.orderPurchased' || e === 'wixPricingPlans.orderUpdated')
@@ -87,6 +132,34 @@
     if (e === 'member.synced')          return (who || 'An operator') + ' ran a per-member sync' + at + '.';
     if (e === 'error.retried')          return (who || 'An operator') + ' retried a failed job' + at + '.';
     if (e === 'client_deleted')         return (who || 'An owner') + ' deleted client ' + (c.client || '') + '.';
+
+    // Internal infrastructure failures (route handlers + logger fault paths).
+    // These bubble up when the system itself can't talk to Postgres or is
+    // logging its own crash — important to surface in plain English so the
+    // operator knows it's a platform-level issue, not a member-level one.
+    if (e === 'db.query_error' || e === 'admin.logs.events_failed') {
+      var sqlstate = ev.detail && ev.detail.error && ev.detail.error.code;
+      var why = isSqlstate(sqlstate) ? ' ' + describeSqlstate(sqlstate) : '';
+      return 'A database query failed.' + why;
+    }
+    if (e === 'admin.logs.typeahead_failed')      return 'The trace search query failed.';
+    if (e === 'admin.logs.trace_failed')          return 'Loading a single trace failed.';
+    if (e === 'logger.diagnostic_log_write_failed') return "Couldn't write a diagnostic row to the database (logged to stdout instead).";
+    if (e === 'activity.write_failed')            return "Couldn't write an activity row to the database.";
+    if (e === 'trace_context.write_failed')       return "Couldn't write trace context (member/plan resolution row).";
+    if (e === 'trace_context.update_failed')      return "Couldn't enrich trace context after the fact.";
+    if (e === 'admin.unhandled_error')            return 'An unhandled error in the admin server.';
+    if (e === 'admin.uncaught_exception')         return 'An uncaught exception in the admin process — investigate immediately.';
+    if (e === 'admin.unhandled_rejection')        return 'An unhandled promise rejection in the admin process.';
+
+    // SQLSTATE fallback — when event itself is a 5-char Postgres code and we
+    // had no inner event name to upgrade to, describe the class of failure
+    // instead of dumping the raw code. Pulls extra context from detail.error
+    // when available (the full Postgres error object).
+    if (isSqlstate(ev.event)) {
+      var msg = ev.detail && ev.detail.error && ev.detail.error.message;
+      return describeSqlstate(ev.event) + (msg ? ' (' + msg + ')' : '');
+    }
 
     // Fallback — surface the raw event name + flag missing translation
     return e + ' — (plain English not yet defined)';
