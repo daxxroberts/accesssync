@@ -60,6 +60,57 @@ FROM   latest_orders lo
 WHERE  mra.member_id        = lo.member_id
   AND  mra.billing_snapshot IS NULL;
 
+-- Pass 2: sub-members inherit their holder's snapshot. Subs typically have
+-- no plan.purchased webhook of their own (the holder paid for the family),
+-- so the first pass leaves their MRA NULL. Walk plan_holder_id up to the
+-- holder's latest plan.purchased and copy. inheritedFromHolder=true marks
+-- these so future debugging knows the snapshot came from the holder's order.
+WITH holder_orders AS (
+  SELECT DISTINCT ON (holder.id)
+    holder.id                          AS holder_id,
+    wl.raw_payload->'data'->'entity'   AS entity,
+    wl.received_at                     AS captured_at
+  FROM   webhook_log    wl
+  JOIN   member_identity holder
+    ON   holder.client_id          = wl.client_id
+    AND  holder.platform_member_id = wl.normalized_payload->>'platformMemberId'
+  WHERE  wl.normalized_payload->>'eventType' = 'plan.purchased'
+    AND  wl.hmac_status  = 'accepted'
+    AND  wl.dedup_status = 'new'
+    AND  wl.raw_payload->'data'->'entity' IS NOT NULL
+  ORDER  BY holder.id, wl.received_at DESC
+)
+UPDATE member_role_assignments mra
+SET    billing_snapshot = jsonb_strip_nulls(jsonb_build_object(
+         'planPrice',         ho.entity->>'planPrice',
+         'cycleUnit',         ho.entity->'pricing'->'subscription'->'cycleDuration'->>'unit',
+         'cycleCount',        NULLIF(ho.entity->'pricing'->'subscription'->'cycleDuration'->>'count', '')::int,
+         'currency',          ho.entity->'pricing'->'prices'->0->'price'->>'currency',
+         'total',             ho.entity->'pricing'->'prices'->0->'price'->>'total',
+         'subtotal',          ho.entity->'pricing'->'prices'->0->'price'->>'subtotal',
+         'discount',          ho.entity->'pricing'->'prices'->0->'price'->>'discount',
+         'coupon',            CASE
+                                WHEN ho.entity->'pricing'->'prices'->0->'price'->'coupon'->>'code' IS NOT NULL
+                                THEN jsonb_build_object(
+                                  'code',   ho.entity->'pricing'->'prices'->0->'price'->'coupon'->>'code',
+                                  'amount', ho.entity->'pricing'->'prices'->0->'price'->'coupon'->>'amount'
+                                )
+                                ELSE NULL
+                              END,
+         'autoRenewCanceled', COALESCE((ho.entity->>'autoRenewCanceled')::bool, false),
+         'lastPaymentStatus', ho.entity->>'lastPaymentStatus',
+         'subscriptionId',    ho.entity->>'subscriptionId',
+         'orderMethod',       ho.entity->>'orderMethod',
+         'orderId',           ho.entity->>'_id',
+         'capturedAt',        to_char(ho.captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+         'inheritedFromHolder', true
+       ))
+FROM   member_identity sub
+JOIN   holder_orders ho ON ho.holder_id = sub.plan_holder_id
+WHERE  mra.member_id        = sub.id
+  AND  mra.billing_snapshot IS NULL
+  AND  sub.plan_holder_id   IS NOT NULL;
+
 -- Diagnostic: how many rows did we just populate?
 DO $$
 DECLARE
