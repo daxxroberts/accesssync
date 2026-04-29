@@ -35,7 +35,12 @@ function renderNav() {
     { label: 'Overview',      href: '/dashboard',    key: 'overview' },
     { label: 'Members',       href: '/members',      key: 'members' },
     { label: 'Plan Mapping',  href: '/plan-mapping', key: 'plan-mapping' },
-    { label: 'Access',        href: '/access',       key: 'access' },
+    // Access tab hidden 2026-04-29 — superseded by Trace Timeline (logs).
+    // The page rendered member_access_log as a chart + table, which is now
+    // a strict subset of what /logs surfaces with full enrichment. Route
+    // and EJS file kept for now so existing bookmarks don't 404 hard;
+    // tab will revisit (or get deleted) post-HOG. See OB-NEW-Access-pivot.
+    // { label: 'Access',        href: '/access',       key: 'access' },
     { label: 'Logs',          href: '/logs',         key: 'logs' },
     { label: 'Errors',        href: '/errors',       key: 'errors' },
     { label: 'System Config', href: '/locations',    key: 'config' },

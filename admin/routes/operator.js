@@ -1874,6 +1874,7 @@ router.get('/:clientId/errors', async (req, res) => {
               eq.error_code, eq.user_message, eq.action_text, eq.resolution,
               eq.occurred_count, eq.last_occurred_at,
               eq.http_status, eq.raw_api_body, eq.payload,
+              eq.member_id, eq.trace_id,
               mi.first_name, mi.last_name, mi.email AS member_email,
               mi.platform_member_id
        FROM error_queue eq

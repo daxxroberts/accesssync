@@ -178,6 +178,7 @@ async function getTimeline(memberId) {
             mal.error_code     AS detail,
             NULL::text         AS error_code,
             NULL::jsonb        AS context,
+            mal.trace_id,
             mal.created_at
      FROM member_access_log mal
      WHERE mal.member_id = $1
@@ -190,6 +191,7 @@ async function getTimeline(memberId) {
             eq.error_reason    AS detail,
             eq.error_code,
             NULL::jsonb        AS context,
+            eq.trace_id,
             eq.created_at
      FROM error_queue eq
      WHERE eq.member_id = $1
@@ -202,6 +204,7 @@ async function getTimeline(memberId) {
             aal.result         AS detail,
             NULL::text         AS error_code,
             NULL::jsonb        AS context,
+            aal.trace_id,
             aal.created_at
      FROM adapter_admin_log aal
      WHERE aal.platform_member_id = (
@@ -218,6 +221,7 @@ async function getTimeline(memberId) {
             dl.message         AS detail,
             dl.error_code,
             dl.context,
+            dl.trace_id,
             dl.created_at
      FROM diagnostic_log dl
      WHERE dl.context->>'memberId' = (SELECT id::text FROM member_identity WHERE id = $1)
@@ -231,6 +235,7 @@ async function getTimeline(memberId) {
             wl.dedup_status    AS detail,
             wl.hmac_status     AS error_code,
             wl.normalized_payload AS context,
+            wl.trace_id,
             wl.received_at     AS created_at
      FROM webhook_log wl
      WHERE wl.client_id = (SELECT client_id FROM member_identity WHERE id = $1)

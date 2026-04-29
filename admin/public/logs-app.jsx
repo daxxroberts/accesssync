@@ -22,6 +22,11 @@
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
+// Source metadata — color tokens are CSS variables scoped to #panel-logs.
+// The labels (short/plain) come from the shared humanize module so the
+// Errors-page incident drawer renders the same source pills with identical
+// text. SOURCE_LABELS hex values are not used here; we use the var() form
+// for theme-aware coloring.
 const SOURCES = {
   activity:      { label: 'activity_event',    short: 'activity',    plain: 'Operator activity', color: 'var(--src-activity)' },
   webhook:       { label: 'webhook_log',       short: 'webhook',     plain: 'Wix webhook',       color: 'var(--src-webhook)' },
@@ -33,85 +38,11 @@ const SOURCES = {
 };
 const ALL_SOURCES = Object.keys(SOURCES);
 
-// Severity derivation: v_trace_timeline.result has different semantics per source.
-// Map them to a unified 3-level enum on the client side.
-function severityOf(ev) {
-  const r = (ev.result || '').toLowerCase();
-  if (r === 'error' || r === 'failed' || r === 'rejected' || r === 'critical') return 'error';
-  if (r === 'warn' || r === 'warning' || r === 'open') return 'warn';
-  return 'info';
-}
-
-// Plain English humanizer. Falls back to event name when uncatalogued, with a
-// muted hint. Catalog covers events from core/EVENT_REGISTRY.md (DR-038).
-function humanize(ev) {
-  const c = {
-    member: ev.member_name || ev.member_email || null,
-    client: ev.client_name || null,
-    plan:   ev.plan_name || null,
-    door:   ev.door_name || null,
-    actor:  ev.actor_id || null,
-  };
-  const who    = c.member || (c.actor && c.actor !== 'anonymous' ? c.actor : 'Someone');
-  const at     = c.client ? ` at ${c.client}` : '';
-  const onPlan = c.plan   ? ` on the ${c.plan} plan` : '';
-  const door   = c.door   ? ` (${c.door})` : '';
-  const e = ev.event || '';
-
-  // Webhook events (event = wixPricingPlans.* / Velo names / our normalized)
-  if (e === 'plan.purchased' || e === 'wixPricingPlans.orderPurchased' || e === 'wixPricingPlans.orderUpdated')
-    return `${who} subscribed${onPlan}${at} via Wix.`;
-  if (e === 'plan.started' || e === 'wixPricingPlans.orderStarted')
-    return `${who}'s plan started${onPlan}${at}.`;
-  if (e === 'plan.cancelled' || e.includes('orderCanceled') || e.includes('orderEnded'))
-    return `${who}'s plan was cancelled${onPlan}${at}.`;
-  if (e === 'plan.unpaid_order')
-    return `An unpaid Wix order arrived${onPlan} — dropped, no access granted.`;
-  if (e === 'booking.confirmed') return `${who} confirmed a booking${at}.`;
-  if (e === 'booking.cancelled') return `${who}'s booking was cancelled${at}.`;
-  if (e === 'member.deleted')    return `${who} was deleted from Wix${at}.`;
-
-  // Member-access events
-  if (e === 'provisioned' || e === 'granted')   return `Set up access for ${who}${door}.`;
-  if (e === 'disabled')                         return `Suspended access for ${who}${door} (payment failed or paused).`;
-  if (e === 'revoked')                          return `Removed access for ${who}${door}.`;
-  if (e === 'deleted')                          return `Deleted ${who}'s hardware user.`;
-  if (e === 'location_suspended')               return `Suspended ${who} (location subscription lapsed).`;
-  if (e === 'reactivated')                      return `Restored access for ${who}${door}.`;
-
-  // Diagnostic events (most have ALL_CAPS error codes)
-  if (e === 'IN_FLIGHT_LOCK')                   return `Concurrent change rejected — already processing ${who}.`;
-  if (e === 'ADAPTER_IDENTITY_GATE2_RECOVERY_TRIGGERED') return `Webhook arrived without an email — recovering from Wix.`;
-  if (e === 'DB_SLOW_QUERY')                    return `A database query took longer than the threshold.`;
-  if (e === 'ADAPTER_NO_IDENTITY')              return `Revoke skipped — no identity record for this member.`;
-  if (e === 'QUEUE_REVOKE_NO_IDENTITY')         return `Cancel arrived for a member we never provisioned.`;
-  if (e.startsWith('grant.'))                   return `Grant step: ${e.replace('grant.', '').replace(/_/g, ' ')}.`;
-  if (e.startsWith('revoke.'))                  return `Revoke step: ${e.replace('revoke.', '').replace(/_/g, ' ')}.`;
-  if (e.startsWith('hmac.'))                    return `Webhook signature: ${e.replace('hmac.', '').replace(/_/g, ' ')}.`;
-
-  // Alerts
-  if (e === 'no_mapping_found' || e === 'missing_group') return `Plan "${c.plan || 'unknown'}" isn't mapped to a hardware group${at}.`;
-  if (e === 'group_not_found')                  return `Hardware group missing — the door it points to no longer exists${at}.`;
-  if (e === 'untraceable_hardware_access')      return `${who} has door access but no plan or booking justifies it${at}.`;
-  if (e === 'wix_api_unavailable')              return `Wix API didn't respond during reconciliation${at}.`;
-  if (e === 'lockdown_detected')                return `A door is currently in lockdown${at}.`;
-  if (e === 'api_key_invalid_after_rotation')   return `Hardware API key was rotated but new key is invalid${at}.`;
-
-  // Activity (operator mutations)
-  if (e === 'plan_mapping.created')   return `${who || 'An operator'} created a plan mapping${at}.`;
-  if (e === 'plan_mapping.updated')   return `${who || 'An operator'} updated a plan mapping${at}.`;
-  if (e === 'plan_mapping.deleted')   return `${who || 'An operator'} deleted a plan mapping${at}.`;
-  if (e === 'api_key.saved')          return `${who || 'An operator'} saved a hardware API key${at}.`;
-  if (e === 'api_key.rotated')        return `${who || 'An operator'} rotated the hardware API key${at}.`;
-  if (e === 'location.suspended')     return `${who || 'An operator'} suspended a location${at}.`;
-  if (e === 'location.activated')     return `${who || 'An operator'} reactivated a location${at}.`;
-  if (e === 'member.synced')          return `${who || 'An operator'} ran a per-member sync${at}.`;
-  if (e === 'error.retried')          return `${who || 'An operator'} retried a failed job${at}.`;
-  if (e === 'client_deleted')         return `${who || 'An owner'} deleted client ${c.client || ''}.`;
-
-  // Fallback — surface the raw event name + flag missing translation
-  return `${e} — (plain English not yet defined)`;
-}
+// Imported from /humanize.js (shared with member-incident-drawer.js).
+// window.AccessSyncHumanize is loaded as a plain <script> before this
+// file in both index.html and logs.ejs.
+const humanize    = window.AccessSyncHumanize.humanize;
+const severityOf  = window.AccessSyncHumanize.severityOf;
 
 function fmtClock(iso) {
   const d = new Date(iso);
@@ -178,6 +109,18 @@ function App() {
 
   // Persist voice toggle
   useEffect(() => { setVoiceCookie(voice); }, [voice]);
+
+  // Deep-link support — if URL has ?openTrace=<uuid>, expand that trace once
+  // events arrive and select its first event. Used by the Member Incident
+  // Drawer's "Open in Trace Timeline" link (owner-only).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tid = params.get('openTrace');
+    if (!tid || events.length === 0) return;
+    setExpandedTraces(new Set([tid]));
+    const first = events.find(e => e.trace_id === tid);
+    if (first) setSelected(first);
+  }, [events]);
 
   // Fetch events
   const loadEvents = useCallback(async () => {

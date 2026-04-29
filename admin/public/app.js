@@ -278,6 +278,13 @@ async function initDashboard() {
     if (!res.ok) return;
     loadErrors();
     startQueuePolling(); // background — so queue badge can update
+
+    // Deep-link: ?openTrace=<uuid> jumps straight to the Trace Timeline panel.
+    // The React island reads the same query param and pre-selects the trace.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('openTrace')) {
+      switchPanel('logs');
+    }
   } catch { /* redirect already handled by apiFetch */ }
 }
 
