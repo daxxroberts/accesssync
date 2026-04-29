@@ -93,6 +93,22 @@ There are two member-facing screens AccessSync provides:
 
 Both are HTML pages embedded as iframes via Wix Velo. The onboarding wizard provides the snippets. Both screens self-resize to fit the Wix layout.
 
+### A member says they never got an email from Kisi after signing up. What do I tell them?
+
+When a member buys a plan, AccessSync creates their Kisi account and Kisi sends an invitation email automatically. The email comes from Kisi (not from your gym's address) and sometimes lands in spam. Here's what to check:
+
+1. Ask the member to search their inbox (including spam / junk) for an email from Kisi
+2. Check that they're looking in the same inbox they used when buying the plan on Wix
+3. If nothing's there after a few minutes: go to the **Kisi dashboard → Users**, find their name, and click **Resend invitation**. This triggers a fresh email from Kisi immediately.
+
+If the resend also doesn't arrive, the member's email address may be mis-typed in Wix. Correct it in Wix and resend.
+
+### A member can't download the Kisi app or log in. They got the invitation email but something's wrong.
+
+Forward them to the Kisi Help Center for app setup (download.kisi.com or the Kisi support site). If the invitation link is expired (links expire after 24 hours): go to **Kisi dashboard → Users → Resend invitation** to issue a fresh link. Once the link is active, the member follows it to set up their PIN and download the app — the door credential is already in place on our end.
+
+If a member's plan was canceled before they set up the app, their Kisi account is deactivated. They'd need to resubscribe in Wix first, then set up the app.
+
 ---
 
 ## Maintenance Rule (internal — for the team building this)

@@ -184,12 +184,30 @@ class StandardAdapter {
    * @param {boolean} [opts.force]     bypass DB cache (OB-80 stale ID purge)
    * @param {string}  [opts.tenantId]  client UUID — required for Gate 2 recovery via Wix Members API
    * @param {string}  [opts.platformMemberId]  Wix member ID — required for Gate 2 recovery
+   * @param {string}  [opts.userPattern]  'invited' | 'managed' — DR-043. If omitted, read from
+   *                                      clients.kisi_user_pattern (defaults to 'invited').
    * @returns {string|null}            hardware user ID, or null if parked as pending_identity
    */
   async resolveIdentity(memberId, email, name, hardwarePlatform, apiKey, opts = {}) {
     // OB-80: caller may force re-resolution after a hardware 404 on the cached ID.
     // This bypasses the DB cache, looks up by email again, and returns the current Kisi user ID.
     const { force = false, tenantId = null, platformMemberId = null } = opts;
+
+    // DR-043: resolve per-tenant user pattern so createUser sends the right invite flags.
+    // Prefer an explicitly provided value (e.g. from tests), then read DB, then safe default.
+    let userPattern = opts.userPattern || null;
+    if (!userPattern && tenantId) {
+      try {
+        const patternRow = await db.query(
+          `SELECT kisi_user_pattern FROM clients WHERE id = $1`,
+          [tenantId]
+        );
+        userPattern = patternRow.rows[0]?.kisi_user_pattern || 'invited';
+      } catch (_) {
+        userPattern = 'invited';
+      }
+    }
+    if (!userPattern) userPattern = 'invited';
 
     // 1. DB cache check (skipped when force=true)
     const cached = await db.query(
@@ -210,7 +228,7 @@ class StandardAdapter {
     let hardwareUserId;
     try {
       hardwareUserId = await this._callHardwareToResolveIdentity(
-        hardwarePlatform, apiKey, email, name
+        hardwarePlatform, apiKey, email, name, { userPattern }
       );
     } catch (err) {
       if (err.code === 'INVALID_HARDWARE_REQUEST' && err.missingFields?.includes('email')) {
@@ -228,7 +246,8 @@ class StandardAdapter {
             stage: 'identity', result: 'success',
           });
           hardwareUserId = await this._callHardwareToResolveIdentity(
-            hardwarePlatform, apiKey, recovered.email, recovered.name || name || recovered.email
+            hardwarePlatform, apiKey, recovered.email, recovered.name || name || recovered.email,
+            { userPattern }
           );
         } else {
           // Ladder exhausted — park as pending_identity, return null to signal "parked, not failed".
@@ -536,15 +555,16 @@ class StandardAdapter {
   /**
    * Wrapper around hardware findUserByEmail + createUser. Isolated so Gate 2
    * can call it twice — first with original inputs, again with recovered inputs.
+   * DR-043: options.userPattern passed to createUser so send_emails is set correctly.
    */
-  async _callHardwareToResolveIdentity(hardwarePlatform, apiKey, email, name) {
+  async _callHardwareToResolveIdentity(hardwarePlatform, apiKey, email, name, options = {}) {
     let hardwareUserId = await hardwareAdapter.findUserByEmail(hardwarePlatform, apiKey, email);
     if (hardwareUserId) {
       log.info('adapter.identity_found', { hardwarePlatform, hardwareUserId });
       return hardwareUserId;
     }
-    log.info('adapter.identity_creating', { hardwarePlatform, email });
-    return hardwareAdapter.createUser(hardwarePlatform, apiKey, email, name);
+    log.info('adapter.identity_creating', { hardwarePlatform, email, userPattern: options.userPattern || 'invited' });
+    return hardwareAdapter.createUser(hardwarePlatform, apiKey, email, name, options);
   }
 
   /**

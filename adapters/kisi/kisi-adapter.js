@@ -29,16 +29,24 @@ class KisiAdapter {
   }
 
   /**
-   * Create a new managed user (DR-007: send_emails: false).
+   * Create a Kisi user. DR-043: behaviour is per-tenant via options.userPattern.
+   *
+   * 'invited'  (default) — send_emails: true  → Kisi sends invitation email; member can download app
+   * 'managed'            — send_emails: false  → DR-007 managed user; no app access
+   *
+   * Both patterns always set confirm: true (server-side confirmation — no email link required).
    * Returns new Kisi user ID.
    */
-  async createUser(apiKey, email, name) {
+  async createUser(apiKey, email, name, options = {}) {
+    const pattern   = options.userPattern || 'invited';
+    const sendEmails = pattern === 'invited';
     const data = await kisiConnector.makeRequest('/users', {
       method: 'POST',
       body: JSON.stringify({
-        user: { email, name, send_emails: false, confirm: true }
+        user: { email, name, send_emails: sendEmails, confirm: true }
       })
     }, apiKey);
+    log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id });
     return data.id;
   }
 

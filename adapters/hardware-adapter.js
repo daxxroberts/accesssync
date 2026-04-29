@@ -121,9 +121,13 @@ class HardwareAdapter {
     return this._getAdapter(hardwarePlatform).findUserByEmail(apiKey, email);
   }
 
-  async createUser(hardwarePlatform, apiKey, email, name) {
+  /**
+   * DR-043: options.userPattern ('invited' | 'managed') controls whether the new
+   * user receives an invitation email. Passed through to the Layer 6 adapter unchanged.
+   */
+  async createUser(hardwarePlatform, apiKey, email, name, options = {}) {
     this._validate(hardwarePlatform, 'createUser', { email, name });
-    return this._getAdapter(hardwarePlatform).createUser(apiKey, email, name);
+    return this._getAdapter(hardwarePlatform).createUser(apiKey, email, name, options);
   }
 
   /**
