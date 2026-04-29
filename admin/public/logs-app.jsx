@@ -474,6 +474,94 @@ function Row({ ev, sel, onSelect, relativeTo, plain, mode }) {
   );
 }
 
+// Copy text to clipboard; falls back to a hidden textarea + execCommand for
+// non-secure contexts (some Wix iframe nesting can disable navigator.clipboard).
+function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      ok ? resolve() : reject(new Error('execCommand copy failed'));
+    } catch (e) { reject(e); }
+  });
+}
+
+// Small button that flashes "Copied" for 1.5s after a successful copy.
+function CopyButton({ label = 'Copy', getText, style }) {
+  const [state, setState] = useState('idle'); // idle | done | err
+  return (
+    <button
+      type="button"
+      className="btn-g"
+      style={{height:22,padding:'0 8px',fontSize:10.5,gap:4,...style}}
+      onClick={(e) => {
+        e.stopPropagation();
+        Promise.resolve(getText())
+          .then((t) => copyToClipboard(t))
+          .then(() => { setState('done'); setTimeout(() => setState('idle'), 1500); })
+          .catch(() => { setState('err'); setTimeout(() => setState('idle'), 1800); });
+      }}
+    >
+      {state === 'done' ? '✓ Copied' : state === 'err' ? 'Copy failed' : '⧉ ' + label}
+    </button>
+  );
+}
+
+// Build a single readable text blob of the entire trace for clipboard paste.
+// Header → context fields → events with timing offsets → full payloads per
+// event. Plain ASCII so it pastes cleanly into Slack, Linear, etc.
+function buildTraceCopyText(ev, traceDetail) {
+  const lines = [];
+  const ctx = traceDetail?.context || {};
+  lines.push('=== AccessSync Trace ===');
+  lines.push('trace_id:    ' + (ev.trace_id || '(none)'));
+  if (ctx.started_at)        lines.push('started_at:  ' + ctx.started_at);
+  if (ctx.client_name)       lines.push('client:      ' + ctx.client_name + (ctx.client_id ? ' (' + ctx.client_id + ')' : ''));
+  if (ctx.member_name)       lines.push('member:      ' + ctx.member_name + (ctx.member_email ? ' <' + ctx.member_email + '>' : ''));
+  if (ctx.platform_member_id)lines.push('platform_id: ' + ctx.platform_member_id);
+  if (ctx.hardware_user_id)  lines.push('hardware_id: ' + ctx.hardware_user_id + (ctx.hardware_platform ? ' (' + ctx.hardware_platform + ')' : ''));
+  if (ctx.plan_name)         lines.push('plan:        ' + ctx.plan_name);
+  if (ctx.door_name)         lines.push('door:        ' + ctx.door_name);
+  if (ctx.entry_point)       lines.push('entry_point: ' + ctx.entry_point);
+  if (ctx.actor_type || ctx.actor_id) lines.push('actor:       ' + (ctx.actor_type || '?') + '/' + (ctx.actor_id || '?'));
+  lines.push('');
+
+  const events = traceDetail?.events || [];
+  if (events.length === 0) {
+    lines.push('(no events on this trace)');
+  } else {
+    const firstTs = new Date(events[0].ts).getTime();
+    lines.push('--- Events (' + events.length + ') ---');
+    events.forEach((e, i) => {
+      const dt = i === 0 ? 0 : Math.round(new Date(e.ts).getTime() - firstTs);
+      lines.push('');
+      lines.push('[' + (i + 1) + '/' + events.length + '] +' + dt + 'ms  ' + e.ts);
+      lines.push('  source:  ' + e.source);
+      lines.push('  event:   ' + e.event);
+      lines.push('  result:  ' + (e.result || ''));
+      lines.push('  actor:   ' + (e.actor_type || '?') + '/' + (e.actor_id || '?'));
+      lines.push('  plain:   ' + humanize(e));
+      if (e.detail !== null && e.detail !== undefined) {
+        lines.push('  payload:');
+        const json = JSON.stringify(e.detail, null, 2);
+        json.split('\n').forEach((ln) => lines.push('    ' + ln));
+      }
+    });
+  }
+  lines.push('');
+  lines.push('=== End trace ===');
+  return lines.join('\n');
+}
+
 function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
   const s = SOURCES[ev.source] || {};
   return (
@@ -489,6 +577,10 @@ function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
             {ev.result || severityOf(ev)}
           </span>
           <div style={{flex:1}}/>
+          <CopyButton
+            label="Copy trace"
+            getText={() => buildTraceCopyText(ev, traceDetail)}
+          />
           <button onClick={onClose} className="btn-g" style={{height:22,padding:'0 7px'}}>✕</button>
         </div>
         <div className="mono" style={{fontSize:12,fontWeight:600,wordBreak:'break-word'}}>{ev.event}</div>
@@ -533,7 +625,14 @@ function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
       )}
 
       <div className="drawer-section">
-        <h3>Payload</h3>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:7}}>
+          <h3 style={{margin:0}}>Payload</h3>
+          <div style={{flex:1}}/>
+          <CopyButton
+            label="Copy"
+            getText={() => JSON.stringify(ev.detail, null, 2)}
+          />
+        </div>
         <pre className="mono scroll" style={{margin:0,padding:'9px 11px',background:'var(--bg)',borderRadius:7,fontSize:10,color:'var(--text2)',lineHeight:1.55,whiteSpace:'pre-wrap',wordBreak:'break-word',maxHeight:180,overflow:'auto'}}>
 {JSON.stringify(ev.detail, null, 2)}
         </pre>
