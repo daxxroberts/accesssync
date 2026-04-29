@@ -371,3 +371,164 @@ LIMIT 1
 | Writing to `member_role_assignments` outside standard-adapter.js | DR-023 violation | Route all state writes through Standard Adapter |
 | `DELETE FROM member_role_assignments WHERE mapping_id = $1` | Deletes by mapping, not member — may affect other members on same mapping | Always delete by `member_id` for revoke operations |
 | Checking `member_access_state.role_assignment_id` for current assignments | Legacy column (S-08) — not maintained | Query `member_role_assignments` table |
+
+---
+
+## Pattern N — Trace Timeline (v_trace_timeline)
+
+**View:** `v_trace_timeline` (defined in `migrations/dr-041.sql`)
+**Use:** Powers the Admin Trace Timeline UI. UNION ALL across 7 log tables, LEFT JOIN trace_context for enrichment.
+**Sources unified:** `activity_event` (`source='activity'`), `webhook_log` (`source='webhook'`), `diagnostic_log` (`source='diagnostic'`), `member_access_log` (`source='member_access'`), `error_queue` (`source='error_queue'`), `adapter_admin_log` (`source='admin_audit'`), `config_alert_log` (`source='config_alert'`).
+**Filter discipline:** ALWAYS bound by `ts` time window. The view UNIONs 7 tables — unbounded queries scan all of them.
+
+### Pattern N.1 — Trace Timeline: events feed (paginated)
+
+**Use:** `GET /admin/logs/events` — primary feed. Default 24h window, max 7d.
+**Indexes touched:** per-source `created_at`/`received_at`/`ts` indexes; trace_context PK on JOIN.
+
+```sql
+SELECT trace_id, ts, source, actor_type, actor_id, event,
+       target_type, target_id, result, detail, client_id,
+       client_name, member_name, member_email,
+       source_platform, hardware_platform, hardware_user_id,
+       plan_name, door_name, entry_point
+FROM v_trace_timeline
+WHERE ts >= $1                              -- since (e.g. NOW() - INTERVAL '24 hours')
+  AND ($2::timestamptz IS NULL OR ts < $2)  -- until (optional)
+  AND ($3::text IS NULL OR source = $3)     -- source filter
+  AND ($4::text IS NULL OR result = $4)     -- severity proxy (level/result column)
+  AND ($5::uuid IS NULL OR client_id = $5)  -- client_id filter
+  AND ($6::text IS NULL OR trace_id = $6)   -- trace_id filter
+ORDER BY ts DESC
+LIMIT $7 OFFSET $8;
+```
+
+**Defaults:** `since = NOW() - INTERVAL '24 hours'`, `limit = 100`, `offset = 0`. Hard-cap `limit` server-side at 500.
+
+**Severity derivation (post-fix needed):** the view's `result` column carries different semantics per source (HMAC status, error level, success/failed). MVP UI maps `result` → severity client-side. Future migration may add a derived `severity` column to the view.
+
+### Pattern N.2 — Trace Timeline: typeahead search
+
+**Use:** `GET /admin/logs/typeahead` — typeahead-style search across members, clients, traces. Drives the search box in the Trace Timeline UI.
+**Index:** `idx_trace_context_fts` (GIN on `to_tsvector` of name columns) — built into dr-041.
+
+```sql
+-- Member matches (FTS on member_name + email + platform_member_id + hardware_user_id)
+SELECT DISTINCT ON (member_id)
+       'member' AS kind, member_id, member_name, member_email,
+       client_id, client_name, platform_member_id, hardware_user_id,
+       MAX(started_at) AS last_seen
+FROM trace_context
+WHERE member_id IS NOT NULL
+  AND to_tsvector('english',
+        coalesce(client_name,'') || ' ' || coalesce(member_name,'') || ' ' ||
+        coalesce(member_email,'') || ' ' || coalesce(platform_member_id,'') || ' ' ||
+        coalesce(hardware_user_id,'') || ' ' || coalesce(plan_name,'') || ' ' ||
+        coalesce(door_name,'')
+      ) @@ websearch_to_tsquery('english', $1)
+GROUP BY member_id, member_name, member_email, client_id, client_name,
+         platform_member_id, hardware_user_id
+ORDER BY member_id, last_seen DESC
+LIMIT 5;
+
+-- Client matches (simple ILIKE — small table, GIN index unnecessary)
+SELECT id AS client_id, name AS client_name
+FROM clients
+WHERE name ILIKE '%' || $1 || '%'
+  AND status = 'active'
+LIMIT 3;
+
+-- Trace ID matches (exact prefix only — UUIDs are not searchable text)
+SELECT trace_id, started_at, client_name, member_name, plan_name, door_name, entry_point
+FROM trace_context
+WHERE trace_id::text LIKE $1 || '%'
+ORDER BY started_at DESC
+LIMIT 4;
+```
+
+**FAULT.2 mitigation:** typeahead must also surface traces where `member_id IS NULL` but a free-text token (email, plan_id) appears in raw event payload. Without that, operators searching for a failed sign-up find nothing — the failure they most need to find is invisible. Implement as a fallback against `webhook_log.normalized_payload` and `error_queue.payload` JSONB when no member_id matches the query:
+
+```sql
+-- Fallback: search raw payloads when no resolved-member match
+SELECT 'untraced' AS kind, trace_id, ts, source, event, client_id
+FROM v_trace_timeline
+WHERE ts > NOW() - INTERVAL '7 days'
+  AND member_name IS NULL
+  AND detail::text ILIKE '%' || $1 || '%'
+ORDER BY ts DESC
+LIMIT 5;
+```
+
+### Pattern N.3 — Trace Timeline: full trace by ID
+
+**Use:** `GET /admin/logs/trace/:trace_id` — drawer detail view. Returns every event in one trace, ordered chronologically.
+
+```sql
+SELECT trace_id, ts, source, actor_type, actor_id, event,
+       target_type, target_id, result, detail, client_id,
+       client_name, member_name, member_email,
+       source_platform, hardware_platform, hardware_user_id,
+       plan_name, door_name, entry_point
+FROM v_trace_timeline
+WHERE trace_id = $1
+ORDER BY ts ASC;
+```
+
+**Caps:** unbounded — a trace exceeding 100 events is a smell that should surface to FORGE for UI handling. Server returns full result; UI may paginate.
+
+### Pattern N.4 — Trace Timeline: source breakdown for stat strip
+
+**Use:** Sparkbar / stat strip on Trace Timeline UI. Aggregates 24h activity by source.
+
+```sql
+SELECT source, COUNT(*) AS n
+FROM v_trace_timeline
+WHERE ts > NOW() - INTERVAL '24 hours'
+  AND ($1::uuid IS NULL OR client_id = $1)
+GROUP BY source
+ORDER BY n DESC;
+```
+
+### Pattern N.5 — Trace Timeline: writes (NOT applicable)
+
+`v_trace_timeline` is read-only. Writes to its underlying tables follow the **trace_id threading rule (DR-037, enforced by `test/p3-data-integrity/log-table-trace-id.test.js`):**
+
+> Every `INSERT INTO <log table>` in `core/`, `adapters/`, or `admin/` MUST include `trace_id, actor_type, actor_id` in its column list, with values pulled from `getTraceId()` and `getActor()` of `core/trace-context.js`.
+
+Reference implementation: `admin/middleware/activity.js` (`recordActivity` helper). All 14 INSERT call sites updated 2026-04-28 (commit `d434b91`).
+
+### Pattern N.6 — trace_context enrichment (write side)
+
+**File:** `core/trace-context.js` — `setTraceContext(traceId, opts)`
+**Use:** Backfill member/plan/door/mapping context after entry-point mint, when those fields resolve mid-request.
+
+```sql
+UPDATE trace_context
+SET client_id  = COALESCE(client_id,  $2),
+    member_id  = COALESCE(member_id,  $3),
+    member_name= COALESCE(member_name,$4),
+    -- ... (all fields built dynamically; only NULL slots upgrade)
+    plan_name  = COALESCE(plan_name,  $N),
+    door_name  = COALESCE(door_name,  $N+1),
+    mapping_id = COALESCE(mapping_id, $N+2)
+WHERE trace_id = $1;
+```
+
+**Call sites (all fire-and-forget via `setImmediate`):**
+- `adapters/standard-adapter.js#resolveAndLock` — adds `memberId` (triggers re-resolution of member name + hardware identifiers from `member_identity`)
+- `core/plan-mapping-resolver.js#resolve` — adds `planName`, `doorName`, `mappingId`
+- `core/webhook-processor.js#processWebhook` — backfills `clientId` once tenant resolves
+- `core/queue-worker.js` — full enrichment after identity resolution (replaces no-op `registerTrace` ON CONFLICT DO NOTHING)
+
+**Why COALESCE not overwrite:** entry-point middleware writes the row first; mid-request callers only fill NULLs to avoid clobbering known-good values. This is the only safe pattern for fire-and-forget concurrent UPDATE.
+
+---
+
+## Trace Timeline — Performance Notes
+
+EXPLAIN ANALYZE on Railway prod (2026-04-28, view at 1,865 trace_context rows + 360 log rows): pattern N.1 with 24h window completes in **0.4ms**. Sort is on `ae.ts DESC` from the `activity_event` arm; trace_context JOIN uses PK index. No table scans observed.
+
+**Volume thresholds where re-audit is warranted:**
+- v_trace_timeline rows > 100k → check that all per-source `created_at` indexes are still hit (current indexes verified via STEP_01 of logging sprint)
+- trace_context rows > 1M → consider partitioning by `started_at` (monthly partitions)
+- typeahead query > 50ms → re-check `idx_trace_context_fts` GIN index health

@@ -23,6 +23,7 @@ const clientsRoutes  = require('./routes/clients');
 const operatorRoutes    = require('./routes/operator');
 const multiMemberRoutes = require('./routes/multi-member');
 const portalRoutes      = require('./routes/portal');
+const logsRoutes        = require('./routes/logs');
 const { requireAuth, requireAuthPage, requireAuthPageOrOperator } = require('./middleware/auth');
 const { traceContextMiddleware } = require('./middleware/trace-context');
 const { log } = require('../core/logger');
@@ -78,6 +79,7 @@ app.use('/admin/members',  requireAuth, membersRoutes);
 app.use('/admin/webhooks', requireAuth, webhooksRoutes);
 app.use('/admin/queue',    requireAuth, queueRoutes);
 app.use('/admin/clients',  requireAuth, clientsRoutes);
+app.use('/admin/logs',     requireAuth, logsRoutes);
 
 // ── Operator dashboard API (auth handled inside router — signup endpoints exempt) ──
 app.use('/operator', operatorRoutes);
