@@ -66,17 +66,19 @@ class KisiAdapter {
         ...(options.validUntil ? { valid_until: options.validUntil } : {}),
       }
     };
+    log.info('kisi.role.assigning', { userId, groupId, validUntil: options.validUntil || null });
     try {
       const data = await kisiConnector.makeRequest('/role_assignments', {
         method: 'POST',
         body: JSON.stringify(body)
       }, apiKey);
+      log.info('kisi.role.assigned', { userId, groupId, roleAssignmentId: data.id });
       return data.id;
     } catch (err) {
       // 409 means the assignment already exists — idempotent success.
       // Fetch the existing role assignment ID so we can record it correctly.
       if (err.statusCode === 409) {
-        log.info('kisi.assign_role.already_exists', { userId, groupId });
+        log.info('kisi.role.already_exists', { userId, groupId });
         const existing = await kisiConnector.makeRequest(
           `/role_assignments?user_id=${userId}&group_id=${groupId}&limit=1`,
           { method: 'GET' },
@@ -85,53 +87,89 @@ class KisiAdapter {
         const match = Array.isArray(existing) ? existing[0] : null;
         if (match?.id) return match.id;
         // Kisi confirmed 409 but we can't retrieve the ID — surface as unknown
-        log.warn('kisi.assign_role.conflict_unresolvable', { userId, groupId });
+        log.warn('kisi.role.conflict_unresolvable', { userId, groupId });
         throw err;
       }
+      log.error('kisi.role.assign_failed', { userId, groupId, statusCode: err.statusCode }, err);
       throw err;
     }
   }
 
   /**
    * Remove a role assignment (plan.cancelled flow).
+   * OB-147: 404 treated as idempotent success — the role is already gone, which is the goal.
    */
   async removeRole(apiKey, roleAssignmentId) {
-    await kisiConnector.makeRequest(
-      `/role_assignments/${roleAssignmentId}`,
-      { method: 'DELETE' },
-      apiKey
-    );
+    log.info('kisi.role.removing', { roleAssignmentId });
+    try {
+      await kisiConnector.makeRequest(
+        `/role_assignments/${roleAssignmentId}`,
+        { method: 'DELETE' },
+        apiKey
+      );
+      log.info('kisi.role.removed', { roleAssignmentId });
+    } catch (err) {
+      if (err.statusCode === 404) {
+        log.info('kisi.role.remove_skipped_already_gone', { roleAssignmentId });
+        return;
+      }
+      log.error('kisi.role.remove_failed', { roleAssignmentId, statusCode: err.statusCode }, err);
+      throw err;
+    }
   }
 
   /**
    * Suspend access without deleting role (payment.failed flow).
    */
   async suspendAccess(apiKey, userId, contextMessage = 'Access suspended') {
-    await kisiConnector.makeRequest(`/users/${userId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        user: { access_enabled: false, notes: contextMessage }
-      })
-    }, apiKey);
+    log.info('kisi.user.suspending', { userId });
+    try {
+      await kisiConnector.makeRequest(`/users/${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          user: { access_enabled: false, notes: contextMessage }
+        })
+      }, apiKey);
+      log.info('kisi.user.suspended', { userId });
+    } catch (err) {
+      log.error('kisi.user.suspend_failed', { userId, statusCode: err.statusCode }, err);
+      throw err;
+    }
   }
 
   /**
    * Re-enable access (payment.recovered flow).
    */
   async enableAccess(apiKey, userId) {
-    await kisiConnector.makeRequest(`/users/${userId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        user: { access_enabled: true }
-      })
-    }, apiKey);
+    log.info('kisi.user.enabling', { userId });
+    try {
+      await kisiConnector.makeRequest(`/users/${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          user: { access_enabled: true }
+        })
+      }, apiKey);
+      log.info('kisi.user.enabled', { userId });
+    } catch (err) {
+      log.error('kisi.user.enable_failed', { userId, statusCode: err.statusCode }, err);
+      throw err;
+    }
   }
 
   /**
    * Completely remove user from Kisi org (member.deleted flow).
+   * OB-125: callers must check member_identity.source_tag = 'accesssync' before invoking
+   * — AccessSync deletes only Kisi users it created.
    */
   async deleteUser(apiKey, userId) {
-    await kisiConnector.makeRequest(`/users/${userId}`, { method: 'DELETE' }, apiKey);
+    log.info('kisi.user.deleting', { userId });
+    try {
+      await kisiConnector.makeRequest(`/users/${userId}`, { method: 'DELETE' }, apiKey);
+      log.info('kisi.user.deleted', { userId });
+    } catch (err) {
+      log.error('kisi.user.delete_failed', { userId, statusCode: err.statusCode }, err);
+      throw err;
+    }
   }
 
   /**

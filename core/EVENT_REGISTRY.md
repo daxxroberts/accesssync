@@ -139,6 +139,33 @@ New events require an entry before shipping. Events without entries are flagged 
 
 ---
 
+## Kisi Adapter Events (OB-152, OB-153)
+
+| Event | Level | Description |
+|---|---|---|
+| `kisi.request` | debug | Outbound Kisi API request — every call logged with method + endpoint + retry attempt |
+| `kisi.response.success` | debug | Successful 2xx response from Kisi |
+| `kisi.response.error` | error | Non-2xx response from Kisi — full structured context (status, Kisi body code/message, mapped error code) before throw |
+| `kisi.rate_limit.backoff` | warn | 429 response — sleeping before retry |
+| `kisi.rate_limit.exhausted` | error | 429 retry budget exhausted (3 attempts) |
+| `kisi.user.created` | info | New Kisi user created via createUser |
+| `kisi.user.suspending` / `kisi.user.suspended` / `kisi.user.suspend_failed` | info / info / error | suspendAccess lifecycle (payment.failed flow) |
+| `kisi.user.enabling` / `kisi.user.enabled` / `kisi.user.enable_failed` | info / info / error | enableAccess lifecycle (payment.recovered flow) |
+| `kisi.user.deleting` / `kisi.user.deleted` / `kisi.user.delete_failed` | info / info / error | deleteUser lifecycle (member.deleted flow). Caller-side OB-125 source_tag guard required before invocation. |
+| `kisi.role.assigning` / `kisi.role.assigned` / `kisi.role.assign_failed` | info / info / error | assignRole lifecycle (grant flow) |
+| `kisi.role.already_exists` | info | 409 on assignRole — idempotent success, existing assignment fetched |
+| `kisi.role.conflict_unresolvable` | warn | 409 on assignRole but existing record could not be retrieved |
+| `kisi.role.removing` / `kisi.role.removed` / `kisi.role.remove_failed` | info / info / error | removeRole lifecycle (revoke flow) |
+| `kisi.role.remove_skipped_already_gone` | info | OB-147: 404 on removeRole — role already gone, treated as idempotent success |
+| `kisi.managed_assignments.fetched` / `kisi.managed_assignments.fetch_failed` | info / error | getManagedRoleAssignments — reconciliation Kisi-side data fetch |
+| `kisi.get_groups_no_key` / `kisi.get_groups_failed` | warn / error | getGroups — onboarding + plan-mapping dropdown fetch |
+| `kisi.get_role_assignments_no_key` | warn | Reconciliation called without API key |
+| `kisi.get_locks_no_key` / `kisi.get_locks_failed` | warn / error | getLocks — reconciliation door-lockdown sync |
+
+Required context fields per event vary; minimum for adapter calls: identifying ID(s) (`userId`, `groupId`, `roleAssignmentId`), `statusCode` on errors. ALS auto-populates `trace_id`, `actor_type`, `actor_id`. No PII in Kisi event payloads — emails/names from member_identity are not included.
+
+---
+
 ## Sub-Member Lifecycle Events (DR-044)
 
 | Event | Level | Description |

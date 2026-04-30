@@ -122,6 +122,18 @@ class KisiConnector {
         resolution: 'RETRY',
       };
 
+      // OB-153: log full error context with structured Kisi body before throwing.
+      // Preserves status code + Kisi body + mapped code for downstream debugging
+      // even when error propagation flattens to a string at some boundary.
+      log.error('kisi.response.error', {
+        method: options.method || 'GET',
+        endpoint,
+        statusCode: response.status,
+        kisiCode: errorBody?.code || null,
+        kisiMessage: errorBody?.message || response.statusText,
+        mappedCode: mapped.code,
+      });
+
       const error = new Error(`Kisi ${response.status}: ${errorBody?.message || response.statusText}`);
       error.statusCode = response.status;
       error.code = mapped.code;
@@ -131,6 +143,13 @@ class KisiConnector {
       error.body = errorBody;
       throw error;
     }
+
+    // OB-153: log every successful response at debug level so we can confirm calls landed.
+    log.debug('kisi.response.success', {
+      method: options.method || 'GET',
+      endpoint,
+      statusCode: response.status,
+    });
 
     if (response.status === 204) return null;
 
