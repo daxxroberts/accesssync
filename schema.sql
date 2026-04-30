@@ -170,6 +170,7 @@ CREATE TABLE member_identity (
     first_name          VARCHAR(255),                   -- Sub-member first name (required)
     last_name           VARCHAR(255),                   -- Sub-member last name (required)
     email               VARCHAR(255),                   -- Sub-member email (required — FP-01 resolution)
+    display_name        VARCHAR(255),                   -- Composed name from Wix Members API (Gate 2 cache, OB-89). Originally removed in commit b5dced7 (2026-03-27, data minimization) but column survived in production and accumulated active read/write sites in 13 files. Re-documented in schema 2026-04-30 (OB-148) to restore schema-as-code parity. Future: revisit data-minimization intent — either drop column + all references, or formalise the cache model.
     sub_member_status   VARCHAR(50),                    -- DR-032: 'draft', 'submitted', NULL for primary members
     created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

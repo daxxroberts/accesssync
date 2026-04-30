@@ -425,8 +425,29 @@ class GrantRevokeLogic {
       }
 
       case 'member.deleted': {
+        // OB-125: source_tag guard — AccessSync deletes only Kisi users it created.
+        // For foreign users (source_tag != 'accesssync'), skip deleteUser. The Kisi
+        // user identity may be shared with admin/staff roles or other-system grants
+        // we don't own; deleting it would orphan that access. We still process the
+        // AccessSync-side cleanup (member_access_log, config_alert_log) so the
+        // operator audit reflects the member.deleted event reaching us.
         if (hardwareUserId) {
-          await hardwareAdapter.deleteUser(hardwarePlatform, apiKey, hardwareUserId);
+          const tagResult = await db.query(
+            `SELECT source_tag FROM member_identity WHERE id = $1`,
+            [memberId]
+          );
+          const sourceTag = tagResult.rows[0]?.source_tag;
+          if (sourceTag === 'accesssync') {
+            await hardwareAdapter.deleteUser(hardwarePlatform, apiKey, hardwareUserId);
+          } else {
+            log.warn('kisi.user.delete_skipped_foreign', {
+              clientId: tenantId, memberId,
+              platformMemberId: wixEvent.platformMemberId,
+              hardwareUserId, sourceTag: sourceTag || '(null)',
+              stage: 'revoke', result: 'skipped',
+              reason: 'source_tag_not_accesssync',
+            });
+          }
         }
         {
           const _actor = getActor() || {};

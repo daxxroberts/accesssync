@@ -152,8 +152,18 @@ describe('[P1] Payment fails → access suspended (roles preserved for recovery)
 
 describe('[P1] Deleted member → hardware user removed from org', () => {
 
-  it('deletes the user from hardware so they are completely removed from the org', async () => {
+  it('deletes the user from hardware so they are completely removed from the org (source_tag=accesssync)', async () => {
     const deletedEvent = { ...planCancelledEvent, eventType: 'member.deleted' };
+
+    // OB-125: deleteUser path now reads source_tag from member_identity.
+    // The default beforeEach mock chains _getClientApiKey → empty rows.
+    // For deleteUser to fire, source_tag must be 'accesssync'.
+    // Re-prime the mock chain: API key, then source_tag, then audit-log INSERTs.
+    db.query.mockReset();
+    db.query
+      .mockResolvedValueOnce({ rows: [{ hardware_api_key: ENCRYPTED_API_KEY_DB_VALUE }] })
+      .mockResolvedValueOnce({ rows: [{ source_tag: 'accesssync' }] })
+      .mockResolvedValue({ rows: [] });
 
     const targetStatus = await grantRevoke.processRevoke(
       HOG_CLIENT_ID,
