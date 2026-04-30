@@ -264,10 +264,12 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
   try {
     const memberResult = await db.query(
       `SELECT mi.id, mi.platform_member_id, mi.plan_holder_id, mi.sub_member_status,
-              mi.hardware_user_id, mi.hardware_platform, mi.client_id,
+              mi.hardware_user_id, mi.hardware_platform, mi.client_id, mi.plan_mapping_id,
+              pm.source_plan_id,
               mas.status AS access_status
        FROM member_identity mi
        LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+       LEFT JOIN plan_mappings pm ON pm.id = mi.plan_mapping_id
        WHERE mi.id = $1 AND mi.plan_holder_id IS NOT NULL`,
       [subId]
     );
@@ -302,10 +304,15 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
         `UPDATE member_identity SET sub_member_status = 'removing', updated_at = NOW() WHERE id = $1`,
         [subId]
       );
+      // OB-150 fix: include planId so DR-034 source row delete COALESCE check matches.
+      // Without planId, the targeted DELETE in processRevoke skips the source row,
+      // remainingCount stays > 0, and removeRole is incorrectly suppressed by the
+      // multi-source safety guard — leaving the Kisi role assignment orphaned.
       const syntheticEvent = {
         eventType: 'plan.cancelled',
         platformMemberId: member.platform_member_id,
         sourcePlatform: 'wix',
+        planId: member.source_plan_id || null,
         synthetic: true,
         traceId: mintTraceId(),
       };
