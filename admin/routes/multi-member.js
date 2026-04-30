@@ -9,11 +9,12 @@
  *   DELETE /api/multi-member/members/:subId      — Remove sub-member
  *   POST   /api/multi-member/submit              — Submit all drafts for provisioning
  *
- * Sub-member ID format (DR-029): {wix_uuid}###as{NNN}
+ * Sub-member ID format (DR-029): {wix_uuid}###as{6-char-random}
  * Draft→Submit workflow (DR-032): members are draft until batch submit.
  */
 
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
@@ -170,27 +171,35 @@ router.post('/api/multi-member/members', async (req, res) => {
       return res.status(409).json({ error: `Maximum ${maxMembers} additional members allowed for this plan` });
     }
 
-    // Generate sub-member platform ID (DR-029): {holderPlatformId}###as{NNN}
-    // NNN is scoped across all sub-members for this holder (unique ID, not per-plan counter)
-    const totalCount = await db.query(
-      `SELECT COUNT(*)::int AS cnt FROM member_identity WHERE plan_holder_id = $1`,
-      [holderId]
-    );
-    const nextNum = totalCount.rows[0].cnt + 1;
+    // Generate sub-member platform ID (DR-029): {holderPlatformId}###as{6-char-base36}
+    // Random suffix avoids reuse-after-revoke collisions (no counter state).
+    // Retry on the off chance of a 6-char collision; UNIQUE constraint is the backstop.
     const holderPlatformMemberId = await db.query(
       `SELECT platform_member_id FROM member_identity WHERE id = $1`, [holderId]
     );
-    const subPlatformMemberId = `${holderPlatformMemberId.rows[0].platform_member_id}###as${String(nextNum).padStart(3, '0')}`;
+    const holderId_str = holderPlatformMemberId.rows[0].platform_member_id;
 
-    const result = await db.query(
-      `INSERT INTO member_identity
-       (client_id, platform_member_id, source_platform, hardware_platform, source_tag,
-        plan_holder_id, plan_mapping_id, first_name, last_name, email, phone, sub_member_status)
-       VALUES ($1, $2, 'wix', $3, 'accesssync', $4, $5, $6, $7, $8, $9, 'draft')
-       RETURNING id, platform_member_id, first_name, last_name, email, phone, sub_member_status, plan_mapping_id, created_at`,
-      [clientId, subPlatformMemberId, holderCheck.rows[0].hardware_platform,
-       holderId, planMappingId, firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim()]
-    );
+    let result;
+    let subPlatformMemberId;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const suffix = crypto.randomBytes(4).toString('hex').slice(0, 6);
+      subPlatformMemberId = `${holderId_str}###as${suffix}`;
+      try {
+        result = await db.query(
+          `INSERT INTO member_identity
+           (client_id, platform_member_id, source_platform, hardware_platform, source_tag,
+            plan_holder_id, plan_mapping_id, first_name, last_name, email, phone, sub_member_status)
+           VALUES ($1, $2, 'wix', $3, 'accesssync', $4, $5, $6, $7, $8, $9, 'draft')
+           RETURNING id, platform_member_id, first_name, last_name, email, phone, sub_member_status, plan_mapping_id, created_at`,
+          [clientId, subPlatformMemberId, holderCheck.rows[0].hardware_platform,
+           holderId, planMappingId, firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim()]
+        );
+        break;
+      } catch (e) {
+        if (e.code === '23505' && attempt < 4) continue;
+        throw e;
+      }
+    }
 
     log.info('admin.sub_member_added', { subPlatformMemberId, holderId });
     res.status(201).json({
