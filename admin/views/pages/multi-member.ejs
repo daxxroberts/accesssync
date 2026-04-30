@@ -857,7 +857,10 @@ async function loadData(prevMembersOverride) {
     return;
   }
   try {
-    const res = await fetch(BASE + '/member/' + encodeURIComponent(platformMemberId) + '/widget-data?clientId=' + encodeURIComponent(clientId));
+    // OB-159: cache-bust on every poll. The Wix iframe context + any intermediate
+    // proxy may cache identical-URL GETs and serve stale state, leaving the UI
+    // stuck on "pending" forever. Server also sets Cache-Control: no-store.
+    const res = await fetch(BASE + '/member/' + encodeURIComponent(platformMemberId) + '/widget-data?clientId=' + encodeURIComponent(clientId) + '&_t=' + Date.now(), { cache: 'no-store' });
     if (res.status === 404) {
       showState('error', "We couldn't find your membership. Contact your gym.");
       return;

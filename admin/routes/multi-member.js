@@ -32,6 +32,14 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
 
   if (!clientId) return res.status(400).json({ error: 'clientId is required' });
 
+  // OB-159: Member Hub polls this endpoint every 4s. Inside the Wix iframe
+  // (and any other intermediate proxy / CDN), identical-URL GETs were being
+  // served from cache, so polling never saw state transitions. Force fresh
+  // every time.
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+
   try {
     // 1. Find the plan holder's identity record
     const holderResult = await db.query(
