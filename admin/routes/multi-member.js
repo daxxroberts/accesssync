@@ -67,6 +67,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
        FROM member_identity mi
        LEFT JOIN member_access_state mas ON mas.member_id = mi.id
        WHERE mi.plan_holder_id = $1
+         AND mi.sub_member_status != 'removing'
        ORDER BY mi.plan_mapping_id, mi.created_at`,
       [holder.id]
     );
@@ -275,9 +276,18 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
       return res.json({ ok: true, message: 'Draft member removed' });
     }
 
-    // Submitted/active: enqueue a revoke job to clean up hardware access,
-    // then delete the identity record. The revoke job will handle Kisi removal.
-    if (member.access_status === 'active' && member.hardware_user_id) {
+    // Submitted/active path — check whether a hardware user was ever created.
+    // If hardware_user_id exists, enqueue a revoke BEFORE deleting identity so the
+    // queue-worker can look up the row and call Kisi. Identity is kept alive with
+    // sub_member_status='removing' until the revoke job completes, at which point
+    // completeRevoke sets access_status='revoked'. On the next loadData the UI
+    // sees no member (we delete it there) — or we clean up here via a brief wait.
+    if (member.hardware_user_id) {
+      // Mark as removing so the GET /members endpoint filters it out immediately
+      await db.query(
+        `UPDATE member_identity SET sub_member_status = 'removing', updated_at = NOW() WHERE id = $1`,
+        [subId]
+      );
       const syntheticEvent = {
         eventType: 'plan.cancelled',
         platformMemberId: member.platform_member_id,
@@ -287,13 +297,16 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
       };
       const jobId = `revoke-multi-member-${subId}-${Date.now()}`;
       await eventQueue.add('revoke', { tenantId: member.client_id, standardEvent: syntheticEvent }, { jobId });
-      log.info('admin.sub_member_revoke_queued', { platformMemberId: member.platform_member_id, jobId });
+      log.info('admin.sub_member_revoke_queued', { platformMemberId: member.platform_member_id, jobId, subId });
+      // Row is kept alive — queue-worker reads it; completeRevoke sets status='revoked'.
+      // Orphan cleanup: any row with sub_member_status='removing' that is also revoked
+      // will be excluded from the GET /members query.
+    } else {
+      // Never provisioned to hardware — safe to delete immediately.
+      await db.query('DELETE FROM member_identity WHERE id = $1', [subId]);
     }
 
-    // Clean up DB records (CASCADE from member_identity handles access state + role assignments)
-    await db.query('DELETE FROM member_identity WHERE id = $1', [subId]);
-
-    log.info('admin.sub_member_removed', { status: member.sub_member_status, subId });
+    log.info('admin.sub_member_removed', { status: member.sub_member_status, subId, hadHardwareUser: !!member.hardware_user_id });
     res.json({ ok: true, message: 'Member removed and access revoked' });
   } catch (err) {
     log.error('admin.multi_member_delete_error', {}, err);

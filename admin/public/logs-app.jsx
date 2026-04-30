@@ -495,83 +495,31 @@ function copyToClipboard(text) {
   });
 }
 
-// Larger button that fetches a paste-ready AI bundle from the server,
-// copies it to the clipboard, and offers a ✓/✗ follow-up:
-//   ✗ — no log; close.
-//   ✓ — opens a follow-up dialog showing the bundle stub (a markdown block
-//       Daxx pastes into AccessSync/00_Vault_Control/bundle_gap_log.md so
-//       the AI review team can fill it in later).
-//
-// The two-step flow is deliberate — the bundle is paste-ready immediately;
-// the log decision is a separate explicit action that doesn't slow down
-// "I just want the bundle" cases.
 function BundleButton({ label, fetchUrl, style }) {
-  const [state, setState] = useState('idle'); // idle | loading | done | err
-  const [pendingStub, setPendingStub] = useState(null);
-  const [bundleSize, setBundleSize] = useState(null);
-  const [stubCopyState, setStubCopyState] = useState('idle');
+  const [state, setState] = useState('idle'); // idle | loading | copied | err
 
   function fetchAndCopy() {
     setState('loading');
     fetch(fetchUrl, { credentials: 'include' })
       .then((r) => r.ok ? r.json() : Promise.reject(r))
-      .then((j) => copyToClipboard(j.text).then(() => j))
-      .then((j) => {
-        setBundleSize(j.chars);
-        setPendingStub(j.stub || null);
-        setState('done');
-      })
+      .then((j) => copyToClipboard(j.text))
+      .then(() => { setState('copied'); setTimeout(() => setState('idle'), 1800); })
       .catch(() => { setState('err'); setTimeout(() => setState('idle'), 2000); });
   }
 
-  function logIt() {
-    if (!pendingStub) return;
-    copyToClipboard(pendingStub)
-      .then(() => { setStubCopyState('done'); setTimeout(() => closeDialog(), 1200); })
-      .catch(() => { setStubCopyState('err'); setTimeout(() => setStubCopyState('idle'), 1500); });
-  }
-  function closeDialog() {
-    setPendingStub(null);
-    setBundleSize(null);
-    setState('idle');
-    setStubCopyState('idle');
-  }
-
   return (
-    <>
-      <button
-        type="button"
-        className="btn-g"
-        style={{height:22,padding:'0 8px',fontSize:10.5,gap:4,...style}}
-        disabled={state === 'loading'}
-        onClick={(e) => { e.stopPropagation(); fetchAndCopy(); }}
-      >
-        {state === 'loading' ? 'Building…' :
-         state === 'err'     ? 'Failed' :
-         '⧉ ' + label}
-      </button>
-      {pendingStub && state === 'done' && (
-        <div onClick={(e) => e.stopPropagation()}
-             style={{position:'fixed',inset:0,background:'rgba(15,25,35,0.45)',backdropFilter:'blur(2px)',zIndex:9050,display:'flex',alignItems:'center',justifyContent:'center'}}>
-          <div style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:10,padding:'18px 20px',width:480,maxWidth:'92vw',color:'var(--text)',fontFamily:'Sora,sans-serif'}}>
-            <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>Bundle copied to clipboard</div>
-            <div style={{fontSize:11.5,color:'var(--text2)',marginBottom:14,lineHeight:1.5}}>
-              {bundleSize ? bundleSize.toLocaleString() : '?'} characters. Paste into Claude.ai for analysis.
-            </div>
-            <div style={{fontSize:11,color:'var(--text2)',marginBottom:8}}>Want to log this for the AI review team?</div>
-            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button type="button" className="btn-g" onClick={closeDialog}>✗ No log</button>
-              <button type="button" className="btn-g" style={{background:'var(--brand)',color:'#fff',borderColor:'var(--brand)'}}
-                      onClick={logIt} disabled={stubCopyState === 'done'}>
-                {stubCopyState === 'done' ? '✓ Stub copied — paste into bundle_gap_log.md' :
-                 stubCopyState === 'err'  ? 'Stub copy failed' :
-                 '✓ Yes — copy log stub'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    <button
+      type="button"
+      className="btn-g"
+      style={{height:22,padding:'0 8px',fontSize:10.5,gap:4,...style}}
+      disabled={state === 'loading'}
+      onClick={(e) => { e.stopPropagation(); fetchAndCopy(); }}
+    >
+      {state === 'loading' ? 'Building…' :
+       state === 'copied'  ? '✓ Copied' :
+       state === 'err'     ? 'Failed' :
+       '⧉ ' + label}
+    </button>
   );
 }
 
