@@ -68,7 +68,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
        FROM member_identity mi
        LEFT JOIN member_access_state mas ON mas.member_id = mi.id
        WHERE mi.plan_holder_id = $1
-         AND (mi.sub_member_status IS NULL OR mi.sub_member_status NOT IN ('removing', 'deleted'))
+         AND (mi.sub_member_status IS NULL OR mi.sub_member_status != 'deleted')
        ORDER BY mi.plan_mapping_id, mi.created_at`,
       [holder.id]
     );

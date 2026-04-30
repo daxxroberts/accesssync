@@ -809,6 +809,8 @@ function initials(first, last) {
 // ── Status metadata ─────────────────────────────────────────────
 function statusMeta(m) {
   if (m.status === 'draft') return { label: 'Draft', cls: 'badge-amber', dot: 'dot-amber', pulse: false };
+  // DR-044: row is in 'removing' state — Kisi revoke queued or in-flight, finalize pending
+  if (m.status === 'removing') return { label: 'Will be removed', cls: 'badge-amber', dot: 'dot-amber', pulse: true };
   switch (m.accessStatus) {
     case 'active':       return { label: 'Active',  cls: 'badge-green', dot: 'dot-green', pulse: false, ring: true };
     case 'in_flight':
