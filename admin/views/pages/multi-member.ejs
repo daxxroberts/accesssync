@@ -1135,6 +1135,11 @@ function openAddForm() {
   document.getElementById('add-form').classList.remove('hidden');
   document.getElementById('btn-add-trigger').classList.add('hidden');
   document.getElementById('limit-notice').classList.add('hidden');
+  // saveAdd disables this button on submit but only re-enables on failure paths
+  // (lines 1255, 1263). On success it stays disabled in memory; reopening the form
+  // re-shows it but the button stays disabled until reset here.
+  const saveBtn = document.getElementById('btn-add-save');
+  if (saveBtn) saveBtn.disabled = false;
   clearAddForm();
   document.getElementById('f-first').focus();
   notifyHeight();
