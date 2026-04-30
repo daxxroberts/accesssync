@@ -437,7 +437,7 @@ function App() {
           )}
         </div>
 
-        {selected && <Drawer ev={selected} traceDetail={traceDetail} onClose={() => setSelected(null)} onSelectEvent={setSelected} />}
+        {selected && <Drawer ev={selected} traceDetail={traceDetail} role={role} onClose={() => setSelected(null)} onSelectEvent={setSelected} />}
       </div>
     </>
   );
@@ -495,34 +495,6 @@ function copyToClipboard(text) {
   });
 }
 
-function BundleButton({ label, fetchUrl, style }) {
-  const [state, setState] = useState('idle'); // idle | loading | copied | err
-
-  function fetchAndCopy() {
-    setState('loading');
-    fetch(fetchUrl, { credentials: 'include' })
-      .then((r) => r.ok ? r.json() : Promise.reject(r))
-      .then((j) => copyToClipboard(j.text))
-      .then(() => { setState('copied'); setTimeout(() => setState('idle'), 1800); })
-      .catch(() => { setState('err'); setTimeout(() => setState('idle'), 2000); });
-  }
-
-  return (
-    <button
-      type="button"
-      className="btn-g"
-      style={{height:22,padding:'0 8px',fontSize:10.5,gap:4,...style}}
-      disabled={state === 'loading'}
-      onClick={(e) => { e.stopPropagation(); fetchAndCopy(); }}
-    >
-      {state === 'loading' ? 'Building…' :
-       state === 'copied'  ? '✓ Copied' :
-       state === 'err'     ? 'Failed' :
-       '⧉ ' + label}
-    </button>
-  );
-}
-
 // Small button that flashes "Copied" for 1.5s after a successful copy.
 function CopyButton({ label = 'Copy', getText, style }) {
   const [state, setState] = useState('idle'); // idle | done | err
@@ -542,6 +514,42 @@ function CopyButton({ label = 'Copy', getText, style }) {
       {state === 'done' ? '✓ Copied' : state === 'err' ? 'Copy failed' : '⧉ ' + label}
     </button>
   );
+}
+
+// Trace Admin clipboard format (owner-only).
+//
+// Self-contained handoff that survives session boundaries — anyone with this
+// blob + Railway CLI auth can replay the full trace without external lookups.
+//
+// Lines:
+//   1. `trace <id>`                       — short alias-friendly directive
+//   2-N. `# context: …`                   — human-readable header
+//   N+1. `# CLI: DATABASE_URL=$(...)`     — full shell command, password
+//                                           fetched on demand from Railway CLI
+//                                           (Option C — no plaintext password
+//                                           in clipboard; see DR-028 spirit).
+//
+// Pastes cleanly into:
+//   - A bash terminal (lines 2-N+1 are comments; line 1 runs if `trace` aliased)
+//   - The chat with Claude (Claude parses `trace <id>` and runs the CLI itself)
+//   - Slack/Linear (renders as plain text)
+function buildTraceAdminText(ev, traceDetail) {
+  const ctx = traceDetail?.context || {};
+  const id = ev.trace_id || '(none)';
+  const lines = [];
+  lines.push('trace ' + id);
+  // Context as comments — ignored by shell, readable by humans + AI
+  const ctxParts = [];
+  if (ctx.member_name)   ctxParts.push(ctx.member_name + (ctx.member_email ? ' <' + ctx.member_email + '>' : ''));
+  if (ctx.client_name)   ctxParts.push(ctx.client_name);
+  if (ctx.plan_name)     ctxParts.push(ctx.plan_name);
+  if (ctx.started_at)    ctxParts.push(ctx.started_at);
+  if (ctxParts.length)   lines.push('# ' + ctxParts.join(' · '));
+  if (ev.event)          lines.push('# event: ' + ev.event + (ev.result ? ' [' + ev.result + ']' : ''));
+  // CLI: fetch DATABASE_URL on demand via Railway CLI; never in clipboard.
+  // Recipient must have railway CLI authenticated and the project linked.
+  lines.push('# CLI: DATABASE_URL=$(railway variables --service Postgres --kv | grep DATABASE_PUBLIC_URL | cut -d= -f2-) node scripts/trace.js ' + id);
+  return lines.join('\n');
 }
 
 // Build a single readable text blob of the entire trace for clipboard paste.
@@ -590,7 +598,7 @@ function buildTraceCopyText(ev, traceDetail) {
   return lines.join('\n');
 }
 
-function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
+function Drawer({ ev, traceDetail, role, onClose, onSelectEvent }) {
   const s = SOURCES[ev.source] || {};
   return (
     <div className="drawer scroll">
@@ -609,14 +617,10 @@ function Drawer({ ev, traceDetail, onClose, onSelectEvent }) {
             label="Copy trace"
             getText={() => buildTraceCopyText(ev, traceDetail)}
           />
-          <BundleButton
-            label="Trace bundle"
-            fetchUrl={`/admin/logs/bundle/trace/${encodeURIComponent(ev.trace_id)}`}
-          />
-          {traceDetail?.context?.member_id && (
-            <BundleButton
-              label="Member bundle"
-              fetchUrl={`/admin/logs/bundle/member/${encodeURIComponent(traceDetail.context.member_id)}`}
+          {role === 'owner' && (
+            <CopyButton
+              label="Trace Admin"
+              getText={() => buildTraceAdminText(ev, traceDetail)}
             />
           )}
           <button onClick={onClose} className="btn-g" style={{height:22,padding:'0 7px'}}>✕</button>
