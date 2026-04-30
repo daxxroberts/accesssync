@@ -139,6 +139,19 @@ New events require an entry before shipping. Events without entries are flagged 
 
 ---
 
+## Sub-Member Lifecycle Events (DR-044)
+
+| Event | Level | Description |
+|---|---|---|
+| `member.sub_member.soft_deleted` | info | DR-044: Sub-member finalize succeeded — `sub_member_status='deleted'`, PII NULL'd. Atomic UPDATE matched expected `'removing'` prior state. Lands in `member_access_log` as `event_type='sub_member_soft_deleted'`. |
+| `member.sub_member.soft_delete_idempotent_skip` | warn | DR-044: Finalize UPDATE matched 0 rows on a sub-member (plan_holder_id not NULL). Race or replay — already in terminal `'deleted'` state or never reached `'removing'`. Diagnostic only; not an error. |
+
+Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='revoke'`, `result`. ALS auto-populates `trace_id`, `actor_type`, `actor_id`. No PII fields included (PII is NULL by the time these events fire, and was never in the event payload).
+
+`member.sub_member.revoke_failed` is intentionally NOT a discrete event — revoke failures are captured by the existing failure pipeline (`error_queue` row + `diagnostic_log` rows from `retry-engine.js`). Sub-member soft-delete inherits this.
+
+---
+
 ## Reconciliation Events
 
 | Event | Level | Description |

@@ -33,7 +33,7 @@ const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
-const { getTraceId, getActor } = require('../../core/trace-context');
+const { getTraceId, getActor, runWith, mintTraceId } = require('../../core/trace-context');
 const { recordActivity } = require('../middleware/activity');
 
 // Global rate limiter on all operator read endpoints (500 req/min/IP)
@@ -1092,6 +1092,7 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
          LEFT JOIN member_role_assignments mra ON mra.member_id = mi.id
          LEFT JOIN plan_mappings pm ON pm.id = mra.mapping_id
          WHERE mi.client_id = $1
+           AND (mi.sub_member_status IS NULL OR mi.sub_member_status NOT IN ('removing', 'deleted'))
            AND (pm.location_id = $2 OR EXISTS (
              SELECT 1 FROM plan_mappings pm2
              WHERE pm2.location_id = $2
@@ -1601,6 +1602,9 @@ router.get('/:clientId/members', async (req, res) => {
   try {
     const params = [clientId];
     const conditions = ['mi.client_id = $1'];
+
+    // DR-044: exclude soft-deleted and in-flight-removing sub-members from operator listing
+    conditions.push(`(mi.sub_member_status IS NULL OR mi.sub_member_status NOT IN ('removing', 'deleted'))`);
 
     if (status && status !== 'all') {
       params.push(status);
@@ -2361,10 +2365,16 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
 
     const reconciliation = require('../../core/reconciliation');
     const operatorActor = req.admin?.email || req.admin?.userId || 'operator';
-    const { granted, revoked, skippedHolderOptin, runId, aborted, reason, sanityGateTriggered } = await reconciliation._syncClient(
-      clientResult.rows[0],
-      { triggeredBy: 'manual', triggeredByActor: { type: 'operator', id: String(operatorActor) } }
+    const traceId = mintTraceId();
+    reconciliation._sweepTraceId = traceId;
+    const { granted, revoked, skippedHolderOptin, runId, aborted, reason, sanityGateTriggered } = await runWith(
+      { traceId, actor: { type: 'operator', id: String(operatorActor) } },
+      () => reconciliation._syncClient(
+        clientResult.rows[0],
+        { triggeredBy: 'manual', triggeredByActor: { type: 'operator', id: String(operatorActor) } }
+      )
     );
+    reconciliation._sweepTraceId = null;
 
     // Don't stamp last_sync_at on an aborted sync — the timestamp would lie about freshness
     if (!aborted) {

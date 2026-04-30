@@ -295,13 +295,26 @@ class GrantRevokeLogic {
         // Happens when a cancel fires before (or without) a successful grant,
         // e.g. Wix fires orderCancelled on a superseded order when a new one is created.
         if (raWithGroups.rows.length === 0 && roleAssignmentIds.length === 0) {
+          const raw = wixEvent.rawEventType || '';
+          const cancelledEventType = raw.includes('AutoRenew') || raw.includes('Canceled') || raw.includes('Cancelled')
+            ? 'cancelled_by_member'
+            : raw.includes('Ended') || raw.includes('Expired')
+              ? 'cancelled_expired'
+              : eventType === 'booking.cancelled'
+                ? 'cancelled_booking'
+                : 'cancelled_by_system';
           log.info('revoke.skipped.never_provisioned', {
             clientId: tenantId, memberId,
             platformMemberId: wixEvent.platformMemberId,
-            eventType, planId,
+            eventType, rawEventType: raw, cancelledEventType, planId,
             stage: 'revoke', result: 'skipped',
           });
-          return 'revoked';
+          const _actor = getActor() || {};
+          await db.query(
+            `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id) VALUES ($1, $2, $3, $4, $5, $6)`,
+            [memberId, tenantId, cancelledEventType, getTraceId() || null, _actor.type || null, _actor.id || null]
+          );
+          return 'cancelled';
         }
 
         for (const { role_assignment_id: raId, hardware_group_id: groupId } of raWithGroups.rows) {
@@ -353,6 +366,61 @@ class GrantRevokeLogic {
             [memberId, tenantId, getTraceId() || null, _actor.type || null, _actor.id || null]
           );
         }
+
+        // DR-044: Sub-member soft-delete finalize.
+        // If this member is a sub-member (plan_holder_id IS NOT NULL) and was in 'removing' state,
+        // flip to 'deleted' and NULL all PII fields. Single atomic UPDATE with optimistic-lock
+        // WHERE clause — only finalize from the expected prior state.
+        {
+          const _actor = getActor() || {};
+          const _tid   = getTraceId() || null;
+          const finalize = await db.query(
+            `UPDATE member_identity
+             SET sub_member_status = 'deleted',
+                 first_name   = NULL,
+                 last_name    = NULL,
+                 display_name = NULL,
+                 email        = NULL,
+                 phone        = NULL,
+                 updated_at   = NOW()
+             WHERE id = $1
+               AND plan_holder_id IS NOT NULL
+               AND sub_member_status = 'removing'
+             RETURNING id`,
+            [memberId]
+          );
+
+          if (finalize.rowCount > 0) {
+            await db.query(
+              `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id)
+               VALUES ($1, $2, 'sub_member_soft_deleted', $3, $4, $5)`,
+              [memberId, tenantId, _tid, _actor.type || null, _actor.id || null]
+            );
+            log.info('member.sub_member.soft_deleted', {
+              clientId: tenantId, memberId,
+              platformMemberId: wixEvent.platformMemberId,
+              stage: 'revoke', result: 'finalized',
+            });
+          } else {
+            // Either: not a sub-member, not in 'removing' state, or already 'deleted' (race/replay).
+            // Look up current state to log the right diagnostic.
+            const stateRes = await db.query(
+              `SELECT plan_holder_id, sub_member_status FROM member_identity WHERE id = $1`,
+              [memberId]
+            );
+            const isSubMember = stateRes.rows[0]?.plan_holder_id !== null && stateRes.rows[0]?.plan_holder_id !== undefined;
+            if (isSubMember) {
+              log.warn('member.sub_member.soft_delete_idempotent_skip', {
+                clientId: tenantId, memberId,
+                platformMemberId: wixEvent.platformMemberId,
+                currentStatus: stateRes.rows[0]?.sub_member_status,
+                stage: 'revoke', result: 'idempotent_skip',
+              });
+            }
+            // Non-sub-members fall through silently — finalize doesn't apply.
+          }
+        }
+
         return 'revoked';
       }
 

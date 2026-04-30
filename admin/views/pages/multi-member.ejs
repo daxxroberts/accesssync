@@ -1294,6 +1294,10 @@ async function saveEdit(subId) {
 }
 
 // ── API: Remove ──────────────────────────────────────────────────
+// DR-044: server marks 'removing' on submitted/active members + queues revoke
+// job. processRevoke() finalizes to 'deleted' + NULL PII when Kisi confirms.
+// loadData() re-fetches widget-data after — server filters 'removing' and
+// 'deleted' from the listing so the UI reflects truth. No optimistic updates.
 async function doRemove(subId) {
   S.confirmingId = null;
   try {
@@ -1306,7 +1310,7 @@ async function doRemove(subId) {
       return;
     }
     await loadData();
-    showToast(data.message || 'Member removed', 'info');
+    showToast(data.message || 'Member will be removed', 'info');
   } catch (e) {
     showToast('Something went wrong. Try again.', 'error');
   }

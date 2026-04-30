@@ -68,7 +68,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
        FROM member_identity mi
        LEFT JOIN member_access_state mas ON mas.member_id = mi.id
        WHERE mi.plan_holder_id = $1
-         AND mi.sub_member_status != 'removing'
+         AND (mi.sub_member_status IS NULL OR mi.sub_member_status NOT IN ('removing', 'deleted'))
        ORDER BY mi.plan_mapping_id, mi.created_at`,
       [holder.id]
     );
@@ -277,6 +277,11 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
     }
 
     const member = memberResult.rows[0];
+
+    // DR-044: terminal state — already soft-deleted. Return 410 Gone.
+    if (member.sub_member_status === 'deleted') {
+      return res.status(410).json({ error: 'Sub-member already removed' });
+    }
 
     if (member.sub_member_status === 'draft') {
       // Draft: just delete — no hardware to clean up
