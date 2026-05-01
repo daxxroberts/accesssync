@@ -370,6 +370,16 @@ async function _processJobBody(job, traceId) {
         stage: 'revoke', result: 'start',
       });
 
+      // Phase 2 enrichment — mirrors grant path so revoke traces show full member/client context
+      registerTrace(traceId, {
+        entryPoint: 'queue',
+        clientId,
+        memberId,
+        actorType: 'system',
+        actorId:   'queue-worker',
+      });
+      setTraceContext(traceId, { clientId, memberId });
+
       // Step 2: Execute hardware revoke across all stored role assignments → returns targetStatus
       lastStep = 'revoke.process_revoke';
       const targetStatus = await grantRevokeLogic.processRevoke(
