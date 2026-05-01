@@ -21,6 +21,42 @@ const { eventQueue } = require('../../core/webhook-processor');
 const { log } = require('../../core/logger');
 const { mintTraceId } = require('../../core/trace-context');
 
+/**
+ * Write the origin record for a synthetic grant/revoke job fired from the Member Hub.
+ * Covers the gap where Wix webhooks get a webhook_log row at the HTTP boundary but
+ * sub-member events have no equivalent entry — leaving the trace starting mid-flight
+ * at the queue worker with no "who triggered this and why" record.
+ *
+ * Writes two rows, both fire-and-forget:
+ *   1. trace_context  — seeds entry_point='member-hub', clientId, actor, so the trace
+ *      tool can label the event origin correctly before the queue worker fills the rest.
+ *   2. activity_event — the human-readable origin row that appears in the timeline,
+ *      showing the operator, the action, the sub-member targeted, and the job queued.
+ */
+function recordSyntheticOrigin(traceId, { clientId, actorType, actorId, action, diff = {} }) {
+  setImmediate(() => {
+    db.query(
+      `INSERT INTO trace_context (trace_id, client_id, actor_type, actor_id, entry_point)
+       VALUES ($1, $2, $3, $4, 'member-hub')
+       ON CONFLICT (trace_id) DO NOTHING`,
+      [traceId, clientId || null, actorType || null, actorId || null]
+    ).catch(() => {});
+
+    db.query(
+      `INSERT INTO activity_event (client_id, action, actor_type, actor_id, trace_id, diff)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        clientId || null,
+        action,
+        actorType || null,
+        actorId   || null,
+        traceId,
+        Object.keys(diff).length ? JSON.stringify(diff) : null,
+      ]
+    ).catch(() => {});
+  });
+}
+
 // ── GET /member/:memberId/widget-data ──────────────────────────────
 // Returns everything the multi-member editor needs:
 //   - Plan holder info (name, plan)
@@ -327,6 +363,13 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
         synthetic: true,
         traceId: mintTraceId(),
       };
+      recordSyntheticOrigin(syntheticEvent.traceId, {
+        clientId: member.client_id,
+        actorType: 'member-hub',
+        actorId:   subId,
+        action:    'sub_member.revoke_queued',
+        diff: { subMemberId: subId, platformMemberId: member.platform_member_id, planId: member.source_plan_id || null },
+      });
       const jobId = `revoke-multi-member-${subId}-${Date.now()}`;
       await eventQueue.add('revoke', { tenantId: member.client_id, standardEvent: syntheticEvent }, { jobId });
       log.info('admin.sub_member_revoke_queued', { platformMemberId: member.platform_member_id, jobId, subId });
@@ -410,6 +453,13 @@ router.post('/api/multi-member/submit', async (req, res) => {
         synthetic: true,
         traceId: mintTraceId(),
       };
+      recordSyntheticOrigin(syntheticEvent.traceId, {
+        clientId,
+        actorType: req.admin?.actorType || req.operator?.actorType || 'operator',
+        actorId:   req.admin?.email     || req.operator?.clientId  || holderId,
+        action:    'sub_member.grant_queued',
+        diff: { subMemberId: draft.id, platformMemberId: draft.platform_member_id, planId: draft.source_plan_id, jobId: `grant-multi-member-${draft.id}` },
+      });
       const jobId = `grant-multi-member-${draft.id}-${Date.now()}`;
       await eventQueue.add('grant', { tenantId: clientId, standardEvent: syntheticEvent }, { jobId });
       log.info('admin.sub_member_grant_queued', { platformMemberId: draft.platform_member_id, jobId });
@@ -490,6 +540,13 @@ router.post('/api/multi-member/holder-claim-slot', async (req, res) => {
       synthetic: true,
       traceId: mintTraceId(),
     };
+    recordSyntheticOrigin(syntheticEvent.traceId, {
+      clientId,
+      actorType: 'member-hub',
+      actorId:   holderId,
+      action:    'holder.claim_slot_queued',
+      diff: { holderId, planMappingId, planId: planResult.rows[0].source_plan_id },
+    });
     const jobId = `grant-holder-claim-${holderId}-${planMappingId}-${Date.now()}`;
     await eventQueue.add('grant', { tenantId: clientId, standardEvent: syntheticEvent }, { jobId });
 
@@ -537,6 +594,13 @@ router.post('/api/multi-member/holder-release-slot', async (req, res) => {
       synthetic: true,
       traceId: mintTraceId(),
     };
+    recordSyntheticOrigin(syntheticEvent.traceId, {
+      clientId,
+      actorType: 'member-hub',
+      actorId:   holderId,
+      action:    'holder.release_slot_queued',
+      diff: { holderId, planMappingId },
+    });
     const jobId = `revoke-holder-release-${holderId}-${planMappingId}-${Date.now()}`;
     await eventQueue.add('revoke', { tenantId: clientId, standardEvent: syntheticEvent }, { jobId });
 

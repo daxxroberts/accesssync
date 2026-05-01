@@ -119,6 +119,10 @@ const COPY_OVERRIDES = {
   'queue.revoke.lock_acquired':    'Acquired in-flight lock (prevents concurrent operations on this member)',
   'queue.grant.identity_resolved': 'Hardware user identity resolved — ready for hardware calls',
   'queue.grant.mappings_resolved': 'Plan mapped to hardware groups — ready to assign roles',
+  'sub_member.grant_queued':       'Member Hub — sub-member grant queued (plan holder submitted additional member)',
+  'sub_member.revoke_queued':      'Member Hub — sub-member revoke queued (plan holder removed additional member)',
+  'holder.claim_slot_queued':      'Member Hub — plan holder claimed their own slot (grant queued)',
+  'holder.release_slot_queued':    'Member Hub — plan holder released their slot (revoke queued)',
   'queue.grant.hardware_calls_complete':  'All hardware calls finished — recording DB state',
   'queue.revoke.hardware_calls_complete': 'All hardware calls finished — recording DB state',
   'revoke.start':                  'Starting revoke flow',
@@ -215,8 +219,10 @@ async function queryDb(traceId) {
 function fetchRailwayLogs(traceId) {
   return new Promise((resolve, reject) => {
     // Pass the full command string to shell directly to avoid DEP0190 (args + shell: true).
+    // cwd must be the repo root — railway CLI reads .railway/config.json from there.
     const cmd = 'railway logs --service accesssync --json';
-    const opts = { maxBuffer: 50 * 1024 * 1024, shell: true, windowsHide: true };
+    const repoRoot = path.resolve(__dirname, '..');
+    const opts = { maxBuffer: 50 * 1024 * 1024, shell: true, windowsHide: true, cwd: repoRoot };
     execFile(cmd, [], opts, (err, stdout) => {
       if (err && !stdout) return reject(err);
       const lines = (stdout || '').split('\n').filter(Boolean);
@@ -339,8 +345,17 @@ function renderContext(ctx) {
   if (ctx.plan_name)        lines.push(`Plan:       ${ctx.plan_name}`);
   if (ctx.hardware_platform) lines.push(`Hardware:   ${ctx.hardware_platform}${ctx.hardware_user_id ? ` (user ${ctx.hardware_user_id})` : ''}`);
   if (ctx.source_platform)  lines.push(`Source:     ${ctx.source_platform}`);
-  if (ctx.entry_point)      lines.push(`Entry:      ${ctx.entry_point}`);
-  if (ctx.actor_type)       lines.push(`Actor:      ${ctx.actor_type}/${ctx.actor_id || '?'}`);
+  // Entry point — label synthetic member-hub events clearly vs Wix webhook vs queue
+  const entryLabel = ctx.entry_point === 'member-hub' ? 'member-hub (synthetic)' : ctx.entry_point;
+  if (entryLabel)           lines.push(`Entry:      ${entryLabel}`);
+  // Actor — for member-hub events the actor is the plan holder or operator who triggered it
+  if (ctx.actor_type === 'member-hub') {
+    lines.push(`Triggered:  Member Hub — plan holder ${ctx.actor_id || '?'}`);
+  } else if (ctx.actor_type === 'operator') {
+    lines.push(`Triggered:  Operator — ${ctx.actor_id || '?'}`);
+  } else if (ctx.actor_type) {
+    lines.push(`Actor:      ${ctx.actor_type}/${ctx.actor_id || '?'}`);
+  }
   if (ctx.started_at)       lines.push(`Started:    ${new Date(ctx.started_at).toISOString()}`);
   return lines.map(l => '  ' + l).join('\n');
 }
