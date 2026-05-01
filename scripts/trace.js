@@ -70,6 +70,22 @@ function loadEventRegistry() {
   return map;
 }
 
+// Events that are internal queue bookkeeping — rendered as a single dim checkpoint
+// line rather than a full block. They add latency context but not diagnostic value
+// unless something goes wrong.
+const QUEUE_BOOKKEEPING = new Set([
+  'queue.job.start',
+  'queue.grant.lock_acquired',
+  'queue.revoke.lock_acquired',
+  'queue.grant.mappings_resolved',
+  'queue.grant.hardware_calls_complete',
+  'queue.revoke.hardware_calls_complete',
+  'queue.grant.complete',
+  'queue.revoke.complete',
+  'queue.job.completed',
+  'grant.role.assigning',
+]);
+
 // DB-lifecycle event_type values from member_access_log — these aren't in the
 // EVENT_REGISTRY (which covers code-emitted log events). Provide explicit copy
 // so the operator-facing audit row makes sense in plain English.
@@ -297,40 +313,80 @@ function buildTimeline(dbEvents, railwayEvents) {
   return unified;
 }
 
-function renderEvent(evt, registry, idx, raw) {
+function renderEvent(evt, registry, idx, raw, ctx) {
   const ts = evt.ts ? new Date(evt.ts).toISOString().replace('T', ' ').slice(11, 23) : '????????????';
   const colour = sevColour(evt.level);
+  const m = evt.meta || {};
+
+  // Queue bookkeeping — collapse to a single dim checkpoint line
+  // unless something failed or --raw is requested.
+  if (!raw && QUEUE_BOOKKEEPING.has(evt.event) && m.result !== 'failed') {
+    const checkLabel = humanize(evt.event, registry);
+    const dur = m.durationMs ? c.dim(` (${m.durationMs}ms)`) : '';
+    return `${c.dim(String(idx + 1).padStart(3, ' '))}  ${c.dim(ts)}  ${c.dim('·')} ${c.dim(checkLabel)}${dur}`;
+  }
+
   const sourceTag = evt.source === 'db' ? c.cyan('[db]') : c.dim('[rwy]');
   const eventName = colour(evt.event);
-  const actor = evt.actor ? c.dim(`(${evt.actor})`) : '';
+
+  // Actor — suppress raw UUIDs, humanize known actor patterns
+  let actorStr = '';
+  if (evt.actor) {
+    const [aType, aId] = evt.actor.split('/');
+    if (aType === 'system')      actorStr = c.dim('(system)');
+    else if (aType === 'member-hub') actorStr = c.dim('(member hub)');
+    else if (aType === 'operator' && aId && aId.includes('-')) actorStr = c.dim('(operator)');
+    else                         actorStr = c.dim(`(${evt.actor})`);
+  }
 
   const human = raw ? '' : '\n     ' + c.dim(humanize(evt.event, registry));
 
+  // Context already shown in the header — suppress repetitive fields here
+  const ctxMemberName  = ctx?.member_name;
+  const ctxClientName  = ctx?.client_name;
+  const ctxPlanName    = ctx?.plan_name;
+  const ctxDoorName    = ctx?.door_name;
+  const ctxHwUserId    = ctx?.hardware_user_id;
+
   const metaLines = [];
-  const m = evt.meta || {};
-  if (m.memberName)        metaLines.push(`member: ${m.memberName}${m.memberEmail ? ` <${m.memberEmail}>` : ''}`);
-  if (m.platformMemberId)  metaLines.push(`platform_member_id: ${m.platformMemberId}`);
-  if (m.userId)            metaLines.push(`kisi user: ${m.userId}`);
-  if (m.hardwareUserId && !m.userId) metaLines.push(`hardware_user_id: ${m.hardwareUserId}`);
-  if (m.groupId)           metaLines.push(`kisi group: ${m.groupId}`);
-  if (m.roleAssignmentId)  metaLines.push(`role assignment: ${m.roleAssignmentId}`);
-  if (m.planName)          metaLines.push(`plan: ${m.planName}`);
-  if (m.doorName)          metaLines.push(`door: ${m.doorName}`);
-  if (m.clientName)        metaLines.push(`client: ${m.clientName}`);
-  if (m.eventType)         metaLines.push(`event_type: ${m.eventType}`);
-  if (m.attempt)           metaLines.push(`attempt: ${m.attempt}`);
+  // Only show member/client/plan/door if different from trace-level context
+  if (m.memberName && m.memberName !== ctxMemberName)
+    metaLines.push(`member: ${m.memberName}${m.memberEmail ? ` <${m.memberEmail}>` : ''}`);
+  if (m.clientName && m.clientName !== ctxClientName)
+    metaLines.push(`client: ${m.clientName}`);
+  if (m.planName && m.planName !== ctxPlanName)
+    metaLines.push(`plan: ${m.planName}`);
+  if (m.doorName && m.doorName !== ctxDoorName)
+    metaLines.push(`door: ${m.doorName}`);
+  // Hardware IDs — show only the meaningful one, not both
+  if (m.userId)                                              metaLines.push(`kisi user: ${m.userId}`);
+  else if (m.hardwareUserId && m.hardwareUserId !== ctxHwUserId) metaLines.push(`hardware user: ${m.hardwareUserId}`);
+  if (m.groupId)           metaLines.push(`group: ${m.groupId}`);
+  if (m.roleAssignmentId)  metaLines.push(`role: ${m.roleAssignmentId}`);
+  // Suppress platform_member_id (sub-member ###as IDs) — noise once context is known
+  // Suppress eventType on synthetic events — always plan.purchased/cancelled, redundant
+  if (m.attempt && m.attempt > 1) metaLines.push(c.yellow(`attempt: ${m.attempt}`));
   if (m.durationMs)        metaLines.push(`duration: ${m.durationMs}ms`);
-  if (m.result === 'success' || m.result === 'finalized') metaLines.push(c.green(`result: ${m.result}`));
-  if (m.result === 'skipped' || m.result === 'failed')    metaLines.push(c.yellow(`result: ${m.result}`));
-  if (m.message)           metaLines.push(`message: ${m.message}`);
-  if (m.detail) {
-    const detailStr = typeof m.detail === 'object' ? JSON.stringify(m.detail) : String(m.detail);
-    if (detailStr && detailStr !== '{}' && detailStr !== '[object Object]') metaLines.push(`detail: ${detailStr}`);
+  if (m.result === 'success' || m.result === 'finalized') metaLines.push(c.green(`✓ success`));
+  if (m.result === 'skipped')  metaLines.push(c.yellow(`skipped`));
+  if (m.result === 'failed')   metaLines.push(c.red(`✗ failed`));
+  if (m.message)           metaLines.push(`note: ${m.message}`);
+  // Detail — strip internal/redundant fields, show only human-meaningful keys
+  if (m.detail && typeof m.detail === 'object') {
+    const SKIP_DETAIL_KEYS = new Set(['mapping_id', 'jobId', 'subMemberId', 'platformMemberId', 'planId']);
+    const meaningful = Object.entries(m.detail).filter(([k, v]) => {
+      if (v === null || v === undefined) return false;
+      if (SKIP_DETAIL_KEYS.has(k)) return false;
+      // Skip pure UUID values — already in context or MRA section
+      if (typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return false;
+      return true;
+    }).map(([k, v]) => `${k}: ${v}`);
+    if (meaningful.length) metaLines.push(meaningful.join(', '));
   }
 
   const meta = metaLines.length ? '\n     ' + c.dim(metaLines.join(' · ')) : '';
 
-  return `${c.dim(String(idx + 1).padStart(3, ' '))}  ${ts}  ${sourceTag} ${eventName} ${actor}${human}${meta}`;
+  return `${c.dim(String(idx + 1).padStart(3, ' '))}  ${ts}  ${sourceTag} ${eventName} ${actorStr}${human}${meta}`;
 }
 
 function renderContext(ctx) {
@@ -348,13 +404,15 @@ function renderContext(ctx) {
   // Entry point — label synthetic member-hub events clearly vs Wix webhook vs queue
   const entryLabel = ctx.entry_point === 'member-hub' ? 'member-hub (synthetic)' : ctx.entry_point;
   if (entryLabel)           lines.push(`Entry:      ${entryLabel}`);
-  // Actor — for member-hub events the actor is the plan holder or operator who triggered it
+  // Actor — humanize, never show raw UUIDs
   if (ctx.actor_type === 'member-hub') {
-    lines.push(`Triggered:  Member Hub — plan holder ${ctx.actor_id || '?'}`);
+    lines.push(`Triggered:  Plan holder via Member Hub`);
   } else if (ctx.actor_type === 'operator') {
-    lines.push(`Triggered:  Operator — ${ctx.actor_id || '?'}`);
+    lines.push(`Triggered:  Operator`);
+  } else if (ctx.actor_type === 'system') {
+    lines.push(`Triggered:  System (queue worker)`);
   } else if (ctx.actor_type) {
-    lines.push(`Actor:      ${ctx.actor_type}/${ctx.actor_id || '?'}`);
+    lines.push(`Triggered:  ${ctx.actor_type}`);
   }
   if (ctx.started_at)       lines.push(`Started:    ${new Date(ctx.started_at).toISOString()}`);
   return lines.map(l => '  ' + l).join('\n');
@@ -500,7 +558,7 @@ async function main() {
   }
 
   console.log(c.bold(`\nTimeline (${timeline.length} events):\n`));
-  timeline.forEach((e, i) => console.log(renderEvent(e, registry, i, raw)));
+  timeline.forEach((e, i) => console.log(renderEvent(e, registry, i, raw, dbResult.context)));
 
   if (dbResult.mraRows && dbResult.mraRows.length > 0) {
     console.log(c.bold('\nHardware assignments (member_role_assignments):\n'));
