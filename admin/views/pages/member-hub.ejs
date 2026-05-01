@@ -1676,7 +1676,10 @@ async function mmLoadData() {
   document.getElementById('mm-content').classList.add('hidden');
 
   try {
-    const res = await fetch(BASE + '/member/' + encodeURIComponent(platformMemberId) + '/widget-data?clientId=' + encodeURIComponent(clientId));
+    // Cache-bust on every call. Inside the Wix iframe + intermediate proxies,
+    // identical-URL GETs were being served from cache, leaving polling stale.
+    // Server also sets Cache-Control: no-store on this route.
+    const res = await fetch(BASE + '/member/' + encodeURIComponent(platformMemberId) + '/widget-data?clientId=' + encodeURIComponent(clientId) + '&_t=' + Date.now(), { cache: 'no-store' });
 
     document.getElementById('mm-loading').classList.add('hidden');
 
@@ -1713,12 +1716,58 @@ async function mmLoadData() {
     document.getElementById('mm-content').classList.remove('hidden');
     mmRender();
     notifyHeight();
+
+    // After every successful load, kick off polling if any sub-member is in
+    // a non-terminal state (submitted/in_flight/pending_sync). Stops when all
+    // members have settled (active/failed/etc) or after MM_POLL_MAX cycles.
+    mmStartPollIfPending();
   } catch (e) {
     document.getElementById('mm-loading').classList.add('hidden');
     document.getElementById('mm-error').classList.remove('hidden');
     document.getElementById('mm-error-msg').textContent = 'Something went wrong. Try again.';
     notifyHeight();
   }
+}
+
+// ── Manage Members polling ────────────────────────────────────────
+// Watches non-terminal sub-members (submitted/pending_sync/in_flight) and
+// re-fetches every MM_POLL_INTERVAL ms until they settle or MM_POLL_MAX cycles.
+// Independent of the My Access overlay's _pollTimer (different endpoint, different
+// semantics). Defensive: always clears any stale interval before starting a new
+// one so a dead timer can't keep us from running.
+const MM_POLL_INTERVAL = 4000;
+const MM_POLL_MAX      = 75;  // 5 minutes
+let _mmPollTimer = null;
+let _mmPollCount = 0;
+
+function mmIsSubMemberPending(m) {
+  if (!m) return false;
+  if (m.status === 'draft') return false;
+  if (m.accessStatus === 'active') return false;
+  if (m.accessStatus === 'failed' || m.accessStatus === 'error') return false;
+  if (m.accessStatus === 'suspended' || m.accessStatus === 'revoked') return false;
+  return true;  // submitted / pending_sync / in_flight / null / unknown → still pending
+}
+
+function mmStopPoll() {
+  if (_mmPollTimer) { clearInterval(_mmPollTimer); _mmPollTimer = null; }
+  _mmPollCount = 0;
+}
+
+function mmStartPollIfPending() {
+  const anyPending = (MM.subMembers || []).some(mmIsSubMemberPending);
+  if (!anyPending) { mmStopPoll(); return; }
+
+  // Defensive: always recreate. Don't trust an existing timer (could be dead
+  // from browser throttling, iframe re-mount, or prior load failure).
+  if (_mmPollTimer) { clearInterval(_mmPollTimer); _mmPollTimer = null; }
+  _mmPollCount = 0;
+
+  _mmPollTimer = setInterval(async () => {
+    _mmPollCount++;
+    if (_mmPollCount > MM_POLL_MAX) { mmStopPoll(); return; }
+    try { await mmLoadData(); } catch (_) { /* keep timer alive */ }
+  }, MM_POLL_INTERVAL);
 }
 
 function mmRender() {
@@ -1908,6 +1957,11 @@ function mmOpenAddForm() {
   document.getElementById('mm-add-form').classList.remove('hidden');
   document.getElementById('mm-btn-add-trigger').classList.add('hidden');
   document.getElementById('mm-limit-notice').classList.add('hidden');
+  // mmSaveAdd disables the button on submit but only re-enables on failure.
+  // On the success path closeAddForm() hides the form but the button stays
+  // disabled in memory; reopening shows the form with a dead button. Reset here.
+  const saveBtn = document.getElementById('mm-btn-add-save');
+  if (saveBtn) saveBtn.disabled = false;
   mmClearAddForm();
   document.getElementById('f-first').focus();
   notifyHeight();
@@ -2095,7 +2149,7 @@ async function boot() {
 
   if (platformMemberId && clientId) {
     try {
-      const res = await fetch(BASE + '/member/' + encodeURIComponent(platformMemberId) + '/widget-data?clientId=' + encodeURIComponent(clientId));
+      const res = await fetch(BASE + '/member/' + encodeURIComponent(platformMemberId) + '/widget-data?clientId=' + encodeURIComponent(clientId) + '&_t=' + Date.now(), { cache: 'no-store' });
       if (res.ok) {
         const d = await res.json();
         MM.loaded       = true;
