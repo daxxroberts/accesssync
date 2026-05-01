@@ -49,8 +49,8 @@ class StandardAdapter {
         // GRANT: UPSERT identity record
         const identityResult = await dbClient.query(
           `INSERT INTO member_identity
-           (client_id, platform_member_id, hardware_platform, source_platform, source_tag)
-           VALUES ($1, $2, $3, $4, 'accesssync')
+           (client_id, platform_member_id, hardware_platform, source_platform, source_tag, source_member_id)
+           VALUES ($1, $2, $3, $4, 'accesssync', $2)
            ON CONFLICT (client_id, source_platform, platform_member_id)
            DO UPDATE SET updated_at = NOW()
            RETURNING id, hardware_user_id`,
@@ -396,6 +396,7 @@ class StandardAdapter {
    * Core Engine determines targetStatus from eventType; this layer never handles event type strings (DR-023).
    *
    * targetStatus values:
+   *   'cancelled'  — plan.cancelled before hardware was ever provisioned (no hardware call made)
    *   'disabled'  — payment.failed path (preserve role assignments for fast recovery)
    *   'revoked'   — plan.cancelled, booking.cancelled (clears role assignments)
    *   'deleted'   — member.deleted (clears role assignments)
@@ -410,7 +411,7 @@ class StandardAdapter {
    * @param {Object} [options]   { sourcePlanId, sourceType, hardwareGroupId } — for DR-034 source cleanup
    */
   async completeRevoke(memberId, tenantId, targetStatus, options = {}) {
-    const clearRole = targetStatus === 'revoked' || targetStatus === 'deleted';
+    const clearRole = targetStatus === 'revoked' || targetStatus === 'deleted' || targetStatus === 'cancelled';
     const dbClient = await db.getClient();
 
     try {

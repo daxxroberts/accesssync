@@ -172,6 +172,10 @@ CREATE TABLE member_identity (
     email               VARCHAR(255),                   -- Sub-member email (required — FP-01 resolution)
     display_name        VARCHAR(255),                   -- Composed name from Wix Members API (Gate 2 cache, OB-89). Originally removed in commit b5dced7 (2026-03-27, data minimization) but column survived in production and accumulated active read/write sites in 13 files. Re-documented in schema 2026-04-30 (OB-148) to restore schema-as-code parity. Future: revisit data-minimization intent — either drop column + all references, or formalise the cache model.
     sub_member_status   VARCHAR(50),                    -- DR-032: 'draft', 'submitted', NULL for primary members
+    source_member_id    VARCHAR(255),                   -- OB-160: person-level anchor across all identity roles.
+                                                        --   Holder/direct rows: same as platform_member_id.
+                                                        --   Sub-member rows: holder's platform_member_id.
+                                                        --   Enables My Access and COUNT(DISTINCT) without JOIN chains.
     created_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(client_id, source_platform, platform_member_id)
@@ -186,6 +190,11 @@ CREATE INDEX idx_member_identity_plan_holder
 CREATE INDEX idx_member_identity_plan_mapping
     ON member_identity (plan_mapping_id)
     WHERE plan_mapping_id IS NOT NULL;
+
+-- Person-level anchor — My Access and COUNT(DISTINCT source_member_id) queries (OB-160)
+CREATE INDEX idx_member_identity_source_member_id
+    ON member_identity (source_member_id)
+    WHERE source_member_id IS NOT NULL;
 
 --------------------------------------------------------
 -- 7. Member Access State (Provisioning Status)

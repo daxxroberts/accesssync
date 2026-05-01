@@ -41,13 +41,14 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
   res.set('Expires', '0');
 
   try {
-    // 1. Find the plan holder's identity record
+    // 1. Find the plan holder's identity record (OB-160: use source_member_id so a holder
+    //    who also claimed a seat sees their access correctly in My Access)
     const holderResult = await db.query(
       `SELECT mi.id, mi.platform_member_id, mi.client_id, mi.hardware_platform,
               mas.status AS access_status, mas.provisioned_at
        FROM member_identity mi
        LEFT JOIN member_access_state mas ON mas.member_id = mi.id
-       WHERE mi.platform_member_id = $1 AND mi.client_id = $2
+       WHERE mi.source_member_id = $1 AND mi.client_id = $2
          AND mi.plan_holder_id IS NULL`,
       [memberId, clientId]
     );
@@ -196,11 +197,13 @@ router.post('/api/multi-member/members', async (req, res) => {
         result = await db.query(
           `INSERT INTO member_identity
            (client_id, platform_member_id, source_platform, hardware_platform, source_tag,
-            plan_holder_id, plan_mapping_id, first_name, last_name, email, phone, sub_member_status)
-           VALUES ($1, $2, 'wix', $3, 'accesssync', $4, $5, $6, $7, $8, $9, 'draft')
+            plan_holder_id, plan_mapping_id, first_name, last_name, email, phone, sub_member_status,
+            source_member_id)
+           VALUES ($1, $2, 'wix', $3, 'accesssync', $4, $5, $6, $7, $8, $9, 'draft', $10)
            RETURNING id, platform_member_id, first_name, last_name, email, phone, sub_member_status, plan_mapping_id, created_at`,
           [clientId, subPlatformMemberId, holderCheck.rows[0].hardware_platform,
-           holderId, planMappingId, firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim()]
+           holderId, planMappingId, firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim(),
+           holderId_str]
         );
         break;
       } catch (e) {

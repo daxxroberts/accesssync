@@ -770,12 +770,14 @@ router.get('/:clientId', async (req, res) => {
         [clientId]
       ),
       db.query(
-        `SELECT COUNT(*)::int AS count FROM member_access_state
-         WHERE client_id = $1 AND status = 'active'`,
+        `SELECT COUNT(DISTINCT mi.source_member_id)::int AS count
+         FROM member_identity mi
+         JOIN member_access_state mas ON mas.member_id = mi.id
+         WHERE mi.client_id = $1 AND mas.status = 'active'`,
         [clientId]
       ),
       db.query(
-        `SELECT COUNT(*)::int AS count FROM member_identity
+        `SELECT COUNT(DISTINCT source_member_id)::int AS count FROM member_identity
          WHERE client_id = $1`,
         [clientId]
       ),
