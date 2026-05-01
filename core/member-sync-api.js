@@ -79,44 +79,61 @@ class MemberSyncApi {
         return res.status(403).json({ error: 'JWT uid does not match platformMemberId' });
       }
 
-      // 1. Resolve member_identity
+      // 1. Resolve all identity rows for this person (OB-160: source_member_id anchor).
+      //    One human can have N holder rows + M sub-member rows. We collect all identity
+      //    IDs that share the same source_member_id so My Access shows the full picture.
       const identityResult = await db.query(
         `SELECT id, hardware_user_id, hardware_platform, source_platform
          FROM member_identity
-         WHERE platform_member_id = $1 AND client_id = $2
-         LIMIT 1`,
+         WHERE source_member_id = $1 AND client_id = $2`,
         [platformMemberId, clientId]
       );
 
-      if (!identityResult.rows.length) {
+      // Fallback: pre-OB-160 rows may not have source_member_id set yet — fall back
+      // to platform_member_id lookup on the holder row so existing installs don't break.
+      const rows = identityResult.rows.length
+        ? identityResult.rows
+        : (await db.query(
+            `SELECT id, hardware_user_id, hardware_platform, source_platform
+             FROM member_identity
+             WHERE platform_member_id = $1 AND client_id = $2
+             LIMIT 1`,
+            [platformMemberId, clientId]
+          )).rows;
+
+      if (!rows.length) {
         return res.status(404).json({ error: 'Member not found' });
       }
 
-      const identity = identityResult.rows[0];
+      // Use the first row's platform metadata; hardware_platform is consistent across rows
+      const identity = rows[0];
+      const memberIds = rows.map(r => r.id);
 
-      // 2. Fetch access state
+      // 2. Fetch best access state across all identity rows (prefer active > others)
       const stateResult = await db.query(
         `SELECT status, role_assignment_id, provisioned_at, updated_at, scheduled_start_date
          FROM member_access_state
-         WHERE member_id = $1`,
-        [identity.id]
+         WHERE member_id = ANY($1)
+         ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'in_flight' THEN 1 ELSE 2 END
+         LIMIT 1`,
+        [memberIds]
       );
 
       const state = stateResult.rows[0] || null;
 
-      // 3. Fetch most recent log entry
+      // 3. Fetch most recent log entry across all identity rows
       const logResult = await db.query(
         `SELECT event_type, credential_type, error_code, created_at
          FROM member_access_log
-         WHERE member_id = $1
+         WHERE member_id = ANY($1)
          ORDER BY created_at DESC
          LIMIT 1`,
-        [identity.id]
+        [memberIds]
       );
 
       const lastEvent = logResult.rows[0] || null;
 
-      // 4. Fetch active role assignments with plan/door names (OB-06 — Wix widget needs this)
+      // 4. Fetch active role assignments across all identity rows (OB-06, OB-160)
       const rolesResult = await db.query(
         `SELECT mra.id, mra.role_assignment_id,
                 pm.plan_name, pm.door_name, pm.hardware_group_id,
@@ -124,9 +141,9 @@ class MemberSyncApi {
          FROM member_role_assignments mra
          JOIN plan_mappings pm ON pm.id = mra.mapping_id
          LEFT JOIN locations l ON pm.location_id = l.id
-         WHERE mra.member_id = $1
+         WHERE mra.member_id = ANY($1)
          ORDER BY pm.plan_name`,
-        [identity.id]
+        [memberIds]
       );
 
       const access = rolesResult.rows.map(r => ({
