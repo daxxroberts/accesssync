@@ -79,20 +79,19 @@ class MemberSyncApi {
         return res.status(403).json({ error: 'JWT uid does not match platformMemberId' });
       }
 
-      // 1. Resolve all identity rows for this person (OB-160: source_member_id anchor).
-      //    One human can have N holder rows + M sub-member rows. We collect all identity
-      //    IDs that share the same source_member_id so My Access shows the full picture.
-      const identityResult = await db.query(
+      // 1. Resolve the holder identity row for this person.
+      const holderResult = await db.query(
         `SELECT id, hardware_user_id, hardware_platform, source_platform
          FROM member_identity
-         WHERE source_member_id = $1 AND client_id = $2`,
+         WHERE platform_member_id = $1 AND client_id = $2
+           AND plan_holder_id IS NULL
+         LIMIT 1`,
         [platformMemberId, clientId]
       );
 
-      // Fallback: pre-OB-160 rows may not have source_member_id set yet — fall back
-      // to platform_member_id lookup on the holder row so existing installs don't break.
-      const rows = identityResult.rows.length
-        ? identityResult.rows
+      // Fallback: if no holder row, try any row (pre-OB-160 or direct individual plan)
+      const holderRows = holderResult.rows.length
+        ? holderResult.rows
         : (await db.query(
             `SELECT id, hardware_user_id, hardware_platform, source_platform
              FROM member_identity
@@ -101,12 +100,34 @@ class MemberSyncApi {
             [platformMemberId, clientId]
           )).rows;
 
-      if (!rows.length) {
+      if (!holderRows.length) {
         return res.status(404).json({ error: 'Member not found' });
       }
 
-      // Use the first row's platform metadata; hardware_platform is consistent across rows
-      const identity = rows[0];
+      const holderIdentity = holderRows[0];
+      const holderHardwareUserId = holderIdentity.hardware_user_id;
+
+      // 2a. Find sub-member rows where this person claimed their own seat.
+      //     Identified by matching hardware_user_id — same Kisi user as the holder row.
+      //     This correctly excludes Drew (different hardware_user_id) while including
+      //     Daxx-as-sub-member (same hardware_user_id as holder row).
+      let subMemberRows = [];
+      if (holderHardwareUserId) {
+        const subResult = await db.query(
+          `SELECT id, hardware_user_id, hardware_platform, source_platform
+           FROM member_identity
+           WHERE client_id = $1
+             AND plan_holder_id IS NOT NULL
+             AND hardware_user_id = $2
+             AND (sub_member_status IS NULL OR sub_member_status NOT IN ('deleted', 'removing'))`,
+          [clientId, holderHardwareUserId]
+        );
+        subMemberRows = subResult.rows;
+      }
+
+      const rows = [holderIdentity, ...subMemberRows];
+
+      const identity = holderIdentity;
       const memberIds = rows.map(r => r.id);
 
       // 2. Fetch best access state across all identity rows (prefer active > others)
