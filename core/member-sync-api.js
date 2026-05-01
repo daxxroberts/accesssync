@@ -174,6 +174,16 @@ class MemberSyncApi {
         groupId:      r.hardware_group_id,
       }));
 
+      // Derive unique plans from role assignments — deduped by planName
+      const seenPlans = new Set();
+      const plans = access.reduce((acc, r) => {
+        if (r.planName && !seenPlans.has(r.planName)) {
+          seenPlans.add(r.planName);
+          acc.push({ planName: r.planName, status: 'Active' });
+        }
+        return acc;
+      }, []);
+
       // Invariant: status='active' requires at least one role assignment.
       // If state says active but assignments resolve to none, the record is
       // orphaned (state-only grant, missing assignment row, or all mappings
@@ -196,6 +206,7 @@ class MemberSyncApi {
         sourcePlatform:   identity.source_platform,
         status,
         stateOrphaned,
+        plans,
         provisionedAt:        state?.provisioned_at || null,
         updatedAt:            state?.updated_at || null,
         scheduledStartDate:   state?.scheduled_start_date || null,
