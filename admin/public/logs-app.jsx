@@ -546,9 +546,7 @@ function buildTraceAdminText(ev, traceDetail) {
   if (ctx.started_at)    ctxParts.push(ctx.started_at);
   if (ctxParts.length)   lines.push('# ' + ctxParts.join(' · '));
   if (ev.event)          lines.push('# event: ' + ev.event + (ev.result ? ' [' + ev.result + ']' : ''));
-  // CLI: fetch DATABASE_URL on demand via Railway CLI; never in clipboard.
-  // Recipient must have railway CLI authenticated and the project linked.
-  lines.push('# CLI: DATABASE_URL=$(railway variables --service Postgres --kv | grep DATABASE_PUBLIC_URL | cut -d= -f2-) node scripts/trace.js ' + id);
+  lines.push('# CLI: trace ' + id);
   return lines.join('\n');
 }
 

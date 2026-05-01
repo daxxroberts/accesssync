@@ -13,11 +13,10 @@
  *   node scripts/trace.js <trace_id>
  *   node scripts/trace.js <trace_id> --raw    # show raw JSON instead of humanized
  *   node scripts/trace.js --recent            # show 10 most recent traces with names
+ *   node scripts/trace.js --check             # verify DB connectivity and pg module
  *
- * Requires:
- *   DATABASE_URL                — Railway Postgres public URL
- *   API_KEY_ENCRYPTION_KEY      — for any future encrypted-field decoding
- *   railway CLI authenticated   — for fetching stdout logs
+ * No env setup needed — DB URL is hardcoded as fallback.
+ * Run from: AccessSync GitHub/accesssync/
  *
  * Daxx-only diagnostic tool. Not for operator use.
  */
@@ -137,8 +136,12 @@ function humanize(event, registry) {
 }
 
 // ── DB query ───────────────────────────────────────────────────────
+// Fallback to Railway public proxy so `node scripts/trace.js <id>` works
+// locally without any env setup — no need for `railway variables` lookup.
+const RAILWAY_PUBLIC_URL = 'postgresql://postgres:uSfbDjUYlneLoTXwCEEmVuGlBtFVrgFW@gondola.proxy.rlwy.net:27298/railway';
+
 async function queryDb(traceId) {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL || RAILWAY_PUBLIC_URL;
   if (!url) throw new Error('DATABASE_URL env var required');
   const pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
   try {
@@ -154,12 +157,52 @@ async function queryDb(traceId) {
     const ctx = await pool.query(
       `SELECT trace_id, member_name, member_email, client_name, plan_name,
               hardware_platform, source_platform, hardware_user_id,
-              actor_type, actor_id, entry_point, started_at
+              actor_type, actor_id, entry_point, started_at, member_id
        FROM trace_context
        WHERE trace_id = $1`,
       [traceId]
     );
-    return { events: res.rows, context: ctx.rows[0] || null };
+    let context = ctx.rows[0] || null;
+
+    // Fallback: if no trace_context row (revoke path doesn't write one), recover
+    // member identity from member_access_log → member_identity directly.
+    if (!context) {
+      const fallback = await pool.query(
+        `SELECT mi.id AS member_id,
+                TRIM(CONCAT(mi.first_name, ' ', mi.last_name)) AS member_name,
+                mi.email AS member_email,
+                mi.hardware_platform, mi.source_platform, mi.hardware_user_id,
+                c.name AS client_name,
+                mal.actor_type, mal.actor_id,
+                mal.created_at AS started_at
+         FROM member_access_log mal
+         JOIN member_identity mi ON mi.id = mal.member_id
+         JOIN clients c ON c.id = mal.client_id
+         WHERE mal.trace_id = $1
+         LIMIT 1`,
+        [traceId]
+      );
+      if (fallback.rows[0]) {
+        context = { ...fallback.rows[0], _fallback: true };
+      }
+    }
+
+    // Enrich: pull MRA rows for this member so provisioned events show
+    // mapping/group even when member_access_log.mapping_id is null (sub-member path gap).
+    let mraRows = [];
+    if (context && context.member_id) {
+      const mra = await pool.query(
+        `SELECT mra.role_assignment_id, mra.hardware_group_id, mra.billing_snapshot,
+                pm.plan_name, pm.door_name, pm.action
+         FROM member_role_assignments mra
+         LEFT JOIN plan_mappings pm ON pm.id = mra.mapping_id
+         WHERE mra.member_id = $1`,
+        [context.member_id]
+      );
+      mraRows = mra.rows;
+    }
+
+    return { events: res.rows, context, mraRows };
   } finally {
     await pool.end();
   }
@@ -171,12 +214,10 @@ async function queryDb(traceId) {
 // recent stdout per invocation. For older traces, the data may not be available.
 function fetchRailwayLogs(traceId) {
   return new Promise((resolve, reject) => {
-    const opts = {
-      maxBuffer: 50 * 1024 * 1024,
-      shell:     true,
-      windowsHide: true,
-    };
-    execFile('railway', ['logs', '--service', 'accesssync', '--json'], opts, (err, stdout) => {
+    // Pass the full command string to shell directly to avoid DEP0190 (args + shell: true).
+    const cmd = 'railway logs --service accesssync --json';
+    const opts = { maxBuffer: 50 * 1024 * 1024, shell: true, windowsHide: true };
+    execFile(cmd, [], opts, (err, stdout) => {
       if (err && !stdout) return reject(err);
       const lines = (stdout || '').split('\n').filter(Boolean);
       const matched = [];
@@ -289,20 +330,24 @@ function renderEvent(evt, registry, idx, raw) {
 function renderContext(ctx) {
   if (!ctx) return c.dim('(no trace_context row — trace started outside enrichment path)');
   const lines = [];
-  if (ctx.member_name)     lines.push(`Member:     ${ctx.member_name}${ctx.member_email ? ` <${ctx.member_email}>` : ''}`);
-  if (ctx.client_name)     lines.push(`Client:     ${ctx.client_name}`);
-  if (ctx.plan_name)       lines.push(`Plan:       ${ctx.plan_name}`);
+  if (ctx._fallback)        lines.push(c.yellow('Context:    recovered from member_access_log (no trace_context row — revoke path gap)'));
+  const memberName = ctx.member_name && ctx.member_name.trim() ? ctx.member_name : null;
+  if (memberName)           lines.push(`Member:     ${memberName}${ctx.member_email ? ` <${ctx.member_email}>` : ''}`);
+  else if (ctx.member_email) lines.push(`Member:     ${ctx.member_email}`);
+  else                      lines.push(`Member:     ${c.dim('(PII purged — soft-deleted)')}`);
+  if (ctx.client_name)      lines.push(`Client:     ${ctx.client_name}`);
+  if (ctx.plan_name)        lines.push(`Plan:       ${ctx.plan_name}`);
   if (ctx.hardware_platform) lines.push(`Hardware:   ${ctx.hardware_platform}${ctx.hardware_user_id ? ` (user ${ctx.hardware_user_id})` : ''}`);
-  if (ctx.source_platform) lines.push(`Source:     ${ctx.source_platform}`);
-  if (ctx.entry_point)     lines.push(`Entry:      ${ctx.entry_point}`);
-  if (ctx.actor_type)      lines.push(`Actor:      ${ctx.actor_type}/${ctx.actor_id || '?'}`);
-  if (ctx.started_at)      lines.push(`Started:    ${new Date(ctx.started_at).toISOString()}`);
+  if (ctx.source_platform)  lines.push(`Source:     ${ctx.source_platform}`);
+  if (ctx.entry_point)      lines.push(`Entry:      ${ctx.entry_point}`);
+  if (ctx.actor_type)       lines.push(`Actor:      ${ctx.actor_type}/${ctx.actor_id || '?'}`);
+  if (ctx.started_at)       lines.push(`Started:    ${new Date(ctx.started_at).toISOString()}`);
   return lines.map(l => '  ' + l).join('\n');
 }
 
 // ── Recent traces helper ───────────────────────────────────────────
 async function listRecentTraces(limit = 10) {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL || RAILWAY_PUBLIC_URL, ssl: { rejectUnauthorized: false } });
   try {
     const res = await pool.query(
       `SELECT trace_id, member_name, client_name, plan_name, started_at, entry_point, actor_type
@@ -325,22 +370,94 @@ async function listRecentTraces(limit = 10) {
   }
 }
 
+// ── Setup check ────────────────────────────────────────────────────
+async function checkSetup() {
+  console.log(c.bold('\n  AccessSync trace.js — setup check\n'));
+
+  // 1. Node version
+  const nv = process.version;
+  console.log(`  ${c.green('✓')} Node ${nv}`);
+
+  // 2. pg module
+  try {
+    require('pg');
+    console.log(`  ${c.green('✓')} pg module found`);
+  } catch (_) {
+    console.log(`  ${c.red('✗')} pg module missing — run: npm install`);
+    process.exit(1);
+  }
+
+  // 3. Working directory — must be inside accesssync/
+  const cwd = process.cwd();
+  const inRoot = fs.existsSync(path.join(cwd, 'package.json'));
+  if (inRoot) {
+    console.log(`  ${c.green('✓')} Working directory: ${cwd}`);
+  } else {
+    console.log(`  ${c.yellow('!')} Working directory: ${cwd}`);
+    console.log(`      Expected to be run from AccessSync GitHub/accesssync/`);
+  }
+
+  // 4. DB connectivity
+  const url = process.env.DATABASE_URL || RAILWAY_PUBLIC_URL;
+  const urlDisplay = url.replace(/:([^@]+)@/, ':***@');
+  console.log(`  ${c.dim('→')} Connecting to ${urlDisplay} ...`);
+  try {
+    const pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 5000 });
+    const r = await pool.query('SELECT COUNT(*) FROM trace_context');
+    await pool.end();
+    console.log(`  ${c.green('✓')} DB connected — ${r.rows[0].count} trace_context rows`);
+  } catch (e) {
+    console.log(`  ${c.red('✗')} DB connection failed: ${e.message}`);
+    console.log(`      Update RAILWAY_PUBLIC_URL in scripts/trace.js if the proxy URL has rotated`);
+    process.exit(1);
+  }
+
+  // 5. railway CLI (optional — needed for live log enrichment)
+  const { execSync } = require('child_process');
+  try {
+    execSync('railway --version', { stdio: 'pipe' });
+    console.log(`  ${c.green('✓')} railway CLI found`);
+  } catch (_) {
+    console.log(`  ${c.yellow('!')} railway CLI not found — DB-only mode (no live log enrichment)`);
+    console.log(`      Install: npm i -g @railway/cli`);
+  }
+
+  console.log(c.bold('\n  All good. Run: node scripts/trace.js --recent\n'));
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 async function main() {
   const args = process.argv.slice(2);
   const raw = args.includes('--raw');
   const recent = args.includes('--recent');
+  const check = args.includes('--check');
+
+  if (check) {
+    await checkSetup();
+    return;
+  }
 
   if (recent) {
     await listRecentTraces();
     return;
   }
 
-  const traceId = args.find(a => !a.startsWith('--'));
+  // Accept a raw paste block as the argument — extract UUID from any of these formats:
+  //   f74e7d42-2a45-4b8e-bc58-7973cfe98857
+  //   trace f74e7d42-2a45-4b8e-bc58-7973cfe98857
+  //   # CLI: DATABASE_URL=... node scripts/trace.js f74e7d42-2a45-4b8e-bc58-7973cfe98857
+  const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const rawArg  = args.filter(a => !a.startsWith('--')).join(' ');
+  const uuidMatch = rawArg.match(UUID_RE);
+  const traceId = uuidMatch ? uuidMatch[0] : null;
+
   if (!traceId) {
-    console.error('Usage:  node scripts/trace.js <trace_id>');
-    console.error('        node scripts/trace.js <trace_id> --raw');
-    console.error('        node scripts/trace.js --recent');
+    console.error('Usage:  trace <trace_id>');
+    console.error('        trace <trace_id> --raw');
+    console.error('        trace --recent');
+    console.error('        trace --check');
+    console.error('');
+    console.error('Also accepts raw paste blocks — just pass the whole "trace <uuid>" line.');
     process.exit(1);
   }
 
@@ -369,6 +486,21 @@ async function main() {
 
   console.log(c.bold(`\nTimeline (${timeline.length} events):\n`));
   timeline.forEach((e, i) => console.log(renderEvent(e, registry, i, raw)));
+
+  if (dbResult.mraRows && dbResult.mraRows.length > 0) {
+    console.log(c.bold('\nHardware assignments (member_role_assignments):\n'));
+    dbResult.mraRows.forEach(r => {
+      const parts = [
+        r.plan_name  ? `plan: ${r.plan_name}`             : null,
+        r.door_name  ? `door: ${r.door_name}`             : null,
+        r.hardware_group_id ? `group: ${r.hardware_group_id}` : null,
+        r.role_assignment_id ? `role: ${r.role_assignment_id}` : null,
+        r.billing_snapshot ? c.green('billing_snapshot: ✓') : c.yellow('billing_snapshot: null'),
+      ].filter(Boolean);
+      console.log('  ' + c.dim(parts.join(' · ')));
+    });
+  }
+
   console.log('');
 }
 
