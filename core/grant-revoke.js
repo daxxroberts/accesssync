@@ -226,10 +226,13 @@ class GrantRevokeLogic {
     // the same purchase event (orderCreated / orderPurchased / orderStarted).
     if (newHardwareCallMade) {
       const _actor = getActor() || {};
+      const _first = assignments[0] || {};
       await db.query(
-        `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id)
-         VALUES ($1, $2, 'provisioned', $3, $4, $5)`,
-        [memberId, tenantId, getTraceId() || null, _actor.type || null, _actor.id || null]
+        `INSERT INTO member_access_log
+           (member_id, client_id, event_type, mapping_id, hardware_group_id, trace_id, actor_type, actor_id)
+         VALUES ($1, $2, 'provisioned', $3, $4, $5, $6, $7)`,
+        [memberId, tenantId, _first.mappingId || null, _first.hardwareGroupId || null,
+         getTraceId() || null, _actor.type || null, _actor.id || null]
       );
     } else {
       log.info('grant.log.skipped_duplicate', {
@@ -285,7 +288,7 @@ class GrantRevokeLogic {
         const planId = wixEvent.planId || null;
 
         const raWithGroups = await db.query(
-          `SELECT mra.role_assignment_id, mra.hardware_group_id
+          `SELECT mra.role_assignment_id, mra.hardware_group_id, mra.mapping_id
            FROM member_role_assignments mra
            WHERE mra.member_id = $1`,
           [memberId]
@@ -360,10 +363,14 @@ class GrantRevokeLogic {
         }
 
         {
-          const _actor = getActor() || {};
+          const _actor  = getActor() || {};
+          const _firstRa = raWithGroups.rows[0] || {};
           await db.query(
-            `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id) VALUES ($1, $2, 'revoked', $3, $4, $5)`,
-            [memberId, tenantId, getTraceId() || null, _actor.type || null, _actor.id || null]
+            `INSERT INTO member_access_log
+               (member_id, client_id, event_type, mapping_id, hardware_group_id, trace_id, actor_type, actor_id)
+             VALUES ($1, $2, 'revoked', $3, $4, $5, $6, $7)`,
+            [memberId, tenantId, _firstRa.mapping_id || null, _firstRa.hardware_group_id || null,
+             getTraceId() || null, _actor.type || null, _actor.id || null]
           );
         }
 
