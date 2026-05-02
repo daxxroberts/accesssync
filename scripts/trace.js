@@ -92,7 +92,7 @@ const QUEUE_BOOKKEEPING = new Set([
 const DB_EVENT_COPY = {
   provisioned:                'Access provisioned at hardware — member can enter',
   revoked:                    'Access revoked at hardware — member can no longer enter',
-  sub_member_soft_deleted:    'Sub-member finalized as deleted — personal info purged, audit lineage preserved (DR-044)',
+  sub_member_soft_deleted:    'Sub-member finalized as deleted — personal info purged, audit lineage preserved',
   cancelled_by_member:        'Plan cancelled by member',
   cancelled_by_system:        'Plan cancelled by system',
   cancelled_expired:          'Plan ended on expiration date',
@@ -100,6 +100,9 @@ const DB_EVENT_COPY = {
   suspended:                  'Access suspended (payment failed or admin action)',
   reactivated:                'Access reactivated (payment recovered)',
   failed:                     'Provisioning failed',
+  // Wix event types that surface as event codes in webhook_log rows
+  'plan.purchased':           'Wix: member purchased a plan — grant triggered',
+  'plan.started':             'Wix: plan start date reached — grant triggered',
 };
 
 // Overrides for code-emitted events where the EVENT_REGISTRY description is
@@ -135,6 +138,12 @@ const COPY_OVERRIDES = {
   'queue.revoke.lock_acquired':    'Acquired in-flight lock (prevents concurrent operations on this member)',
   'queue.grant.identity_resolved': 'Hardware user identity resolved — ready for hardware calls',
   'queue.grant.mappings_resolved': 'Plan mapped to hardware groups — ready to assign roles',
+  // Error / diagnostic codes that appear in trace timelines
+  'ADAPTER_IDENTITY_GATE2_RECOVERY_TRIGGERED': 'Member not in DB — falling back to Wix Members API to look up identity',
+  'ADAPTER_NO_IDENTITY':           'No identity record found for this member — webhook arrived before any prior grant',
+  'QUEUE_REVOKE_NO_IDENTITY':      'Revoke job skipped — no member record exists (member was never provisioned)',
+  'IN_FLIGHT_LOCK':                'Concurrent job blocked — another operation was already running for this member',
+  // Sub-member / Member Hub actions
   'sub_member.grant_queued':       'Member Hub — sub-member grant queued (plan holder submitted additional member)',
   'sub_member.revoke_queued':      'Member Hub — sub-member revoke queued (plan holder removed additional member)',
   'holder.claim_slot_queued':      'Member Hub — plan holder claimed their own slot (grant queued)',
