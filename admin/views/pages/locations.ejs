@@ -3,10 +3,10 @@
   @layer admin/pages
   @route /locations
   @role system-config
-  @data GET /operator/:clientId, /operator/:clientId/locations, /operator/clients/:clientId/wix-api-key/status, /operator/clients/:clientId/notification-email
+  @data GET /operator/:clientId, /operator/:clientId/locations, /operator/clients/:clientId/wix-api-key/status, /operator/clients/:clientId/notification-email, /operator/:clientId/setup-snippets
   @writes PATCH /operator/:clientId/locations/:locationId (tier, platform, name, city, state), POST /operator/:clientId/locations/:locationId/api-key, POST /operator/:clientId/locations/:locationId/suspend, POST /operator/:clientId/locations/:locationId/activate, PUT /operator/:clientId/locations/:locationId/notification-email
   @tab System Config
-  @features per-location tier/platform/key/email, profile card (Wix key + rollup email), suspend/reactivate
+  @features per-location tier/platform/key/email, profile card (Wix key + rollup email), suspend/reactivate, wix-setup-guide (inner tab)
 %>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
@@ -142,6 +142,70 @@
     .toast-loc.error   { background: var(--red); }
     .toast-loc.info    { background: var(--brand); }
 
+    /* ── Inner tab nav (Locations / Wix Setup) ── */
+    .inner-tabs { display: flex; gap: 2px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .inner-tab {
+      padding: 8px 16px; font-size: 12px; font-weight: 600; color: var(--muted);
+      background: none; border: none; border-bottom: 2px solid transparent;
+      cursor: pointer; font-family: inherit; transition: color 0.12s;
+      margin-bottom: -1px;
+    }
+    .inner-tab:hover { color: var(--text); }
+    .inner-tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+
+    /* ── Setup Guide snippets ── */
+    .setup-section { display: none; }
+    .setup-section.active { display: block; }
+    .snippet-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow);
+    }
+    .snippet-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; gap: 10px; }
+    .snippet-card-title  { font-size: 13px; font-weight: 700; }
+    .snippet-card-badge  { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: var(--brand-dim); color: var(--brand); flex-shrink: 0; }
+    .snippet-instructions {
+      font-size: 11px; color: var(--muted); line-height: 1.7; margin-bottom: 14px;
+    }
+    .snippet-instructions ol { margin: 8px 0 0 18px; padding: 0; }
+    .snippet-instructions li { margin-bottom: 4px; }
+    .snippet-field-label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+    .snippet-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 13px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;
+    }
+    .snippet-value {
+      flex: 1; font-family: monospace; font-size: 11px; color: var(--text);
+      word-break: break-all; white-space: pre-wrap;
+    }
+    .snippet-value.masked { filter: blur(4px); transition: filter 0.2s; cursor: pointer; }
+    .snippet-value.masked:hover { filter: blur(2px); }
+    .snippet-code-block {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px; margin-bottom: 10px; position: relative;
+    }
+    .snippet-code-block pre {
+      font-family: monospace; font-size: 10.5px; color: var(--text2);
+      white-space: pre-wrap; word-break: break-all; margin: 0; line-height: 1.6;
+    }
+    .snippet-copy-row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+    .snippet-copy-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 12px; font-size: 11px; font-weight: 600;
+      background: var(--card); border: 1px solid var(--border2); border-radius: 6px;
+      color: var(--text2); cursor: pointer; font-family: inherit; transition: all 0.12s;
+    }
+    .snippet-copy-btn:hover { background: var(--brand-dim); color: var(--brand); border-color: var(--brand-glow); }
+    .snippet-copy-btn.copied { background: var(--sage-dim); color: var(--sage-dark); border-color: var(--sage-border); }
+    .snippet-reveal-btn {
+      padding: 4px 10px; font-size: 10px; font-weight: 600;
+      background: none; border: 1px solid var(--border2); border-radius: 5px;
+      color: var(--muted); cursor: pointer; font-family: inherit; flex-shrink: 0;
+    }
+    .snippet-reveal-btn:hover { border-color: var(--brand); color: var(--brand); }
+    .snippet-loading { font-size: 12px; color: var(--muted); padding: 32px 0; text-align: center; }
+    .snippet-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
     @media (max-width: 600px) {
       .loc-stats   { grid-template-columns: repeat(2, 1fr); }
       .page-header { flex-direction: column; }
@@ -159,6 +223,15 @@
         <div class="page-sub">Connect your integrations, manage API keys, and set up your locations</div>
       </div>
     </div>
+
+    <!-- Inner tab nav -->
+    <div class="inner-tabs">
+      <button class="inner-tab active" id="tab-locations" onclick="switchTab('locations')">Locations</button>
+      <button class="inner-tab" id="tab-setup" onclick="switchTab('setup')">Wix Setup Guide</button>
+    </div>
+
+    <!-- ══ Locations section ══════════════════════════════════════════ -->
+    <div id="section-locations">
 
     <!-- Client profile (consolidated) -->
     <div class="org-key-card" id="profile-card">
@@ -269,6 +342,121 @@
       <div>Use the button above to add your first location.</div>
     </div>
     <div id="loc-list"></div>
+
+    </div><!-- /section-locations -->
+
+    <!-- ══ Wix Setup Guide section ════════════════════════════════════ -->
+    <div id="section-setup" class="setup-section">
+      <div id="setup-loading" class="snippet-loading">
+        <div class="spinner"></div>Loading setup data…
+      </div>
+      <div id="setup-content" style="display:none;">
+
+        <!-- 1. Webhook Setup -->
+        <div class="snippet-card">
+          <div class="snippet-card-header">
+            <div>
+              <div class="snippet-card-title">Webhook Setup</div>
+              <div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">
+                Connects Wix to AccessSync so member plan changes trigger door access updates.
+                <ol>
+                  <li>In Wix, go to <strong>Settings → Advanced → Webhooks</strong></li>
+                  <li>Click <strong>Add Webhook</strong></li>
+                  <li>Paste the webhook URL below</li>
+                  <li>Set the secret to the HMAC secret below</li>
+                  <li>Select events: <strong>Order Paid, Order Cancelled, Member Joined</strong></li>
+                  <li>Save the webhook</li>
+                </ol>
+              </div>
+            </div>
+            <span class="snippet-card-badge">REQUIRED</span>
+          </div>
+
+          <hr class="snippet-divider">
+
+          <div class="snippet-field-label">Webhook URL</div>
+          <div class="snippet-row">
+            <span class="snippet-value" id="sg-webhook-url">Loading…</span>
+            <button class="snippet-copy-btn" onclick="sgCopy('sg-webhook-url', this)">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy
+            </button>
+          </div>
+
+          <div class="snippet-field-label" style="margin-top:12px;">HMAC Secret</div>
+          <div class="snippet-row">
+            <span class="snippet-value masked" id="sg-hmac-secret" onclick="sgReveal('sg-hmac-secret')">Click to reveal</span>
+            <button class="snippet-reveal-btn" id="sg-hmac-reveal-btn" onclick="sgReveal('sg-hmac-secret')">Reveal</button>
+            <button class="snippet-copy-btn" onclick="sgCopy('sg-hmac-secret', this)">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Member Sync Status Page -->
+        <div class="snippet-card">
+          <div class="snippet-card-header">
+            <div>
+              <div class="snippet-card-title">Member Sync Status Page</div>
+              <div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">
+                Shows members their current door access status after purchasing a plan.
+                <ol>
+                  <li>In your Wix editor, create a new page (e.g. "Access Status")</li>
+                  <li>Add a <strong>Custom Element</strong> or <strong>HTML iFrame</strong> component</li>
+                  <li>Open the <strong>Velo Dev Mode</strong> code panel for that page</li>
+                  <li>Paste the snippet below into the page's code</li>
+                </ol>
+              </div>
+            </div>
+            <span class="snippet-card-badge">REQUIRED</span>
+          </div>
+          <hr class="snippet-divider">
+          <div class="snippet-field-label">Velo Page Code</div>
+          <div class="snippet-code-block">
+            <pre id="sg-sync-snippet">Loading…</pre>
+          </div>
+          <div class="snippet-copy-row">
+            <button class="snippet-copy-btn" onclick="sgCopyPre('sg-sync-snippet', this)">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy snippet
+            </button>
+          </div>
+        </div>
+
+        <!-- 3. My Access / Member Hub Page -->
+        <div class="snippet-card">
+          <div class="snippet-card-header">
+            <div>
+              <div class="snippet-card-title">My Access Page</div>
+              <div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">
+                Gives members a self-service view of their active door access and plan details.
+                <ol>
+                  <li>In your Wix editor, create a new members-only page (e.g. "My Access")</li>
+                  <li>Open the <strong>Velo Dev Mode</strong> code panel for that page</li>
+                  <li>Paste the snippet below into the page's code</li>
+                  <li>Add an <strong>HTML iFrame</strong> component with ID <code>html1</code></li>
+                </ol>
+              </div>
+            </div>
+            <span class="snippet-card-badge">REQUIRED</span>
+          </div>
+          <hr class="snippet-divider">
+          <div class="snippet-field-label">Velo Page Code</div>
+          <div class="snippet-code-block">
+            <pre id="sg-hub-snippet">Loading…</pre>
+          </div>
+          <div class="snippet-copy-row">
+            <button class="snippet-copy-btn" onclick="sgCopyPre('sg-hub-snippet', this)">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy snippet
+            </button>
+          </div>
+        </div>
+
+      </div><!-- /setup-content -->
+    </div><!-- /section-setup -->
+
   </main>
 
   <div class="toast-wrap" id="toastWrap"></div>
@@ -912,6 +1100,120 @@
       el.textContent = msg;
       wrap.appendChild(el);
       setTimeout(function() { el.remove(); }, duration);
+    }
+
+    // ── Inner tab navigation ──────────────────────────────────────────
+    var _snippetsLoaded = false;
+
+    function switchTab(tab) {
+      document.getElementById('tab-locations').classList.toggle('active', tab === 'locations');
+      document.getElementById('tab-setup').classList.toggle('active', tab === 'setup');
+      document.getElementById('section-locations').style.display = tab === 'locations' ? '' : 'none';
+      var setupEl = document.getElementById('section-setup');
+      setupEl.classList.toggle('active', tab === 'setup');
+      if (tab === 'setup' && !_snippetsLoaded) loadSetupSnippets();
+    }
+
+    // ── Setup Guide ───────────────────────────────────────────────────
+    var _snippetData = null;
+    var _hmacRevealed = false;
+
+    function loadSetupSnippets() {
+      _snippetsLoaded = true;
+      apiFetch('/operator/' + clientId + '/setup-snippets')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          _snippetData = data;
+          renderSetupSnippets(data);
+        })
+        .catch(function() {
+          document.getElementById('setup-loading').innerHTML =
+            '<div style="color:var(--red);font-size:12px;">Failed to load setup data — try refreshing.</div>';
+        });
+    }
+
+    function renderSetupSnippets(d) {
+      document.getElementById('setup-loading').style.display = 'none';
+      document.getElementById('setup-content').style.display = '';
+
+      // Webhook URL
+      var urlEl = document.getElementById('sg-webhook-url');
+      urlEl.textContent = d.webhookUrl || '(CORE_ENGINE_URL not configured — contact support)';
+      if (!d.webhookUrl) urlEl.style.color = 'var(--red)';
+
+      // HMAC secret — masked until revealed
+      var secretEl = document.getElementById('sg-hmac-secret');
+      secretEl.setAttribute('data-secret', d.hmacSecret || '');
+      if (!d.hmacSecret) {
+        secretEl.textContent = '(WIX_WEBHOOK_SECRET not configured)';
+        secretEl.classList.remove('masked');
+        secretEl.style.color = 'var(--red)';
+        document.getElementById('sg-hmac-reveal-btn').style.display = 'none';
+      }
+
+      var base = (d.adminHubBase || '').replace(/\/$/, '');
+      var cid  = d.clientId || '';
+
+      // Sync status snippet
+      document.getElementById('sg-sync-snippet').textContent = [
+        "import wixUsers from 'wix-users';",
+        "",
+        "$w.onReady(async function () {",
+        "  const user = wixUsers.currentUser;",
+        "  if (!user.loggedIn) { $w('#html1').src = ''; return; }",
+        "  const token = await user.getAuthToken();",
+        "  const memberId = user.id;",
+        "  $w('#html1').src = '" + base + "/sync-status'",
+        "    + '?memberId=' + memberId",
+        "    + '&clientId=" + cid + "'",
+        "    + '&token=' + encodeURIComponent(token);",
+        "});"
+      ].join('\n');
+
+      // Member hub / My Access snippet
+      document.getElementById('sg-hub-snippet').textContent = [
+        "import wixUsers from 'wix-users';",
+        "",
+        "$w.onReady(async function () {",
+        "  const user = wixUsers.currentUser;",
+        "  if (!user.loggedIn) { $w('#html1').src = ''; return; }",
+        "  const token = await user.getAuthToken();",
+        "  const memberId = user.id;",
+        "  $w('#html1').src = '" + base + "/member-hub'",
+        "    + '?memberId=' + memberId",
+        "    + '&clientId=" + cid + "'",
+        "    + '&token=' + encodeURIComponent(token);",
+        "});"
+      ].join('\n');
+    }
+
+    function sgReveal(elId) {
+      var el = document.getElementById(elId);
+      var secret = el.getAttribute('data-secret');
+      if (!secret) return;
+      el.classList.remove('masked');
+      el.textContent = secret;
+      var revealBtn = document.getElementById('sg-hmac-reveal-btn');
+      if (revealBtn) revealBtn.style.display = 'none';
+    }
+
+    function sgCopy(elId, btn) {
+      var el = document.getElementById(elId);
+      var text = el.getAttribute('data-secret') || el.textContent;
+      navigator.clipboard.writeText(text.trim()).then(function() {
+        btn.classList.add('copied');
+        btn.textContent = '✓ Copied';
+        setTimeout(function() { btn.classList.remove('copied'); btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy'; }, 1800);
+      }).catch(function() { toast('Copy failed — try manually selecting', 'error'); });
+    }
+
+    function sgCopyPre(preId, btn) {
+      var text = document.getElementById(preId).textContent;
+      navigator.clipboard.writeText(text.trim()).then(function() {
+        btn.classList.add('copied');
+        btn.textContent = '✓ Copied';
+        setTimeout(function() { btn.classList.remove('copied'); btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy snippet'; }, 1800);
+      }).catch(function() { toast('Copy failed — try manually selecting', 'error'); });
     }
   </script>
 </body>

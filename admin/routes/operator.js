@@ -359,6 +359,26 @@ router.get('/webhook-url', (req, res) => {
   res.json({ url: base ? `${base}/webhooks/wix` : null });
 });
 
+// ── GET /operator/:clientId/setup-snippets ────────────────────────
+// Returns pre-populated Wix setup data for the Setup Guide tab:
+// webhook URL, HMAC secret, and clientId — all operator-scoped.
+// HMAC secret comes from WIX_WEBHOOK_SECRET env var (single secret per deployment).
+router.get('/:clientId/setup-snippets', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const result = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const base = (process.env.CORE_ENGINE_URL || '').replace(/\/$/, '');
+    const webhookUrl   = base ? `${base}/webhooks/wix` : null;
+    const hmacSecret   = process.env.WIX_WEBHOOK_SECRET || null;
+    const adminHubBase = (process.env.ADMIN_HUB_URL || base || '').replace(/\/$/, '');
+    res.json({ clientId, webhookUrl, hmacSecret, adminHubBase });
+  } catch (err) {
+    log.error('operator.setup_snippets.error', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /operator/verify-bypass ─────────────────────────────────
 // Owner bypass PIN validation for onboarding (skips Kisi key step).
 // PIN checked against OWNER_PIN env var (Railway ADMIN service) — never hardcoded.
@@ -1702,8 +1722,9 @@ router.get('/:clientId/members', async (req, res) => {
                     LIMIT 1
                   )
                 )                                AS plan_name,
-                -- DR-042: latest billing snapshot. Holder-only members inherit their first sub's snapshot
-                -- so plan-holder cards still show rate/coupon for the family they pay for.
+                -- DR-042: billing snapshot. Holders look down to a sub's snapshot (holders have no
+                -- MRA of their own). Subs return NULL here — the bridge owns sub inheritance via
+                -- buildMembersArray since it already has the nested holder→sub structure.
                 COALESCE(
                   (
                     SELECT mra.billing_snapshot
@@ -1712,14 +1733,14 @@ router.get('/:clientId/members', async (req, res) => {
                     ORDER BY mra.created_at DESC
                     LIMIT 1
                   ),
-                  (
+                  CASE WHEN mi.plan_holder_id IS NULL THEN (
                     SELECT sub_mra.billing_snapshot
                     FROM member_identity sub_mi
                     JOIN member_role_assignments sub_mra ON sub_mra.member_id = sub_mi.id
                     WHERE sub_mi.plan_holder_id = mi.id AND sub_mra.billing_snapshot IS NOT NULL
                     ORDER BY sub_mra.created_at DESC
                     LIMIT 1
-                  )
+                  ) END
                 )                                AS billing_snapshot,
                 -- Count of successful hardware role assignments. When mas.status = 'failed'
                 -- but assignment_count > 0, the member has partial access (some plans provisioned,
