@@ -37,6 +37,8 @@
     if (effectiveStatus === "active") return "Active";
     if (effectiveStatus === "pending" || effectiveStatus === "pending_hardware") return "Pending Setup";
     if (effectiveStatus === "suspended" || effectiveStatus === "failed" || effectiveStatus === "revoked") return "Suspended";
+    // partial coverage or unknown — treat active sub-member as active
+    if (role === "sub") return "Active";
     return "Pending";
   }
 
