@@ -1352,12 +1352,6 @@ async function pollAccess() {
         notifyHeight();
         if (!_overlaySettled) {
           _overlaySettled = true;
-          // Auto-dismiss after 1.5s then reload My Access tab
-          setTimeout(() => {
-            hideOverlay();
-            switchTab('access');
-            loadAccessData();
-          }, 1500);
         }
       }, 600);
       return;
@@ -1370,8 +1364,7 @@ async function pollAccess() {
       } else {
         setOvState('error');
       }
-      // Auto-dismiss error after 1.5s
-      setTimeout(() => { hideOverlay(); switchTab('access'); loadAccessData(); }, 1500);
+      // No auto-dismiss — member closes the lightbox manually
       return;
     }
 
