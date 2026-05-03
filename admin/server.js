@@ -114,7 +114,7 @@ app.get('/members',      allowWixFrame, requireAuthPageOrOperator, (req, res) =>
 app.get('/plan-mapping', allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/plan-mapping', { activeTab: 'plan-mapping', ...sessionMeta(req) }));
 app.get('/access',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/access',       { activeTab: 'access',       ...sessionMeta(req) }));
 app.get('/locations',    allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/locations',    { activeTab: 'config',       ...sessionMeta(req) }));
-app.get('/errors',       allowWixFrame, requireAuthPage,          (req, res) => res.render('pages/errors',       { activeTab: 'errors',       ...sessionMeta(req) }));
+app.get('/errors',       allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/errors',       { activeTab: 'errors',       ...sessionMeta(req) }));
 // Trace Timeline operator page — accepts owner OR operator. Tenant scope is
 // enforced server-side inside admin/routes/logs.js via scopedClientId(req).
 app.get('/logs',         allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/logs',         { activeTab: 'logs',         clientId: req.admin?.clientId || '', ...sessionMeta(req) }));
