@@ -56,10 +56,6 @@ const ActionsMenu = ({ open, onClose, onAction, member }) => {
           <div className="menu-sep"/>
         </>
       )}
-      <button className="menu-item" onClick={() => onAction("bundle")}>
-        <Icon name="copy" />Copy bundle for AI
-      </button>
-      <div className="menu-sep"/>
       <button className="menu-item danger" onClick={() => onAction("remove")}>
         <Icon name="trash" />Remove member
       </button>
@@ -75,16 +71,6 @@ const MemberDrawer = ({ member, open, onClose }) => {
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
   if (!member) return null;
-
-  // Generate a deterministic-ish heatmap for door access (28 days)
-  const seed = (member.id || "0").charCodeAt(0) + (member.first?.length || 0);
-  const cells = Array.from({ length: 28 }, (_, i) => {
-    const r = Math.abs(Math.sin(seed * (i + 1) * 0.31)) ;
-    if (member.status !== "active") return Math.random() < 0.05 ? "hit" : "";
-    if (r > .82) return "hit-strong";
-    if (r > .55) return "hit";
-    return "";
-  });
 
   return (
     <>
@@ -103,14 +89,6 @@ const MemberDrawer = ({ member, open, onClose }) => {
             </div>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <button
-              className="btn"
-              onClick={() => window.triggerMemberBundle && window.triggerMemberBundle(member.id)}
-              title="Copy member bundle for AI analysis"
-              style={{padding:"5px 10px",fontSize:11.5,fontWeight:500}}
-            >
-              ⧉ Bundle
-            </button>
             <button className="btn-icon btn" onClick={onClose} aria-label="Close">
               <Icon name="x" />
             </button>
@@ -124,8 +102,7 @@ const MemberDrawer = ({ member, open, onClose }) => {
               <PlanBadge plan={member.plan} />
             </div>
             <p style={{margin:0,fontSize:13,color:"var(--text2)",lineHeight:1.55,fontWeight:400}}>
-              Member since {member.since}. {member.visits30d} visits in the last 30 days.
-              Last entry {member.lastVisit?.toLowerCase()}.
+              Member since {member.since}.
             </p>
           </div>
 
@@ -186,43 +163,6 @@ const MemberDrawer = ({ member, open, onClose }) => {
               </div>
             </div>
           )}
-
-          <div className="drawer-section">
-            <h3>Door access · last 28 days</h3>
-            <div className="door-grid">
-              {cells.map((c, i) => (
-                <div key={i} className={`door-cell ${c}`} title={`Day ${i+1}`}>
-                  {c === "hit-strong" ? "•" : ""}
-                </div>
-              ))}
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--muted)",marginTop:8}}>
-              <span>4 weeks ago</span>
-              <span>Today</span>
-            </div>
-          </div>
-
-          <div className="drawer-section">
-            <h3>Recent activity</h3>
-            <div className="activity">
-              <div className="activity-item">
-                <div className="activity-time">{member.lastVisit}</div>
-                <div className="activity-text"><strong>Door entry</strong> · Front door, 6:42 AM</div>
-              </div>
-              <div className="activity-item">
-                <div className="activity-time">Yesterday</div>
-                <div className="activity-text"><strong>Class booked</strong> · Yoga w/ Mira, 7:30 AM</div>
-              </div>
-              <div className="activity-item">
-                <div className="activity-time">Apr 22</div>
-                <div className="activity-text"><strong>Payment processed</strong> · {member.rate}</div>
-              </div>
-              <div className="activity-item">
-                <div className="activity-time">{member.since}</div>
-                <div className="activity-text"><strong>Joined</strong> · {member.plan} plan activated</div>
-              </div>
-            </div>
-          </div>
 
         </div>
       </aside>
