@@ -240,7 +240,8 @@ class KisiAdapter {
    *
    * DR-035: Normalized return shape — { id, name, locked: boolean }.
    * All hardware adapters must return this shape. Reconciliation reads 'locked', not platform-specific fields.
-   * Kisi source field: is_locked (boolean).
+   * Kisi source field: locked_down (boolean) — VERIFIED 2026-05-02 live API test.
+   * Note: is_locked does not exist on the Kisi lock response.
    *
    * Returns [] on error or missing key.
    */
@@ -255,7 +256,7 @@ class KisiAdapter {
       return locks.map(l => ({
         id:     l.id,
         name:   l.name || String(l.id),
-        locked: l.is_locked === true,
+        locked: l.locked_down === true,
       }));
     } catch (err) {
       log.error('kisi.get_locks_failed', {}, err);
