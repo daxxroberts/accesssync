@@ -237,43 +237,93 @@ function App() {
             )}
             {pageRows.flatMap(m => {
               const isPlanOpen = expandedPlans.has(m.id);
-              const isSubsOpen = expandedSubs.has(m.id);
+              const isGroupOpen = !expandedSubs.has(m.id + "_collapsed");
               const hasSubs = (m.additional?.length || 0) > 0;
+              const totalInGroup = 1 + (m.additional?.length || 0);
               const accessKind = m.status === "active"
                 ? (m.role === "Plan Holder" ? "holder" : "active")
                 : m.status;
 
               const rows = [];
 
-              // Main row
+              // Plan group header row
               rows.push(
-                <tr key={`r-${m.id}`} className={`row-main ${m.error ? "has-error" : ""} ${isSubsOpen && hasSubs ? "is-expanded" : ""}`}>
+                <tr key={`gh-${m.id}`} className="row-plan-group">
+                  <td colSpan="6">
+                    <div className="plan-group-head">
+                      <button
+                        className="plan-group-toggle"
+                        onClick={() => toggleSubs(m.id + "_collapsed")}
+                      >
+                        <span className={`plan-group-chev ${isGroupOpen ? "open" : ""}`}>▶</span>
+                        <PlanBadge plan={m.plan} />
+                      </button>
+                      <span className="plan-group-count">
+                        {totalInGroup === 1 ? "1 member" : `${totalInGroup} members`}
+                      </span>
+                      <button
+                        className={`plan-group-details-btn ${isPlanOpen ? "open" : ""}`}
+                        onClick={() => togglePlan(m.id)}
+                      >
+                        Plan details <span className="chev">▼</span>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+
+              // Plan detail row (expanded)
+              if (isPlanOpen) {
+                rows.push(
+                  <tr key={`pd-${m.id}`} className="plan-detail-row-wrap">
+                    <td colSpan="6">
+                      <div className="plan-detail-card" style={{marginLeft:0}}>
+                        <div className="pd-cell">
+                          <div className="pd-label">Plan type</div>
+                          <div className="pd-value">{m.planType}</div>
+                        </div>
+                        <div className="pd-cell">
+                          <div className="pd-label">Rate</div>
+                          <div className="pd-value tabular">{m.rate}</div>
+                          {m.coupon && (
+                            <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{m.coupon}</div>
+                          )}
+                        </div>
+                        <div className="pd-cell">
+                          <div className="pd-label">Renewal</div>
+                          <div className={`pd-value ${m.expiresLabel.startsWith("No") ? "muted" : ""}`}
+                            style={{color: m.status === "suspended" ? "var(--rose)" : undefined}}>
+                            {m.autoRenewCanceled ? "Cancels at period end" : m.expiresLabel}
+                          </div>
+                        </div>
+                        <div className="pd-cell">
+                          <div className="pd-label">Member since</div>
+                          <div className="pd-value">{m.since}</div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }
+
+              if (!isGroupOpen) return rows;
+
+              // Holder row (inside group)
+              rows.push(
+                <tr key={`r-${m.id}`} className={`row-main row-grouped ${m.error ? "has-error" : ""}`}>
                   <td>
                     <div className="member-cell">
                       <Avatar member={m} kind={m.status === "active" ? (m.role === "Plan Holder" ? "holder" : "active") : m.status} />
                       <div style={{minWidth:0}}>
                         <div className="member-name" onClick={() => setDrawerId(m.id)}>
                           <span className="name-link">{memberFullName(m)}</span>
+                          <span className="member-tag" style={{background:"var(--brand-dim)",color:"var(--brand)",borderColor:"rgba(79,110,247,.22)"}}>Holder</span>
                         </div>
                         <div className="member-email">{m.email}</div>
                       </div>
                     </div>
                   </td>
-                  <td>
-                    <div className="plan-cell">
-                      <PlanBadge plan={m.plan} />
-                      <div style={{display:"flex",gap:14}}>
-                        <button className={`plan-meta-btn ${isPlanOpen?"open":""}`} onClick={() => togglePlan(m.id)}>
-                          Plan details <span className="chev">▼</span>
-                        </button>
-                        {hasSubs && (
-                          <button className={`plan-meta-btn ${isSubsOpen?"open":""}`} onClick={() => toggleSubs(m.id)}>
-                            <Icon name="users" className="ic-12" /> {m.additional.length} additional <span className="chev">▼</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </td>
+                  <td style={{color:"var(--muted)",fontSize:12.5}}>—</td>
                   <td style={{color:"var(--text2)",fontSize:13}}>{m.role}</td>
                   <td><StatusPill status={accessKind} label={m.accessStatus} /></td>
                   <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{m.since}</td>
@@ -314,45 +364,11 @@ function App() {
                 </tr>
               );
 
-              // Plan detail row (expanded)
-              if (isPlanOpen) {
-                rows.push(
-                  <tr key={`pd-${m.id}`} className="plan-detail-row-wrap">
-                    <td colSpan="6">
-                      <div className="plan-detail-card">
-                        <div className="pd-cell">
-                          <div className="pd-label">Plan type</div>
-                          <div className="pd-value">{m.planType}</div>
-                        </div>
-                        <div className="pd-cell">
-                          <div className="pd-label">Rate</div>
-                          <div className="pd-value tabular">{m.rate}</div>
-                          {m.coupon && (
-                            <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{m.coupon}</div>
-                          )}
-                        </div>
-                        <div className="pd-cell">
-                          <div className="pd-label">Renewal</div>
-                          <div className={`pd-value ${m.expiresLabel.startsWith("No") ? "muted" : ""}`}
-                            style={{color: m.status === "suspended" ? "var(--rose)" : undefined}}>
-                            {m.autoRenewCanceled ? "Cancels at period end" : m.expiresLabel}
-                          </div>
-                        </div>
-                        <div className="pd-cell">
-                          <div className="pd-label">Member since</div>
-                          <div className="pd-value">{m.since}</div>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              }
-
-              // Sub-member rows
-              if (isSubsOpen && hasSubs) {
+              // Additional member rows (inside group)
+              if (hasSubs) {
                 m.additional.forEach(a => {
                   rows.push(
-                    <tr key={`sub-${a.id}`} className="row-sub">
+                    <tr key={`sub-${a.id}`} className="row-sub row-grouped">
                       <td>
                         <div className="member-cell">
                           <span className="sub-indent" />
@@ -366,7 +382,7 @@ function App() {
                           </div>
                         </div>
                       </td>
-                      <td><PlanBadge plan="Linked to holder" muted /></td>
+                      <td style={{color:"var(--muted)",fontSize:12.5}}>—</td>
                       <td style={{color:"var(--muted)",fontSize:12.5}}>Additional Member</td>
                       <td><StatusPill status={a.status} /></td>
                       <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{a.since}</td>
