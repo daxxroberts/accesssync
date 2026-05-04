@@ -50,12 +50,16 @@ function App() {
 
     const q = query.trim().toLowerCase();
     if (q) {
-      rows = rows.filter(m =>
-        memberFullName(m).toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q) ||
-        m.plan.toLowerCase().includes(q) ||
-        (m.additional || []).some(a => memberFullName(a).toLowerCase().includes(q) || a.email.toLowerCase().includes(q))
-      );
+      rows = rows.filter(m => {
+        if (memberFullName(m).toLowerCase().includes(q)) return true;
+        if (m.email.toLowerCase().includes(q)) return true;
+        if ((m.plans || []).some(p => p.planName.toLowerCase().includes(q))) return true;
+        return (m.plans || []).some(p =>
+          (p.additional || []).some(a =>
+            memberFullName(a).toLowerCase().includes(q) || a.email.toLowerCase().includes(q)
+          )
+        );
+      });
     }
 
     const dir = sort.dir === "asc" ? 1 : -1;
@@ -85,7 +89,8 @@ function App() {
   }), [members]);
 
   const totalAdditional = useMemo(
-    () => members.reduce((n, m) => n + (m.additional?.length || 0), 0),
+    () => members.reduce((n, m) =>
+      n + (m.plans || []).reduce((pn, p) => pn + (p.additional?.length || 0), 0), 0),
     [members]
   );
 
@@ -236,167 +241,176 @@ function App() {
               <tr><td colSpan="6"><div className="empty">No members match your search.</div></td></tr>
             )}
             {pageRows.flatMap(m => {
-              const isPlanOpen = expandedPlans.has(m.id);
-              const isGroupOpen = !expandedSubs.has(m.id + "_collapsed");
-              const hasSubs = (m.additional?.length || 0) > 0;
-              const totalInGroup = 1 + (m.additional?.length || 0);
               const accessKind = m.status === "active"
                 ? (m.role === "Plan Holder" ? "holder" : "active")
                 : m.status;
-
+              const plans = m.plans || [];
               const rows = [];
 
-              // Plan group header row
-              rows.push(
-                <tr key={`gh-${m.id}`} className="row-plan-group">
-                  <td colSpan="6">
-                    <div className="plan-group-head">
-                      <button
-                        className="plan-group-toggle"
-                        onClick={() => toggleSubs(m.id + "_collapsed")}
-                      >
-                        <span className={`plan-group-chev ${isGroupOpen ? "open" : ""}`}>▶</span>
-                        <PlanBadge plan={m.plan} />
-                      </button>
-                      <span className="plan-group-count">
-                        {totalInGroup === 1 ? "1 member" : `${totalInGroup} members`}
-                      </span>
-                      <button
-                        className={`plan-group-details-btn ${isPlanOpen ? "open" : ""}`}
-                        onClick={() => togglePlan(m.id)}
-                      >
-                        Plan details <span className="chev">▼</span>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
+              // One plan group header + member rows per plan the holder owns.
+              plans.forEach((plan, planIdx) => {
+                const groupKey   = `${m.id}_${planIdx}`;
+                const detailKey  = `${m.id}_${planIdx}_detail`;
+                const isGroupOpen  = !expandedSubs.has(groupKey + "_collapsed");
+                const isPlanOpen   = expandedPlans.has(detailKey);
+                const hasSubs      = (plan.additional?.length || 0) > 0;
+                const totalInGroup = 1 + (plan.additional?.length || 0);
 
-              // Plan detail row (expanded)
-              if (isPlanOpen) {
+                // Plan group header
                 rows.push(
-                  <tr key={`pd-${m.id}`} className="plan-detail-row-wrap">
+                  <tr key={`gh-${groupKey}`} className="row-plan-group">
                     <td colSpan="6">
-                      <div className="plan-detail-card" style={{marginLeft:0}}>
-                        <div className="pd-cell">
-                          <div className="pd-label">Plan type</div>
-                          <div className="pd-value">{m.planType}</div>
-                        </div>
-                        <div className="pd-cell">
-                          <div className="pd-label">Rate</div>
-                          <div className="pd-value tabular">{m.rate}</div>
-                          {m.coupon && (
-                            <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{m.coupon}</div>
-                          )}
-                        </div>
-                        <div className="pd-cell">
-                          <div className="pd-label">Renewal</div>
-                          <div className={`pd-value ${m.expiresLabel.startsWith("No") ? "muted" : ""}`}
-                            style={{color: m.status === "suspended" ? "var(--rose)" : undefined}}>
-                            {m.autoRenewCanceled ? "Cancels at period end" : m.expiresLabel}
-                          </div>
-                        </div>
-                        <div className="pd-cell">
-                          <div className="pd-label">Member since</div>
-                          <div className="pd-value">{m.since}</div>
-                        </div>
+                      <div className="plan-group-head">
+                        <button
+                          className="plan-group-toggle"
+                          onClick={() => toggleSubs(groupKey + "_collapsed")}
+                        >
+                          <span className={`plan-group-chev ${isGroupOpen ? "open" : ""}`}>▶</span>
+                          <PlanBadge plan={plan.planName} />
+                        </button>
+                        <span className="plan-group-count">
+                          {totalInGroup === 1 ? "1 member" : `${totalInGroup} members`}
+                        </span>
+                        <button
+                          className={`plan-group-details-btn ${isPlanOpen ? "open" : ""}`}
+                          onClick={() => togglePlan(detailKey)}
+                        >
+                          Plan details <span className="chev">▼</span>
+                        </button>
                       </div>
                     </td>
                   </tr>
                 );
-              }
 
-              if (!isGroupOpen) return rows;
-
-              // Holder row (inside group)
-              rows.push(
-                <tr key={`r-${m.id}`} className={`row-main row-grouped ${m.error ? "has-error" : ""}`}>
-                  <td>
-                    <div className="member-cell">
-                      <Avatar member={m} kind={m.status === "active" ? (m.role === "Plan Holder" ? "holder" : "active") : m.status} />
-                      <div style={{minWidth:0}}>
-                        <div className="member-name" onClick={() => setDrawerId(m.id)}>
-                          <span className="name-link">{memberFullName(m)}</span>
-                          <span className="member-tag" style={{background:"var(--brand-dim)",color:"var(--brand)",borderColor:"rgba(79,110,247,.22)"}}>Holder</span>
-                        </div>
-                        <div className="member-email">{m.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{color:"var(--muted)",fontSize:12.5}}>—</td>
-                  <td style={{color:"var(--text2)",fontSize:13}}>{m.role}</td>
-                  <td><StatusPill status={accessKind} label={m.accessStatus} /></td>
-                  <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{m.since}</td>
-                  <td style={{textAlign:"right"}}>
-                    <div className={`row-actions ${openMenu === m.id || openError === m.id ? "open" : ""}`}>
-                      {m.error && (
-                        <div className="menu-anchor">
-                          <button
-                            className="row-btn"
-                            title="See error"
-                            style={{color:"var(--red)"}}
-                            onClick={(e)=>{e.stopPropagation(); setOpenError(openError === m.id ? null : m.id); setOpenMenu(null);}}
-                          >
-                            <Icon name="alert" />
-                          </button>
-                          {openError === m.id && (
-                            <ErrorPopover error={m.error} onClose={() => setOpenError(null)} />
-                          )}
-                        </div>
-                      )}
-                      <div className="menu-anchor">
-                        <button className="row-btn" onClick={(e)=>{e.stopPropagation(); setOpenMenu(openMenu === m.id ? null : m.id); setOpenError(null);}}>
-                          <Icon name="more" />
-                        </button>
-                        <ActionsMenu
-                          open={openMenu === m.id}
-                          onClose={() => setOpenMenu(null)}
-                          onAction={(a) => {
-                            setOpenMenu(null);
-                            if (a === "error") setOpenError(m.id);
-                            if (a === "remove") setRemoveTarget(m);
-                          }}
-                          member={m}
-                        />
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              );
-
-              // Additional member rows (inside group)
-              if (hasSubs) {
-                m.additional.forEach(a => {
+                // Plan detail row (expanded) — billing comes from holder
+                if (isPlanOpen) {
                   rows.push(
-                    <tr key={`sub-${a.id}`} className="row-sub row-grouped">
-                      <td>
-                        <div className="member-cell">
-                          <span className="sub-indent" />
-                          <Avatar member={a} kind={a.status} size="sm" />
-                          <div style={{minWidth:0}}>
-                            <div className="member-name" onClick={() => setDrawerId(a.id)}>
-                              <span className="name-link">{memberFullName(a)}</span>
-                              <span className="member-tag sub">Additional</span>
-                            </div>
-                            <div className="member-email">{a.email}</div>
+                    <tr key={`pd-${groupKey}`} className="plan-detail-row-wrap">
+                      <td colSpan="6">
+                        <div className="plan-detail-card" style={{marginLeft:0}}>
+                          <div className="pd-cell">
+                            <div className="pd-label">Plan type</div>
+                            <div className="pd-value">{m.planType}</div>
                           </div>
-                        </div>
-                      </td>
-                      <td style={{color:"var(--muted)",fontSize:12.5}}>—</td>
-                      <td style={{color:"var(--muted)",fontSize:12.5}}>Additional Member</td>
-                      <td><StatusPill status={a.status} /></td>
-                      <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{a.since}</td>
-                      <td style={{textAlign:"right"}}>
-                        <div className="row-actions">
-                          <button className="row-btn" title="Remove member" onClick={(e)=>{e.stopPropagation(); setRemoveTarget(a);}}>
-                            <Icon name="trash" />
-                          </button>
+                          <div className="pd-cell">
+                            <div className="pd-label">Rate</div>
+                            <div className="pd-value tabular">{m.rate}</div>
+                            {m.coupon && (
+                              <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{m.coupon}</div>
+                            )}
+                          </div>
+                          <div className="pd-cell">
+                            <div className="pd-label">Renewal</div>
+                            <div className={`pd-value ${m.expiresLabel.startsWith("No") ? "muted" : ""}`}
+                              style={{color: m.status === "suspended" ? "var(--rose)" : undefined}}>
+                              {m.autoRenewCanceled ? "Cancels at period end" : m.expiresLabel}
+                            </div>
+                          </div>
+                          <div className="pd-cell">
+                            <div className="pd-label">Member since</div>
+                            <div className="pd-value">{m.since}</div>
+                          </div>
                         </div>
                       </td>
                     </tr>
                   );
-                });
-              }
+                }
+
+                if (!isGroupOpen) return;
+
+                // Holder row — only rendered once, under the first plan group.
+                // For subsequent plans the holder is already visible above.
+                if (planIdx === 0) {
+                  rows.push(
+                    <tr key={`r-${m.id}`} className={`row-main row-grouped ${m.error ? "has-error" : ""}`}>
+                      <td>
+                        <div className="member-cell">
+                          <Avatar member={m} kind={accessKind} />
+                          <div style={{minWidth:0}}>
+                            <div className="member-name" onClick={() => setDrawerId(m.id)}>
+                              <span className="name-link">{memberFullName(m)}</span>
+                              <span className="member-tag" style={{background:"var(--brand-dim)",color:"var(--brand)",borderColor:"rgba(79,110,247,.22)"}}>Holder</span>
+                            </div>
+                            <div className="member-email">{m.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{color:"var(--muted)",fontSize:12.5}}>—</td>
+                      <td style={{color:"var(--text2)",fontSize:13}}>{m.role}</td>
+                      <td><StatusPill status={accessKind} label={m.accessStatus} /></td>
+                      <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{m.since}</td>
+                      <td style={{textAlign:"right"}}>
+                        <div className={`row-actions ${openMenu === m.id || openError === m.id ? "open" : ""}`}>
+                          {m.error && (
+                            <div className="menu-anchor">
+                              <button
+                                className="row-btn"
+                                title="See error"
+                                style={{color:"var(--red)"}}
+                                onClick={(e)=>{e.stopPropagation(); setOpenError(openError === m.id ? null : m.id); setOpenMenu(null);}}
+                              >
+                                <Icon name="alert" />
+                              </button>
+                              {openError === m.id && (
+                                <ErrorPopover error={m.error} onClose={() => setOpenError(null)} />
+                              )}
+                            </div>
+                          )}
+                          <div className="menu-anchor">
+                            <button className="row-btn" onClick={(e)=>{e.stopPropagation(); setOpenMenu(openMenu === m.id ? null : m.id); setOpenError(null);}}>
+                              <Icon name="more" />
+                            </button>
+                            <ActionsMenu
+                              open={openMenu === m.id}
+                              onClose={() => setOpenMenu(null)}
+                              onAction={(a) => {
+                                setOpenMenu(null);
+                                if (a === "error") setOpenError(m.id);
+                                if (a === "remove") setRemoveTarget(m);
+                              }}
+                              member={m}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                // Additional member rows for this plan
+                if (hasSubs) {
+                  plan.additional.forEach(a => {
+                    rows.push(
+                      <tr key={`sub-${a.id}`} className="row-sub row-grouped">
+                        <td>
+                          <div className="member-cell">
+                            <span className="sub-indent" />
+                            <Avatar member={a} kind={a.status} size="sm" />
+                            <div style={{minWidth:0}}>
+                              <div className="member-name" onClick={() => setDrawerId(a.id)}>
+                                <span className="name-link">{memberFullName(a)}</span>
+                                <span className="member-tag sub">Additional</span>
+                              </div>
+                              <div className="member-email">{a.email}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{color:"var(--muted)",fontSize:12.5}}>—</td>
+                        <td style={{color:"var(--muted)",fontSize:12.5}}>Additional Member</td>
+                        <td><StatusPill status={a.status} /></td>
+                        <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{a.since}</td>
+                        <td style={{textAlign:"right"}}>
+                          <div className="row-actions">
+                            <button className="row-btn" title="Remove member" onClick={(e)=>{e.stopPropagation(); setRemoveTarget(a);}}>
+                              <Icon name="trash" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  });
+                }
+              });
 
               return rows;
             })}

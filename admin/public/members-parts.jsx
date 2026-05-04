@@ -146,11 +146,13 @@ const MemberDrawer = ({ member, open, onClose }) => {
             </dl>
           </div>
 
-          {member.additional && member.additional.length > 0 && (
-            <div className="drawer-section">
-              <h3>Additional members ({member.additional.length})</h3>
+          {(member.plans || []).filter(p => p.additional && p.additional.length > 0).map((plan, idx) => (
+            <div className="drawer-section" key={idx}>
+              <h3>
+                {plan.planName} · {plan.additional.length} additional {plan.additional.length === 1 ? "member" : "members"}
+              </h3>
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {member.additional.map(a => (
+                {plan.additional.map(a => (
                   <div key={a.id} className="submember-row" style={{maxWidth:"none"}}>
                     <Avatar member={a} kind={a.status} size="sm" />
                     <div style={{flex:1,minWidth:0}}>
@@ -162,7 +164,7 @@ const MemberDrawer = ({ member, open, onClose }) => {
                 ))}
               </div>
             </div>
-          )}
+          ))}
 
         </div>
       </aside>

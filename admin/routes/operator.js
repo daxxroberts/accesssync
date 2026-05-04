@@ -1757,6 +1757,12 @@ router.get('/:clientId/members', async (req, res) => {
                 lat.processing_s,
                 lat.total_s,
                 mi.plan_holder_id,
+                mi.plan_mapping_id,
+                (
+                  SELECT pm.plan_name
+                  FROM plan_mappings pm
+                  WHERE pm.id = mi.plan_mapping_id
+                )                                AS sub_plan_name,
                 CASE WHEN mi.plan_holder_id IS NULL THEN 'holder' ELSE 'sub' END AS role,
                 holder_mi.id          AS holder_id,
                 holder_mi.display_name AS holder_name,

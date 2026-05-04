@@ -126,6 +126,8 @@ async function _processJobBody(job, traceId) {
         await hardwareAdapter.enableAccess(hardwarePlatform, apiKey, hardwareUserId);
         lastStep = 'grant.recovered.complete_revoke';
         await standardAdapter.completeRevoke(memberId, tenantId, 'active');
+        // OB-162: enrich trace_context on payment.recovered path (no mapping context available)
+        setTraceContext(traceId, { clientId, memberId });
         logger.info('queue.grant.recovered.complete', {
           clientId, memberId, eventId,
           platformMemberId: standardEvent.platformMemberId,
@@ -182,6 +184,14 @@ async function _processJobBody(job, traceId) {
         lastStep = 'grant.started.complete_grant';
         const startedBilling = extractBillingSnapshot(standardEvent.rawPayload);
         await standardAdapter.completeGrant(memberId, tenantId, startedAssignments, startedBilling);
+        // OB-162: enrich trace_context with plan/door context on plan.started path
+        setTraceContext(traceId, {
+          clientId,
+          memberId,
+          planName:  mappings[0]?.planName  || null,
+          doorName:  mappings[0]?.doorName  || null,
+          mappingId: mappings[0]?.mappingId || null,
+        });
         logger.info('queue.grant.started.complete', {
           clientId, memberId, eventId,
           platformMemberId: standardEvent.platformMemberId,
@@ -370,7 +380,8 @@ async function _processJobBody(job, traceId) {
         stage: 'revoke', result: 'start',
       });
 
-      // Phase 2 enrichment — mirrors grant path so revoke traces show full member/client context
+      // Phase 2 enrichment — mirrors grant path so revoke traces show full member/client context.
+      // OB-162: query first active mapping for this member to populate plan/door context.
       registerTrace(traceId, {
         entryPoint: 'queue',
         clientId,
@@ -378,7 +389,23 @@ async function _processJobBody(job, traceId) {
         actorType: 'system',
         actorId:   'queue-worker',
       });
-      setTraceContext(traceId, { clientId, memberId });
+      const revokeMappingRow = roleAssignmentIds?.length
+        ? await db.query(
+            `SELECT pm.plan_name, pm.door_name, mra.mapping_id
+             FROM member_role_assignments mra
+             JOIN plan_mappings pm ON pm.id = mra.mapping_id
+             WHERE mra.member_id = $1
+             LIMIT 1`,
+            [memberId]
+          ).then(r => r.rows[0] || {}).catch(() => ({}))
+        : {};
+      setTraceContext(traceId, {
+        clientId,
+        memberId,
+        planName:  revokeMappingRow.plan_name  || null,
+        doorName:  revokeMappingRow.door_name  || null,
+        mappingId: revokeMappingRow.mapping_id || null,
+      });
 
       // Step 2: Execute hardware revoke across all stored role assignments → returns targetStatus
       lastStep = 'revoke.process_revoke';

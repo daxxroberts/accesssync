@@ -120,8 +120,13 @@
       first:             r.first_name || "",
       last:              r.last_name  || "",
       email:             r.email      || "",
+      // plan_names[] is the full list for holder rows; plan_name is the first.
+      // Sub rows carry sub_plan_name (joined from plan_mappings via plan_mapping_id).
+      planNames:         Array.isArray(r.plan_names) ? r.plan_names : (r.plan_name ? [r.plan_name] : []),
       plan:              r.plan_name  || "Unknown Plan",
       planType:          "Pricing Plan",
+      planMappingId:     r.plan_mapping_id || null,
+      subPlanName:       r.sub_plan_name   || null,
       role:              r.role === "holder" ? "Plan Holder" : "Additional Member",
       status:            mapStatus(r.effective_status),
       accessStatus:      mapAccessStatus(r.effective_status, r.role),
@@ -137,17 +142,21 @@
       lastVisit:         "—",
       visits30d:         0,
       error:             null,
-      additional:        [],
+      plans:             [],   // populated by buildMembersArray for holder rows
       _raw:              r,
     };
   }
 
-  // ── Flat → nested ──────────────────────────────────────────────────
+  // ── Flat → nested (plan-grouped) ───────────────────────────────────
+  // Each holder row produces m.plans[] — one entry per plan the holder owns.
+  // Sub-members are partitioned by plan_mapping_id into the correct plan entry.
+  // Solo plans (no subs) get an entry with additional: [].
+  // Subs with null plan_mapping_id go into an "Unknown Plan" fallback entry.
   function buildMembersArray(flatRows) {
     if (!Array.isArray(flatRows)) return [];
 
     var holders = [];
-    var subsByHolder = {};
+    var subsByHolder = {};  // holderId → shaped sub[]
 
     for (var i = 0; i < flatRows.length; i++) {
       var r = flatRows[i];
@@ -161,11 +170,11 @@
 
     return holders.map(function (h) {
       var shaped = shapeMember(h);
-      var subs = subsByHolder[h.id] || [];
+      var allSubs = subsByHolder[h.id] || [];
+
       // DR-042: subs inherit holder's billing snapshot when their own is missing.
-      // Subs typically don't carry their own order — the holder paid for the family.
       if (shaped.billing && shaped.billing.raw) {
-        subs = subs.map(function (s) {
+        allSubs = allSubs.map(function (s) {
           if (s.billing && s.billing.raw) return s;
           return Object.assign({}, s, {
             rate:              shaped.rate,
@@ -178,7 +187,60 @@
           });
         });
       }
-      shaped.additional = subs;
+
+      // Group subs by planMappingId so each plan entry gets the right subs.
+      var subsByMapping = {};
+      var orphanSubs = [];  // subs with null plan_mapping_id
+      allSubs.forEach(function (s) {
+        if (s.planMappingId) {
+          if (!subsByMapping[s.planMappingId]) subsByMapping[s.planMappingId] = [];
+          subsByMapping[s.planMappingId].push(s);
+        } else {
+          orphanSubs.push(s);
+        }
+      });
+
+      // Build one plans[] entry per plan the holder owns.
+      // plan_names[] comes from the API (aggregated from MRAs). Each name maps to
+      // a set of subs whose sub_plan_name matches — we use planMappingId for
+      // the keying since names can collide; plan_ids[] gives source_plan_ids in
+      // the same order as plan_names[].
+      var planNames  = shaped.planNames;
+      var planIds    = Array.isArray(h.plan_ids) ? h.plan_ids : [];
+
+      if (planNames.length === 0) planNames = ["Unknown Plan"];
+
+      // Build a mapping from sub_plan_name → subs for name-based fallback
+      var subsByPlanName = {};
+      allSubs.forEach(function (s) {
+        var key = s.subPlanName || "Unknown Plan";
+        if (!subsByPlanName[key]) subsByPlanName[key] = [];
+        subsByPlanName[key].push(s);
+      });
+
+      // Build plans[] — prefer planMappingId keying; fall back to plan name matching.
+      var usedSubIds = {};
+      var plans = planNames.map(function (planName, idx) {
+        // Collect subs that belong to this plan by name
+        var planSubs = (subsByPlanName[planName] || []).filter(function (s) {
+          if (usedSubIds[s.id]) return false;
+          usedSubIds[s.id] = true;
+          return true;
+        });
+        return {
+          planName:      planName,
+          planSourceId:  planIds[idx] || null,
+          additional:    planSubs,
+        };
+      });
+
+      // Orphan subs (null plan_mapping_id, unmatched by name) go to a fallback entry.
+      var unusedOrphans = orphanSubs.filter(function (s) { return !usedSubIds[s.id]; });
+      if (unusedOrphans.length > 0) {
+        plans.push({ planName: "Unknown Plan", planSourceId: null, additional: unusedOrphans });
+      }
+
+      shaped.plans = plans;
       return shaped;
     });
   }
@@ -298,6 +360,8 @@
     buildMembersArray: buildMembersArray,
     mapStatus: mapStatus,
     mapAccessStatus: mapAccessStatus,
+    formatRate: formatRate,
+    formatCouponLine: formatCouponLine,
   };
 
   // Auto-run on script load

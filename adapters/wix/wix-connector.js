@@ -77,14 +77,30 @@ class WixConnector {
 
       const eventType = req.headers['x-wix-event-type'] || req.body?.eventType || null;
 
-      // OB-03-A: wixSiteId extraction — Wix REST webhooks confirmed from live payloads.
-      // instanceId (= site ID) lives at data.metadata.instanceId in REST webhooks.
-      // Velo events.js puts it at top-level instanceId or passes it via x-accesssync-client-id.
+      // OB-161: wixSiteId extraction — header is primary source.
+      // Wix orderUpdated / orderStarted payloads omit instanceId from the body entirely.
+      // x-wix-site-id header is present on all Wix REST webhook calls regardless of event type.
+      // Body paths are retained as fallback for Velo events.js and non-standard variants.
       const wixSiteId =
-        req.body?.data?.metadata?.instanceId  ||  // REST webhook: confirmed live payload location
+        req.headers['x-wix-site-id']          ||  // HTTP header — primary (OB-161)
+        req.body?.data?.metadata?.instanceId  ||  // REST webhook body fallback
         req.body?.instanceId                  ||  // Velo events.js top-level
         req.body?.metadata?.instanceId        ||  // top-level metadata variant
         null;
+
+      const wixSiteIdSource =
+        req.headers['x-wix-site-id']          ? 'header' :
+        (req.body?.data?.metadata?.instanceId ||
+         req.body?.instanceId                 ||
+         req.body?.metadata?.instanceId)      ? 'body'   : null;
+
+      if (!wixSiteId) {
+        log.warn('wix.site_id.unresolved', {
+          traceId,
+          clientIdHint: (req.headers['x-accesssync-client-id'] || null),
+          wixHeaders: Object.keys(req.headers).filter(k => k.startsWith('x-wix')),
+        });
+      }
 
       // Self-registration: if events.js includes X-AccessSync-Client-Id, wire source_site_id on
       // first arrival so future lookups resolve by source_site_id without DEFAULT_TENANT_ID.
@@ -105,6 +121,7 @@ class WixConnector {
       const tenantDiagnostic = {
         hasClientIdHeader: !!clientIdHint,
         hasInstanceId:     !!wixSiteId,
+        wixSiteIdSource,
         payloadTopKeys:    req.body ? Object.keys(req.body) : [],
         dataKeys:          req.body?.data ? Object.keys(req.body.data) : [],
         metadataKeys:      req.body?.data?.metadata ? Object.keys(req.body.data.metadata) : [],
