@@ -67,10 +67,10 @@ router.use(function operatorAuth(req, res, next) {
  */
 async function resolveApiKey(clientId, locationId) {
   const cs = await db.query(
-    `SELECT hardware_api_key_enc FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+    `SELECT hardware_api_key FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
     [clientId]
   );
-  const enc = cs.rows[0]?.hardware_api_key_enc;
+  const enc = cs.rows[0]?.hardware_api_key;
   if (enc) return decryptKey(enc);
   return null;
 }
@@ -423,9 +423,11 @@ router.get('/site-id/verify', requireInviteToken, async (req, res) => {
 
   try {
     const existing = await db.query(
-      `SELECT id, name, tier, hardware_platform,
-              hardware_api_key IS NOT NULL AS has_api_key
-       FROM clients WHERE source_site_id = $1 LIMIT 1`,
+      `SELECT c.id, c.name, c.tier, c.hardware_platform,
+              (cs.id IS NOT NULL) AS has_api_key
+       FROM clients c
+       LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
+       WHERE c.source_site_id = $1 LIMIT 1`,
       [siteId.trim()]
     );
     if (existing.rows.length) {
@@ -547,11 +549,17 @@ router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) =
       return res.status(400).json({ error: 'apiKey is required' });
     }
     const encrypted = encryptApiKey(apiKey.trim());
-    const result = await db.query(
-      `UPDATE clients SET hardware_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
-      [encrypted, clientId]
+    const platformRow = await db.query('SELECT hardware_platform FROM clients WHERE id = $1', [clientId]);
+    if (!platformRow.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const hwPlatform = platformRow.rows[0].hardware_platform || 'kisi';
+    await db.query(
+      `INSERT INTO connector_subscriptions (client_id, hardware_platform, hardware_api_key, status, updated_at)
+       VALUES ($1, $2, $3, 'active', NOW())
+       ON CONFLICT (client_id, hardware_platform) DO UPDATE
+         SET hardware_api_key = EXCLUDED.hardware_api_key,
+             updated_at = NOW()`,
+      [clientId, hwPlatform, encrypted]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     log.info('operator.setup.apikey_set', { clientId });
     recordActivity(req, 'api_key.saved', { clientId });
 
