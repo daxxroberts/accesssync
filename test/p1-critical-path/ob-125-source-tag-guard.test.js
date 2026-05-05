@@ -1,3 +1,7 @@
+// SCHEMA_MIGRATION_SKIP: Mocks old member_role_assignments / member_identity shapes.
+// Replaced by: test/p1-critical-path/grant-revoke-new-schema.test.js
+// Un-skip in: S-8
+
 /**
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │  PRIORITY 1 — CRITICAL PATH                                             │
@@ -79,7 +83,7 @@ function mockSourceTagLookup(sourceTag) {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe('[P1] OB-125 source_tag guard on member.deleted → deleteUser', () => {
+describe.skip('[P1] OB-125 source_tag guard on member.deleted → deleteUser', () => {
 
   it('CALLS deleteUser when source_tag is accesssync — AccessSync owns this Kisi user', async () => {
     mockSourceTagLookup('accesssync');

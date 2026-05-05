@@ -1,3 +1,7 @@
+// SCHEMA_MIGRATION_SKIP: Mocks old member_role_assignments / member_identity shapes.
+// Replaced by: test/p1-critical-path/grant-revoke-new-schema.test.js
+// Un-skip in: S-8
+
 /**
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │  PRIORITY 1 — CRITICAL PATH                                             │
@@ -66,7 +70,7 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-describe('[P1] processGrant idempotency on retry after prior partial success', () => {
+describe.skip('[P1] processGrant idempotency on retry after prior partial success', () => {
 
   test('reuses existing role_assignment_id when member_role_assignments already has a row', async () => {
     // Simulate: prior attempt already wrote member_role_assignments + called Kisi.

@@ -66,14 +66,11 @@ class GrantRevokeLogic {
       // We still record the new source row so revoke tracking stays accurate.
       if (mapping.hardwareGroupId) {
         const sourceCheck = await db.query(
-          `SELECT mas.source_plan_id, mas.source_type, mra.role_assignment_id
-           FROM member_access_sources mas
-           JOIN member_role_assignments mra
-             ON mra.member_id = mas.member_id
-            AND mra.hardware_group_id = mas.hardware_group_id
-           WHERE mas.member_id = $1
-             AND mas.hardware_group_id = $2
-           ORDER BY mas.granted_at ASC
+          `SELECT source_plan_id, source_type, role_assignment_id
+           FROM member_access_sources
+           WHERE access_id = $1
+             AND hardware_group_id = $2
+           ORDER BY created_at ASC
            LIMIT 1`,
           [memberId, mapping.hardwareGroupId]
         );
@@ -91,6 +88,7 @@ class GrantRevokeLogic {
             stage: 'grant', result: 'skipped',
           });
           assignments.push({
+            accessId:         memberId,
             mappingId:        mapping.mappingId,
             roleAssignmentId: String(priorRaId),
             hardwareGroupId:  mapping.hardwareGroupId,
@@ -102,8 +100,8 @@ class GrantRevokeLogic {
       }
 
       const existing = await db.query(
-        `SELECT role_assignment_id, mapping_id FROM member_role_assignments
-         WHERE member_id = $1
+        `SELECT role_assignment_id, mapping_id FROM member_access_sources
+         WHERE access_id = $1
            AND hardware_group_id = $2
            AND role_assignment_id IS NOT NULL
          ORDER BY created_at ASC
@@ -143,6 +141,7 @@ class GrantRevokeLogic {
         }
 
         assignments.push({
+          accessId:         memberId,
           mappingId:        mapping.mappingId,
           roleAssignmentId: String(priorId),
           hardwareGroupId:  mapping.hardwareGroupId,
@@ -167,6 +166,7 @@ class GrantRevokeLogic {
         );
         newHardwareCallMade = true;
         assignments.push({
+          accessId:         memberId,
           mappingId:        mapping.mappingId,
           roleAssignmentId: String(roleId),
           hardwareGroupId:  mapping.hardwareGroupId,
@@ -288,9 +288,9 @@ class GrantRevokeLogic {
         const planId = wixEvent.planId || null;
 
         const raWithGroups = await db.query(
-          `SELECT mra.role_assignment_id, mra.hardware_group_id, mra.mapping_id
-           FROM member_role_assignments mra
-           WHERE mra.member_id = $1`,
+          `SELECT role_assignment_id, hardware_group_id, mapping_id
+           FROM member_access_sources
+           WHERE access_id = $1`,
           [memberId]
         );
 
@@ -323,7 +323,7 @@ class GrantRevokeLogic {
         for (const { role_assignment_id: raId, hardware_group_id: groupId } of raWithGroups.rows) {
           await db.query(
             `DELETE FROM member_access_sources
-             WHERE member_id = $1
+             WHERE access_id = $1
                AND hardware_group_id = $2
                AND source_type = $3
                AND COALESCE(source_plan_id, '') = COALESCE($4, '')`,
@@ -332,7 +332,7 @@ class GrantRevokeLogic {
 
           const remaining = await db.query(
             `SELECT COUNT(*) AS cnt FROM member_access_sources
-             WHERE member_id = $1 AND hardware_group_id = $2`,
+             WHERE access_id = $1 AND hardware_group_id = $2`,
             [memberId, groupId]
           );
 
@@ -382,7 +382,7 @@ class GrantRevokeLogic {
           const _actor = getActor() || {};
           const _tid   = getTraceId() || null;
           const finalize = await db.query(
-            `UPDATE member_identity
+            `UPDATE member_master
              SET sub_member_status = 'deleted',
                  first_name   = NULL,
                  last_name    = NULL,
@@ -390,7 +390,7 @@ class GrantRevokeLogic {
                  email        = NULL,
                  phone        = NULL,
                  updated_at   = NOW()
-             WHERE id = $1
+             WHERE id = (SELECT member_master_id FROM member_access WHERE id = $1)
                AND plan_holder_id IS NOT NULL
                AND sub_member_status = 'removing'
              RETURNING id`,
@@ -412,7 +412,10 @@ class GrantRevokeLogic {
             // Either: not a sub-member, not in 'removing' state, or already 'deleted' (race/replay).
             // Look up current state to log the right diagnostic.
             const stateRes = await db.query(
-              `SELECT plan_holder_id, sub_member_status FROM member_identity WHERE id = $1`,
+              `SELECT mm.plan_holder_id, ma.sub_member_status
+               FROM member_access ma
+               JOIN member_master mm ON mm.id = ma.member_master_id
+               WHERE ma.id = $1`,
               [memberId]
             );
             const isSubMember = stateRes.rows[0]?.plan_holder_id !== null && stateRes.rows[0]?.plan_holder_id !== undefined;
@@ -440,7 +443,10 @@ class GrantRevokeLogic {
         // operator audit reflects the member.deleted event reaching us.
         if (hardwareUserId) {
           const tagResult = await db.query(
-            `SELECT source_tag FROM member_identity WHERE id = $1`,
+            `SELECT mm.source_tag
+             FROM member_master mm
+             JOIN member_access ma ON ma.member_master_id = mm.id
+             WHERE ma.id = $1`,
             [memberId]
           );
           const sourceTag = tagResult.rows[0]?.source_tag;

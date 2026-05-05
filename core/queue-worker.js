@@ -391,10 +391,10 @@ async function _processJobBody(job, traceId) {
       });
       const revokeMappingRow = roleAssignmentIds?.length
         ? await db.query(
-            `SELECT pm.plan_name, pm.door_name, mra.mapping_id
-             FROM member_role_assignments mra
-             JOIN plan_mappings pm ON pm.id = mra.mapping_id
-             WHERE mra.member_id = $1
+            `SELECT pm.plan_name, pm.door_name, mas.mapping_id
+             FROM member_access_sources mas
+             JOIN plan_mappings pm ON pm.id = mas.mapping_id
+             WHERE mas.access_id = $1
              LIMIT 1`,
             [memberId]
           ).then(r => r.rows[0] || {}).catch(() => ({}))
@@ -543,9 +543,9 @@ function startWorker() {
       // Recover member_id from DB so we can release the lock
       if (tenantId && platformMemberId) {
         const result = await db.query(
-          `SELECT mi.id FROM member_identity mi
-           JOIN member_access_state mas ON mas.member_id = mi.id
-           WHERE mi.client_id = $1 AND mi.platform_member_id = $2 AND mas.status = 'in_flight'`,
+          `SELECT ma.id FROM member_access ma
+           JOIN member_master mm ON mm.id = ma.member_master_id
+           WHERE mm.client_id = $1 AND mm.platform_member_id = $2 AND ma.status = 'in_flight'`,
           [tenantId, platformMemberId]
         );
         if (result.rows.length) {
