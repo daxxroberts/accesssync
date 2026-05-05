@@ -45,11 +45,12 @@ async function activateLocationMembersAdmin(clientId, locationId) {
 
       const ctxResult = await db.query(
         `SELECT COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform,
-                COALESCE(l.hardware_api_key, c.hardware_api_key) AS api_key_enc,
+                cs.hardware_api_key AS api_key_enc,
                 pm.source_plan_id
          FROM plan_mappings pm
          JOIN clients c ON c.id = pm.client_id
          JOIN locations l ON l.id = pm.location_id
+         LEFT JOIN connector_subscriptions cs ON cs.client_id = pm.client_id AND cs.status = 'active'
          WHERE pm.id = $1`, [m.id]
       );
       if (!ctxResult.rows.length) continue;
@@ -58,12 +59,11 @@ async function activateLocationMembersAdmin(clientId, locationId) {
       const apiKey = decrypt(api_key_enc);
 
       const members = await db.query(
-        `SELECT mi.id AS member_id, mi.hardware_user_id
-         FROM member_access_state mas
-         JOIN member_identity mi ON mi.id = mas.member_id
-         WHERE mas.client_id = $1 AND mas.status = 'active'
-           AND COALESCE(mas.pending_plan_id,'') = COALESCE($2,'')
-           AND mi.hardware_user_id IS NOT NULL`,
+        `SELECT ma.id AS member_id, ma.hardware_user_id
+         FROM member_access ma
+         WHERE ma.client_id = $1 AND ma.status = 'active'
+           AND ma.plan_mapping_id = (SELECT id FROM plan_mappings WHERE source_plan_id = $2 AND client_id = $1 LIMIT 1)
+           AND ma.hardware_user_id IS NOT NULL`,
         [clientId, source_plan_id]
       );
       for (const mem of members.rows) {
@@ -71,7 +71,7 @@ async function activateLocationMembersAdmin(clientId, locationId) {
           try {
             const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, mem.hardware_user_id, groupId);
             await db.query(
-              `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
+              `INSERT INTO member_access_sources (access_id, mapping_id, role_assignment_id, hardware_group_id)
                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
               [mem.member_id, m.id, String(roleId), groupId]
             );
@@ -143,11 +143,11 @@ router.get('/', async (req, res) => {
               c.archived_at,
               c.created_at,
               c.updated_at,
-              COUNT(DISTINCT mi.id)::int  AS member_count,
-              COUNT(DISTINCT CASE WHEN mas.status = 'active' THEN mi.id END)::int AS active_count
+              COUNT(DISTINCT mm.id)::int  AS member_count,
+              COUNT(DISTINCT CASE WHEN ma.status = 'active' THEN mm.id END)::int AS active_count
        FROM clients c
-       LEFT JOIN member_identity    mi  ON mi.client_id  = c.id
-       LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+       LEFT JOIN member_master mm ON mm.client_id = c.id
+       LEFT JOIN member_access ma ON ma.member_master_id = mm.id
        ${whereClause}
        GROUP BY c.id
        ORDER BY c.created_at ASC`,
@@ -209,13 +209,18 @@ router.post('/:id/api-key', async (req, res) => {
       return res.status(400).json({ error: 'API key too short — must be at least 20 characters' });
     }
     const encrypted = encryptApiKey(apiKey.trim());
-    const result = await db.query(
-      `UPDATE clients SET hardware_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
-      [encrypted, id]
+    const clientRow = await db.query('SELECT id, name, hardware_platform FROM clients WHERE id = $1', [id]);
+    if (!clientRow.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const hwPlatform = clientRow.rows[0].hardware_platform || 'kisi';
+    await db.query(
+      `INSERT INTO connector_subscriptions (client_id, hardware_platform, hardware_api_key, status, updated_at)
+       VALUES ($1, $2, $3, 'active', NOW())
+       ON CONFLICT (client_id, hardware_platform) DO UPDATE
+         SET hardware_api_key = EXCLUDED.hardware_api_key, updated_at = NOW()`,
+      [id, hwPlatform, encrypted]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    logAdminAction(id, 'api_key_rotated', { type: 'hardware', client_name: result.rows[0].name });
-    log.info('admin.api_key_set', { clientId: id, name: result.rows[0].name });
+    logAdminAction(id, 'api_key_rotated', { type: 'hardware', client_name: clientRow.rows[0].name });
+    log.info('admin.api_key_set', { clientId: id, name: clientRow.rows[0].name });
     res.json({ ok: true, message: 'API key saved' });
   } catch (err) {
     log.error('admin.clients_api_key_error', {}, err);
@@ -230,9 +235,13 @@ router.post('/:id/api-key', async (req, res) => {
 router.get('/:id/api-key/test', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [id]);
-    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    if (!result.rows[0].hardware_api_key) return res.status(400).json({ valid: false, error: 'No API key set for this client' });
+    const result = await db.query(
+      `SELECT hardware_api_key FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+      [id]
+    );
+    if (!result.rows.length || !result.rows[0].hardware_api_key) {
+      return res.status(400).json({ valid: false, error: 'No API key set for this client' });
+    }
 
     const apiKey = decryptApiKey(result.rows[0].hardware_api_key);
     await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
@@ -251,9 +260,11 @@ router.get('/:id/api-key/test', async (req, res) => {
 router.get('/:id/api-key/status', async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [id]);
-    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    res.json({ hasKey: !!result.rows[0].hardware_api_key });
+    const result = await db.query(
+      `SELECT hardware_api_key FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+      [id]
+    );
+    res.json({ hasKey: !!(result.rows[0]?.hardware_api_key) });
   } catch (err) {
     log.error('admin.clients_api_key_status_error', {}, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -268,14 +279,17 @@ router.get('/:id/locations', async (req, res) => {
     const { id } = req.params;
     const result = await db.query(
       `SELECT l.id, l.name, l.city, l.state,
-              l.subscription_status, l.tier, l.subscribed_at, l.subscription_id,
+              COALESCE(bs.status, 'inactive') AS subscription_status,
+              bs.tier, bs.subscribed_at,
               l.created_at,
-              (l.hardware_api_key IS NOT NULL) AS has_location_key,
+              (cs.hardware_api_key IS NOT NULL) AS has_location_key,
               COUNT(DISTINCT pm.id)::int  AS mapping_count
        FROM locations l
+       LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
+       LEFT JOIN connector_subscriptions cs ON cs.client_id = l.client_id AND cs.status = 'active'
        LEFT JOIN plan_mappings pm ON pm.location_id = l.id
        WHERE l.client_id = $1
-       GROUP BY l.id
+       GROUP BY l.id, bs.status, bs.tier, bs.subscribed_at, cs.hardware_api_key
        ORDER BY l.created_at ASC`,
       [id]
     );
@@ -298,13 +312,20 @@ router.post('/:id/locations', async (req, res) => {
     if (!clientCheck.rows.length) return res.status(404).json({ error: 'Client not found' });
 
     const result = await db.query(
-      `INSERT INTO locations (client_id, name, city, state, tier, subscription_status, created_at)
-       VALUES ($1, $2, $3, $4, $5, 'inactive', NOW())
-       RETURNING id, client_id, name, city, state, tier, subscription_status, created_at`,
-      [id, name.trim(), city || null, state || null, tier || null]
+      `INSERT INTO locations (client_id, name, city, state, created_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       RETURNING id, client_id, name, city, state, created_at`,
+      [id, name.trim(), city || null, state || null]
     );
+    if (tier) {
+      await db.query(
+        `INSERT INTO billing_subscriptions (client_id, location_id, tier, status)
+         VALUES ($1, $2, $3, 'inactive')`,
+        [id, result.rows[0].id, tier]
+      );
+    }
     log.info('admin.location_created', { name: result.rows[0].name, clientId: id });
-    res.status(201).json({ ok: true, location: result.rows[0] });
+    res.status(201).json({ ok: true, location: { ...result.rows[0], subscription_status: 'inactive' } });
   } catch (err) {
     log.error('admin.clients_location_create_error', {}, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -329,7 +350,9 @@ router.patch('/:id/locations/:locationId', async (req, res) => {
     if (req.body.subscription_status !== undefined) {
       const newStatus = req.body.subscription_status;
       const current = await db.query(
-        'SELECT subscription_status FROM locations WHERE id = $1 AND client_id = $2',
+        `SELECT COALESCE(bs.status, 'inactive') AS subscription_status
+         FROM locations l LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
+         WHERE l.id = $1 AND l.client_id = $2`,
         [locationId, clientId]
       );
       if (!current.rows.length) return res.status(404).json({ error: 'Location not found' });
@@ -341,13 +364,19 @@ router.patch('/:id/locations/:locationId', async (req, res) => {
           const result = await suspendLocationMembers(locationId, clientId, newStatus);
           return res.json({ ok: true, suspended: result.suspended, skipped: result.skipped, errors: result.errors });
         } else if (newStatus === 'active') {
-          // Set status active then re-provision members
-          await db.query(
-            `UPDATE locations SET subscription_status = 'active', subscribed_at = NOW() WHERE id = $1 AND client_id = $2`,
+          // Update billing_subscriptions
+          const bsUpdate = await db.query(
+            `UPDATE billing_subscriptions SET status = 'active', subscribed_at = NOW(), updated_at = NOW()
+             WHERE location_id = $1 AND client_id = $2`,
             [locationId, clientId]
           );
-          // Re-provision members fire-and-forget (requires operator.js activateLocationMembers
-          // but that lives in operator.js — log intent here, full reprovision via activate endpoint)
+          if (bsUpdate.rowCount === 0) {
+            await db.query(
+              `INSERT INTO billing_subscriptions (client_id, location_id, status, subscribed_at)
+               VALUES ($1, $2, 'active', NOW())`,
+              [clientId, locationId]
+            );
+          }
           log.info('admin.location_reactivated', { locationId });
           return res.json({ ok: true, message: 'Location reactivated. Use the activate endpoint to re-provision members.' });
         }
@@ -382,14 +411,22 @@ router.post('/:id/locations/:locationId/api-key', async (req, res) => {
     if (apiKey.trim().length < 20) return res.status(400).json({ error: 'API key must be at least 20 characters' });
 
     const encrypted = encryptApiKey(apiKey.trim());
-    const result = await db.query(
-      `UPDATE locations SET hardware_api_key = $1
-       WHERE id = $2 AND client_id = $3
-       RETURNING id, name`,
-      [encrypted, locationId, id]
+    const locCheck = await db.query(
+      `SELECT l.id, l.name, COALESCE(c.hardware_platform, 'kisi') AS hardware_platform
+       FROM locations l JOIN clients c ON c.id = l.client_id
+       WHERE l.id = $1 AND l.client_id = $2`,
+      [locationId, id]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
-    log.info('admin.location_api_key_set', { name: result.rows[0].name, locationId });
+    if (!locCheck.rows.length) return res.status(404).json({ error: 'Location not found' });
+    const hwPlatform = locCheck.rows[0].hardware_platform;
+    await db.query(
+      `INSERT INTO connector_subscriptions (client_id, hardware_platform, hardware_api_key, status, updated_at)
+       VALUES ($1, $2, $3, 'active', NOW())
+       ON CONFLICT (client_id, hardware_platform) DO UPDATE
+         SET hardware_api_key = EXCLUDED.hardware_api_key, updated_at = NOW()`,
+      [id, hwPlatform, encrypted]
+    );
+    log.info('admin.location_api_key_set', { name: locCheck.rows[0].name, locationId });
     res.json({ ok: true, message: 'Location API key saved' });
   } catch (err) {
     log.error('admin.clients_location_key_error', {}, err);
@@ -426,20 +463,29 @@ router.post('/:id/locations/:locationId/activate', async (req, res) => {
     const { id: clientId, locationId } = req.params;
     const { subscription_id, tier } = req.body;
 
-    const result = await db.query(
-      `UPDATE locations
-       SET subscription_status = 'active',
-           subscribed_at = NOW(),
-           subscription_id = COALESCE($3, subscription_id),
-           tier = COALESCE($4, tier)
-       WHERE id = $1 AND client_id = $2
-       RETURNING id, name, subscription_status`,
-      [locationId, clientId, subscription_id || null, tier || null]
+    const locCheck = await db.query(
+      'SELECT id, name FROM locations WHERE id = $1 AND client_id = $2',
+      [locationId, clientId]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    if (!locCheck.rows.length) return res.status(404).json({ error: 'Location not found' });
 
-    log.info('admin.location_activated', { name: result.rows[0].name });
-    res.json({ ok: true, location: result.rows[0] });
+    const bsUpdate = await db.query(
+      `UPDATE billing_subscriptions
+       SET status = 'active', subscribed_at = NOW(), updated_at = NOW(),
+           tier = COALESCE($3, tier)
+       WHERE location_id = $1 AND client_id = $2`,
+      [locationId, clientId, tier || null]
+    );
+    if (bsUpdate.rowCount === 0) {
+      await db.query(
+        `INSERT INTO billing_subscriptions (client_id, location_id, status, tier, subscribed_at)
+         VALUES ($1, $2, 'active', $3, NOW())`,
+        [clientId, locationId, tier || null]
+      );
+    }
+
+    log.info('admin.location_activated', { name: locCheck.rows[0].name });
+    res.json({ ok: true, location: { id: locCheck.rows[0].id, name: locCheck.rows[0].name, subscription_status: 'active' } });
 
     // GAP 3: re-provision all previously active members at this location
     activateLocationMembersAdmin(clientId, locationId)
@@ -503,19 +549,18 @@ router.get('/:id/dependencies', async (req, res) => {
     const counts = await db.query(
       `SELECT
         (SELECT COUNT(*)::int FROM locations WHERE client_id = $1) AS locations,
-        (SELECT COUNT(*)::int FROM member_identity WHERE client_id = $1) AS members,
+        (SELECT COUNT(*)::int FROM member_master WHERE client_id = $1) AS members,
         (SELECT COUNT(*)::int FROM plan_mappings WHERE client_id = $1) AS plan_mappings,
         (SELECT COUNT(*)::int FROM plan_mapping_groups pmg
          JOIN plan_mappings pm ON pmg.mapping_id = pm.id WHERE pm.client_id = $1) AS plan_mapping_groups,
-        (SELECT COUNT(*)::int FROM member_role_assignments mra
-         JOIN member_identity mi ON mra.member_id = mi.id WHERE mi.client_id = $1) AS role_assignments,
-        (SELECT COUNT(*)::int FROM member_access_state WHERE client_id = $1) AS access_states,
+        (SELECT COUNT(*)::int FROM member_access_sources mas
+         JOIN member_access ma ON ma.id = mas.access_id WHERE ma.client_id = $1) AS access_sources,
+        (SELECT COUNT(*)::int FROM member_access WHERE client_id = $1) AS access_states,
         (SELECT COUNT(*)::int FROM member_access_log WHERE client_id = $1) AS access_logs,
         (SELECT COUNT(*)::int FROM error_queue WHERE client_id = $1) AS error_queue,
         (SELECT COUNT(*)::int FROM config_alert_log WHERE client_id = $1) AS config_alerts,
         (SELECT COUNT(*)::int FROM client_activity_summary WHERE client_id = $1) AS activity_summaries,
         (SELECT COUNT(*)::int FROM processed_event_ids WHERE client_id = $1) AS processed_events,
-        (SELECT COUNT(*)::int FROM member_access_sources WHERE member_id IN (SELECT id FROM member_identity WHERE client_id = $1)) AS access_sources,
         (SELECT COUNT(*)::int FROM adapter_admin_log WHERE client_id = $1) AS audit_logs,
         (SELECT COUNT(*)::int FROM webhook_log WHERE client_id = $1) AS webhook_logs`,
       [id]
@@ -528,9 +573,8 @@ router.get('/:id/dependencies', async (req, res) => {
         members: counts.rows[0].members,
         plan_mappings: counts.rows[0].plan_mappings,
         plan_mapping_groups: counts.rows[0].plan_mapping_groups,
-        role_assignments: counts.rows[0].role_assignments,
-        access_states: counts.rows[0].access_states,
         access_sources: counts.rows[0].access_sources,
+        access_states: counts.rows[0].access_states,
         access_logs: counts.rows[0].access_logs,
         error_queue: counts.rows[0].error_queue,
         config_alerts: counts.rows[0].config_alerts,
