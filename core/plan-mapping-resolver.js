@@ -48,16 +48,18 @@ class PlanMappingResolver {
               pm.access_type,
               pm.plan_name,
               pm.door_name,
-              COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform,
-              COALESCE(l.hardware_api_key, c.hardware_api_key) AS hardware_api_key_enc
+              cs.hardware_platform,
+              cs.hardware_api_key  AS hardware_api_key_enc,
+              cs.kisi_user_pattern
        FROM plan_mappings pm
        LEFT JOIN plan_mapping_groups pmg ON pmg.mapping_id = pm.id
        LEFT JOIN locations l ON pm.location_id = l.id
-       JOIN  clients c ON pm.client_id = c.id
+       LEFT JOIN billing_subscriptions bs ON bs.location_id = pm.location_id AND bs.status = 'active'
+       JOIN connector_subscriptions cs ON cs.client_id = pm.client_id AND cs.hardware_platform = pm.hardware_platform
        WHERE pm.client_id = $1
          AND pm.source_plan_id = $2
          AND pm.status = 'active'
-         AND (l.id IS NULL OR l.subscription_status = 'active')
+         AND (l.id IS NULL OR bs.id IS NOT NULL)
          AND COALESCE(pmg.hardware_group_id, pm.hardware_group_id, '') != ''
          AND COALESCE(pmg.health_status, 'ok') = 'ok'`,
       [tenantId, planId]
@@ -109,6 +111,7 @@ class PlanMappingResolver {
       accessType:       row.access_type || 'group',
       apiKey:           row.hardware_api_key_enc ? decryptApiKey(row.hardware_api_key_enc) : null,
                           // DR-028: null means no API key configured — hardware calls will fail with a clear error
+      kisiUserPattern:  row.kisi_user_pattern || null,
     }));
   }
 }

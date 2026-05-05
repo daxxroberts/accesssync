@@ -3,11 +3,12 @@
  * │  PRIORITY 2 — OPERATOR ONBOARDING                                      │
  * │  Scenario: Plan mapping resolver returns correct hardware groups        │
  * │                                                                         │
- * │  Business consequence: If the resolver returns wrong groups, a member   │
- * │  gets provisioned to the wrong doors or none at all. If it returns      │
- * │  null incorrectly, the member's payment goes into the error queue.      │
- * │                                                                         │
- * │  Critical path: plan purchased → resolve mappings → correct group IDs   │
+ * │  SCHEMA_MIGRATION_SKIP: Mocks old COALESCE hardware key from            │
+ * │  clients/locations and subscription_status = 'active' filter on         │
+ * │  locations. Replaced by new connector_subscriptions + billing_          │
+ * │  subscriptions joins.                                                   │
+ * │  Replaced by: test/p2-onboarding/plan-mapping-resolver-new-schema.test.js │
+ * │  Un-skip in: S-8                                                        │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -54,7 +55,7 @@ function mockMappingRow(overrides = {}) {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe('[P2] Plan mapping resolver returns correct hardware groups for a purchased plan', () => {
+describe.skip('[P2] Plan mapping resolver returns correct hardware groups for a purchased plan', () => {
 
   it('returns the mapped hardware group when a single active mapping exists', async () => {
     db.query.mockResolvedValueOnce({
@@ -115,7 +116,7 @@ describe('[P2] Plan mapping resolver returns correct hardware groups for a purch
 
 });
 
-describe('[P2] Plan mapping resolver handles missing and unmapped plans correctly', () => {
+describe.skip('[P2] Plan mapping resolver handles missing and unmapped plans correctly', () => {
 
   it('returns null for a completely unknown plan — triggers PLAN_NOT_MAPPED error path', async () => {
     // Main query returns no rows
@@ -160,7 +161,7 @@ describe('[P2] Plan mapping resolver handles missing and unmapped plans correctl
 
 });
 
-describe('[P2] Plan mapping resolver filters unhealthy groups (K-2 edge case)', () => {
+describe.skip('[P2] Plan mapping resolver filters unhealthy groups (K-2 edge case)', () => {
 
   it('SQL query includes health_status = ok filter — dead groups excluded at the DB level', async () => {
     db.query.mockResolvedValueOnce({ rows: [mockMappingRow()] });
