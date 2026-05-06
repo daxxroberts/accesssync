@@ -1,0 +1,14 @@
+{
+  "clientId": "00000000-e2e0-4000-a000-000000000001",
+  "locationId": "00000000-e2e0-4000-a000-000000000002",
+  "planMappings": {
+    "individual": {
+      "id": "00000000-e2e0-4000-a000-000000000010",
+      "sourcePlanId": "test-plan-individual"
+    },
+    "couples": {
+      "id": "00000000-e2e0-4000-a000-000000000011",
+      "sourcePlanId": "test-plan-couples"
+    }
+  }
+}
