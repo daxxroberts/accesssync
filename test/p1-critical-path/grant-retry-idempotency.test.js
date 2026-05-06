@@ -1,7 +1,3 @@
-// SCHEMA_MIGRATION_SKIP: Mocks old member_role_assignments / member_identity shapes.
-// Replaced by: test/p1-critical-path/grant-revoke-new-schema.test.js
-// Un-skip in: S-8
-
 /**
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │  PRIORITY 1 — CRITICAL PATH                                             │
@@ -70,7 +66,7 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-describe.skip('[P1] processGrant idempotency on retry after prior partial success', () => {
+describe('[P1] processGrant idempotency on retry after prior partial success', () => {
 
   test('reuses existing role_assignment_id when member_role_assignments already has a row', async () => {
     // Simulate: prior attempt already wrote member_role_assignments + called Kisi.
@@ -85,7 +81,7 @@ describe.skip('[P1] processGrant idempotency on retry after prior partial succes
     const result = await grantRevoke.processGrant(TENANT_ID, MEMBER_ID, HW_USER_ID, [mapping], wixEvent);
 
     expect(hardwareAdapter.assignRole).not.toHaveBeenCalled(); // KEY: no re-call to Kisi
-    expect(result).toEqual([
+    expect(result).toMatchObject([
       {
         mappingId:        MAPPING_ID,
         roleAssignmentId: EXISTING_RA,

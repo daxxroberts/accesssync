@@ -73,6 +73,29 @@ describe('[P1] Member cancels plan → all door access revoked', () => {
   it('removes every role assignment when plan is cancelled — member cannot re-enter', async () => {
     const roleIds = [KISI_ROLE_ASSIGNMENT_ID, 'role-assignment-gym-floor'];
 
+    // New schema: processRevoke reads role_assignment_id from member_access_sources (not caller-passed roleIds)
+    db.query.mockReset();
+    db.query
+      // _getClientApiKey
+      .mockResolvedValueOnce({ rows: [{ hardware_api_key: ENCRYPTED_API_KEY_DB_VALUE }] })
+      // SELECT ... FROM member_access_sources WHERE access_id = $1
+      .mockResolvedValueOnce({ rows: [
+        { role_assignment_id: KISI_ROLE_ASSIGNMENT_ID, hardware_group_id: 'kisi-group-front', mapping_id: 'pm-1' },
+        { role_assignment_id: 'role-assignment-gym-floor', hardware_group_id: 'kisi-group-gym', mapping_id: 'pm-1' },
+      ]})
+      // DELETE member_access_sources (group 1)
+      .mockResolvedValueOnce({ rowCount: 1 })
+      // SELECT COUNT(*) remaining (group 1) → 0 → removeRole fires
+      .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })
+      // DELETE member_access_sources (group 2)
+      .mockResolvedValueOnce({ rowCount: 1 })
+      // SELECT COUNT(*) remaining (group 2) → 0 → removeRole fires
+      .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })
+      // Sub-member finalize UPDATE → rowCount 0 (not a sub-member)
+      .mockResolvedValueOnce({ rowCount: 0 })
+      // member_access_log INSERT (revoked)
+      .mockResolvedValue({ rows: [] });
+
     const targetStatus = await grantRevoke.processRevoke(
       HOG_CLIENT_ID,
       MEMBER_INTERNAL_ID,
@@ -88,6 +111,17 @@ describe('[P1] Member cancels plan → all door access revoked', () => {
   });
 
   it('uses the decrypted API key from DB — never a hardcoded or mock key', async () => {
+    db.query.mockReset();
+    db.query
+      .mockResolvedValueOnce({ rows: [{ hardware_api_key: ENCRYPTED_API_KEY_DB_VALUE }] })
+      .mockResolvedValueOnce({ rows: [
+        { role_assignment_id: KISI_ROLE_ASSIGNMENT_ID, hardware_group_id: 'kisi-group-all', mapping_id: 'pm-1' },
+      ]})
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })
+      .mockResolvedValueOnce({ rowCount: 0 })
+      .mockResolvedValue({ rows: [] });
+
     await grantRevoke.processRevoke(
       HOG_CLIENT_ID,
       MEMBER_INTERNAL_ID,

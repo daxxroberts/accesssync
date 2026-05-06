@@ -1,7 +1,3 @@
-// SCHEMA_MIGRATION_SKIP: Mocks old member_identity/member_access_state shapes.
-// Replaced by: test/p1-critical-path/queue-worker-new-schema.test.js
-// Un-skip in: S-8
-
 /**
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │  PRIORITY 1 — CRITICAL PATH                                             │
@@ -138,7 +134,7 @@ beforeEach(() => {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe.skip('[P1] Queue worker grant flow — resolve → lock → provision → complete', () => {
+describe('[P1] Queue worker grant flow — resolve → lock → provision → complete', () => {
 
   it('resolves plan mappings, locks identity, provisions access, and completes — full happy path', async () => {
     const job = makeJob('grant');
@@ -182,7 +178,7 @@ describe.skip('[P1] Queue worker grant flow — resolve → lock → provision �
 
 });
 
-describe.skip('[P1] Queue worker handles unknown plan — PLAN_NOT_MAPPED path (W-1)', () => {
+describe('[P1] Queue worker handles unknown plan — PLAN_NOT_MAPPED path (W-1)', () => {
 
   it('calls retryEngine.handleFailure when resolver returns null (unknown plan)', async () => {
     planMappingResolver.resolve.mockResolvedValue(null);
@@ -211,7 +207,7 @@ describe.skip('[P1] Queue worker handles unknown plan — PLAN_NOT_MAPPED path (
 
 });
 
-describe.skip('[P1] Queue worker parks member when plan has no hardware group (Wix-first flow)', () => {
+describe('[P1] Queue worker parks member when plan has no hardware group (Wix-first flow)', () => {
 
   it('parks member as pending_hardware when resolver returns empty array', async () => {
     planMappingResolver.resolve.mockResolvedValue([]);
@@ -229,7 +225,7 @@ describe.skip('[P1] Queue worker parks member when plan has no hardware group (W
 
 });
 
-describe.skip('[P1] Queue worker parks member when no API key is configured', () => {
+describe('[P1] Queue worker parks member when no API key is configured', () => {
 
   it('parks member as pending_hardware when client has no hardware API key', async () => {
     // Return no API key from client lookup
@@ -247,7 +243,7 @@ describe.skip('[P1] Queue worker parks member when no API key is configured', ()
 
 });
 
-describe.skip('[P1] Queue worker releases lock and rethrows on hardware failure', () => {
+describe('[P1] Queue worker releases lock and rethrows on hardware failure', () => {
 
   it('releases in_flight lock before rethrowing so member is not stuck', async () => {
     const kisiErr = new Error('Kisi 503');
