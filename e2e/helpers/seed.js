@@ -44,6 +44,10 @@ const HOG_SOURCE_PLAN_IDS = {
   student:        '2dcaf897-f355-42ba-8b73-dff789ed0e94',
   couples:        '16d5654d-b427-4425-a3ec-2ee9f266e57a',
   family:         '0d478601-8e54-4628-ba17-c5e14995b490',
+  firstResponder: '7861f180-925b-44d8-80ee-f0a458d8fc06',
+  military:       '87e831a4-13bf-40dd-adf6-2a4be47530ee',
+  freeService:    'c068eb5f-51bf-40be-a351-47e62b6a8175',
+  servicePackage: '28dd565b-6566-4b3f-a37d-a27aa0e009af',
 };
 
 // HOG Kisi hardware group IDs

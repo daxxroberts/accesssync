@@ -136,7 +136,10 @@ class WebhookProcessor {
       .catch((err) => log.warn('webhook.last_webhook_at_update_failed', { clientId: tenantId, eventId }, err));
 
     // 5. Classify and enqueue (DR-012)
-    if (['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(standardEvent.eventType)) {
+    // plan.started is phase 2 of delayed-start grants — orderStarted fires when the future
+    // startDate arrives. queue-worker has a dedicated plan.started branch that completes
+    // the grant (assigns Kisi role, writes member_access_sources). Must be enqueued.
+    if (['plan.purchased', 'plan.started', 'payment.recovered', 'booking.confirmed'].includes(standardEvent.eventType)) {
       await eventQueue.add('grant', { tenantId, standardEvent }, { jobId: `grant-${eventId}` });
       log.info('webhook.enqueued', {
         traceId, eventId, eventType: standardEvent.eventType,
