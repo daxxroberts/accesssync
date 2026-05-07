@@ -325,6 +325,16 @@ class StandardAdapter {
     );
     const memberMasterId = masterRow.rows[0]?.member_master_id;
 
+    // member_access row is missing or member_master_id is null — fail loud.
+    // This means the row was CASCADE-deleted (member_master removed mid-grant) or never
+    // existed. Writing null into member_billing.member_master_id silently corrupts data;
+    // throwing lets BullMQ dead-letter the job and surfaces the integrity break.
+    if (!memberMasterId) {
+      const err = new Error(`completeGrant: member_access row ${memberId} missing or has null member_master_id (likely CASCADE delete mid-grant)`);
+      err.code = 'MEMBER_ACCESS_GONE';
+      throw err;
+    }
+
     for (const {
       mappingId, roleAssignmentId, hardwareGroupId, sourcePlanId, sourceType,
       planEndDate, wixOrderId, wixSubscriptionId, cycleIndex,
@@ -600,7 +610,29 @@ class StandardAdapter {
       return hardwareUserId;
     }
     log.info('adapter.identity_creating', { hardwarePlatform, email, userPattern: options.userPattern || 'invited' });
-    return hardwareAdapter.createUser(hardwarePlatform, apiKey, email, name, options);
+    try {
+      return await hardwareAdapter.createUser(hardwarePlatform, apiKey, email, name, options);
+    } catch (err) {
+      // Kisi 409 'The record already exists' — user was created between findUserByEmail and createUser.
+      // Causes: concurrent grants for same member, search index lag, prior partial run.
+      // Recovery: re-query by email; if found, reuse that ID.
+      const isAlreadyExists =
+        (err.statusCode === 409 || err.status === 409) &&
+        /already exists/i.test(err.message || '');
+      if (!isAlreadyExists) throw err;
+
+      log.warn('adapter.identity.create_409_recovering', {
+        hardwarePlatform, email,
+        message: 'Kisi returned 409 on createUser — re-querying by email to reuse existing ID',
+      });
+      hardwareUserId = await hardwareAdapter.findUserByEmail(hardwarePlatform, apiKey, email);
+      if (hardwareUserId) {
+        log.info('adapter.identity.create_409_recovered', { hardwarePlatform, hardwareUserId, email });
+        return hardwareUserId;
+      }
+      // Re-query failed too — surface the original 409.
+      throw err;
+    }
   }
 
   /**

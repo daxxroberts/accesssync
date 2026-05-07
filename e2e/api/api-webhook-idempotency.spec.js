@@ -28,6 +28,8 @@ async function waitFor(fn, timeoutMs = 15_000) {
   return null;
 }
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('API — Billing deduplication (wix_order_id + cycle_index)', () => {
   test.afterEach(async () => { await seed.teardownHogTestMembers(); });
 
@@ -44,6 +46,13 @@ test.describe('API — Billing deduplication (wix_order_id + cycle_index)', () =
     await waitFor(() => db.queryOne(`
       SELECT id FROM member_master WHERE client_id = $1 AND platform_member_id = $2
     `, [seed.HOG_CLIENT_ID, memberId]));
+    // Wait for member_billing row to exist before the second post (otherwise the second
+    // arrives before the first finishes provisioning, and the COUNT below races).
+    await waitFor(() => db.queryOne(`
+      SELECT mb.id FROM member_billing mb
+      JOIN member_master mm ON mb.member_master_id = mm.id
+      WHERE mm.client_id = $1 AND mm.platform_member_id = $2 AND mb.wix_order_id = $3
+    `, [seed.HOG_CLIENT_ID, memberId, orderId]));
 
     await postWebhook(payload);
     await new Promise(r => setTimeout(r, 3_000));
@@ -100,7 +109,7 @@ test.describe('API — Billing deduplication (wix_order_id + cycle_index)', () =
     }));
 
     await waitFor(() => db.queryOne(`
-      SELECT id FROM member_billing mb
+      SELECT mb.id FROM member_billing mb
       JOIN member_master mm ON mb.member_master_id = mm.id
       WHERE mm.platform_member_id = $1 AND mb.cycle_index = 1
     `, [memberId]));
@@ -119,7 +128,7 @@ test.describe('API — Billing deduplication (wix_order_id + cycle_index)', () =
     });
 
     const row2 = await waitFor(() => db.queryOne(`
-      SELECT id FROM member_billing mb
+      SELECT mb.id FROM member_billing mb
       JOIN member_master mm ON mb.member_master_id = mm.id
       WHERE mm.platform_member_id = $1 AND mb.cycle_index = 2
     `, [memberId]));

@@ -60,18 +60,8 @@ class WebhookProcessor {
 
     // 2. Deduplication check (Idempotency — DR-010)
     const isDuplicate = await this._checkIfDuplicate(eventId);
-    if (isDuplicate) {
-      log.info('webhook.duplicate', { traceId, eventId, eventType: standardEvent.eventType, stage: 'ingress', result: 'skipped' });
-      return;
-    }
 
-    // 3. Register Event (mark processed before enqueuing — prevents re-entry on crash)
-    await this._markEventProcessed(eventId, standardEvent);
-
-    // 4. Resolve tenant. Two paths:
-    //   REST webhook: wixSiteId (instanceId) → clients.source_site_id lookup.
-    //   Velo forwarder: payload has no instanceId. events.js sends CLIENT_ID via
-    //     X-AccessSync-Client-Id header (HMAC-verified end-to-end) → use it directly.
+    // Resolve tenant up front so duplicate webhook_log rows still get clientId stamped.
     let tenantId = null;
     if (standardEvent.wixSiteId) {
       tenantId = await tenantResolver.resolve(standardEvent.wixSiteId);
@@ -84,7 +74,8 @@ class WebhookProcessor {
     // didn't know the clientId at mint time. Fire-and-forget; never blocks.
     if (tenantId && traceId) setTraceContext(traceId, { clientId: tenantId });
 
-    // 4b. Log to webhook_log for Admin Hub Webhook Inspector (after tenant known)
+    // Log to webhook_log BEFORE the duplicate early-return so operators can see duplicates
+    // in the Webhook Inspector (DR-010 observability requirement).
     await this.logWebhookAttempt({
       eventId,
       clientId: tenantId,
@@ -97,6 +88,14 @@ class WebhookProcessor {
     }).catch((dbErr) => {
       log.error('webhook.log_write_failed', { traceId, eventId, clientId: tenantId, eventType: standardEvent.eventType, stage: 'ingress', result: 'failed' }, dbErr);
     });
+
+    if (isDuplicate) {
+      log.info('webhook.duplicate', { traceId, eventId, eventType: standardEvent.eventType, stage: 'ingress', result: 'skipped' });
+      return;
+    }
+
+    // 3. Register Event (mark processed before enqueuing — prevents re-entry on crash)
+    await this._markEventProcessed(eventId, standardEvent);
 
     if (!tenantId) {
       // OB-88: classify the failure so operators can self-diagnose.
