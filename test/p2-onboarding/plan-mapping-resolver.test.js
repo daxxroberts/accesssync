@@ -2,12 +2,6 @@
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │  PRIORITY 2 — OPERATOR ONBOARDING                                      │
  * │  Scenario: Plan mapping resolver returns correct hardware groups        │
- * │                                                                         │
- * │  Business consequence: If the resolver returns wrong groups, a member   │
- * │  gets provisioned to the wrong doors or none at all. If it returns      │
- * │  null incorrectly, the member's payment goes into the error queue.      │
- * │                                                                         │
- * │  Critical path: plan purchased → resolve mappings → correct group IDs   │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -172,13 +166,13 @@ describe('[P2] Plan mapping resolver filters unhealthy groups (K-2 edge case)', 
     expect(mainQuery).toContain("'ok'");
   });
 
-  it('SQL query filters inactive subscription locations (DR-027)', async () => {
+  it('SQL query filters inactive subscription locations via billing_subscriptions (DR-027)', async () => {
     db.query.mockResolvedValueOnce({ rows: [mockMappingRow()] });
 
     await planMappingResolver.resolve(HOG_CLIENT_ID, CONNECT_PLAN_ID);
 
     const mainQuery = db.query.mock.calls[0][0];
-    expect(mainQuery).toContain('subscription_status');
+    expect(mainQuery).toContain('billing_subscriptions');
     expect(mainQuery).toContain("'active'");
   });
 

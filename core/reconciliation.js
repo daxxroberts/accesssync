@@ -3,8 +3,8 @@
  * @layer core/layer4
  * @role cron-nightly
  * @schedule nightly via Railway Cron
- * @reads member_access_state, error_queue, locations, clients (source_api_key, source_site_id, reconciliation_interval, last_sync_at), member_identity, member_role_assignments, member_access_sources, plan_mappings
- * @writes member_access_state, config_alert_log, clients (last_sync_at)
+ * @reads member_access, member_master, error_queue, locations, clients (source_api_key, source_site_id, reconciliation_interval, last_sync_at), member_access_sources, plan_mappings
+ * @writes member_access, config_alert_log, clients (last_sync_at)
  * @calls hardware-adapter (getLocks, getManagedRoleAssignments), wix-plans-api (listActiveOrders, listConfirmedBookings), plan-mapping-resolver (resolve), BullMQ (re-queue), resend (digest)
  * @exports instance (NightlyReconciliation) — exposes runNightlySweep, _syncClient, reconcileMember
  * @dr DR-003, DR-008, DR-018, DR-020, DR-023, DR-034, DR-037
@@ -73,7 +73,7 @@ class NightlyReconciliation {
 
       // Step 1: Clean up stale in_flight records (crash protection)
       await db.query(
-        `UPDATE member_access_state
+        `UPDATE member_access
          SET status = 'failed', updated_at = NOW()
          WHERE status = 'in_flight'
            AND updated_at < NOW() - INTERVAL '${this.staleThresholdMinutes} minutes'`
@@ -118,12 +118,13 @@ class NightlyReconciliation {
     sweepLogger.info('reconciliation.wix_sync_start', { traceId: sweepTraceId, stage: 'cron', result: 'start' });
 
     const clientsResult = await db.query(
-      `SELECT id, source_site_id, source_api_key, hardware_api_key, hardware_platform,
-              last_active_member_count
-       FROM clients
-       WHERE status = 'active'
-         AND source_api_key IS NOT NULL
-         AND source_site_id IS NOT NULL`
+      `SELECT c.id, c.source_site_id, c.source_api_key, c.last_active_member_count,
+              cs.hardware_api_key, cs.hardware_platform
+       FROM clients c
+       JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
+       WHERE c.status = 'active'
+         AND c.source_api_key IS NOT NULL
+         AND c.source_site_id IS NOT NULL`
     );
 
     for (const client of clientsResult.rows) {
@@ -236,17 +237,66 @@ class NightlyReconciliation {
 
     if (kisiUserIds.length > 0) {
       const identityResult = await db.query(
-        `SELECT platform_member_id, plan_holder_id
-         FROM member_identity
-         WHERE client_id = $1
-           AND source_tag = 'accesssync'
-           AND hardware_user_id = ANY($2)`,
+        `SELECT mm.platform_member_id, ma.plan_holder_id
+         FROM member_access ma
+         JOIN member_master mm ON mm.id = ma.member_master_id
+         WHERE ma.client_id = $1
+           AND mm.source_tag = 'accesssync'
+           AND ma.hardware_user_id = ANY($2)`,
         [client.id, kisiUserIds]
       );
       for (const row of identityResult.rows) {
         kisiMembers.set(row.platform_member_id, {
           isSubMember: row.plan_holder_id !== null || row.platform_member_id.includes('###as'),
         });
+      }
+    }
+
+    // OB-74: Verify each Kisi role assignment has a matching member_access_sources row.
+    // If not, queue a synthetic revoke — Kisi has a role with no AccessSync billing source.
+    for (const assignment of kisiAssignments) {
+      if (!assignment.userId) continue;
+      const sourceCheck = await db.query(
+        `SELECT mas.id
+         FROM member_access_sources mas
+         JOIN member_access ma ON ma.id = mas.access_id
+         WHERE ma.client_id = $1
+           AND ma.hardware_user_id = $2
+           AND mas.hardware_group_id = $3
+         LIMIT 1`,
+        [client.id, assignment.userId, assignment.groupId]
+      );
+      if (sourceCheck.rows.length === 0) {
+        log.warn('reconciliation.kisi_orphan_detected', {
+          clientId: client.id, kisiUserId: assignment.userId,
+          hardwareGroupId: assignment.groupId, traceId: this._sweepTraceId,
+        });
+        // Resolve which Wix member this Kisi user belongs to, so the synthetic revoke targets correctly
+        const memberRow = await db.query(
+          `SELECT mm.platform_member_id
+           FROM member_access ma
+           JOIN member_master mm ON mm.id = ma.member_master_id
+           WHERE ma.client_id = $1 AND ma.hardware_user_id = $2
+           LIMIT 1`,
+          [client.id, assignment.userId]
+        );
+        if (!memberRow.rows.length) continue; // No DB record — user was never AccessSync-managed, skip
+        const platformMemberId = memberRow.rows[0].platform_member_id;
+        const recoEventId = `recon-kisi-orphan-${client.id}-${assignment.userId}-${Date.now()}`;
+        const orphanTraceId = this._sweepTraceId || crypto.randomUUID();
+        const syntheticEvent = {
+          eventType:        'plan.cancelled',
+          sourcePlatform:   'wix',
+          platformMemberId,
+          wixSiteId:        siteId,
+          synthetic:        true,
+          syntheticSource:  'reconciliation.kisi_orphan',
+          traceId:          orphanTraceId,
+          eventId:          recoEventId,
+        };
+        const jobId = `revoke-kisi-orphan-${client.id}-${assignment.userId}-${Date.now()}`;
+        await eventQueue.add('revoke', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
+        revoked++;
       }
     }
 
@@ -505,8 +555,11 @@ class NightlyReconciliation {
 
     // 1. Load client + verify active and configured
     const clientRes = await db.query(
-      `SELECT id, source_site_id, source_api_key, hardware_api_key, hardware_platform
-       FROM clients WHERE id = $1 AND status = 'active'`,
+      `SELECT c.id, c.source_site_id, c.source_api_key,
+              cs.hardware_api_key, cs.hardware_platform
+       FROM clients c
+       LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
+       WHERE c.id = $1 AND c.status = 'active'`,
       [clientId]
     );
     if (!clientRes.rows.length) {
@@ -524,10 +577,12 @@ class NightlyReconciliation {
       return result;
     }
 
-    // 2. Load member_identity, guard against sub-members
+    // 2. Load member_access + member_master, guard against sub-members
     const identityRes = await db.query(
-      `SELECT id, platform_member_id, hardware_user_id, plan_holder_id, source_tag
-       FROM member_identity WHERE id = $1 AND client_id = $2`,
+      `SELECT ma.id, mm.platform_member_id, ma.hardware_user_id, ma.plan_holder_id, mm.source_tag
+       FROM member_access ma
+       JOIN member_master mm ON mm.id = ma.member_master_id
+       WHERE ma.id = $1 AND ma.client_id = $2`,
       [memberId, clientId]
     );
     if (!identityRes.rows.length) {
@@ -672,21 +727,16 @@ class NightlyReconciliation {
     const untraceable = [...actualGroupIds].filter(g => !expectedGroupIds.has(g));
     const missingHardware = [...expectedGroupIds].filter(g => !actualGroupIds.has(g));
 
-    // 6. Check DB row drift — even when hardware matches Wix, member_role_assignments
-    //    or member_access_sources rows may be missing (this is the bug Daxx hit).
-    const dbAssignmentRes = await db.query(
-      `SELECT hardware_group_id FROM member_role_assignments WHERE member_id = $1`,
-      [memberId]
-    );
-    const dbGroupIds = new Set(dbAssignmentRes.rows.map(r => r.hardware_group_id).filter(Boolean));
+    // 6. Check DB row drift — even when hardware matches Wix, member_access_sources
+    //    rows may be missing (this is the bug Daxx hit). Uses access_id FK (new schema).
     const dbSourceRes = await db.query(
-      `SELECT hardware_group_id FROM member_access_sources WHERE member_id = $1`,
+      `SELECT hardware_group_id FROM member_access_sources WHERE access_id = $1`,
       [memberId]
     );
     const dbSourceGroupIds = new Set(dbSourceRes.rows.map(r => r.hardware_group_id).filter(Boolean));
 
     const dbMissingForExpected = [...expectedGroupIds].filter(
-      g => !dbGroupIds.has(g) || !dbSourceGroupIds.has(g)
+      g => !dbSourceGroupIds.has(g)
     );
 
     // 7. Decide and act
@@ -800,10 +850,11 @@ class NightlyReconciliation {
     // Per-location iteration: each active location has its own platform + key
     const locationsResult = await db.query(
       `SELECT l.id AS location_id, l.client_id,
-              COALESCE(l.hardware_platform, c.hardware_platform, 'kisi') AS hardware_platform,
-              COALESCE(l.hardware_api_key, c.hardware_api_key) AS hardware_api_key
+              cs.hardware_platform,
+              cs.hardware_api_key
        FROM locations l
        JOIN clients c ON l.client_id = c.id
+       JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
        WHERE c.status = 'active' AND l.subscription_status = 'active'`
     );
 
@@ -831,12 +882,12 @@ class NightlyReconciliation {
 
   async _fetchActionableRecords() {
     const result = await db.query(
-      `SELECT mas.id, mas.status, mas.member_id, mas.client_id,
-              mi.platform_member_id, mi.hardware_platform, mi.source_platform
-       FROM member_access_state mas
-       JOIN member_identity mi ON mi.id = mas.member_id
-       WHERE mas.status IN ('failed', 'skipped_lockdown')
-         AND mi.source_tag = 'accesssync'`
+      `SELECT ma.id, ma.status, ma.id AS member_id, ma.client_id,
+              mm.platform_member_id, ma.hardware_platform, mm.source_platform
+       FROM member_access ma
+       JOIN member_master mm ON mm.id = ma.member_master_id
+       WHERE ma.status IN ('failed', 'skipped_lockdown')
+         AND mm.source_tag = 'accesssync'`
     );
     return result.rows;
   }

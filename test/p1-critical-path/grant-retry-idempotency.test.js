@@ -81,7 +81,7 @@ describe('[P1] processGrant idempotency on retry after prior partial success', (
     const result = await grantRevoke.processGrant(TENANT_ID, MEMBER_ID, HW_USER_ID, [mapping], wixEvent);
 
     expect(hardwareAdapter.assignRole).not.toHaveBeenCalled(); // KEY: no re-call to Kisi
-    expect(result).toEqual([
+    expect(result).toMatchObject([
       {
         mappingId:        MAPPING_ID,
         roleAssignmentId: EXISTING_RA,

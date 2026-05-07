@@ -62,20 +62,15 @@ router.use(function operatorAuth(req, res, next) {
 });
 
 /**
- * Resolves the hardware API key for a client, preferring location-level override.
+ * Resolves the hardware API key for a client via connector_subscriptions.
  * Used by syncMappingMembers for direct hardware calls.
  */
 async function resolveApiKey(clientId, locationId) {
-  if (locationId) {
-    const loc = await db.query(
-      'SELECT hardware_api_key FROM locations WHERE id = $1 AND client_id = $2',
-      [locationId, clientId]
-    );
-    const enc = loc.rows[0]?.hardware_api_key;
-    if (enc) return decryptKey(enc);
-  }
-  const cli = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
-  const enc = cli.rows[0]?.hardware_api_key;
+  const cs = await db.query(
+    `SELECT hardware_api_key FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+    [clientId]
+  );
+  const enc = cs.rows[0]?.hardware_api_key;
   if (enc) return decryptKey(enc);
   return null;
 }
@@ -114,21 +109,20 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
     // C-4 safety: only call Kisi removeRole if no OTHER mapping grants the same group
     if (newStatus === 'inactive' && oldStatus === 'active') {
       const members = await db.query(
-        `SELECT mi.id AS member_id, mi.hardware_user_id,
-                mra.role_assignment_id, mra.hardware_group_id
-         FROM member_role_assignments mra
-         JOIN member_identity mi ON mi.id = mra.member_id
-         WHERE mra.mapping_id = $1 AND mi.hardware_user_id IS NOT NULL`,
+        `SELECT ma.id AS member_id, ma.hardware_user_id,
+                mas.role_assignment_id, mas.hardware_group_id
+         FROM member_access_sources mas
+         JOIN member_access ma ON ma.id = mas.access_id
+         WHERE mas.mapping_id = $1 AND ma.hardware_user_id IS NOT NULL`,
         [mappingId]
       );
       for (const m of members.rows) {
         try {
-          await db.query('DELETE FROM member_role_assignments WHERE mapping_id = $1 AND member_id = $2', [mappingId, m.member_id]);
-          await db.query('DELETE FROM member_access_sources WHERE member_id = $1 AND hardware_group_id = $2 AND mapping_id = $3', [m.member_id, m.hardware_group_id, mappingId]);
+          await db.query('DELETE FROM member_access_sources WHERE access_id = $1 AND mapping_id = $2 AND hardware_group_id = $3', [m.member_id, mappingId, m.hardware_group_id]);
 
           const otherGrants = await db.query(
-            `SELECT COUNT(*) AS cnt FROM member_role_assignments
-             WHERE member_id = $1 AND hardware_group_id = $2 AND mapping_id != $3`,
+            `SELECT COUNT(*) AS cnt FROM member_access_sources
+             WHERE access_id = $1 AND hardware_group_id = $2 AND mapping_id != $3`,
             [m.member_id, m.hardware_group_id, mappingId]
           );
           if (parseInt(otherGrants.rows[0].cnt, 10) > 0) {
@@ -147,13 +141,12 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
     // ── Status activation: grant all members with active access on this plan ──
     if (newStatus === 'active' && oldStatus === 'inactive') {
       const members = await db.query(
-        `SELECT mi.id AS member_id, mi.hardware_user_id
-         FROM member_access_state mas
-         JOIN member_identity mi ON mi.id = mas.member_id
-         WHERE mas.client_id = $1
-           AND mas.status = 'active'
-           AND COALESCE(mas.pending_plan_id, '') = COALESCE($2, '')
-           AND mi.hardware_user_id IS NOT NULL`,
+        `SELECT ma.id AS member_id, ma.hardware_user_id
+         FROM member_access ma
+         WHERE ma.client_id = $1
+           AND ma.status = 'active'
+           AND ma.plan_mapping_id = (SELECT id FROM plan_mappings WHERE source_plan_id = $2 AND client_id = $1 LIMIT 1)
+           AND ma.hardware_user_id IS NOT NULL`,
         [clientId, source_plan_id]
       );
       for (const m of members.rows) {
@@ -161,9 +154,9 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
           try {
             const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, m.hardware_user_id, groupId);
             await db.query(
-              `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
+              `INSERT INTO member_access_sources (access_id, mapping_id, hardware_group_id, role_assignment_id)
                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-              [m.member_id, mappingId, String(roleId), groupId]
+              [m.member_id, mappingId, groupId, String(roleId)]
             );
             log.info('operator.sync.granted', { memberId: m.member_id, hardwareGroupId: groupId, reason: 'mapping_activated' });
           } catch (err) {
@@ -181,21 +174,20 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
     if (!added.length && !removed.length) return;
 
     const activeMembers = await db.query(
-      `SELECT mi.id AS member_id, mi.hardware_user_id, mra.role_assignment_id, mra.hardware_group_id
-       FROM member_role_assignments mra
-       JOIN member_identity mi ON mi.id = mra.member_id
-       WHERE mra.mapping_id = $1 AND mi.hardware_user_id IS NOT NULL`,
+      `SELECT ma.id AS member_id, ma.hardware_user_id, mas.role_assignment_id, mas.hardware_group_id
+       FROM member_access_sources mas
+       JOIN member_access ma ON ma.id = mas.access_id
+       WHERE mas.mapping_id = $1 AND ma.hardware_user_id IS NOT NULL`,
       [mappingId]
     );
 
-    // Also get members with active access state (for added groups — they may not have mra rows yet for new groups)
+    // Also get members with active access (for added groups — they may not have source rows yet for new groups)
     const activeMembersForGrant = await db.query(
-      `SELECT DISTINCT mi.id AS member_id, mi.hardware_user_id
-       FROM member_access_state mas
-       JOIN member_identity mi ON mi.id = mas.member_id
-       WHERE mas.client_id = $1 AND mas.status = 'active'
-         AND COALESCE(mas.pending_plan_id, '') = COALESCE($2, '')
-         AND mi.hardware_user_id IS NOT NULL`,
+      `SELECT DISTINCT ma.id AS member_id, ma.hardware_user_id
+       FROM member_access ma
+       WHERE ma.client_id = $1 AND ma.status = 'active'
+         AND ma.plan_mapping_id = (SELECT id FROM plan_mappings WHERE source_plan_id = $2 AND client_id = $1 LIMIT 1)
+         AND ma.hardware_user_id IS NOT NULL`,
       [clientId, source_plan_id]
     );
 
@@ -205,9 +197,9 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
         try {
           const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, m.hardware_user_id, groupId);
           await db.query(
-            `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
+            `INSERT INTO member_access_sources (access_id, mapping_id, hardware_group_id, role_assignment_id)
              VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-            [m.member_id, mappingId, String(roleId), groupId]
+            [m.member_id, mappingId, groupId, String(roleId)]
           );
           log.info('operator.sync.granted', { memberId: m.member_id, hardwareGroupId: groupId, reason: 'group_added' });
         } catch (err) {
@@ -221,15 +213,12 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
     for (const m of activeMembers.rows) {
       if (!removed.includes(m.hardware_group_id)) continue;
       try {
-        // Delete this mapping's MRA row first
-        await db.query('DELETE FROM member_role_assignments WHERE mapping_id = $1 AND member_id = $2 AND hardware_group_id = $3', [mappingId, m.member_id, m.hardware_group_id]);
-        // Delete this mapping's source row only (scoped to this mapping)
-        await db.query('DELETE FROM member_access_sources WHERE member_id = $1 AND hardware_group_id = $2 AND mapping_id = $3', [m.member_id, m.hardware_group_id, mappingId]);
+        await db.query('DELETE FROM member_access_sources WHERE access_id = $1 AND mapping_id = $2 AND hardware_group_id = $3', [m.member_id, mappingId, m.hardware_group_id]);
 
         // Check if ANY other mapping still grants this member the same group
         const otherGrants = await db.query(
-          `SELECT COUNT(*) AS cnt FROM member_role_assignments
-           WHERE member_id = $1 AND hardware_group_id = $2 AND mapping_id != $3`,
+          `SELECT COUNT(*) AS cnt FROM member_access_sources
+           WHERE access_id = $1 AND hardware_group_id = $2 AND mapping_id != $3`,
           [m.member_id, m.hardware_group_id, mappingId]
         );
         if (parseInt(otherGrants.rows[0].cnt, 10) > 0) {
@@ -322,15 +311,17 @@ async function validateApiKeyGroups(clientId, apiKey, hardwarePlatform) {
 async function retryPendingHardwareMembers(clientId, planId = null) {
   const result = await db.query(
     planId
-      ? `SELECT mi.platform_member_id, mi.source_platform, mas.pending_plan_id
-         FROM member_access_state mas
-         JOIN member_identity mi ON mi.id = mas.member_id
-         WHERE mas.client_id = $1 AND mas.status = 'pending_hardware'
-           AND COALESCE(mas.pending_plan_id, '') = COALESCE($2, '')`
-      : `SELECT mi.platform_member_id, mi.source_platform, mas.pending_plan_id
-         FROM member_access_state mas
-         JOIN member_identity mi ON mi.id = mas.member_id
-         WHERE mas.client_id = $1 AND mas.status = 'pending_hardware'`,
+      ? `SELECT mm.platform_member_id, mm.source_platform, pm.source_plan_id AS pending_plan_id
+         FROM member_access ma
+         JOIN member_master mm ON mm.id = ma.member_master_id
+         JOIN plan_mappings pm ON pm.id = ma.plan_mapping_id
+         WHERE ma.client_id = $1 AND ma.status = 'pending_hardware'
+           AND pm.source_plan_id = $2`
+      : `SELECT mm.platform_member_id, mm.source_platform, pm.source_plan_id AS pending_plan_id
+         FROM member_access ma
+         JOIN member_master mm ON mm.id = ma.member_master_id
+         LEFT JOIN plan_mappings pm ON pm.id = ma.plan_mapping_id
+         WHERE ma.client_id = $1 AND ma.status = 'pending_hardware'`,
     planId ? [clientId, planId] : [clientId]
   );
   if (result.rows.length === 0) return 0;
@@ -432,9 +423,11 @@ router.get('/site-id/verify', requireInviteToken, async (req, res) => {
 
   try {
     const existing = await db.query(
-      `SELECT id, name, tier, hardware_platform,
-              hardware_api_key IS NOT NULL AS has_api_key
-       FROM clients WHERE source_site_id = $1 LIMIT 1`,
+      `SELECT c.id, c.name, c.tier, c.hardware_platform,
+              (cs.id IS NOT NULL) AS has_api_key
+       FROM clients c
+       LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
+       WHERE c.source_site_id = $1 LIMIT 1`,
       [siteId.trim()]
     );
     if (existing.rows.length) {
@@ -556,11 +549,17 @@ router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) =
       return res.status(400).json({ error: 'apiKey is required' });
     }
     const encrypted = encryptApiKey(apiKey.trim());
-    const result = await db.query(
-      `UPDATE clients SET hardware_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
-      [encrypted, clientId]
+    const platformRow = await db.query('SELECT hardware_platform FROM clients WHERE id = $1', [clientId]);
+    if (!platformRow.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const hwPlatform = platformRow.rows[0].hardware_platform || 'kisi';
+    await db.query(
+      `INSERT INTO connector_subscriptions (client_id, hardware_platform, hardware_api_key, status, updated_at)
+       VALUES ($1, $2, $3, 'active', NOW())
+       ON CONFLICT (client_id, hardware_platform) DO UPDATE
+         SET hardware_api_key = EXCLUDED.hardware_api_key,
+             updated_at = NOW()`,
+      [clientId, hwPlatform, encrypted]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     log.info('operator.setup.apikey_set', { clientId });
     recordActivity(req, 'api_key.saved', { clientId });
 
@@ -609,9 +608,12 @@ router.post('/clients/:clientId/locations/:locationId/activate', requireInviteTo
 router.get('/clients/:clientId/kisi-groups', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const clientResult = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
-    if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
-    if (!clientResult.rows[0].hardware_api_key) {
+    const clientResult = await db.query(
+      `SELECT cs.hardware_api_key FROM connector_subscriptions cs
+       WHERE cs.client_id = $1 AND cs.status = 'active' LIMIT 1`,
+      [clientId]
+    );
+    if (!clientResult.rows.length || !clientResult.rows[0].hardware_api_key) {
       return res.status(400).json({ groups: [], count: 0, noKey: true, keyStatus: 'missing',
         error: 'No API key configured' });
     }
@@ -650,9 +652,11 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
 router.get('/clients/:clientId/api-key/status', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
-    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    res.json({ hasKey: !!result.rows[0].hardware_api_key });
+    const result = await db.query(
+      `SELECT hardware_api_key FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+      [clientId]
+    );
+    res.json({ hasKey: !!(result.rows[0]?.hardware_api_key) });
   } catch (err) {
     log.error('operator.apikey.status_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -664,9 +668,13 @@ router.get('/clients/:clientId/api-key/status', async (req, res) => {
 router.get('/clients/:clientId/api-key/test', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]);
-    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    if (!result.rows[0].hardware_api_key) return res.status(400).json({ valid: false, error: 'No API key set' });
+    const result = await db.query(
+      `SELECT hardware_api_key FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+      [clientId]
+    );
+    if (!result.rows.length || !result.rows[0].hardware_api_key) {
+      return res.status(400).json({ valid: false, error: 'No API key set' });
+    }
 
     const apiKey = decryptKey(result.rows[0].hardware_api_key);
     await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
@@ -689,9 +697,18 @@ router.put('/clients/:clientId/api-key', async (req, res) => {
       return res.status(400).json({ error: 'apiKey is required' });
     }
     const encrypted = encryptApiKey(apiKey.trim());
+    // Resolve hardware_platform from clients (needed for UNIQUE(client_id, hardware_platform))
+    const platformRow = await db.query('SELECT hardware_platform FROM clients WHERE id = $1', [clientId]);
+    if (!platformRow.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const hwPlatform = platformRow.rows[0].hardware_platform || 'kisi';
     const result = await db.query(
-      `UPDATE clients SET hardware_api_key = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name`,
-      [encrypted, clientId]
+      `INSERT INTO connector_subscriptions (client_id, hardware_platform, hardware_api_key, status, updated_at)
+       VALUES ($1, $2, $3, 'active', NOW())
+       ON CONFLICT (client_id, hardware_platform) DO UPDATE
+         SET hardware_api_key = EXCLUDED.hardware_api_key,
+             updated_at = NOW()
+       RETURNING client_id`,
+      [clientId, hwPlatform, encrypted]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     log.info('operator.apikey.rotated', { clientId });
@@ -790,14 +807,13 @@ router.get('/:clientId', async (req, res) => {
         [clientId]
       ),
       db.query(
-        `SELECT COUNT(DISTINCT mi.source_member_id)::int AS count
-         FROM member_identity mi
-         JOIN member_access_state mas ON mas.member_id = mi.id
-         WHERE mi.client_id = $1 AND mas.status = 'active'`,
+        `SELECT COUNT(DISTINCT ma.member_master_id)::int AS count
+         FROM member_access ma
+         WHERE ma.client_id = $1 AND ma.status = 'active'`,
         [clientId]
       ),
       db.query(
-        `SELECT COUNT(DISTINCT source_member_id)::int AS count FROM member_identity
+        `SELECT COUNT(DISTINCT id)::int AS count FROM member_master
          WHERE client_id = $1`,
         [clientId]
       ),
@@ -806,7 +822,7 @@ router.get('/:clientId', async (req, res) => {
         [clientId]
       ),
       db.query(
-        `SELECT COUNT(*)::int AS count FROM member_access_state
+        `SELECT COUNT(*)::int AS count FROM member_access
          WHERE client_id = $1 AND status = 'pending_hardware'`,
         [clientId]
       ),
@@ -889,13 +905,23 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
       return res.status(400).json({ error: 'API key too short' });
     }
     const encrypted = encryptApiKey(apiKey.trim());
-    const result = await db.query(
-      `UPDATE locations SET hardware_api_key = $1
-       WHERE id = $2 AND client_id = $3
-       RETURNING id, name`,
-      [encrypted, locationId, clientId]
+    // Verify the location exists and resolve hardware_platform for the UNIQUE key
+    const locCheck = await db.query(
+      `SELECT l.id, COALESCE(c.hardware_platform, 'kisi') AS hardware_platform
+       FROM locations l JOIN clients c ON c.id = l.client_id
+       WHERE l.id = $1 AND l.client_id = $2`,
+      [locationId, clientId]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    if (!locCheck.rows.length) return res.status(404).json({ error: 'Location not found' });
+    const hwPlatform = locCheck.rows[0].hardware_platform;
+    await db.query(
+      `INSERT INTO connector_subscriptions (client_id, hardware_platform, hardware_api_key, status, updated_at)
+       VALUES ($1, $2, $3, 'active', NOW())
+       ON CONFLICT (client_id, hardware_platform) DO UPDATE
+         SET hardware_api_key = EXCLUDED.hardware_api_key,
+             updated_at = NOW()`,
+      [clientId, hwPlatform, encrypted]
+    );
     log.info('operator.location.apikey_set', { clientId, locationId });
     recordActivity(req, 'api_key.saved', { clientId, locationId });
 
@@ -905,12 +931,7 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
     res.json({ ok: true, message: 'Location API key saved', pendingRetried: retried });
 
     // GAP 6: validate new key can reach all active groups at this location
-    const locPlatform = await db.query(
-      `SELECT COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform
-       FROM locations l JOIN clients c ON c.id = l.client_id
-       WHERE l.id = $1`, [locationId]
-    );
-    validateApiKeyGroups(clientId, apiKey.trim(), locPlatform.rows[0]?.hardware_platform)
+    validateApiKeyGroups(clientId, apiKey.trim(), hwPlatform)
       .catch(err => log.warn('operator.apikey.location_validation_failed', { clientId, locationId }, err));
   } catch (err) {
     log.error('operator.location.apikey_save_failed', { clientId, locationId }, err);
@@ -966,14 +987,25 @@ router.post('/:clientId/locations/:locationId/suspend', async (req, res) => {
 router.post('/:clientId/locations/:locationId/activate', async (req, res) => {
   const { clientId, locationId } = req.params;
   try {
-    const result = await db.query(
-      `UPDATE locations SET subscription_status = 'active', subscribed_at = NOW()
-       WHERE id = $1 AND client_id = $2 RETURNING id, name, subscription_status`,
+    const locCheck = await db.query(
+      'SELECT id, name FROM locations WHERE id = $1 AND client_id = $2',
       [locationId, clientId]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+    if (!locCheck.rows.length) return res.status(404).json({ error: 'Location not found' });
+    const bsUpdate = await db.query(
+      `UPDATE billing_subscriptions SET status = 'active', subscribed_at = NOW(), updated_at = NOW()
+       WHERE location_id = $1 AND client_id = $2`,
+      [locationId, clientId]
+    );
+    if (bsUpdate.rowCount === 0) {
+      await db.query(
+        `INSERT INTO billing_subscriptions (client_id, location_id, status, subscribed_at)
+         VALUES ($1, $2, 'active', NOW())`,
+        [clientId, locationId]
+      );
+    }
     recordActivity(req, 'location.activated', { clientId, locationId });
-    res.json({ ok: true, location: result.rows[0] });
+    res.json({ ok: true, location: { id: locCheck.rows[0].id, name: locCheck.rows[0].name, subscription_status: 'active' } });
     // GAP 3: re-provision all previously active members at this location
     activateLocationMembers(clientId, locationId)
       .catch(err => log.warn('operator.location.reactivation_fire_forget_failed', { clientId, locationId }, err));
@@ -989,16 +1021,20 @@ router.post('/:clientId/locations/:locationId/activate', async (req, res) => {
 router.get('/:clientId/locations/:locationId/api-key/test', async (req, res) => {
   const { clientId, locationId } = req.params;
   try {
-    const [locResult, clientResult] = await Promise.all([
-      db.query('SELECT hardware_api_key FROM locations WHERE id = $1 AND client_id = $2', [locationId, clientId]),
-      db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]),
+    // Verify location exists, then get key from connector_subscriptions
+    const [locCheck, csResult] = await Promise.all([
+      db.query('SELECT id FROM locations WHERE id = $1 AND client_id = $2', [locationId, clientId]),
+      db.query(
+        `SELECT hardware_api_key FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+        [clientId]
+      ),
     ]);
-    if (!locResult.rows.length) return res.status(404).json({ error: 'Location not found' });
+    if (!locCheck.rows.length) return res.status(404).json({ error: 'Location not found' });
 
-    const encryptedKey = locResult.rows[0].hardware_api_key || clientResult.rows[0]?.hardware_api_key;
+    const encryptedKey = csResult.rows[0]?.hardware_api_key;
     if (!encryptedKey) return res.status(400).json({ valid: false, error: 'No API key set', source: null });
 
-    const source = locResult.rows[0].hardware_api_key ? 'location' : 'client';
+    const source = 'connector';
     const apiKey = decryptKey(encryptedKey);
     await kisiConnector.makeRequest('/groups?limit=1', { method: 'GET' }, apiKey);
 
@@ -1018,14 +1054,18 @@ router.get('/:clientId/locations', async (req, res) => {
   try {
     const [locations, errorCounts, doorCounts, planCounts] = await Promise.all([
       db.query(
-        `SELECT l.id, l.name, l.city, l.state, l.subscription_status, l.tier,
-                l.subscribed_at,
+        `SELECT l.id, l.name, l.city, l.state,
+                COALESCE(bs.status, 'inactive') AS subscription_status,
+                bs.tier,
+                bs.subscribed_at,
                 COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform,
                 l.notification_email,
-                (l.hardware_api_key IS NOT NULL) AS has_location_key,
-                (l.hardware_api_key IS NOT NULL OR c.hardware_api_key IS NOT NULL) AS has_key
+                (cs.hardware_api_key IS NOT NULL) AS has_location_key,
+                (cs.hardware_api_key IS NOT NULL) AS has_key
          FROM locations l
          JOIN clients c ON c.id = l.client_id
+         LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
+         LEFT JOIN connector_subscriptions cs ON cs.client_id = l.client_id AND cs.status = 'active'
          WHERE l.client_id = $1 ORDER BY l.created_at ASC`,
         [clientId]
       ),
@@ -1092,35 +1132,32 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
       ),
       db.query(
         `SELECT mal.id, mal.event_type, mal.credential_type, mal.created_at,
-                mi.platform_member_id
+                mm.platform_member_id
          FROM member_access_log mal
-         JOIN member_identity mi ON mi.id = mal.member_id
+         JOIN member_access ma ON ma.id = mal.member_id
+         JOIN member_master mm ON mm.id = ma.member_master_id
          WHERE mal.client_id = $1
-           AND mi.id IN (
-             SELECT mra2.member_id FROM member_role_assignments mra2
-             JOIN plan_mappings pm2 ON pm2.id = mra2.mapping_id
+           AND ma.id IN (
+             SELECT mas2.access_id FROM member_access_sources mas2
+             JOIN plan_mappings pm2 ON pm2.id = mas2.mapping_id
              WHERE pm2.location_id = $2
            )
          ORDER BY mal.created_at DESC LIMIT 10`,
         [clientId, locationId]
       ),
       db.query(
-        `SELECT DISTINCT mi.id, mi.platform_member_id, mas.status, mas.provisioned_at, mas.updated_at,
-                COALESCE(mi.display_name,
-                  NULLIF(TRIM(COALESCE(mi.first_name,'') || ' ' || COALESCE(mi.last_name,'')), ''),
-                  mi.email) AS member_name
-         FROM member_identity mi
-         JOIN member_access_state mas ON mas.member_id = mi.id
-         LEFT JOIN member_role_assignments mra ON mra.member_id = mi.id
-         LEFT JOIN plan_mappings pm ON pm.id = mra.mapping_id
-         WHERE mi.client_id = $1
-           AND (mi.sub_member_status IS NULL OR mi.sub_member_status NOT IN ('removing', 'deleted'))
-           AND (pm.location_id = $2 OR EXISTS (
-             SELECT 1 FROM plan_mappings pm2
-             WHERE pm2.location_id = $2
-               AND pm2.source_plan_id = mas.pending_plan_id
-           ))
-         ORDER BY mas.updated_at DESC NULLS LAST`,
+        `SELECT DISTINCT ma.id, mm.platform_member_id, ma.status, ma.provisioned_at, ma.updated_at,
+                COALESCE(mm.display_name,
+                  NULLIF(TRIM(COALESCE(mm.first_name,'') || ' ' || COALESCE(mm.last_name,'')), ''),
+                  mm.email) AS member_name
+         FROM member_access ma
+         JOIN member_master mm ON mm.id = ma.member_master_id
+         LEFT JOIN member_access_sources mas ON mas.access_id = ma.id
+         LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
+         WHERE ma.client_id = $1
+           AND (mm.sub_member_status IS NULL OR mm.sub_member_status NOT IN ('removing', 'deleted'))
+           AND pm.location_id = $2
+         ORDER BY ma.updated_at DESC NULLS LAST`,
         [clientId, locationId]
       ),
     ]);
@@ -1157,9 +1194,9 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
       db.query(
         `SELECT pm.id, pm.source_plan_id, pm.plan_name, pm.door_name, pm.hardware_group_id,
                 pm.status, pm.source_status, pm.allow_multiple, pm.max_members, pm.created_at,
-                COUNT(DISTINCT mra.member_id)::int AS member_count
+                COUNT(DISTINCT ma.member_master_id)::int AS member_count
          FROM plan_mappings pm
-         LEFT JOIN member_role_assignments mra ON mra.mapping_id = pm.id
+         LEFT JOIN member_access ma ON ma.plan_mapping_id = pm.id AND ma.client_id = pm.client_id
          WHERE pm.client_id = $2 AND (pm.location_id = $1 OR pm.location_id IS NULL)
          GROUP BY pm.id
          ORDER BY pm.plan_name`,
@@ -1289,11 +1326,7 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     }
 
     if (removeGroupId) {
-      // Clean up MRA + source rows for the removed group before deleting junction row
-      await db.query(
-        'DELETE FROM member_role_assignments WHERE mapping_id = $1 AND hardware_group_id = $2',
-        [mappingId, removeGroupId]
-      );
+      // Clean up source rows for the removed group before deleting junction row
       await db.query(
         'DELETE FROM member_access_sources WHERE hardware_group_id = $1 AND mapping_id = $2',
         [removeGroupId, mappingId]
@@ -1424,10 +1457,9 @@ router.get('/:clientId/plan-mappings/:mappingId/members', async (req, res) => {
     if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
 
     const result = await db.query(
-      `SELECT COUNT(DISTINCT mra.member_id) AS count
-       FROM member_role_assignments mra
-       JOIN member_identity mi ON mi.id = mra.member_id
-       WHERE mra.mapping_id = $1 AND mi.client_id = $2`,
+      `SELECT COUNT(DISTINCT ma.member_master_id) AS count
+       FROM member_access ma
+       WHERE ma.plan_mapping_id = $1 AND ma.client_id = $2`,
       [mappingId, clientId]
     );
     res.json({ count: parseInt(result.rows[0].count, 10) });
@@ -1449,20 +1481,18 @@ router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
     if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
 
     const result = await db.query(
-      `SELECT mi.id,
-              mi.platform_member_id,
-              mi.first_name,
-              mi.last_name,
-              mi.plan_holder_id,
-              mas.status,
-              CASE WHEN mi.plan_holder_id IS NULL THEN 'holder' ELSE 'sub' END AS role
-       FROM member_role_assignments mra
-       JOIN member_identity mi ON mi.id = mra.member_id
-       LEFT JOIN member_access_state mas ON mas.member_id = mi.id
-       WHERE mra.mapping_id = $1
-         AND mi.client_id = $2
-       GROUP BY mi.id, mi.platform_member_id, mi.first_name, mi.last_name, mi.plan_holder_id, mas.status
-       ORDER BY mi.plan_holder_id NULLS FIRST, mi.platform_member_id`,
+      `SELECT ma.id,
+              mm.platform_member_id,
+              mm.first_name,
+              mm.last_name,
+              ma.sub_master_id AS plan_holder_id,
+              ma.status,
+              CASE WHEN ma.sub_master_id IS NULL THEN 'holder' ELSE 'sub' END AS role
+       FROM member_access ma
+       JOIN member_master mm ON mm.id = ma.member_master_id
+       WHERE ma.plan_mapping_id = $1
+         AND ma.client_id = $2
+       ORDER BY ma.sub_master_id NULLS FIRST, mm.platform_member_id`,
       [mappingId, clientId]
     );
     res.json({
@@ -1472,8 +1502,8 @@ router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
           platformMemberId: r.platform_member_id,
           firstName:        r.first_name,
           lastName:         r.last_name,
-          role:             r.role,           // 'holder' or 'sub'
-          planHolderId:     r.plan_holder_id, // null for the buyer-as-slot-occupant
+          role:             r.role,
+          planHolderId:     r.plan_holder_id,
           status:           r.status || 'active',
         };
       }),
@@ -1494,9 +1524,9 @@ router.get('/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members
     if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
 
     const result = await db.query(
-      `SELECT COUNT(DISTINCT mra.member_id) AS count
-       FROM member_role_assignments mra
-       WHERE mra.mapping_id = $1 AND mra.hardware_group_id = $2`,
+      `SELECT COUNT(DISTINCT mas.access_id) AS count
+       FROM member_access_sources mas
+       WHERE mas.mapping_id = $1 AND mas.hardware_group_id = $2`,
       [mappingId, groupId]
     );
     res.json({ count: parseInt(result.rows[0].count, 10) });
@@ -1529,11 +1559,11 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
 
     // Resolve hardware API key and platform
     const keyRow = await db.query(
-      `SELECT COALESCE(l.hardware_api_key, c.hardware_api_key) AS raw_key, c.hardware_platform AS platform
-       FROM clients c
-       LEFT JOIN locations l ON l.id = $2
-       WHERE c.id = $1`,
-      [clientId, locationId]
+      `SELECT cs.hardware_api_key AS raw_key, cs.hardware_platform AS platform
+       FROM connector_subscriptions cs
+       WHERE cs.client_id = $1 AND cs.status = 'active'
+       LIMIT 1`,
+      [clientId]
     );
     if (!keyRow.rows.length || !keyRow.rows[0].raw_key) {
       return res.status(400).json({ error: 'No hardware API key configured' });
@@ -1541,13 +1571,13 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
     const apiKey = decryptKey(keyRow.rows[0].raw_key);
     const platform = keyRow.rows[0].platform || 'kisi';
 
-    // Fetch all member assignments for this mapping in the old groups
+    // Fetch all member source rows for this mapping in the old groups
     const membersResult = await db.query(
-      `SELECT mra.id AS mra_id, mra.member_id, mra.role_assignment_id, mra.hardware_group_id,
-              mi.hardware_user_id
-       FROM member_role_assignments mra
-       JOIN member_identity mi ON mi.id = mra.member_id
-       WHERE mra.mapping_id = $1 AND mra.hardware_group_id = ANY($2::text[]) AND mi.client_id = $3`,
+      `SELECT mas.id AS mra_id, mas.access_id AS member_id, mas.role_assignment_id, mas.hardware_group_id,
+              ma.hardware_user_id
+       FROM member_access_sources mas
+       JOIN member_access ma ON ma.id = mas.access_id
+       WHERE mas.mapping_id = $1 AND mas.hardware_group_id = ANY($2::text[]) AND ma.client_id = $3`,
       [mappingId, oldGroupIds, clientId]
     );
 
@@ -1579,9 +1609,9 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
           newAssignments.push({ groupId: newGroupId, roleAssignmentId });
         }
 
-        // DB: remove old rows, insert new rows
+        // DB: remove old source rows, insert new source rows
         const oldMraIds = rows.map(r => r.mra_id);
-        await db.query('DELETE FROM member_role_assignments WHERE id = ANY($1::uuid[])', [oldMraIds]);
+        await db.query('DELETE FROM member_access_sources WHERE id = ANY($1::uuid[])', [oldMraIds]);
 
         if (newAssignments.length > 0) {
           const values = [];
@@ -1590,9 +1620,9 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
             return `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`;
           });
           await db.query(
-            `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id)
+            `INSERT INTO member_access_sources (access_id, mapping_id, role_assignment_id, hardware_group_id)
              VALUES ${placeholders.join(', ')}
-             ON CONFLICT (member_id, mapping_id, hardware_group_id) DO UPDATE SET role_assignment_id = EXCLUDED.role_assignment_id`,
+             ON CONFLICT DO NOTHING`,
             values
           );
         }
@@ -1623,23 +1653,23 @@ router.get('/:clientId/members', async (req, res) => {
 
   try {
     const params = [clientId];
-    const conditions = ['mi.client_id = $1'];
+    const conditions = ['ma.client_id = $1'];
 
     // DR-044: exclude soft-deleted and in-flight-removing sub-members from operator listing
-    conditions.push(`(mi.sub_member_status IS NULL OR mi.sub_member_status NOT IN ('removing', 'deleted'))`);
+    conditions.push(`(mm.sub_member_status IS NULL OR mm.sub_member_status NOT IN ('removing', 'deleted'))`);
 
     if (status && status !== 'all') {
       params.push(status);
-      conditions.push(`mas.status = $${params.length}`);
+      conditions.push(`ma.status = $${params.length}`);
     }
 
     if (location_id) {
       params.push(location_id);
       conditions.push(
         `EXISTS (
-           SELECT 1 FROM member_role_assignments mra
-           JOIN plan_mappings pm ON pm.id = mra.mapping_id AND pm.location_id = $${params.length}
-           WHERE mra.member_id = mi.id
+           SELECT 1 FROM member_access_sources mas2
+           JOIN plan_mappings pm ON pm.id = mas2.mapping_id AND pm.location_id = $${params.length}
+           WHERE mas2.access_id = ma.id
          )`
       );
     }
@@ -1649,106 +1679,79 @@ router.get('/:clientId/members', async (req, res) => {
 
     const [rows, countRow] = await Promise.all([
       db.query(
-        `SELECT mi.id,
-                mi.platform_member_id,
-                mi.hardware_platform,
-                mi.display_name,
-                mi.first_name,
-                mi.last_name,
-                mi.email,
-                mas.status          AS access_status,
-                mas.provisioned_at,
-                -- Plan(s) this member is in, aggregated. Members can be on multiple mappings
-                -- (multi-door support, DR-026). plan_names[] is the full list; plan_name is
-                -- the first for list-view display. Null when the member has no mappings yet
-                -- (e.g. reconciliation synthetic grant that parked before completeGrant).
+        `SELECT ma.id,
+                mm.platform_member_id,
+                ma.hardware_platform,
+                mm.display_name,
+                mm.first_name,
+                mm.last_name,
+                mm.email,
+                ma.status           AS access_status,
+                ma.provisioned_at,
+                -- Plan(s) this member is in, aggregated.
                 COALESCE(
                   (
                     SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
-                    FROM member_role_assignments mra
-                    JOIN plan_mappings pm ON pm.id = mra.mapping_id
-                    WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
+                    FROM member_access_sources mas
+                    JOIN plan_mappings pm ON pm.id = mas.mapping_id
+                    WHERE mas.access_id = ma.id AND pm.plan_name IS NOT NULL
                   ),
-                  -- Holder-only: pull plan names from sub-members (billing identity has no own MRA)
+                  -- Holder-only: pull plan names from sub-members
                   (
                     SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
-                    FROM member_identity sub_mi
-                    JOIN member_role_assignments sub_mra ON sub_mra.member_id = sub_mi.id
-                    JOIN plan_mappings pm ON pm.id = sub_mra.mapping_id
-                    WHERE sub_mi.plan_holder_id = mi.id AND pm.plan_name IS NOT NULL
+                    FROM member_access sub_ma
+                    JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
+                    JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
+                    WHERE sub_ma.sub_master_id = ma.member_master_id AND pm.plan_name IS NOT NULL
                   )
                 )                                AS plan_names,
                 COALESCE(
                   (
                     SELECT ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)
-                    FROM member_role_assignments mra
-                    JOIN plan_mappings pm ON pm.id = mra.mapping_id
-                    WHERE mra.member_id = mi.id AND pm.source_plan_id IS NOT NULL
+                    FROM member_access_sources mas
+                    JOIN plan_mappings pm ON pm.id = mas.mapping_id
+                    WHERE mas.access_id = ma.id AND pm.source_plan_id IS NOT NULL
                   ),
                   (
                     SELECT ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)
-                    FROM member_identity sub_mi
-                    JOIN member_role_assignments sub_mra ON sub_mra.member_id = sub_mi.id
-                    JOIN plan_mappings pm ON pm.id = sub_mra.mapping_id
-                    WHERE sub_mi.plan_holder_id = mi.id AND pm.source_plan_id IS NOT NULL
+                    FROM member_access sub_ma
+                    JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
+                    JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
+                    WHERE sub_ma.sub_master_id = ma.member_master_id AND pm.source_plan_id IS NOT NULL
                   )
                 )                                AS plan_ids,
                 (
-                  SELECT ARRAY_AGG(mas_src.valid_until ORDER BY pm.plan_name)
-                  FROM member_role_assignments mra
-                  JOIN plan_mappings pm ON pm.id = mra.mapping_id
-                  LEFT JOIN member_access_sources mas_src
-                    ON mas_src.member_id = mi.id
-                    AND mas_src.mapping_id = pm.id
-                  WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
+                  SELECT ARRAY_AGG(mas.valid_until ORDER BY pm.plan_name)
+                  FROM member_access_sources mas
+                  JOIN plan_mappings pm ON pm.id = mas.mapping_id
+                  WHERE mas.access_id = ma.id AND pm.plan_name IS NOT NULL
                 )                                AS plan_valid_untils,
                 COALESCE(
                   (
                     SELECT pm.plan_name
-                    FROM member_role_assignments mra
-                    JOIN plan_mappings pm ON pm.id = mra.mapping_id
-                    WHERE mra.member_id = mi.id AND pm.plan_name IS NOT NULL
-                    ORDER BY mra.created_at ASC
+                    FROM member_access_sources mas
+                    JOIN plan_mappings pm ON pm.id = mas.mapping_id
+                    WHERE mas.access_id = ma.id AND pm.plan_name IS NOT NULL
+                    ORDER BY mas.created_at ASC
                     LIMIT 1
                   ),
-                  -- Holder-only: pull plan name from first sub-member's assignment
                   (
                     SELECT pm.plan_name
-                    FROM member_identity sub_mi
-                    JOIN member_role_assignments sub_mra ON sub_mra.member_id = sub_mi.id
-                    JOIN plan_mappings pm ON pm.id = sub_mra.mapping_id
-                    WHERE sub_mi.plan_holder_id = mi.id AND pm.plan_name IS NOT NULL
-                    ORDER BY sub_mra.created_at ASC
+                    FROM member_access sub_ma
+                    JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
+                    JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
+                    WHERE sub_ma.sub_master_id = ma.member_master_id AND pm.plan_name IS NOT NULL
+                    ORDER BY sub_mas.created_at ASC
                     LIMIT 1
                   )
                 )                                AS plan_name,
-                -- DR-042: billing snapshot. Holders look down to a sub's snapshot (holders have no
-                -- MRA of their own). Subs return NULL here — the bridge owns sub inheritance via
-                -- buildMembersArray since it already has the nested holder→sub structure.
-                COALESCE(
-                  (
-                    SELECT mra.billing_snapshot
-                    FROM member_role_assignments mra
-                    WHERE mra.member_id = mi.id AND mra.billing_snapshot IS NOT NULL
-                    ORDER BY mra.created_at DESC
-                    LIMIT 1
-                  ),
-                  CASE WHEN mi.plan_holder_id IS NULL THEN (
-                    SELECT sub_mra.billing_snapshot
-                    FROM member_identity sub_mi
-                    JOIN member_role_assignments sub_mra ON sub_mra.member_id = sub_mi.id
-                    WHERE sub_mi.plan_holder_id = mi.id AND sub_mra.billing_snapshot IS NOT NULL
-                    ORDER BY sub_mra.created_at DESC
-                    LIMIT 1
-                  ) END
-                )                                AS billing_snapshot,
-                -- Count of successful hardware role assignments. When mas.status = 'failed'
-                -- but assignment_count > 0, the member has partial access (some plans provisioned,
-                -- some failed). The UI uses this to show 'partial' rather than blanket 'failed'.
+                -- DR-042: billing snapshot on member_access directly.
+                ma.billing_snapshot,
+                -- Count of active source rows (hardware group assignments).
                 (
                   SELECT COUNT(*)::int
-                  FROM member_role_assignments mra
-                  WHERE mra.member_id = mi.id
+                  FROM member_access_sources mas
+                  WHERE mas.access_id = ma.id
                 )                                AS assignment_count,
                 lat.webhook_received_at,
                 lat.enqueued_at,
@@ -1756,48 +1759,48 @@ router.get('/:clientId/members', async (req, res) => {
                 lat.ingest_s,
                 lat.processing_s,
                 lat.total_s,
-                mi.plan_holder_id,
-                mi.plan_mapping_id,
+                ma.sub_master_id    AS plan_holder_id,
+                ma.plan_mapping_id,
                 (
                   SELECT pm.plan_name
                   FROM plan_mappings pm
-                  WHERE pm.id = mi.plan_mapping_id
+                  WHERE pm.id = ma.plan_mapping_id
                 )                                AS sub_plan_name,
-                CASE WHEN mi.plan_holder_id IS NULL THEN 'holder' ELSE 'sub' END AS role,
-                holder_mi.id          AS holder_id,
-                holder_mi.display_name AS holder_name,
-                holder_mi.email        AS holder_email
-         FROM   member_identity mi
-         LEFT JOIN member_access_state mas ON mas.member_id = mi.id
-         LEFT JOIN member_identity holder_mi ON holder_mi.id = mi.plan_holder_id
+                CASE WHEN ma.sub_master_id IS NULL THEN 'holder' ELSE 'sub' END AS role,
+                holder_mm.id          AS holder_id,
+                holder_mm.display_name AS holder_name,
+                holder_mm.email        AS holder_email
+         FROM   member_access ma
+         JOIN   member_master mm ON mm.id = ma.member_master_id
+         LEFT JOIN member_master holder_mm ON holder_mm.id = ma.sub_master_id
          LEFT JOIN LATERAL (
            SELECT
-             wl.received_at                                                      AS webhook_received_at,
-             pei.processed_at                                                    AS enqueued_at,
-             mra.created_at                                                      AS kisi_confirmed_at,
+             wl.received_at                                                        AS webhook_received_at,
+             pei.processed_at                                                      AS enqueued_at,
+             mas_lat.created_at                                                    AS kisi_confirmed_at,
              ROUND(EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)))::int   AS ingest_s,
-             ROUND(EXTRACT(EPOCH FROM (mra.created_at   - pei.processed_at)))::int AS processing_s,
-             ROUND(EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at)))::int   AS total_s
+             ROUND(EXTRACT(EPOCH FROM (mas_lat.created_at - pei.processed_at)))::int AS processing_s,
+             ROUND(EXTRACT(EPOCH FROM (mas_lat.created_at - wl.received_at)))::int   AS total_s
            FROM webhook_log wl
            JOIN processed_event_ids pei ON pei.event_id = wl.event_id
-           JOIN member_role_assignments mra ON mra.member_id = mi.id
-           WHERE wl.client_id = mi.client_id
-             AND wl.normalized_payload->>'platformMemberId' = mi.platform_member_id
+           JOIN member_access_sources mas_lat ON mas_lat.access_id = ma.id
+           WHERE wl.client_id = ma.client_id
+             AND wl.normalized_payload->>'platformMemberId' = mm.platform_member_id
              AND wl.hmac_status = 'accepted'
              AND wl.dedup_status = 'new'
-             AND mra.created_at > wl.received_at
+             AND mas_lat.created_at > wl.received_at
            ORDER BY wl.received_at DESC
            LIMIT 1
          ) lat ON TRUE
          WHERE  ${conditions.join(' AND ')}
-         ORDER  BY mas.provisioned_at DESC NULLS LAST
+         ORDER  BY ma.provisioned_at DESC NULLS LAST
          LIMIT  $${params.length - 1} OFFSET $${params.length}`,
         params
       ),
       db.query(
         `SELECT COUNT(*)::int AS total
-         FROM   member_identity mi
-         LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+         FROM   member_access ma
+         JOIN   member_master mm ON mm.id = ma.member_master_id
          WHERE  ${conditions.join(' AND ')}`,
         params.slice(0, params.length - 2)
       ),
@@ -1837,7 +1840,7 @@ router.get('/:clientId/members/:memberId/diagnose', async (req, res) => {
   const { clientId, memberId } = req.params;
   try {
     const scope = await db.query(
-      'SELECT id FROM member_identity WHERE id = $1 AND client_id = $2',
+      'SELECT id FROM member_master WHERE id = $1 AND client_id = $2',
       [memberId, clientId]
     );
     if (!scope.rows.length) return res.status(404).json({ error: 'Member not found' });
@@ -1856,7 +1859,7 @@ router.get('/:clientId/members/:memberId/timeline', async (req, res) => {
   const { clientId, memberId } = req.params;
   try {
     const scope = await db.query(
-      'SELECT id FROM member_identity WHERE id = $1 AND client_id = $2',
+      'SELECT id FROM member_master WHERE id = $1 AND client_id = $2',
       [memberId, clientId]
     );
     if (!scope.rows.length) return res.status(404).json({ error: 'Member not found' });
@@ -1876,11 +1879,11 @@ router.get('/:clientId/recent-members', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 5, 10);
   try {
     const result = await db.query(
-      `SELECT mi.platform_member_id, mas.status, mas.updated_at
-       FROM member_access_state mas
-       JOIN member_identity mi ON mi.id = mas.member_id
-       WHERE mas.client_id = $1
-       ORDER BY mas.updated_at DESC
+      `SELECT mm.platform_member_id, ma.status, ma.updated_at
+       FROM member_access ma
+       JOIN member_master mm ON mm.id = ma.member_master_id
+       WHERE ma.client_id = $1
+       ORDER BY ma.updated_at DESC
        LIMIT $2`,
       [clientId, limit]
     );
@@ -1927,10 +1930,11 @@ router.get('/:clientId/errors', async (req, res) => {
               eq.occurred_count, eq.last_occurred_at,
               eq.http_status, eq.raw_api_body, eq.payload,
               eq.member_id, eq.trace_id,
-              mi.first_name, mi.last_name, mi.email AS member_email,
-              mi.platform_member_id
+              mm.first_name, mm.last_name, mm.email AS member_email,
+              mm.platform_member_id
        FROM error_queue eq
-       LEFT JOIN member_identity mi ON mi.id = eq.member_id
+       LEFT JOIN member_access ma ON ma.id = eq.member_id
+       LEFT JOIN member_master mm ON mm.id = ma.member_master_id
        WHERE eq.client_id = $1 AND eq.status = 'failed'
        ORDER BY eq.last_occurred_at DESC NULLS LAST, eq.created_at DESC
        LIMIT $2`,
@@ -2017,9 +2021,9 @@ router.get('/:clientId/access-log', async (req, res) => {
     if (location_id) {
       params.push(location_id);
       conditions.push(
-        `EXISTS (SELECT 1 FROM member_role_assignments mra
-                 JOIN plan_mappings pm ON pm.id = mra.mapping_id AND pm.location_id = $${params.length}
-                 WHERE mra.member_id = mal.member_id)`
+        `EXISTS (SELECT 1 FROM member_access_sources mas2
+                 JOIN plan_mappings pm ON pm.id = mas2.mapping_id AND pm.location_id = $${params.length}
+                 WHERE mas2.access_id = mal.member_id)`
       );
     }
     if (event_type) {
@@ -2033,27 +2037,28 @@ router.get('/:clientId/access-log', async (req, res) => {
     const [rows, countRow] = await Promise.all([
       db.query(
         `SELECT mal.id, mal.event_type, mal.credential_type, mal.error_code,
-                mal.created_at, mi.platform_member_id,
-                COALESCE(mi.display_name,
-                  NULLIF(TRIM(COALESCE(mi.first_name,'') || ' ' || COALESCE(mi.last_name,'')), ''),
-                  mi.email) AS member_name,
+                mal.created_at, mm.platform_member_id,
+                COALESCE(mm.display_name,
+                  NULLIF(TRIM(COALESCE(mm.first_name,'') || ' ' || COALESCE(mm.last_name,'')), ''),
+                  mm.email) AS member_name,
                 (SELECT pm.plan_name
-                   FROM member_role_assignments mra
-                   JOIN plan_mappings pm ON pm.id = mra.mapping_id
-                  WHERE mra.member_id = mal.member_id
-                  ORDER BY mra.created_at ASC LIMIT 1) AS plan_name,
+                   FROM member_access_sources mas
+                   JOIN plan_mappings pm ON pm.id = mas.mapping_id
+                  WHERE mas.access_id = mal.member_id
+                  ORDER BY mas.created_at ASC LIMIT 1) AS plan_name,
                 (SELECT l.name
-                   FROM member_role_assignments mra
-                   JOIN plan_mappings pm ON pm.id = mra.mapping_id
+                   FROM member_access_sources mas
+                   JOIN plan_mappings pm ON pm.id = mas.mapping_id
                    JOIN locations l ON l.id = pm.location_id
-                  WHERE mra.member_id = mal.member_id
-                  ORDER BY mra.created_at ASC LIMIT 1) AS location_name,
-                (SELECT mra.hardware_group_id
-                   FROM member_role_assignments mra
-                  WHERE mra.member_id = mal.member_id
-                  ORDER BY mra.created_at ASC LIMIT 1) AS hardware_group_id
+                  WHERE mas.access_id = mal.member_id
+                  ORDER BY mas.created_at ASC LIMIT 1) AS location_name,
+                (SELECT mas.hardware_group_id
+                   FROM member_access_sources mas
+                  WHERE mas.access_id = mal.member_id
+                  ORDER BY mas.created_at ASC LIMIT 1) AS hardware_group_id
          FROM member_access_log mal
-         JOIN member_identity mi ON mi.id = mal.member_id
+         JOIN member_access ma ON ma.id = mal.member_id
+         JOIN member_master mm ON mm.id = ma.member_master_id
          WHERE ${conditions.join(' AND ')}
          ORDER BY mal.created_at DESC
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -2091,9 +2096,9 @@ router.get('/:clientId/access-stats', async (req, res) => {
     let locationFilter = '';
     if (location_id) {
       params.push(location_id);
-      locationFilter = `AND EXISTS (SELECT 1 FROM member_role_assignments mra
-                         JOIN plan_mappings pm ON pm.id = mra.mapping_id AND pm.location_id = $${params.length}
-                         WHERE mra.member_id = mal.member_id)`;
+      locationFilter = `AND EXISTS (SELECT 1 FROM member_access_sources mas2
+                         JOIN plan_mappings pm ON pm.id = mas2.mapping_id AND pm.location_id = $${params.length}
+                         WHERE mas2.access_id = mal.member_id)`;
     }
 
     const result = await db.query(
@@ -2145,15 +2150,16 @@ router.get('/:clientId/latency-stats', async (req, res) => {
            EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at))  AS total_s
          FROM webhook_log wl
          JOIN processed_event_ids pei ON pei.event_id = wl.event_id
-         JOIN member_identity mi
-           ON mi.client_id = wl.client_id
-           AND mi.platform_member_id = wl.normalized_payload->>'platformMemberId'
-         JOIN member_role_assignments mra ON mra.member_id = mi.id
+         JOIN member_master mm
+           ON mm.client_id = wl.client_id
+           AND mm.platform_member_id = wl.normalized_payload->>'platformMemberId'
+         JOIN member_access ma ON ma.member_master_id = mm.id
+         JOIN member_access_sources mas ON mas.access_id = ma.id
          WHERE wl.client_id = $1
            AND wl.received_at > NOW() - INTERVAL '30 days'
            AND wl.hmac_status = 'accepted'
            AND wl.dedup_status = 'new'
-           AND mra.created_at > wl.received_at
+           AND mas.created_at > wl.received_at
        )
        SELECT
          COUNT(*)::int                                                     AS sample_count,
@@ -2169,25 +2175,26 @@ router.get('/:clientId/latency-stats', async (req, res) => {
     // Per-member rows for recent 50 events
     const recent = await db.query(
       `SELECT
-         mi.id                                                              AS member_id,
-         mi.platform_member_id,
+         mm.id                                                              AS member_id,
+         mm.platform_member_id,
          wl.received_at                                                     AS webhook_received_at,
          pei.processed_at                                                   AS enqueued_at,
-         mra.created_at                                                     AS kisi_confirmed_at,
+         mas.created_at                                                     AS kisi_confirmed_at,
          ROUND(EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)))::int  AS ingest_s,
-         ROUND(EXTRACT(EPOCH FROM (mra.created_at   - pei.processed_at)))::int AS processing_s,
-         ROUND(EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at)))::int   AS total_s
+         ROUND(EXTRACT(EPOCH FROM (mas.created_at   - pei.processed_at)))::int AS processing_s,
+         ROUND(EXTRACT(EPOCH FROM (mas.created_at   - wl.received_at)))::int   AS total_s
        FROM webhook_log wl
        JOIN processed_event_ids pei ON pei.event_id = wl.event_id
-       JOIN member_identity mi
-         ON mi.client_id = wl.client_id
-         AND mi.platform_member_id = wl.normalized_payload->>'platformMemberId'
-       JOIN member_role_assignments mra ON mra.member_id = mi.id
+       JOIN member_master mm
+         ON mm.client_id = wl.client_id
+         AND mm.platform_member_id = wl.normalized_payload->>'platformMemberId'
+       JOIN member_access ma ON ma.member_master_id = mm.id
+       JOIN member_access_sources mas ON mas.access_id = ma.id
        WHERE wl.client_id = $1
          AND wl.received_at > NOW() - INTERVAL '30 days'
          AND wl.hmac_status = 'accepted'
          AND wl.dedup_status = 'new'
-         AND mra.created_at > wl.received_at
+         AND mas.created_at > wl.received_at
        ORDER BY wl.received_at DESC
        LIMIT 50`,
       [clientId]
@@ -2235,7 +2242,12 @@ router.get('/:clientId/wix-plans', async (req, res) => {
     if (allPlans.length > 0) {
       const [existing, locationRows] = await Promise.all([
         db.query('SELECT source_plan_id FROM plan_mappings WHERE client_id = $1', [clientId]),
-        db.query('SELECT id FROM locations WHERE client_id = $1 AND subscription_status = \'active\'', [clientId]),
+        db.query(
+          `SELECT l.id FROM locations l
+           JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.status = 'active'
+           WHERE l.client_id = $1`,
+          [clientId]
+        ),
       ]);
       const existingIds = new Set(existing.rows.map(r => r.source_plan_id));
       // If the client has exactly one active location, auto-assign it so plan-mapping-resolver
@@ -2323,9 +2335,8 @@ router.post('/:clientId/members/:memberId/unlock', async (req, res) => {
   const { clientId, memberId } = req.params;
   try {
     const scope = await db.query(
-      `SELECT mas.status FROM member_access_state mas
-       JOIN member_identity mi ON mi.id = mas.member_id
-       WHERE mas.member_id = $1 AND mi.client_id = $2`,
+      `SELECT ma.status FROM member_access ma
+       WHERE ma.id = $1 AND ma.client_id = $2`,
       [memberId, clientId]
     );
     if (!scope.rows.length) return res.status(404).json({ error: 'Member not found' });
@@ -2333,7 +2344,7 @@ router.post('/:clientId/members/:memberId/unlock', async (req, res) => {
       return res.status(400).json({ error: `Member is not in_flight (current status: ${scope.rows[0].status})` });
     }
     await db.query(
-      `UPDATE member_access_state SET status = 'pending', updated_at = NOW() WHERE member_id = $1`,
+      `UPDATE member_access SET status = 'pending', updated_at = NOW() WHERE id = $1`,
       [memberId]
     );
     log.info('operator.member.unlock', { clientId, memberId, previousStatus: 'in_flight' });

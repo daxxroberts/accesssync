@@ -127,11 +127,15 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
     db.query
       // kisi_user_pattern lookup (DR-043 — resolveIdentity reads this first when tenantId provided)
       .mockResolvedValueOnce({ rows: [{ kisi_user_pattern: 'invited' }] })
-      // member_identity cache lookup — no hardware_user_id yet
+      // member_access cache lookup — no hardware_user_id yet
       .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })
       // clients lookup for wix api key + site id
       .mockResolvedValueOnce({ rows: [{ source_api_key: 'enc-wix-key', source_site_id: 'site-123' }] })
-      // member_identity UPDATE to cache the new hardware_user_id
+      // SELECT member_master_id FROM member_access (Gate 2 Tier 1: cache write path)
+      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm-uuid-001' }] })
+      // UPDATE member_master SET email = ... (cache the recovered PII)
+      .mockResolvedValueOnce({ rowCount: 1 })
+      // UPDATE member_access SET hardware_user_id = ... (cache the hardware user)
       .mockResolvedValueOnce({ rowCount: 1 });
 
     wixMembersApi.getMemberById.mockResolvedValue({
@@ -160,13 +164,15 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
 
   test('parks as pending_identity when Wix Members API returns null email AND DB cache empty', async () => {
     db.query
-      // member_identity cache lookup
+      // member_access cache lookup — no hardware_user_id yet
       .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })
-      // clients lookup
+      // clients lookup for Wix API key + site id
       .mockResolvedValueOnce({ rows: [{ source_api_key: 'enc-wix-key', source_site_id: 'site-123' }] })
-      // Tier 2 DB cache — no email stored on member_identity either
+      // SELECT member_master_id FROM member_access (Tier 2: DB cache path — resolves mm id first)
+      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm-uuid-001' }] })
+      // SELECT email ... FROM member_master — no email stored
       .mockResolvedValueOnce({ rows: [{ email: null, display_name: null, first_name: null, last_name: null }] })
-      // _parkPendingIdentity UPDATE
+      // _parkPendingIdentity UPDATE member_access
       .mockResolvedValueOnce({ rowCount: 1 });
 
     // Wix returns a member object with no email (rare — social login fallback)
@@ -191,7 +197,7 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
     expect(kisiAdapter.createUser).not.toHaveBeenCalled();
     // Verify _parkPendingIdentity UPDATE was the last DB call
     const lastCall = db.query.mock.calls[db.query.mock.calls.length - 1];
-    expect(lastCall[0]).toMatch(/UPDATE member_access_state/);
+    expect(lastCall[0]).toMatch(/UPDATE member_access/);
     expect(lastCall[0]).toMatch(/pending_identity/);
     expect(lastCall[1]).toEqual([MEMBER_ID]);
   });
@@ -200,15 +206,18 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
     db.query
       // kisi_user_pattern lookup (DR-043)
       .mockResolvedValueOnce({ rows: [{ kisi_user_pattern: 'invited' }] })
+      // member_access cache lookup — no hardware_user_id yet
       .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })
-      // clients lookup succeeds
+      // clients lookup succeeds (for Tier 1 attempt)
       .mockResolvedValueOnce({ rows: [{ source_api_key: 'enc-wix-key', source_site_id: 'site-123' }] })
-      // DB cache DOES have email from prior event
+      // SELECT member_master_id FROM member_access (Tier 2: DB cache path)
+      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm-uuid-001' }] })
+      // SELECT email ... FROM member_master — has cached email from prior event
       .mockResolvedValueOnce({ rows: [{
         email: RECOVERED_EMAIL, display_name: RECOVERED_NAME,
         first_name: 'Chad', last_name: 'Owner',
       }] })
-      // member_identity UPDATE
+      // UPDATE member_access SET hardware_user_id = ... (cache the resolved ID)
       .mockResolvedValueOnce({ rowCount: 1 });
 
     const wixErr = new Error('Wix Members API 500: transient');
@@ -229,9 +238,9 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
 
   test('parks pending_identity when tenantId missing (cannot call Wix Members API)', async () => {
     db.query
-      // member_identity cache lookup
+      // member_access cache lookup — no hardware_user_id yet
       .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })
-      // _parkPendingIdentity UPDATE
+      // _parkPendingIdentity UPDATE member_access
       .mockResolvedValueOnce({ rowCount: 1 });
 
     // Without tenantId/platformMemberId, Gate 2's recovery function short-circuits
@@ -245,7 +254,7 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
     expect(kisiAdapter.createUser).not.toHaveBeenCalled();
     // Verify _parkPendingIdentity UPDATE was called
     const lastCall = db.query.mock.calls[db.query.mock.calls.length - 1];
-    expect(lastCall[0]).toMatch(/UPDATE member_access_state/);
+    expect(lastCall[0]).toMatch(/UPDATE member_access/);
     expect(lastCall[0]).toMatch(/pending_identity/);
   });
 });
@@ -261,10 +270,11 @@ describe('[P1] Gate 2 — _parkPendingIdentity releases the in_flight lock via s
     // NOT reference a non-existent `in_flight` column (production schema has no such
     // column; an earlier OB-89 commit incorrectly wrote `in_flight = FALSE`).
     db.query
-      .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })           // cache miss
-      .mockResolvedValueOnce({ rows: [{ source_api_key: null, source_site_id: null }] }) // no Wix key
+      .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })           // member_access cache miss
+      .mockResolvedValueOnce({ rows: [{ source_api_key: null, source_site_id: null }] }) // no Wix key — Tier 1 skips
+      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm-uuid-001' }] }) // SELECT member_master_id (Tier 2)
       .mockResolvedValueOnce({ rows: [{ email: null, display_name: null, first_name: null, last_name: null }] }) // DB cache empty
-      .mockResolvedValueOnce({ rowCount: 1 });                                  // park UPDATE
+      .mockResolvedValueOnce({ rowCount: 1 });                                 // park UPDATE member_access
 
     const result = await standardAdapter.resolveIdentity(
       MEMBER_ID, null, null, 'kisi', 'kisi-api-key',
@@ -274,7 +284,7 @@ describe('[P1] Gate 2 — _parkPendingIdentity releases the in_flight lock via s
     expect(result).toBeNull();
     const parkCall = db.query.mock.calls[db.query.mock.calls.length - 1];
     const parkSql  = parkCall[0];
-    expect(parkSql).toMatch(/UPDATE member_access_state/);
+    expect(parkSql).toMatch(/UPDATE member_access/);
     expect(parkSql).toMatch(/status\s*=\s*'pending_identity'/);
     // Must NOT reference a non-existent in_flight column (schema sentinel).
     expect(parkSql).not.toMatch(/\bin_flight\s*=/);
@@ -287,14 +297,16 @@ describe('[P1] Gate 2 — synthetic @users.wix.com emails are rejected as unqual
     db.query
       // kisi_user_pattern lookup (DR-043)
       .mockResolvedValueOnce({ rows: [{ kisi_user_pattern: 'invited' }] })
-      .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })            // cache miss
-      .mockResolvedValueOnce({ rows: [{ source_api_key: 'enc-wix-key', source_site_id: 'site-123' }] })
+      .mockResolvedValueOnce({ rows: [{ hardware_user_id: null }] })            // member_access cache miss
+      .mockResolvedValueOnce({ rows: [{ source_api_key: 'enc-wix-key', source_site_id: 'site-123' }] }) // clients for Wix key
+      // SELECT member_master_id FROM member_access (Tier 2 DB cache path)
+      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm-uuid-001' }] })
       // DB cache has a real email from a prior event
       .mockResolvedValueOnce({ rows: [{
         email: 'chad@houseofgains.com', display_name: 'Chad Owner',
         first_name: 'Chad', last_name: 'Owner',
       }] })
-      .mockResolvedValueOnce({ rowCount: 1 });                                  // member_identity UPDATE
+      .mockResolvedValueOnce({ rowCount: 1 });                                  // UPDATE member_access SET hardware_user_id
 
     // Wix Members API returns a synthetic address — wix-members-api.js normalises it
     // to null before returning. Gate 2 tier 1 returns null email → falls to Tier 2 DB cache.

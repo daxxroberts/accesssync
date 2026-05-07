@@ -4,7 +4,7 @@
  * @role member-facing-api
  * @route GET /member/access-status
  * @auth Wix RS256 JWT (JWKS cached 1hr)
- * @reads member_identity, member_access_state, member_role_assignments, plan_mappings, locations
+ * @reads member_master, member_access, member_access_sources, member_billing, plan_mappings, locations
  * @exports router
  * @dr DR-021, OB-06, OB-08
  *
@@ -81,21 +81,25 @@ class MemberSyncApi {
 
       // 1. Resolve the holder identity row for this person.
       const holderResult = await db.query(
-        `SELECT id, hardware_user_id, hardware_platform, source_platform
-         FROM member_identity
-         WHERE platform_member_id = $1 AND client_id = $2
-           AND plan_holder_id IS NULL
+        `SELECT mm.id AS member_master_id, ma.id AS access_id,
+                ma.hardware_user_id, ma.hardware_platform, mm.source_platform
+         FROM member_master mm
+         JOIN member_access ma ON ma.member_master_id = mm.id
+         WHERE mm.platform_member_id = $1 AND ma.client_id = $2
+           AND ma.sub_master_id IS NULL
          LIMIT 1`,
         [platformMemberId, clientId]
       );
 
-      // Fallback: if no holder row, try any row (pre-OB-160 or direct individual plan)
+      // Fallback: if no holder row (no sub_master_id IS NULL row), try any access row
       const holderRows = holderResult.rows.length
         ? holderResult.rows
         : (await db.query(
-            `SELECT id, hardware_user_id, hardware_platform, source_platform
-             FROM member_identity
-             WHERE platform_member_id = $1 AND client_id = $2
+            `SELECT mm.id AS member_master_id, ma.id AS access_id,
+                    ma.hardware_user_id, ma.hardware_platform, mm.source_platform
+             FROM member_master mm
+             JOIN member_access ma ON ma.member_master_id = mm.id
+             WHERE mm.platform_member_id = $1 AND ma.client_id = $2
              LIMIT 1`,
             [platformMemberId, clientId]
           )).rows;
@@ -107,19 +111,19 @@ class MemberSyncApi {
       const holderIdentity = holderRows[0];
       const holderHardwareUserId = holderIdentity.hardware_user_id;
 
-      // 2a. Find sub-member rows where this person claimed their own seat.
+      // 2a. Find sub-member access rows where this person claimed their own seat.
       //     Identified by matching hardware_user_id — same Kisi user as the holder row.
-      //     This correctly excludes Drew (different hardware_user_id) while including
-      //     Daxx-as-sub-member (same hardware_user_id as holder row).
       let subMemberRows = [];
       if (holderHardwareUserId) {
         const subResult = await db.query(
-          `SELECT id, hardware_user_id, hardware_platform, source_platform
-           FROM member_identity
-           WHERE client_id = $1
-             AND plan_holder_id IS NOT NULL
-             AND hardware_user_id = $2
-             AND (sub_member_status IS NULL OR sub_member_status NOT IN ('deleted', 'removing'))`,
+          `SELECT mm.id AS member_master_id, ma.id AS access_id,
+                  ma.hardware_user_id, ma.hardware_platform
+           FROM member_master mm
+           JOIN member_access ma ON ma.member_master_id = mm.id
+           WHERE ma.client_id = $1
+             AND ma.sub_master_id IS NOT NULL
+             AND ma.hardware_user_id = $2
+             AND ma.status NOT IN ('deleted', 'revoked', 'cancelled')`,
           [clientId, holderHardwareUserId]
         );
         subMemberRows = subResult.rows;
@@ -128,43 +132,48 @@ class MemberSyncApi {
       const rows = [holderIdentity, ...subMemberRows];
 
       const identity = holderIdentity;
-      const memberIds = rows.map(r => r.id);
+      const accessIds = rows.map(r => r.access_id);
 
-      // 2. Fetch best access state across all identity rows (prefer active > others)
+      // 2. Fetch best access state across all member_access rows (prefer active > others)
       const stateResult = await db.query(
-        `SELECT status, role_assignment_id, provisioned_at, updated_at, scheduled_start_date
-         FROM member_access_state
-         WHERE member_id = ANY($1)
+        `SELECT status, hardware_user_id, provisioned_at, updated_at
+         FROM member_access
+         WHERE id = ANY($1)
          ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'in_flight' THEN 1 ELSE 2 END
          LIMIT 1`,
-        [memberIds]
+        [accessIds]
       );
 
       const state = stateResult.rows[0] || null;
 
-      // 3. Fetch most recent log entry across all identity rows
+      // 3. Fetch most recent log entry across all access rows (member_access_log unchanged)
       const logResult = await db.query(
         `SELECT event_type, credential_type, error_code, created_at
          FROM member_access_log
          WHERE member_id = ANY($1)
          ORDER BY created_at DESC
          LIMIT 1`,
-        [memberIds]
+        [accessIds]
       );
 
       const lastEvent = logResult.rows[0] || null;
 
-      // 4. Fetch active role assignments across all identity rows (OB-06, OB-160)
+      // 4. Fetch active role assignments across all access rows (OB-06, OB-160)
+      //    member_role_assignments retired — access list now from member_access_sources
       const rolesResult = await db.query(
-        `SELECT mra.id, mra.role_assignment_id,
-                pm.plan_name, pm.door_name, pm.hardware_group_id,
+        `SELECT mas.role_assignment_id, mas.hardware_group_id,
+                pm.plan_name, pm.door_name,
                 l.name AS location_name
-         FROM member_role_assignments mra
-         JOIN plan_mappings pm ON pm.id = mra.mapping_id
+         FROM member_access_sources mas
+         JOIN member_access ma ON ma.id = mas.access_id
+         JOIN plan_mappings pm ON pm.id = mas.mapping_id
          LEFT JOIN locations l ON pm.location_id = l.id
-         WHERE mra.member_id = ANY($1)
+         WHERE ma.id = ANY($1)
+           AND mas.billing_id IN (
+             SELECT id FROM member_billing WHERE status = 'active'
+           )
          ORDER BY pm.plan_name`,
-        [memberIds]
+        [accessIds]
       );
 
       const access = rolesResult.rows.map(r => ({
@@ -207,9 +216,8 @@ class MemberSyncApi {
         status,
         stateOrphaned,
         plans,
-        provisionedAt:        state?.provisioned_at || null,
-        updatedAt:            state?.updated_at || null,
-        scheduledStartDate:   state?.scheduled_start_date || null,
+        provisionedAt: state?.provisioned_at || null,
+        updatedAt:     state?.updated_at || null,
         lastEvent: lastEvent ? {
           eventType:      lastEvent.event_type,
           credentialType: lastEvent.credential_type,

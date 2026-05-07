@@ -3,12 +3,12 @@
  * Standard Adapter Layer (Layer 3)
  *
  * Responsibilities (DR-023):
- * - Exclusively owns member_identity UPSERT and SELECT
- * - Exclusively owns member_access_state status writes
- * - Acquires and releases the in_flight lock (DR-011)
+ * - Exclusively owns member_master UPSERT and SELECT
+ * - Exclusively owns member_access status writes (replaces member_access_state)
+ * - Acquires and releases the in_flight lock via FOR UPDATE NOWAIT (Q-2)
  * - Writes client_activity_summary daily UPSERT (DR-024)
  *
- * Core Engine (Layer 4) never writes member_identity or member_access_state directly.
+ * Core Engine (Layer 4) never writes member_master or member_access directly.
  * All DB interaction for identity and state flows through this module.
  */
 
@@ -23,18 +23,20 @@ class StandardAdapter {
    * Resolves member identity and acquires the in_flight lock atomically.
    *
    * GRANT path (hardwarePlatform provided):
-   *   UPSERT member_identity → check + set in_flight → increment events_received
-   *   Returns: { memberId }
+   *   UPSERT member_master (PII) → FOR UPDATE NOWAIT lock on member_access →
+   *   UPSERT member_access status='in_flight' → increment events_received
+   *   Returns: { memberId } where memberId = member_access.id
    *
    * REVOKE path (hardwarePlatform = null):
-   *   SELECT member_identity → check + set in_flight → increment events_received
+   *   SELECT member_access JOIN member_master → FOR UPDATE NOWAIT lock →
+   *   UPDATE status='in_flight' → increment events_received
    *   Returns: { memberId, hardwareUserId, hardwarePlatform, roleAssignmentIds[] }
-   *   Returns null if no identity record exists (caller must skip — not an error).
+   *   Returns null if no member_access record exists (caller must skip — not an error).
    *
-   * Throws if in_flight lock is already set (concurrent modification).
+   * Throws IN_FLIGHT_LOCK if Postgres 55P03 lock-not-available (FOR UPDATE NOWAIT contention).
    *
    * @param {string} tenantId
-   * @param {Object} event             standard event (platformMemberId, sourcePlatform)
+   * @param {Object} event             standard event (platformMemberId, sourcePlatform, planMappingId)
    * @param {string|null} hardwarePlatform  null for revoke path
    * @returns {Object|null}
    */
@@ -43,33 +45,67 @@ class StandardAdapter {
     try {
       await dbClient.query('BEGIN');
 
-      let memberId, hardwareUserId, resolvedPlatform, roleAssignmentIds = [];
+      let memberId, memberMasterId, hardwareUserId, resolvedPlatform, roleAssignmentIds = [];
 
       if (hardwarePlatform !== null) {
-        // GRANT: UPSERT identity record
-        const identityResult = await dbClient.query(
-          `INSERT INTO member_identity
-           (client_id, platform_member_id, hardware_platform, source_platform, source_tag, source_member_id)
-           VALUES ($1, $2, $3, $4, 'accesssync', $2)
-           ON CONFLICT (client_id, source_platform, platform_member_id)
-           DO UPDATE SET updated_at = NOW()
-           RETURNING id, hardware_user_id`,
-          [tenantId, event.platformMemberId, hardwarePlatform, event.sourcePlatform || 'wix']
-        );
-        memberId = identityResult.rows[0].id;
-        hardwareUserId = identityResult.rows[0].hardware_user_id;
-        resolvedPlatform = hardwarePlatform;
+        // GRANT path
 
-      } else {
-        // REVOKE: SELECT existing row
-        const identityResult = await dbClient.query(
-          `SELECT id, hardware_user_id, hardware_platform
-           FROM member_identity
-           WHERE client_id = $1 AND source_platform = $2 AND platform_member_id = $3`,
+        // Step 1: UPSERT person record (PII anchor)
+        const masterResult = await dbClient.query(
+          `INSERT INTO member_master (client_id, source_platform, platform_member_id, source_tag)
+           VALUES ($1, $2, $3, 'accesssync')
+           ON CONFLICT (client_id, source_platform, platform_member_id) DO UPDATE SET updated_at = NOW()
+           RETURNING id`,
           [tenantId, event.sourcePlatform || 'wix', event.platformMemberId]
         );
+        memberMasterId = masterResult.rows[0].id;
 
-        if (identityResult.rows.length === 0) {
+        // Step 2: Acquire row lock before UPSERT (Q-2: prevents deadlock on concurrent grant)
+        // 55P03 = lock_not_available — thrown by FOR UPDATE NOWAIT when row is already locked
+        try {
+          await dbClient.query(
+            `SELECT id FROM member_access
+             WHERE member_master_id = $1 AND plan_mapping_id = $2
+             FOR UPDATE NOWAIT`,
+            [memberMasterId, event.planMappingId]
+          );
+        } catch (lockErr) {
+          if (lockErr.code === '55P03') {
+            const err = new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId} (clientId=${tenantId})`);
+            err.code = 'IN_FLIGHT_LOCK';
+            throw err;
+          }
+          throw lockErr;
+        }
+
+        // Step 3: UPSERT access record — sets in_flight sentinel (Option B stall recovery)
+        const accessResult = await dbClient.query(
+          `INSERT INTO member_access
+             (member_master_id, client_id, plan_mapping_id, source_platform, platform_member_id, status)
+           VALUES ($1, $2, $3, $4, $5, 'in_flight')
+           ON CONFLICT (member_master_id, plan_mapping_id) DO UPDATE
+             SET status = 'in_flight', updated_at = NOW()
+           RETURNING id, hardware_user_id`,
+          [memberMasterId, tenantId, event.planMappingId, event.sourcePlatform || 'wix', event.platformMemberId]
+        );
+        memberId = accessResult.rows[0].id;
+        hardwareUserId = accessResult.rows[0].hardware_user_id;
+
+      } else {
+        // REVOKE path
+
+        const accessResult = await dbClient.query(
+          `SELECT ma.id, ma.hardware_user_id, ma.hardware_platform, ma.status
+           FROM member_access ma
+           JOIN member_master mm ON mm.id = ma.member_master_id
+           WHERE mm.client_id = $1
+             AND mm.source_platform = $2
+             AND mm.platform_member_id = $3
+             AND ma.plan_mapping_id = $4`,
+          [tenantId, event.sourcePlatform || 'wix', event.platformMemberId, event.planMappingId]
+        );
+
+        if (accessResult.rows.length === 0) {
           await dbClient.query('ROLLBACK');
           log.warn('adapter.no_identity', {
             platformMemberId: event.platformMemberId,
@@ -78,62 +114,37 @@ class StandardAdapter {
           return null;
         }
 
-        memberId = identityResult.rows[0].id;
-        hardwareUserId = identityResult.rows[0].hardware_user_id;
-        resolvedPlatform = identityResult.rows[0].hardware_platform;
-      }
+        memberId = accessResult.rows[0].id;
+        hardwareUserId = accessResult.rows[0].hardware_user_id;
+        resolvedPlatform = accessResult.rows[0].hardware_platform;
 
-      // Check + acquire in_flight lock (DR-011)
-      const stateResult = await dbClient.query(
-        `SELECT status, role_assignment_id FROM member_access_state WHERE member_id = $1`,
-        [memberId]
-      );
-
-      if (stateResult.rows.length > 0) {
-        const { status, role_assignment_id } = stateResult.rows[0];
-
-        if (status === 'in_flight') {
-          const lockErr = new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId} (clientId=${tenantId})`);
-          lockErr.code = 'IN_FLIGHT_LOCK';
-          lockErr.memberId = memberId;  // carry memberId so catch block can release the lock
+        // Acquire row lock then set in_flight
+        try {
+          await dbClient.query(
+            `SELECT id FROM member_access WHERE id = $1 FOR UPDATE NOWAIT`,
+            [memberId]
+          );
+        } catch (lockErr) {
+          if (lockErr.code === '55P03') {
+            const err = new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId} (clientId=${tenantId})`);
+            err.code = 'IN_FLIGHT_LOCK';
+            throw err;
+          }
           throw lockErr;
         }
 
-        // Read all role assignment IDs from member_role_assignments (multi-door)
+        await dbClient.query(
+          `UPDATE member_access SET status = 'in_flight', updated_at = NOW() WHERE id = $1`,
+          [memberId]
+        );
+
+        // Role assignment IDs now live on member_access_sources
         const raResult = await dbClient.query(
-          `SELECT role_assignment_id FROM member_role_assignments WHERE member_id = $1`,
+          `SELECT role_assignment_id FROM member_access_sources
+           WHERE access_id = $1 AND role_assignment_id IS NOT NULL`,
           [memberId]
         );
-        if (raResult.rows.length > 0) {
-          roleAssignmentIds = raResult.rows.map(r => r.role_assignment_id);
-        } else {
-          // Legacy fallback: single role_assignment_id from member_access_state
-          roleAssignmentIds = role_assignment_id ? [role_assignment_id] : [];
-        }
-
-        await dbClient.query(
-          `UPDATE member_access_state SET status = 'in_flight', updated_at = NOW() WHERE member_id = $1`,
-          [memberId]
-        );
-
-      } else {
-        if (hardwarePlatform === null) {
-          // Revoke with no state row — nothing to revoke
-          await dbClient.query('ROLLBACK');
-          log.warn('adapter.no_access_state', {
-            platformMemberId: event.platformMemberId,
-            stage: 'resolve', result: 'skipped',
-          });
-          return null;
-        }
-
-        // Grant path: INSERT new state row
-        await dbClient.query(
-          `INSERT INTO member_access_state (member_id, client_id, status)
-           VALUES ($1, $2, 'in_flight')`,
-          [memberId, tenantId]
-        );
-        roleAssignmentIds = [];
+        roleAssignmentIds = raResult.rows.map(r => r.role_assignment_id);
       }
 
       await dbClient.query('COMMIT');
@@ -143,8 +154,7 @@ class StandardAdapter {
         log.warn('adapter.activity_update_failed', { field: 'events_received' }, err)
       );
 
-      // Enrich trace_context with the resolved memberId so the log viewer's
-      // member_name / hardware_user_id / etc. populate. Fire-and-forget.
+      // Enrich trace_context with resolved memberId. Fire-and-forget.
       const _tid = getTraceId();
       if (_tid && memberId) setTraceContext(_tid, { clientId: tenantId, memberId });
 
@@ -167,15 +177,16 @@ class StandardAdapter {
    * DB cache → hardwareAdapter.findUserByEmail → hardwareAdapter.createUser → cache to DB
    *
    * Called only on grant path, after resolveAndLock() returns memberId.
+   * memberId here is member_access.id.
    *
    * OB-89 Gate 2 — when Layer 5 (hardware-adapter) throws INVALID_HARDWARE_REQUEST because
    * email is missing, this method catches it and runs the recovery ladder:
    *   (1) Wix Members API lookup by platformMemberId → pull loginEmail + name → retry.
-   *   (2) DB cache — check member_identity.email from a prior event → retry.
-   *   (3) Park as member_access_state.status='pending_identity', return null.
+   *   (2) DB cache — check member_master.email from a prior event → retry.
+   *   (3) Park as member_access.status='pending_identity', return null.
    * Callers that receive null must treat the grant as parked (not failed).
    *
-   * @param {string} memberId          member_identity.id (UUID)
+   * @param {string} memberId          member_access.id (UUID)
    * @param {string} email             fetched from Wix on-demand (not stored — data minimization)
    * @param {string} name
    * @param {string} hardwarePlatform  e.g. 'kisi'
@@ -184,17 +195,13 @@ class StandardAdapter {
    * @param {boolean} [opts.force]     bypass DB cache (OB-80 stale ID purge)
    * @param {string}  [opts.tenantId]  client UUID — required for Gate 2 recovery via Wix Members API
    * @param {string}  [opts.platformMemberId]  Wix member ID — required for Gate 2 recovery
-   * @param {string}  [opts.userPattern]  'invited' | 'managed' — DR-043. If omitted, read from
-   *                                      clients.kisi_user_pattern (defaults to 'invited').
+   * @param {string}  [opts.userPattern]  'invited' | 'managed' — DR-043
    * @returns {string|null}            hardware user ID, or null if parked as pending_identity
    */
   async resolveIdentity(memberId, email, name, hardwarePlatform, apiKey, opts = {}) {
-    // OB-80: caller may force re-resolution after a hardware 404 on the cached ID.
-    // This bypasses the DB cache, looks up by email again, and returns the current Kisi user ID.
     const { force = false, tenantId = null, platformMemberId = null } = opts;
 
-    // DR-043: resolve per-tenant user pattern so createUser sends the right invite flags.
-    // Prefer an explicitly provided value (e.g. from tests), then read DB, then safe default.
+    // DR-043: resolve per-tenant user pattern
     let userPattern = opts.userPattern || null;
     if (!userPattern && tenantId) {
       try {
@@ -209,9 +216,9 @@ class StandardAdapter {
     }
     if (!userPattern) userPattern = 'invited';
 
-    // 1. DB cache check (skipped when force=true)
+    // 1. DB cache check — reads hardware_user_id from member_access (skipped when force=true)
     const cached = await db.query(
-      'SELECT hardware_user_id FROM member_identity WHERE id = $1',
+      'SELECT hardware_user_id FROM member_access WHERE id = $1',
       [memberId]
     );
     const priorHardwareUserId = cached.rows[0]?.hardware_user_id || null;
@@ -223,8 +230,7 @@ class StandardAdapter {
       return priorHardwareUserId;
     }
 
-    // OB-89 Gate 2: wrap the hardware calls. If Gate 1 (Layer 5 validator) throws
-    // INVALID_HARDWARE_REQUEST because inputs are missing, run the recovery ladder and retry.
+    // OB-89 Gate 2: wrap hardware calls — recover missing email if needed
     let hardwareUserId;
     try {
       hardwareUserId = await this._callHardwareToResolveIdentity(
@@ -232,7 +238,6 @@ class StandardAdapter {
       );
     } catch (err) {
       if (err.code === 'INVALID_HARDWARE_REQUEST' && err.missingFields?.includes('email')) {
-        // Gate 2 — attempt to recover the missing email.
         log.warn('adapter.identity.gate2_recovery_triggered', {
           memberId, platformMemberId, clientId: tenantId,
           missingFields: err.missingFields,
@@ -250,7 +255,6 @@ class StandardAdapter {
             { userPattern }
           );
         } else {
-          // Ladder exhausted — park as pending_identity, return null to signal "parked, not failed".
           log.warn('adapter.identity.parked_pending_identity', {
             memberId, platformMemberId, clientId: tenantId,
             reason: 'email_unrecoverable',
@@ -266,23 +270,20 @@ class StandardAdapter {
 
     const newHardwareUserId = String(hardwareUserId);
 
-    // OB-80: If a prior hardware_user_id existed and we just resolved to a different one,
-    // the original Kisi user was deleted and replaced. The old role_assignment_id and source
-    // rows point at a dead Kisi user — they'll 404 on the next revoke and silently rot.
-    // Purge them so the new grant writes clean rows.
+    // OB-80: Prior hardware_user_id changed — old source rows point at a dead Kisi user.
+    // Purge by access_id (new schema has no member_id column on member_access_sources).
     if (priorHardwareUserId && priorHardwareUserId !== newHardwareUserId) {
       log.warn('adapter.identity_replaced', {
         memberId,
         priorHardwareUserId,
         newHardwareUserId,
       });
-      await db.query(`DELETE FROM member_role_assignments WHERE member_id = $1`, [memberId]);
-      await db.query(`DELETE FROM member_access_sources   WHERE member_id = $1`, [memberId]);
+      await db.query(`DELETE FROM member_access_sources WHERE access_id = $1`, [memberId]);
     }
 
-    // Cache hardware user ID to DB
+    // Cache hardware user ID to member_access
     await db.query(
-      `UPDATE member_identity SET hardware_user_id = $1, updated_at = NOW() WHERE id = $2`,
+      `UPDATE member_access SET hardware_user_id = $1, updated_at = NOW() WHERE id = $2`,
       [newHardwareUserId, memberId]
     );
 
@@ -290,48 +291,86 @@ class StandardAdapter {
   }
 
   /**
-   * Records a successful grant — writes all role assignments to member_role_assignments,
-   * writes source rows to member_access_sources (DR-034),
-   * then sets member_access_state to active.
+   * Records a successful grant:
+   * - INSERTs member_billing row (idempotent on wix_order_id + cycle_index)
+   * - INSERTs member_access_sources rows (access_id→billing_id link, role_assignment_id, valid_until RI-03)
+   * - UPDATEs member_access.status = 'active'
+   *
    * Called after hardware role assignments succeed.
    *
-   * @param {string} memberId
+   * @param {string} memberId   member_access.id
    * @param {string} tenantId
-   * @param {Array}  assignments  [{ mappingId, roleAssignmentId, hardwareGroupId, sourcePlanId, sourceType }]
-   * @param {object} [billingSnapshot]  Optional canonical billing snapshot (DR-042) — written to
-   *                                    every MRA row in this grant pass. Refreshed on renewal.
-   *                                    Display-only — never used to gate grant decisions.
+   * @param {Array}  assignments  [{
+   *   mappingId, roleAssignmentId, hardwareGroupId, sourcePlanId, sourceType,
+   *   planEndDate,       — RI-03: written to valid_until (null = permanent)
+   *   wixOrderId, wixSubscriptionId, cycleIndex, planId, planName,
+   *   effectiveStart, effectiveEnd, billingSnapshot
+   * }]
    */
-  async completeGrant(memberId, tenantId, assignments, billingSnapshot = null) {
-    const snapshotJson = billingSnapshot ? JSON.stringify(billingSnapshot) : null;
-    for (const { mappingId, roleAssignmentId, hardwareGroupId, sourcePlanId, sourceType } of assignments) {
-      // DR-042: ON CONFLICT updates billing_snapshot so renewals refresh it. role_assignment_id
-      // is preserved (it's the live Kisi reference; idempotent retries must not change it).
-      await db.query(
-        `INSERT INTO member_role_assignments (member_id, mapping_id, role_assignment_id, hardware_group_id, billing_snapshot)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (member_id, mapping_id, hardware_group_id)
-         DO UPDATE SET billing_snapshot = COALESCE(EXCLUDED.billing_snapshot, member_role_assignments.billing_snapshot)`,
-        [memberId, mappingId, roleAssignmentId, hardwareGroupId || null, snapshotJson]
-      );
+  async completeGrant(memberId, tenantId, assignments) {
+    // Resolve member_master_id once for member_billing rows
+    const masterRow = await db.query(
+      `SELECT member_master_id FROM member_access WHERE id = $1`,
+      [memberId]
+    );
+    const memberMasterId = masterRow.rows[0]?.member_master_id;
 
-      // DR-034: Record why this member is in this group.
-      // ON CONFLICT DO NOTHING — safe for retry (idempotent).
-      if (hardwareGroupId) {
-        await db.query(
-          `INSERT INTO member_access_sources
-             (member_id, hardware_group_id, source_type, source_plan_id, mapping_id)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT DO NOTHING`,
-          [memberId, hardwareGroupId, sourceType || 'plan', sourcePlanId || null, mappingId || null]
+    for (const {
+      mappingId, roleAssignmentId, hardwareGroupId, sourcePlanId, sourceType,
+      planEndDate, wixOrderId, wixSubscriptionId, cycleIndex,
+      planId, planName, effectiveStart, effectiveEnd, billingSnapshot,
+    } of assignments) {
+      // INSERT member_billing — idempotency guard: ON CONFLICT (wix_order_id, cycle_index) DO NOTHING
+      let billingId = null;
+      if (wixOrderId) {
+        const billingResult = await db.query(
+          `INSERT INTO member_billing
+             (member_master_id, client_id, wix_order_id, wix_subscription_id, cycle_index,
+              plan_id, plan_name, effective_start, effective_end, status, billing_snapshot)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10)
+           ON CONFLICT (wix_order_id, cycle_index) DO NOTHING
+           RETURNING id`,
+          [
+            memberMasterId, tenantId, wixOrderId, wixSubscriptionId || null,
+            cycleIndex || 1, planId || null, planName || null,
+            effectiveStart || null, effectiveEnd || null,
+            billingSnapshot ? JSON.stringify(billingSnapshot) : null,
+          ]
         );
+        // If DO NOTHING fired, fetch the existing row's id
+        if (billingResult.rows.length > 0) {
+          billingId = billingResult.rows[0].id;
+        } else {
+          const existing = await db.query(
+            `SELECT id FROM member_billing WHERE wix_order_id = $1 AND cycle_index = $2`,
+            [wixOrderId, cycleIndex || 1]
+          );
+          billingId = existing.rows[0]?.id || null;
+        }
       }
+
+      // INSERT member_access_sources — new schema: access_id FK, billing_id FK, valid_until (RI-03)
+      await db.query(
+        `INSERT INTO member_access_sources
+           (access_id, billing_id, source_type, source_plan_id, hardware_group_id,
+            role_assignment_id, mapping_id, effective_start, valid_until)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
+           SET role_assignment_id = EXCLUDED.role_assignment_id,
+               billing_id = COALESCE(EXCLUDED.billing_id, member_access_sources.billing_id),
+               effective_start = COALESCE(EXCLUDED.effective_start, member_access_sources.effective_start),
+               valid_until = EXCLUDED.valid_until`,
+        [
+          memberId, billingId || null, sourceType || 'plan',
+          sourcePlanId || null, hardwareGroupId || null,
+          roleAssignmentId || null, mappingId || null,
+          effectiveStart || null, planEndDate || null,
+        ]
+      );
     }
 
     await db.query(
-      `UPDATE member_access_state
-       SET status = 'active', provisioned_at = NOW(), updated_at = NOW()
-       WHERE member_id = $1`,
+      `UPDATE member_access SET status = 'active', provisioned_at = NOW(), updated_at = NOW() WHERE id = $1`,
       [memberId]
     );
 
@@ -339,8 +378,6 @@ class StandardAdapter {
       log.warn('adapter.activity_update_failed', { field: 'grants_completed' }, err)
     );
 
-    // Sprint 5.5: First grant experience — send welcome email on first successful grant per client.
-    // Fault-tolerant: never blocks the grant completion path.
     this._maybeFireFirstGrantEmail(tenantId, memberId).catch(err =>
       log.warn('adapter.first_grant_email_failed', {}, err)
     );
@@ -349,6 +386,7 @@ class StandardAdapter {
   /**
    * Fires the first-grant welcome email once per client (Sprint 5.5).
    * Uses clients.first_grant_sent flag — set atomically to prevent duplicate sends.
+   * UNCHANGED from prior schema.
    */
   async _maybeFireFirstGrantEmail(tenantId, memberId) {
     const result = await db.query(
@@ -358,7 +396,7 @@ class StandardAdapter {
        RETURNING name, notification_email`,
       [tenantId]
     );
-    if (!result.rows.length) return; // Already sent — skip
+    if (!result.rows.length) return;
 
     const { name: clientName, notification_email } = result.rows[0];
     const toEmail = notification_email || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
@@ -392,23 +430,22 @@ class StandardAdapter {
   }
 
   /**
-   * Records a successful revoke — sets member_access_state to targetStatus.
+   * Records a successful revoke — cleans up member_access_sources and sets member_access status.
    * Core Engine determines targetStatus from eventType; this layer never handles event type strings (DR-023).
    *
    * targetStatus values:
-   *   'cancelled'  — plan.cancelled before hardware was ever provisioned (no hardware call made)
-   *   'disabled'  — payment.failed path (preserve role assignments for fast recovery)
-   *   'revoked'   — plan.cancelled, booking.cancelled (clears role assignments)
-   *   'deleted'   — member.deleted (clears role assignments)
+   *   'cancelled'  — plan.cancelled before hardware was ever provisioned
+   *   'disabled'   — payment.failed path (preserve source rows for fast recovery)
+   *   'revoked'    — plan.cancelled, booking.cancelled (clears source rows)
+   *   'deleted'    — member.deleted (clears all source rows)
    *
-   * DR-034: For 'revoked' path, also removes the source row from member_access_sources.
-   * The caller (grant-revoke.js / queue-worker) is responsible for checking remaining
-   * source count BEFORE calling hardware removeRole — this method only cleans up DB state.
+   * DR-034: For 'revoked'/'deleted'/'cancelled' paths, removes source rows from member_access_sources.
+   * Remaining-count check (before hardware removeRole call) is the caller's responsibility.
    *
-   * @param {string} memberId
+   * @param {string} memberId   member_access.id
    * @param {string} tenantId
    * @param {string} targetStatus
-   * @param {Object} [options]   { sourcePlanId, sourceType, hardwareGroupId } — for DR-034 source cleanup
+   * @param {Object} [options]  { sourcePlanId, sourceType, hardwareGroupId }
    */
   async completeRevoke(memberId, tenantId, targetStatus, options = {}) {
     const clearRole = targetStatus === 'revoked' || targetStatus === 'deleted' || targetStatus === 'cancelled';
@@ -418,40 +455,30 @@ class StandardAdapter {
       await dbClient.query('BEGIN');
 
       if (clearRole) {
-        // DR-034: Remove this specific source row if planId provided (targeted revoke).
-        // If no planId (full delete), remove all source rows for this member.
         if (options.sourcePlanId && options.hardwareGroupId) {
           await dbClient.query(
             `DELETE FROM member_access_sources
-             WHERE member_id = $1
+             WHERE access_id = $1
                AND hardware_group_id = $2
                AND source_type = $3
                AND COALESCE(source_plan_id, '') = COALESCE($4, '')`,
             [memberId, options.hardwareGroupId, options.sourceType || 'plan', options.sourcePlanId]
           );
         } else {
-          // Full revoke (member.deleted or no scope info) — clear all source rows
           await dbClient.query(
-            `DELETE FROM member_access_sources WHERE member_id = $1`,
+            `DELETE FROM member_access_sources WHERE access_id = $1`,
             [memberId]
           );
         }
 
-        // Clear all stored role assignments atomically with state update
         await dbClient.query(
-          `DELETE FROM member_role_assignments WHERE member_id = $1`,
-          [memberId]
-        );
-        await dbClient.query(
-          `UPDATE member_access_state
-           SET status = $1, role_assignment_id = NULL, updated_at = NOW()
-           WHERE member_id = $2`,
+          `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
           [targetStatus, memberId]
         );
       } else {
-        // 'disabled' path — preserve role assignments, just update status
+        // 'disabled' path — preserve source rows, just update status
         await dbClient.query(
-          `UPDATE member_access_state SET status = $1, updated_at = NOW() WHERE member_id = $2`,
+          `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
           [targetStatus, memberId]
         );
       }
@@ -471,12 +498,12 @@ class StandardAdapter {
 
   /**
    * Releases the in_flight lock on error or pending_hardware park.
-   * Sets member_access_state.status = lockStatus (default: 'failed').
+   * Sets member_access.status = lockStatus (default: 'failed').
    * Increments errors_count in client_activity_summary (except for pending_hardware).
    *
    * Never throws — error handling in the error path must be bulletproof.
    *
-   * @param {string} memberId
+   * @param {string} memberId   member_access.id
    * @param {string} tenantId
    * @param {string} lockStatus  default 'failed'
    * @param {Object} [options]   optional: { planId } — stored for pending_hardware retry
@@ -484,21 +511,20 @@ class StandardAdapter {
   async releaseLock(memberId, tenantId, lockStatus = 'failed', options = {}) {
     if (lockStatus === 'pending_hardware' && options.planId) {
       await db.query(
-        `UPDATE member_access_state SET status = $1, pending_plan_id = $2, updated_at = NOW() WHERE member_id = $3`,
+        `UPDATE member_access SET status = $1, pending_plan_id = $2, updated_at = NOW() WHERE id = $3`,
         [lockStatus, options.planId, memberId]
       ).catch(err =>
         log.error('adapter.pending_hardware_failed', { memberId }, err)
       );
     } else {
       await db.query(
-        `UPDATE member_access_state SET status = $1, updated_at = NOW() WHERE member_id = $2`,
+        `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
         [lockStatus, memberId]
       ).catch(err =>
         log.error('adapter.lock_release_failed', { memberId }, err)
       );
     }
 
-    // Don't count pending_hardware as errors — it's an expected state, not a failure
     if (lockStatus !== 'pending_hardware') {
       this._incrementActivity(tenantId, 'errors_count').catch(err =>
         log.warn('adapter.activity_update_failed', { field: 'errors_count' }, err)
@@ -508,21 +534,17 @@ class StandardAdapter {
 
   /**
    * Parks a member whose Kisi user has been created but group assignment is deferred
-   * because the plan's startDate is in the future. Sets status = 'pending_start' and
-   * stores the scheduled date so sync-status.ejs can display it to the member.
-   * Called by queue-worker after resolveIdentity() succeeds on an orderPurchased event
-   * for a delayed-start plan. orderStarted fires when the startDate arrives and completes
-   * the grant via the plan.started path.
+   * because the plan's startDate is in the future.
    *
-   * @param {string} memberId
+   * @param {string} memberId   member_access.id
    * @param {string} tenantId
    * @param {string} scheduledStartDate  ISO-8601 string
    */
   async parkPendingStart(memberId, tenantId, scheduledStartDate) {
     await db.query(
-      `UPDATE member_access_state
+      `UPDATE member_access
        SET status = 'pending_start', scheduled_start_date = $2, updated_at = NOW()
-       WHERE member_id = $1`,
+       WHERE id = $1`,
       [memberId, scheduledStartDate]
     );
     this._incrementActivity(tenantId, 'events_received').catch(err =>
@@ -533,6 +555,7 @@ class StandardAdapter {
   /**
    * Daily UPSERT for client_activity_summary (DR-024).
    * Fault-tolerant — all callers .catch() this. Never awaited in critical paths.
+   * UNCHANGED from prior schema.
    *
    * @param {string} tenantId
    * @param {string} field  one of: events_received, grants_completed, revokes_completed, errors_count
@@ -541,7 +564,6 @@ class StandardAdapter {
     const allowed = ['events_received', 'grants_completed', 'revokes_completed', 'errors_count'];
     if (!allowed.includes(field)) throw new Error(`Unknown activity field: ${field}`);
 
-    // Column name validated against allowlist above — safe to interpolate
     await db.query(
       `INSERT INTO client_activity_summary (client_id, summary_date, ${field})
        VALUES ($1, CURRENT_DATE, 1)
@@ -556,7 +578,6 @@ class StandardAdapter {
   /**
    * Wrapper around hardware findUserByEmail + createUser. Isolated so Gate 2
    * can call it twice — first with original inputs, again with recovered inputs.
-   * DR-043: options.userPattern passed to createUser so send_emails is set correctly.
    */
   async _callHardwareToResolveIdentity(hardwarePlatform, apiKey, email, name, options = {}) {
     let hardwareUserId = await hardwareAdapter.findUserByEmail(hardwarePlatform, apiKey, email);
@@ -569,15 +590,12 @@ class StandardAdapter {
   }
 
   /**
-   * OB-89 Gate 2 — recovery ladder for missing identity inputs (email today).
-   * Returns { email, name, source: 'wix_members_api' | 'db_cache' } on success, or null
-   * when every tier is exhausted. Caller (resolveIdentity) parks as pending_identity on null.
+   * OB-89 Gate 2 — recovery ladder for missing identity inputs.
+   * Returns { email, name, source } on success, or null when exhausted.
    *
-   * Tier 1: Wix Members API lookup by platformMemberId. Authoritative — fetches current
-   *         loginEmail and name from Wix. Requires tenantId + platformMemberId in opts.
-   * Tier 2: DB cache — member_identity.email from a prior event (schema already supports
-   *         email; we just haven't been populating it). Fallback for when Members API fails.
-   * Tier 3: None — return null, caller parks.
+   * Tier 1: Wix Members API — authoritative, fetches current loginEmail + name.
+   * Tier 2: DB cache — member_master.email from a prior event.
+   * Tier 3: None — return null, caller parks as pending_identity.
    */
   async _recoverMissingEmail(memberId, tenantId, platformMemberId) {
     if (!tenantId || !platformMemberId) {
@@ -587,7 +605,7 @@ class StandardAdapter {
       return null;
     }
 
-    // Tier 1: Wix Members API (two-call: Members → Contacts for email/name)
+    // Tier 1: Wix Members API
     try {
       const clientRow = (await db.query(
         `SELECT source_api_key, source_site_id FROM clients WHERE id = $1`,
@@ -601,32 +619,30 @@ class StandardAdapter {
           wixApiKey, clientRow.source_site_id, platformMemberId
         );
         if (member && member.email) {
-          // DR-001-A narrow Gate 2 write path — cache the recovered identity on
-          // member_identity so (a) subsequent sync runs don't re-call Wix for the
-          // same member (rate-limit friendliness), (b) the Members page shows a
-          // real name instead of a UUID. Null-coalesce: never overwrite an
-          // existing non-null field with null from a partial Wix response.
-          await db.query(
-            `UPDATE member_identity
-             SET email        = COALESCE($2, email),
-                 first_name   = COALESCE($3, first_name),
-                 last_name    = COALESCE($4, last_name),
-                 display_name = COALESCE($5, display_name),
-                 phone        = COALESCE($6, phone),
-                 updated_at   = NOW()
-             WHERE id = $1`,
-            [
-              memberId,
-              member.email,
-              member.firstName,
-              member.lastName,
-              member.name,
-              member.phone,
-            ]
-          ).catch(err => {
-            log.warn('adapter.identity.gate2_cache_write_failed', { memberId, code: err.code }, err);
-            // Not fatal — caller still gets the recovered data via return value.
-          });
+          // DR-001-A narrow Gate 2 write path — cache to member_master
+          // Resolve member_master_id from member_access
+          const masterIdRow = (await db.query(
+            `SELECT member_master_id FROM member_access WHERE id = $1`, [memberId]
+          )).rows[0];
+          if (masterIdRow) {
+            await db.query(
+              `UPDATE member_master
+               SET email        = COALESCE($2, email),
+                   first_name   = COALESCE($3, first_name),
+                   last_name    = COALESCE($4, last_name),
+                   display_name = COALESCE($5, display_name),
+                   phone        = COALESCE($6, phone),
+                   updated_at   = NOW()
+               WHERE id = $1`,
+              [
+                masterIdRow.member_master_id,
+                member.email, member.firstName, member.lastName,
+                member.name, member.phone,
+              ]
+            ).catch(err => {
+              log.warn('adapter.identity.gate2_cache_write_failed', { memberId, code: err.code }, err);
+            });
+          }
 
           return {
             email: member.email,
@@ -646,49 +662,50 @@ class StandardAdapter {
         });
       }
     } catch (err) {
-      // Don't let Tier 1 failure abort Tier 2.
       log.error('adapter.identity.gate2_tier1_failed', {
         memberId, platformMemberId, httpStatus: err.statusCode, code: err.code,
       }, err);
     }
 
-    // Tier 2: DB cache — prior email stored on member_identity
+    // Tier 2: DB cache — member_master.email
     try {
-      const cached = (await db.query(
-        `SELECT email, display_name, first_name, last_name
-         FROM member_identity WHERE id = $1`,
-        [memberId]
+      const masterIdRow = (await db.query(
+        `SELECT member_master_id FROM member_access WHERE id = $1`, [memberId]
       )).rows[0];
-      if (cached?.email) {
-        const composed = [cached.first_name, cached.last_name].filter(Boolean).join(' ').trim();
-        return {
-          email: cached.email,
-          name: cached.display_name || composed || cached.email,
-          source: 'db_cache',
-        };
+      if (masterIdRow) {
+        const cached = (await db.query(
+          `SELECT email, display_name, first_name, last_name
+           FROM member_master WHERE id = $1`,
+          [masterIdRow.member_master_id]
+        )).rows[0];
+        if (cached?.email) {
+          const composed = [cached.first_name, cached.last_name].filter(Boolean).join(' ').trim();
+          return {
+            email: cached.email,
+            name: cached.display_name || composed || cached.email,
+            source: 'db_cache',
+          };
+        }
       }
     } catch (err) {
       log.error('adapter.identity.gate2_tier2_failed', { memberId }, err);
     }
 
-    // Tier 3: ladder exhausted
     return null;
   }
 
   /**
-   * OB-89 Gate 2 — park a member whose grant cannot proceed because required identity
-   * inputs cannot be recovered. Transitions status out of 'in_flight' to 'pending_identity'
-   * — which IS the lock release (the "in_flight lock" is a sentinel value in the status
-   * column, not a separate boolean column per DR-011/DR-023). Waits for the next webhook
-   * which may carry email via the Velo payload. Not a failure — not a dead-letter.
+   * OB-89 Gate 2 — park a member whose grant cannot proceed.
+   * Transitions member_access.status from 'in_flight' to 'pending_identity'.
+   *
+   * @param {string} memberId   member_access.id
    */
   async _parkPendingIdentity(memberId, tenantId, missingFields) {
     try {
       await db.query(
-        `UPDATE member_access_state
-         SET status = 'pending_identity',
-             updated_at = NOW()
-         WHERE member_id = $1`,
+        `UPDATE member_access
+         SET status = 'pending_identity', updated_at = NOW()
+         WHERE id = $1`,
         [memberId]
       );
       log.info('adapter.identity.parked', { memberId, tenantId, missingFields });

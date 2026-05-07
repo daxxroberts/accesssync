@@ -2,8 +2,8 @@
  * @file location-lapse.js
  * @layer core/layer4
  * @role subscription-lapse
- * @reads locations, clients, member_role_assignments, plan_mappings, member_identity, member_access_state
- * @writes member_access_state, member_access_log, locations.subscription_status
+ * @reads locations, clients, connector_subscriptions, member_access, plan_mappings
+ * @writes member_access, member_access_log, locations.subscription_status
  * @calls hardware-adapter (suspendAccess)
  * @exports suspendLocationMembers(locationId, clientId, targetStatus)
  * @dr DR-027, DR-028
@@ -48,16 +48,17 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
     throw new Error(`[LocationLapse] Invalid targetStatus: ${targetStatus}`);
   }
 
-  // 1. Resolve client + location context
+  // 1. Resolve client + location context via connector_subscriptions
   const ctxResult = await db.query(
-    `SELECT COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform,
-            c.hardware_api_key   AS client_key,
-            l.hardware_api_key   AS location_key,
+    `SELECT cs.hardware_platform,
+            cs.hardware_api_key  AS enc_key,
             l.name               AS location_name,
             l.subscription_status AS current_status
-     FROM clients c
-     JOIN locations l ON l.id = $2 AND l.client_id = $1
-     WHERE c.id = $1`,
+     FROM locations l
+     JOIN clients c ON c.id = $1
+     JOIN connector_subscriptions cs ON cs.client_id = $1 AND cs.status = 'active'
+     WHERE l.id = $2 AND l.client_id = $1
+     LIMIT 1`,
     [clientId, locationId]
   );
 
@@ -65,31 +66,29 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
     throw new Error(`[LocationLapse] Location ${locationId} not found for client ${clientId}`);
   }
 
-  const { hardware_platform, client_key, location_key, location_name, current_status } = ctxResult.rows[0];
+  const { hardware_platform, enc_key, location_name, current_status } = ctxResult.rows[0];
 
   if (current_status === 'cancelled') {
     log.info('location.already_cancelled', { locationId, location: location_name });
     return { suspended: 0, skipped: 0, errors: [] };
   }
 
-  const encKey = location_key || client_key;
-  const apiKey = encKey ? decryptApiKey(encKey) : null; // DR-028: KISI_API_KEY_MOCK removed — set key via Admin Hub
+  const apiKey = enc_key ? decryptApiKey(enc_key) : null; // DR-028
   if (!apiKey) throw new Error(`[LocationLapse] No API key available for client ${clientId}`);
 
   const platform = hardware_platform || 'kisi';
 
-  // 2. Find all active members with role assignments at this location
+  // 2. Find all active members at this location via member_access (new schema)
   const membersResult = await db.query(
     `SELECT DISTINCT
-            mi.id              AS member_id,
-            mi.hardware_user_id,
-            mi.platform_member_id,
-            mas.status         AS current_access_status
-     FROM   member_role_assignments mra
-     JOIN   plan_mappings pm  ON pm.id = mra.mapping_id AND pm.location_id = $1
-     JOIN   member_identity  mi  ON mi.id = mra.member_id  AND mi.client_id = $2
-     JOIN   member_access_state mas ON mas.member_id = mi.id
-     WHERE  mas.status IN ('active', 'pending_sync', 'in_flight')`,
+            ma.id               AS member_id,
+            ma.hardware_user_id,
+            ma.platform_member_id,
+            ma.status           AS current_access_status
+     FROM   member_access ma
+     JOIN   plan_mappings pm ON pm.client_id = ma.client_id AND pm.location_id = $1
+     WHERE  ma.client_id = $2
+       AND  ma.status IN ('active', 'pending_sync', 'in_flight')`,
     [locationId, clientId]
   );
 
@@ -115,9 +114,9 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
       }
 
       await db.query(
-        `UPDATE member_access_state
+        `UPDATE member_access
          SET    status = 'disabled', updated_at = NOW()
-         WHERE  member_id = $1`,
+         WHERE  id = $1`,
         [row.member_id]
       );
 

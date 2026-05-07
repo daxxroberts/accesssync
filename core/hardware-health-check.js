@@ -3,8 +3,8 @@
  * @layer core/layer4
  * @role cron-6hr
  * @schedule every 6 hours via Railway Cron
- * @reads locations, clients, plan_mappings, plan_mapping_groups, member_role_assignments
- * @writes locations.hardware_key_last_verified, locations.hardware_key_last_error, plan_mapping_groups.health_status, plan_mapping_groups.door_name, plan_mappings.door_name, plan_mappings.source_status
+ * @reads locations, clients, connector_subscriptions, plan_mappings, plan_mapping_groups
+ * @writes connector_subscriptions.key_last_verified, connector_subscriptions.key_last_error, plan_mapping_groups.health_status, plan_mapping_groups.door_name, plan_mappings.door_name, plan_mappings.source_status
  * @calls hardware-adapter (getLocks, getGroups), wix-plans-api (listPricingPlans), resend (alerts)
  * @exports runHealthCheck
  * @dr DR-028, DR-037
@@ -48,13 +48,13 @@ async function _runHealthCheckBody() {
 
   // Per-location iteration: each active location gets its own key + platform check
   const locationsResult = await db.query(
-    `SELECT l.id AS location_id, l.name AS location_name,
-            COALESCE(l.hardware_platform, c.hardware_platform, 'kisi') AS hardware_platform,
-            COALESCE(l.hardware_api_key, c.hardware_api_key) AS hardware_api_key,
+    `SELECT l.id AS location_id, l.name AS location_name, l.client_id,
+            cs.hardware_api_key, cs.hardware_platform, cs.id AS connector_id,
             COALESCE(l.notification_email, c.notification_email) AS notification_email,
-            c.name AS client_name, c.id AS client_id
+            c.name AS client_name
      FROM locations l
-     JOIN clients c ON l.client_id = c.id
+     JOIN clients c ON c.id = l.client_id
+     JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
      WHERE c.status = 'active' AND l.subscription_status = 'active'`
   );
 
@@ -73,7 +73,7 @@ async function _checkLocation(loc) {
     const msg = 'No hardware API key configured. Set your API key in the AccessSync dashboard under this location.';
     log.warn('health.no_key', { clientId: loc.client_id, location: loc.location_name });
     await _notifyFailure(loc, null, 'no_key', msg);
-    await _updateLocationVerification(loc.location_id, null, msg);
+    await _updateLocationVerification(loc.connector_id, null, msg);
     return;
   }
 
@@ -104,7 +104,7 @@ async function _checkLocation(loc) {
   }
 
   const errorMsg = error ? _diagnose(errorType, platform) : null;
-  await _updateLocationVerification(loc.location_id, error ? null : new Date(), errorMsg);
+  await _updateLocationVerification(loc.connector_id, error ? null : new Date(), errorMsg);
 
   // Notify only on actionable errors (skip transient network issues)
   if (errorType && errorType !== 'network_error') {
@@ -443,14 +443,14 @@ function _diagnose(errorType, platform) {
   }
 }
 
-async function _updateLocationVerification(locationId, verifiedAt, errorMsg) {
+async function _updateLocationVerification(connectorId, verifiedAt, errorMsg) {
   await db.query(
-    `UPDATE locations
-     SET hardware_key_last_verified = $1,
-         hardware_key_last_error    = $2
+    `UPDATE connector_subscriptions
+     SET key_last_verified = $1,
+         key_last_error    = $2
      WHERE id = $3`,
-    [verifiedAt, errorMsg, locationId]
-  ).catch(e => log.error('health.location_update_failed', { locationId }, e));
+    [verifiedAt, errorMsg, connectorId]
+  ).catch(e => log.error('health.connector_update_failed', { connectorId }, e));
 }
 
 async function _notifyFailure(loc, locName, errorType, message) {

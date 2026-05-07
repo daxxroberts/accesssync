@@ -30,22 +30,22 @@ router.get('/search', async (req, res) => {
       const conditions = [];
       if (client_id) {
         params.push(client_id);
-        conditions.push(`mi.client_id = $${params.length}`);
+        conditions.push(`mm.client_id = $${params.length}`);
       }
       params.push(parseInt(limit));
       const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
       const result = await db.query(
-        `SELECT mi.id, mi.client_id, mi.platform_member_id, mi.display_name,
-                mi.email, mi.first_name, mi.last_name,
-                mi.source_platform, mi.hardware_platform, mi.hardware_user_id,
-                mi.created_at, mi.updated_at,
-                mas.status AS access_status, mas.provisioned_at, mas.role_assignment_id,
+        `SELECT mm.id, mm.client_id, mm.platform_member_id, mm.display_name,
+                mm.email, mm.first_name, mm.last_name,
+                mm.source_platform, ma.hardware_platform, ma.hardware_user_id,
+                mm.created_at, mm.updated_at,
+                ma.status AS access_status, ma.provisioned_at,
                 c.name AS client_name
-         FROM member_identity mi
-         LEFT JOIN member_access_state mas ON mas.member_id = mi.id
-         LEFT JOIN clients c ON c.id = mi.client_id
+         FROM member_master mm
+         LEFT JOIN member_access ma ON ma.member_master_id = mm.id
+         LEFT JOIN clients c ON c.id = mm.client_id
          ${whereClause}
-         ORDER BY mi.updated_at DESC NULLS LAST
+         ORDER BY mm.updated_at DESC NULLS LAST
          LIMIT $${params.length}`,
         params
       );
@@ -96,47 +96,46 @@ router.get('/search', async (req, res) => {
 
     if (platformMemberIds && platformMemberIds.length > 0) {
       params.push(platformMemberIds);
-      conditions.push(`mi.platform_member_id = ANY($${params.length})`);
+      conditions.push(`mm.platform_member_id = ANY($${params.length})`);
     } else {
       params.push(`%${q.trim()}%`);
       conditions.push(
-        `(mi.platform_member_id ILIKE $${params.length}
-          OR mi.email ILIKE $${params.length}
-          OR mi.display_name ILIKE $${params.length}
-          OR mi.first_name ILIKE $${params.length}
-          OR mi.last_name ILIKE $${params.length})`
+        `(mm.platform_member_id ILIKE $${params.length}
+          OR mm.email ILIKE $${params.length}
+          OR mm.display_name ILIKE $${params.length}
+          OR mm.first_name ILIKE $${params.length}
+          OR mm.last_name ILIKE $${params.length})`
       );
     }
 
     if (client_id) {
       params.push(client_id);
-      conditions.push(`mi.client_id = $${params.length}`);
+      conditions.push(`mm.client_id = $${params.length}`);
     }
 
     params.push(parseInt(limit));
 
     const result = await db.query(
-      `SELECT mi.id,
-              mi.client_id,
-              mi.platform_member_id,
-              mi.display_name,
-              mi.email,
-              mi.first_name,
-              mi.last_name,
-              mi.source_platform,
-              mi.hardware_platform,
-              mi.hardware_user_id,
-              mi.created_at,
-              mi.updated_at,
-              mas.status          AS access_status,
-              mas.provisioned_at,
-              mas.role_assignment_id,
+      `SELECT mm.id,
+              mm.client_id,
+              mm.platform_member_id,
+              mm.display_name,
+              mm.email,
+              mm.first_name,
+              mm.last_name,
+              mm.source_platform,
+              ma.hardware_platform,
+              ma.hardware_user_id,
+              mm.created_at,
+              mm.updated_at,
+              ma.status           AS access_status,
+              ma.provisioned_at,
               c.name              AS client_name
-       FROM member_identity mi
-       LEFT JOIN member_access_state mas ON mas.member_id = mi.id
-       LEFT JOIN clients             c   ON c.id = mi.client_id
+       FROM member_master mm
+       LEFT JOIN member_access ma ON ma.member_master_id = mm.id
+       LEFT JOIN clients       c  ON c.id = mm.client_id
        WHERE ${conditions.join(' AND ')}
-       ORDER BY mi.updated_at DESC
+       ORDER BY mm.updated_at DESC
        LIMIT $${params.length}`,
       params
     );
@@ -163,21 +162,22 @@ router.get('/by-client', async (req, res) => {
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const params = [client_id];
-    const conditions = ['mi.client_id = $1'];
+    const conditions = ['mm.client_id = $1'];
 
     if (status && status !== 'all') {
       params.push(status);
-      conditions.push(`mas.status = $${params.length}`);
+      conditions.push(`ma.status = $${params.length}`);
     }
 
     if (location_id) {
-      // Filter members who have role assignments at this location
+      // Filter members who have access sources at this location
       params.push(location_id);
       conditions.push(
         `EXISTS (
-           SELECT 1 FROM member_role_assignments mra
-           JOIN plan_mappings pm ON pm.id = mra.mapping_id AND pm.location_id = $${params.length}
-           WHERE mra.member_id = mi.id
+           SELECT 1 FROM member_access_sources mas
+           JOIN member_access ma2 ON ma2.id = mas.access_id
+           JOIN plan_mappings pm ON pm.id = mas.mapping_id AND pm.location_id = $${params.length}
+           WHERE ma2.member_master_id = mm.id
          )`
       );
     }
@@ -187,19 +187,19 @@ router.get('/by-client', async (req, res) => {
 
     const [membersResult, countResult] = await Promise.all([
       db.query(
-        `SELECT mi.id,
-                mi.platform_member_id,
-                mi.display_name,
-                mi.first_name,
-                mi.last_name,
-                mi.email,
-                mi.source_platform,
-                mi.hardware_platform,
-                mi.hardware_user_id,
-                mi.created_at,
-                mas.status          AS access_status,
-                mas.provisioned_at,
-                mas.updated_at      AS state_updated_at,
+        `SELECT mm.id,
+                mm.platform_member_id,
+                mm.display_name,
+                mm.first_name,
+                mm.last_name,
+                mm.email,
+                mm.source_platform,
+                ma.hardware_platform,
+                ma.hardware_user_id,
+                mm.created_at,
+                ma.status           AS access_status,
+                ma.provisioned_at,
+                ma.updated_at       AS state_updated_at,
                 mal.event_type      AS last_event_type,
                 mal.created_at      AS last_event_at,
                 lat.webhook_received_at,
@@ -208,16 +208,17 @@ router.get('/by-client', async (req, res) => {
                 lat.ingest_s,
                 lat.processing_s,
                 lat.total_s,
-                (SELECT COUNT(DISTINCT mra.mapping_id)::int
-                 FROM member_role_assignments mra
-                 JOIN plan_mappings pm ON pm.id = mra.mapping_id AND pm.status = 'active'
-                 WHERE mra.member_id = mi.id) AS plan_count
-         FROM   member_identity mi
-         LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+                (SELECT COUNT(DISTINCT mas2.mapping_id)::int
+                 FROM member_access_sources mas2
+                 JOIN member_access ma3 ON ma3.id = mas2.access_id
+                 JOIN plan_mappings pm ON pm.id = mas2.mapping_id AND pm.status = 'active'
+                 WHERE ma3.member_master_id = mm.id) AS plan_count
+         FROM   member_master mm
+         LEFT JOIN member_access ma ON ma.member_master_id = mm.id
          LEFT JOIN LATERAL (
            SELECT event_type, created_at
            FROM   member_access_log
-           WHERE  member_id = mi.id
+           WHERE  member_id = mm.id
            ORDER  BY created_at DESC
            LIMIT  1
          ) mal ON TRUE
@@ -225,30 +226,31 @@ router.get('/by-client', async (req, res) => {
            SELECT
              wl.received_at                                                     AS webhook_received_at,
              pei.processed_at                                                   AS enqueued_at,
-             mra.created_at                                                     AS kisi_confirmed_at,
+             mas3.created_at                                                    AS kisi_confirmed_at,
              ROUND(EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)))::int  AS ingest_s,
-             ROUND(EXTRACT(EPOCH FROM (mra.created_at   - pei.processed_at)))::int AS processing_s,
-             ROUND(EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at)))::int   AS total_s
+             ROUND(EXTRACT(EPOCH FROM (mas3.created_at  - pei.processed_at)))::int AS processing_s,
+             ROUND(EXTRACT(EPOCH FROM (mas3.created_at  - wl.received_at)))::int   AS total_s
            FROM webhook_log wl
            JOIN processed_event_ids pei ON pei.event_id = wl.event_id
-           JOIN member_role_assignments mra ON mra.member_id = mi.id
-           WHERE wl.client_id = mi.client_id
-             AND wl.normalized_payload->>'platformMemberId' = mi.platform_member_id
+           JOIN member_access ma4 ON ma4.member_master_id = mm.id
+           JOIN member_access_sources mas3 ON mas3.access_id = ma4.id
+           WHERE wl.client_id = mm.client_id
+             AND wl.normalized_payload->>'platformMemberId' = mm.platform_member_id
              AND wl.hmac_status = 'accepted'
              AND wl.dedup_status = 'new'
-             AND mra.created_at > wl.received_at
+             AND mas3.created_at > wl.received_at
            ORDER BY wl.received_at DESC
            LIMIT 1
          ) lat ON TRUE
          WHERE  ${conditions.join(' AND ')}
-         ORDER  BY mas.provisioned_at DESC NULLS LAST
+         ORDER  BY ma.provisioned_at DESC NULLS LAST
          LIMIT  $${params.length - 1} OFFSET $${params.length}`,
         params
       ),
       db.query(
         `SELECT COUNT(*)::int AS total
-         FROM   member_identity mi
-         LEFT JOIN member_access_state mas ON mas.member_id = mi.id
+         FROM   member_master mm
+         LEFT JOIN member_access ma ON ma.member_master_id = mm.id
          WHERE  ${conditions.join(' AND ')}`,
         params.slice(0, params.length - 2) // exclude limit + offset
       ),
@@ -256,11 +258,11 @@ router.get('/by-client', async (req, res) => {
 
     // Status breakdown
     const breakdownResult = await db.query(
-      `SELECT mas.status, COUNT(*)::int AS count
-       FROM   member_identity mi
-       LEFT JOIN member_access_state mas ON mas.member_id = mi.id
-       WHERE  mi.client_id = $1
-       GROUP  BY mas.status`,
+      `SELECT ma.status, COUNT(*)::int AS count
+       FROM   member_master mm
+       LEFT JOIN member_access ma ON ma.member_master_id = mm.id
+       WHERE  mm.client_id = $1
+       GROUP  BY ma.status`,
       [client_id]
     );
     const breakdown = {};
@@ -310,7 +312,7 @@ router.get('/:id/timeline', async (req, res) => {
 router.get('/:id/plans', async (req, res) => {
   try {
     const { id } = req.params;
-    const memberCheck = await db.query('SELECT id FROM member_identity WHERE id = $1', [id]);
+    const memberCheck = await db.query('SELECT id FROM member_master WHERE id = $1', [id]);
     if (!memberCheck.rows.length) return res.status(404).json({ error: 'Member not found' });
 
     const result = await db.query(
@@ -321,12 +323,13 @@ router.get('/:id/plans', async (req, res) => {
               pm.status,
               pm.source_plan_id,
               l.name         AS location_name,
-              mra.created_at AS granted_at
-       FROM member_role_assignments mra
-       JOIN plan_mappings pm ON pm.id = mra.mapping_id
+              mas.created_at AS granted_at
+       FROM member_access ma
+       JOIN member_access_sources mas ON mas.access_id = ma.id
+       JOIN plan_mappings pm ON pm.id = mas.mapping_id
        LEFT JOIN locations l ON l.id = pm.location_id
-       WHERE mra.member_id = $1
-       ORDER BY pm.status DESC, mra.created_at DESC`,
+       WHERE ma.member_master_id = $1
+       ORDER BY pm.status DESC, mas.created_at DESC`,
       [id]
     );
 
@@ -344,7 +347,7 @@ router.post('/:id/retry', async (req, res) => {
 
     // Get member's client context
     const memberResult = await db.query(
-      'SELECT client_id FROM member_identity WHERE id = $1',
+      'SELECT client_id FROM member_master WHERE id = $1',
       [id]
     );
     if (!memberResult.rows.length) return res.status(404).json({ error: 'Member not found' });
