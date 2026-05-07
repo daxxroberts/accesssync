@@ -206,7 +206,7 @@ describe('[P3] Revoke guard: hardware removeRole is suppressed when other billin
     );
 
     expect(hardwareAdapter.removeRole).not.toHaveBeenCalled();
-    expect(result).toBe('revoked');
+    expect(result).toBe('inactive');
   });
 
 });

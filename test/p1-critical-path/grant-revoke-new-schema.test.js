@@ -143,7 +143,7 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
     );
 
     expect(hardwareAdapter.removeRole).toHaveBeenCalledWith('kisi', null, RA_ID);
-    expect(status).toBe('revoked');
+    expect(status).toBe('inactive');
 
     // Verify SELECT uses access_id
     const selectCall = db.query.mock.calls[1];
@@ -179,7 +179,7 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
     );
 
     expect(hardwareAdapter.removeRole).not.toHaveBeenCalled();
-    expect(status).toBe('revoked');
+    expect(status).toBe('inactive');
   });
 });
 

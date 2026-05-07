@@ -335,7 +335,7 @@ class GrantRevokeLogic {
             `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id) VALUES ($1, $2, $3, $4, $5, $6)`,
             [memberId, tenantId, cancelledEventType, getTraceId() || null, _actor.type || null, _actor.id || null]
           );
-          return 'cancelled';
+          return 'inactive';
         }
 
         for (const { role_assignment_id: raId, hardware_group_id: groupId } of raWithGroups.rows) {
@@ -449,7 +449,7 @@ class GrantRevokeLogic {
           }
         }
 
-        return 'revoked';
+        return 'inactive';
       }
 
       case 'member.deleted': {

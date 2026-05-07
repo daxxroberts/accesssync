@@ -107,7 +107,7 @@ describe('[P1] Member cancels plan → all door access revoked', () => {
     );
 
     expect(hardwareAdapter.removeRole).toHaveBeenCalledTimes(2);
-    expect(targetStatus).toBe('revoked');
+    expect(targetStatus).toBe('inactive');
   });
 
   it('uses the decrypted API key from DB — never a hardcoded or mock key', async () => {

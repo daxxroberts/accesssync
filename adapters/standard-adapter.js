@@ -97,8 +97,9 @@ class StandardAdapter {
         hardwareUserId = accessResult.rows[0].hardware_user_id;
 
       } else {
-        // REVOKE path
-
+        // REVOKE path — revoke applies to ALL active access rows for this member.
+        // A plan.cancelled event does not include a plan_mapping_id, so we look up
+        // by member identity only and revoke every active access row.
         const accessResult = await dbClient.query(
           `SELECT ma.id, ma.hardware_user_id, ma.hardware_platform, ma.status
            FROM member_access ma
@@ -106,8 +107,8 @@ class StandardAdapter {
            WHERE mm.client_id = $1
              AND mm.source_platform = $2
              AND mm.platform_member_id = $3
-             AND ma.plan_mapping_id = $4`,
-          [tenantId, event.sourcePlatform || 'wix', event.platformMemberId, event.planMappingId]
+             AND ma.status IN ('active', 'in_flight')`,
+          [tenantId, event.sourcePlatform || 'wix', event.platformMemberId]
         );
 
         if (accessResult.rows.length === 0) {
@@ -119,6 +120,7 @@ class StandardAdapter {
           return null;
         }
 
+        // Use the first row as the primary access record (handles single-mapping case)
         memberId = accessResult.rows[0].id;
         hardwareUserId = accessResult.rows[0].hardware_user_id;
         resolvedPlatform = accessResult.rows[0].hardware_platform;
@@ -439,12 +441,13 @@ class StandardAdapter {
    * Core Engine determines targetStatus from eventType; this layer never handles event type strings (DR-023).
    *
    * targetStatus values:
-   *   'cancelled'  — plan.cancelled before hardware was ever provisioned
+   *   'inactive'   — plan.cancelled, booking.cancelled (clears source rows)
    *   'disabled'   — payment.failed path (preserve source rows for fast recovery)
-   *   'revoked'    — plan.cancelled, booking.cancelled (clears source rows)
    *   'deleted'    — member.deleted (clears all source rows)
+   *   'revoked'    — legacy alias for 'inactive', kept for backwards compat
+   *   'cancelled'  — legacy alias for early-exit never-provisioned path
    *
-   * DR-034: For 'revoked'/'deleted'/'cancelled' paths, removes source rows from member_access_sources.
+   * DR-034: For 'inactive'/'revoked'/'deleted'/'cancelled' paths, removes source rows from member_access_sources.
    * Remaining-count check (before hardware removeRole call) is the caller's responsibility.
    *
    * @param {string} memberId   member_access.id
@@ -453,7 +456,7 @@ class StandardAdapter {
    * @param {Object} [options]  { sourcePlanId, sourceType, hardwareGroupId }
    */
   async completeRevoke(memberId, tenantId, targetStatus, options = {}) {
-    const clearRole = targetStatus === 'revoked' || targetStatus === 'deleted' || targetStatus === 'cancelled';
+    const clearRole = targetStatus === 'inactive' || targetStatus === 'revoked' || targetStatus === 'deleted' || targetStatus === 'cancelled';
     const dbClient = await db.getClient();
 
     try {

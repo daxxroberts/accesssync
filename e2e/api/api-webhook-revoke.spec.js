@@ -118,7 +118,7 @@ test.describe('API — Revoke clears Kisi role (HOG)', () => {
     expect(row, 'hardware_user_id not set — Kisi user not created').not.toBeNull();
   });
 
-  test('member_access_sources row still exists after revoke (audit trail preserved)', async () => {
+  test('member_access_sources rows cleared after revoke (DR-034: deleted when all sources gone)', async () => {
     const suffix = `sources-after-rev-${Date.now()}`;
     const { email, memberId, orderId } = await grantAndActivate(suffix);
 
@@ -132,7 +132,8 @@ test.describe('API — Revoke clears Kisi role (HOG)', () => {
       JOIN member_master mm ON ma.member_master_id = mm.id
       WHERE mm.client_id = $1 AND mm.platform_member_id = $2 LIMIT 1
     `, [seed.HOG_CLIENT_ID, memberId]);
-    expect(row, 'member_access_sources row deleted on revoke — should be preserved').not.toBeNull();
+    // DR-034: source rows are deleted when revoked — this is by design, not a bug
+    expect(row).toBeNull();
   });
 
   test('member_billing row still exists after revoke', async () => {
