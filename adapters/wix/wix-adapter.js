@@ -141,6 +141,35 @@ class WixAdapter {
       body?.startDate    ||   // top-level fallback
       null;
 
+    // Resolve billing fields from the Wix Order object — stored for record-keeping,
+    // not used to drive access decisions (Wix events remain the sole revocation trigger)
+    const wixOrderId =
+      entity?._id        ||   // REST webhook: Order._id
+      d?._id             ||   // Velo: data IS the Order object
+      d?.order?._id      ||   // legacy wrapper
+      body?.orderId      ||
+      null;
+    const wixSubscriptionId =
+      entity?.subscriptionId ||
+      d?.subscriptionId      ||
+      d?.order?.subscriptionId ||
+      null;
+    const planName =
+      entity?.planName   ||
+      d?.planName        ||
+      d?.order?.planName ||
+      null;
+    const endDate =
+      entity?.endDate    ||
+      d?.endDate         ||
+      d?.order?.endDate  ||
+      null;
+    const cycleIndex =
+      entity?.currentCycle?.index  ||
+      d?.currentCycle?.index       ||
+      d?.order?.currentCycle?.index ||
+      null;
+
     // Resolve email/name from buyer or member data
     const email =
       entity?.buyer?.email        ||  // REST webhook
@@ -174,7 +203,12 @@ class WixAdapter {
       sourcePlatform: 'wix',         // DR-021
       platformMemberId: memberId,     // DR-021
       planId,
+      planName,
       startDate,
+      endDate,
+      wixOrderId,
+      wixSubscriptionId,
+      cycleIndex,
       email,
       name,
       timestamp: new Date().toISOString(),

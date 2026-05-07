@@ -88,12 +88,18 @@ class GrantRevokeLogic {
             stage: 'grant', result: 'skipped',
           });
           assignments.push({
-            accessId:         memberId,
-            mappingId:        mapping.mappingId,
-            roleAssignmentId: String(priorRaId),
-            hardwareGroupId:  mapping.hardwareGroupId,
-            sourcePlanId:     wixEvent.planId || null,
-            sourceType:       wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
+            accessId:           memberId,
+            mappingId:          mapping.mappingId,
+            roleAssignmentId:   String(priorRaId),
+            hardwareGroupId:    mapping.hardwareGroupId,
+            sourcePlanId:       wixEvent.planId || null,
+            sourceType:         wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
+            wixOrderId:         wixEvent.wixOrderId || null,
+            wixSubscriptionId:  wixEvent.wixSubscriptionId || null,
+            planName:           wixEvent.planName || null,
+            cycleIndex:         wixEvent.cycleIndex || null,
+            effectiveStart:     wixEvent.startDate || null,
+            planEndDate:        wixEvent.endDate || null,
           });
           continue; // Hardware call skipped — source row recorded via completeGrant
         }
@@ -141,12 +147,18 @@ class GrantRevokeLogic {
         }
 
         assignments.push({
-          accessId:         memberId,
-          mappingId:        mapping.mappingId,
-          roleAssignmentId: String(priorId),
-          hardwareGroupId:  mapping.hardwareGroupId,
-          sourcePlanId:     wixEvent.planId || null,
-          sourceType:       wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
+          accessId:           memberId,
+          mappingId:          mapping.mappingId,
+          roleAssignmentId:   String(priorId),
+          hardwareGroupId:    mapping.hardwareGroupId,
+          sourcePlanId:       wixEvent.planId || null,
+          sourceType:         wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
+          wixOrderId:         wixEvent.wixOrderId || null,
+          wixSubscriptionId:  wixEvent.wixSubscriptionId || null,
+          planName:           wixEvent.planName || null,
+          cycleIndex:         wixEvent.cycleIndex || null,
+          effectiveStart:     wixEvent.startDate || null,
+          planEndDate:        wixEvent.endDate || null,
         });
         continue; // Skip hardware call for this mapping
       }
@@ -166,12 +178,18 @@ class GrantRevokeLogic {
         );
         newHardwareCallMade = true;
         assignments.push({
-          accessId:         memberId,
-          mappingId:        mapping.mappingId,
-          roleAssignmentId: String(roleId),
-          hardwareGroupId:  mapping.hardwareGroupId,
-          sourcePlanId:     wixEvent.planId || null,
-          sourceType:       wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
+          accessId:           memberId,
+          mappingId:          mapping.mappingId,
+          roleAssignmentId:   String(roleId),
+          hardwareGroupId:    mapping.hardwareGroupId,
+          sourcePlanId:       wixEvent.planId || null,
+          sourceType:         wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
+          wixOrderId:         wixEvent.wixOrderId || null,
+          wixSubscriptionId:  wixEvent.wixSubscriptionId || null,
+          planName:           wixEvent.planName || null,
+          cycleIndex:         wixEvent.cycleIndex || null,
+          effectiveStart:     wixEvent.startDate || null,
+          planEndDate:        wixEvent.endDate || null,
         });
       } catch (err) {
         if (err.code === 'HARDWARE_RESOURCE_NOT_FOUND') {
