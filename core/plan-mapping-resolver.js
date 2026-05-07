@@ -55,7 +55,7 @@ class PlanMappingResolver {
        LEFT JOIN plan_mapping_groups pmg ON pmg.mapping_id = pm.id
        LEFT JOIN locations l ON pm.location_id = l.id
        LEFT JOIN billing_subscriptions bs ON bs.location_id = pm.location_id AND bs.status = 'active'
-       JOIN connector_subscriptions cs ON cs.client_id = pm.client_id AND cs.hardware_platform = pm.hardware_platform
+       JOIN connector_subscriptions cs ON cs.client_id = pm.client_id
        WHERE pm.client_id = $1
          AND pm.source_plan_id = $2
          AND pm.status = 'active'

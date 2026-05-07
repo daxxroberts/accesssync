@@ -50,8 +50,8 @@ const HOG_SOURCE_PLAN_IDS = {
 const HOG_HW_GROUP_ENTRANCE = '838622';
 const HOG_HW_GROUP_TEST     = '852557';
 
-// Wix Site ID for HOG (used in webhook test payloads)
-const HOG_WIX_SITE_ID = 'hog-wix-site-id';
+// Wix Site ID for HOG — must match clients.source_site_id in Railway DB
+const HOG_WIX_SITE_ID = '413432bb-71bc-40ed-a3d4-550bc6841fd0';
 
 // E2E test email domain — all HOG test members use this pattern
 const E2E_EMAIL_DOMAIN = 'accesssync.test';
