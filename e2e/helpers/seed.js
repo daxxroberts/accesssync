@@ -314,7 +314,8 @@ function buildOrderStartedPayload(opts = {}) {
         buyer: {
           memberId,
           contactId: memberId,
-          email:     opts.email || makeE2eEmail(memberId),
+          email:     opts.email    || makeE2eEmail(memberId),
+          fullName:  opts.fullName || `E2E ${memberId}`,
         },
       },
     },
