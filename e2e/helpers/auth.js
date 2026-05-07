@@ -9,9 +9,12 @@
 
 const crypto = require('crypto');
 
-const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || 'http://localhost:3001';
+const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || 'https://accesssync-admin.up.railway.app';
 const OWNER_PIN      = process.env.OWNER_PIN       || '2096';
-const WIX_WEBHOOK_SECRET = process.env.WIX_WEBHOOK_SECRET || '';
+// Read lazily so env vars set after module load (e.g. dotenv in global-setup) are picked up
+function getWixWebhookSecret() {
+  return process.env.WIX_WEBHOOK_SECRET || 'ad6d52c6bd2c2b968c4d95d820cf1198d1e25c16f39a3fa3f389fa4c7f713b44';
+}
 
 // Cached cookie string per process — valid 24h so one mint per test run is fine
 let _adminCookieCache = null;
@@ -81,7 +84,7 @@ function getMemberHubHeaders(wixMemberId) {
  * Mirrors wix-connector.js _verifySignature().
  */
 function buildWebhookSignature(rawBody, secret) {
-  const s = secret || WIX_WEBHOOK_SECRET;
+  const s = secret || getWixWebhookSecret();
   if (!s) throw new Error('WIX_WEBHOOK_SECRET not set — cannot build webhook signature');
   const hmac = crypto.createHmac('sha256', s);
   hmac.update(rawBody, 'utf8');

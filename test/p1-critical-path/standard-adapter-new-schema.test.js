@@ -117,7 +117,7 @@ describe('[P1] resolveAndLock GRANT — UPSERTs member_master then member_access
     // Step 1: UPSERT member_master
     expect(calls[1][0]).toContain('INSERT INTO member_master');
     expect(calls[1][0]).toContain('ON CONFLICT');
-    expect(calls[1][1]).toEqual([TENANT_ID, 'wix', PLATFORM_MEMBER_ID]);
+    expect(calls[1][1]).toEqual([TENANT_ID, 'wix', PLATFORM_MEMBER_ID, null, null]);
 
     // Step 2: FOR UPDATE NOWAIT
     expect(calls[2][0]).toContain('FOR UPDATE NOWAIT');

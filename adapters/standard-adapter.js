@@ -50,13 +50,16 @@ class StandardAdapter {
       if (hardwarePlatform !== null) {
         // GRANT path
 
-        // Step 1: UPSERT person record (PII anchor)
+        // Step 1: UPSERT person record (PII anchor) — write email/name from event when present
         const masterResult = await dbClient.query(
-          `INSERT INTO member_master (client_id, source_platform, platform_member_id, source_tag)
-           VALUES ($1, $2, $3, 'accesssync')
-           ON CONFLICT (client_id, source_platform, platform_member_id) DO UPDATE SET updated_at = NOW()
+          `INSERT INTO member_master (client_id, source_platform, platform_member_id, email, display_name, source_tag)
+           VALUES ($1, $2, $3, $4, $5, 'accesssync')
+           ON CONFLICT (client_id, source_platform, platform_member_id) DO UPDATE
+             SET email        = COALESCE(EXCLUDED.email, member_master.email),
+                 display_name = COALESCE(EXCLUDED.display_name, member_master.display_name),
+                 updated_at   = NOW()
            RETURNING id`,
-          [tenantId, event.sourcePlatform || 'wix', event.platformMemberId]
+          [tenantId, event.sourcePlatform || 'wix', event.platformMemberId, event.email || null, event.name || null]
         );
         memberMasterId = masterResult.rows[0].id;
 
@@ -79,14 +82,16 @@ class StandardAdapter {
         }
 
         // Step 3: UPSERT access record — sets in_flight sentinel (Option B stall recovery)
+        // plan_holder = true for primary members (event.planHolderId null means they are the holder)
+        const isPlanHolder = !event.planHolderId;
         const accessResult = await dbClient.query(
           `INSERT INTO member_access
-             (member_master_id, client_id, plan_mapping_id, source_platform, platform_member_id, status)
-           VALUES ($1, $2, $3, $4, $5, 'in_flight')
+             (member_master_id, client_id, plan_mapping_id, source_platform, platform_member_id, status, plan_holder)
+           VALUES ($1, $2, $3, $4, $5, 'in_flight', $6)
            ON CONFLICT (member_master_id, plan_mapping_id) DO UPDATE
              SET status = 'in_flight', updated_at = NOW()
            RETURNING id, hardware_user_id`,
-          [memberMasterId, tenantId, event.planMappingId, event.sourcePlatform || 'wix', event.platformMemberId]
+          [memberMasterId, tenantId, event.planMappingId, event.sourcePlatform || 'wix', event.platformMemberId, isPlanHolder]
         );
         memberId = accessResult.rows[0].id;
         hardwareUserId = accessResult.rows[0].hardware_user_id;
