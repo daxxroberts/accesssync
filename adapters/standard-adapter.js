@@ -315,6 +315,9 @@ class StandardAdapter {
    * }]
    */
   async completeGrant(memberId, tenantId, assignments) {
+    // Write hardware_platform from first assignment so the revoke path can read it back.
+    const resolvedHardwarePlatform = assignments[0]?.hardwarePlatform || null;
+
     // Resolve member_master_id once for member_billing rows
     const masterRow = await db.query(
       `SELECT member_master_id FROM member_access WHERE id = $1`,
@@ -377,8 +380,11 @@ class StandardAdapter {
     }
 
     await db.query(
-      `UPDATE member_access SET status = 'active', provisioned_at = NOW(), updated_at = NOW() WHERE id = $1`,
-      [memberId]
+      `UPDATE member_access
+       SET status = 'active', provisioned_at = NOW(), updated_at = NOW(),
+           hardware_platform = COALESCE(hardware_platform, $2)
+       WHERE id = $1`,
+      [memberId, resolvedHardwarePlatform]
     );
 
     this._incrementActivity(tenantId, 'grants_completed').catch(err =>

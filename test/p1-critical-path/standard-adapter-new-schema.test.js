@@ -264,11 +264,11 @@ describe('[P1] completeGrant — INSERTs to member_access_sources (access_id FK)
     expect(calls[2][0]).not.toContain('member_id');
     expect(calls[2][1][0]).toBe(MEMBER_ACCESS_ID); // access_id = $1
 
-    // Step 4: UPDATE member_access status='active'
+    // Step 4: UPDATE member_access status='active' + hardware_platform
     expect(calls[3][0]).toContain('UPDATE member_access');
     expect(calls[3][0]).toContain("status = 'active'");
     expect(calls[3][0]).not.toContain('member_access_state');
-    expect(calls[3][1]).toEqual([MEMBER_ACCESS_ID]);
+    expect(calls[3][1][0]).toBe(MEMBER_ACCESS_ID); // $1 = member_access.id
   });
 });
 

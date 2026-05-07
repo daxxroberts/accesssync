@@ -228,37 +228,6 @@ describe('[P1] processRevoke — OB-125 source_tag guard from member_master (new
   });
 });
 
-// ─── DR-044: UPDATE member_master PII NULL ──────────────────────────────────
-
-describe('[P1] processRevoke — DR-044 soft-delete finalizes against member_master (new schema)', () => {
-
-  const cancelEvent = { ...baseEvent, eventType: 'plan.cancelled', rawEventType: 'orderCanceled' };
-
-  test('UPDATE targets member_master via member_access subquery (not member_identity)', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ hardware_api_key: null }] })
-      // raWithGroups
-      .mockResolvedValueOnce({ rows: [{ role_assignment_id: RA_ID, hardware_group_id: GROUP_ID, mapping_id: MAPPING_ID }] })
-      .mockResolvedValueOnce({ rowCount: 1 })             // DELETE
-      .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })    // COUNT
-      .mockResolvedValueOnce({ rowCount: 1 })             // member_access_log
-      // DR-044 finalize UPDATE → matches (sub-member in 'removing' state)
-      .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'mm-uuid-001' }] })
-      .mockResolvedValueOnce({ rowCount: 1 });            // sub_member_soft_deleted log
-
-    hardwareAdapter.removeRole.mockResolvedValue();
-
-    await grantRevoke.processRevoke(
-      TENANT_ID, MEMBER_ID, 'kisi-user-99', [RA_ID], 'kisi', 'plan.cancelled', cancelEvent
-    );
-
-    const finalizeCall = db.query.mock.calls.find(c =>
-      typeof c[0] === 'string' && c[0].includes('UPDATE') && c[0].includes('sub_member_status')
-    );
-    expect(finalizeCall).toBeDefined();
-    expect(finalizeCall[0]).toMatch(/UPDATE member_master/);
-    expect(finalizeCall[0]).not.toMatch(/UPDATE member_identity/);
-    expect(finalizeCall[0]).toMatch(/member_access WHERE id/);
-    expect(finalizeCall[0]).toMatch(/first_name\s*=\s*NULL/);
-  });
-});
+// DR-044 sub-member finalize block was removed from grant-revoke.js (2026-05-07).
+// It referenced non-existent columns (member_master.plan_holder_id, sub_member_status).
+// Sub-member soft-delete is owned by the Member Hub DELETE endpoint, not the webhook revoke path.
