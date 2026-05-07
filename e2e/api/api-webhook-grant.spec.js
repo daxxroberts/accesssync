@@ -49,6 +49,8 @@ async function getBillingRow(memberId) {
   `, [seed.HOG_CLIENT_ID, memberId]);
 }
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('API — orderPurchased grant path', () => {
   let suffix, email, memberId, orderId;
 

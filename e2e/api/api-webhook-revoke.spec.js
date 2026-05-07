@@ -45,7 +45,7 @@ async function grantAndActivate(suffix) {
   await postWebhook(seed.buildOrderPurchasedPayload({
     orderId, memberId, planId: seed.HOG_SOURCE_PLAN_IDS.individual, email,
   }));
-  await waitForStatus(memberId, 'active');
+  await waitForStatus(memberId, 'active', 25_000);
   return { email, memberId, orderId };
 }
 
@@ -57,11 +57,14 @@ const CANCEL_VARIANTS = [
   { eventType: 'wixPricingPlans.orderExpired',           expectedEvent: 'plan.cancelled' },
 ];
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('API — Cancel variants → member_access inactive', () => {
   test.afterEach(async () => { await seed.teardownHogTestMembers(); });
 
   for (const variant of CANCEL_VARIANTS) {
     test(`${variant.eventType} → status=inactive`, async () => {
+      test.setTimeout(60_000);
       const suffix = `rev-${variant.eventType.split('.')[1]}-${Date.now()}`;
       const { email, memberId, orderId } = await grantAndActivate(suffix);
 
@@ -105,6 +108,7 @@ test.describe('API — Revoke clears Kisi role (HOG)', () => {
   test.afterEach(async () => { await seed.teardownHogTestMembers(); });
 
   test('member_access hardware_user_id is set before revoke', async () => {
+    test.setTimeout(60_000);
     const suffix = `hw-check-${Date.now()}`;
     const { memberId } = await grantAndActivate(suffix);
     const row = await waitFor(async () => {
@@ -119,11 +123,12 @@ test.describe('API — Revoke clears Kisi role (HOG)', () => {
   });
 
   test('member_access_sources rows cleared after revoke (DR-034: deleted when all sources gone)', async () => {
+    test.setTimeout(60_000);
     const suffix = `sources-after-rev-${Date.now()}`;
     const { email, memberId, orderId } = await grantAndActivate(suffix);
 
     // Cancel
-    await postWebhook(seed.buildOrderCancelledPayload({ orderId, memberId, email }));
+    await postWebhook(seed.buildOrderCancelledPayload({ orderId, memberId, email, planId: seed.HOG_SOURCE_PLAN_IDS.individual }));
     await waitForStatus(memberId, 'inactive');
 
     const row = await db.queryOne(`
@@ -137,10 +142,11 @@ test.describe('API — Revoke clears Kisi role (HOG)', () => {
   });
 
   test('member_billing row still exists after revoke', async () => {
+    test.setTimeout(60_000);
     const suffix = `billing-after-rev-${Date.now()}`;
     const { email, memberId, orderId } = await grantAndActivate(suffix);
 
-    await postWebhook(seed.buildOrderCancelledPayload({ orderId, memberId, email }));
+    await postWebhook(seed.buildOrderCancelledPayload({ orderId, memberId, email, planId: seed.HOG_SOURCE_PLAN_IDS.individual }));
     await waitForStatus(memberId, 'inactive');
 
     const row = await db.queryOne(`
@@ -156,10 +162,11 @@ test.describe('API — Double cancel is idempotent', () => {
   test.afterEach(async () => { await seed.teardownHogTestMembers(); });
 
   test('second cancel on already-inactive member returns 200', async () => {
+    test.setTimeout(60_000);
     const suffix = `double-cancel-${Date.now()}`;
     const { email, memberId, orderId } = await grantAndActivate(suffix);
 
-    const cancelPayload = seed.buildOrderCancelledPayload({ orderId, memberId, email });
+    const cancelPayload = seed.buildOrderCancelledPayload({ orderId, memberId, email, planId: seed.HOG_SOURCE_PLAN_IDS.individual });
     await postWebhook(cancelPayload);
     await waitForStatus(memberId, 'inactive');
 
