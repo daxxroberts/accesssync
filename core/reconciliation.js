@@ -109,7 +109,7 @@ class NightlyReconciliation {
    * Step 0: Pull Wix active orders + confirmed bookings, diff against member_identity.
    * Queue synthetic grant/revoke jobs for any mismatches found.
    *
-   * Sub-members (platform_member_id containing '###as' or plan_holder_id IS NOT NULL)
+   * Sub-members (platform_member_id containing '###as' or sub_master_id IS NOT NULL)
    * are operator-managed — they are excluded from the Wix absence revoke check.
    */
   async _syncTrueSources() {
@@ -237,7 +237,7 @@ class NightlyReconciliation {
 
     if (kisiUserIds.length > 0) {
       const identityResult = await db.query(
-        `SELECT mm.platform_member_id, ma.plan_holder_id
+        `SELECT mm.platform_member_id, ma.sub_master_id
          FROM member_access ma
          JOIN member_master mm ON mm.id = ma.member_master_id
          WHERE ma.client_id = $1
@@ -247,7 +247,7 @@ class NightlyReconciliation {
       );
       for (const row of identityResult.rows) {
         kisiMembers.set(row.platform_member_id, {
-          isSubMember: row.plan_holder_id !== null || row.platform_member_id.includes('###as'),
+          isSubMember: row.sub_master_id !== null || row.platform_member_id.includes('###as'),
         });
       }
     }
@@ -521,7 +521,7 @@ class NightlyReconciliation {
    *  - This function NEVER writes member_role_assignments or member_access_sources
    *    directly. All repairs flow through Standard Adapter Layer (L3) via the
    *    event queue, which makes completeGrant() handle the inserts idempotently.
-   *  - Sub-members (plan_holder_id != null OR platform_member_id contains '###as')
+   *  - Sub-members (sub_master_id != null OR platform_member_id contains '###as')
    *    are operator-managed and skipped; reconcile the plan holder instead.
    *
    * Result actions (one of):
@@ -579,7 +579,7 @@ class NightlyReconciliation {
 
     // 2. Load member_access + member_master, guard against sub-members
     const identityRes = await db.query(
-      `SELECT ma.id, mm.platform_member_id, ma.hardware_user_id, ma.plan_holder_id, mm.source_tag
+      `SELECT ma.id, mm.platform_member_id, ma.hardware_user_id, ma.sub_master_id, mm.source_tag
        FROM member_access ma
        JOIN member_master mm ON mm.id = ma.member_master_id
        WHERE ma.id = $1 AND ma.client_id = $2`,
@@ -594,7 +594,7 @@ class NightlyReconciliation {
       return result;
     }
     const identity = identityRes.rows[0];
-    const isSubMember = identity.plan_holder_id !== null
+    const isSubMember = identity.sub_master_id !== null
       || (identity.platform_member_id || '').includes('###as');
     if (isSubMember) {
       result.action = 'sub_member_skipped';

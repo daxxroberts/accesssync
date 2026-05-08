@@ -167,7 +167,7 @@ describe('[P3] reconcileMember — member_master + member_access (new schema)', 
     });
     // identity (member_access JOIN member_master)
     db.query.mockResolvedValueOnce({
-      rows: [{ id: MEMBER_ID, platform_member_id: PLATFORM_MEMBER_ID, hardware_user_id: 'kisi-user-99', plan_holder_id: null, source_tag: 'accesssync' }],
+      rows: [{ id: MEMBER_ID, platform_member_id: PLATFORM_MEMBER_ID, hardware_user_id: 'kisi-user-99', sub_master_id: null, source_tag: 'accesssync' }],
     });
 
     wixPlansApi.listActiveOrders.mockResolvedValue([{ memberId: PLATFORM_MEMBER_ID, planId: 'wix-plan-aaa', email: 'test@test.com', name: 'Test' }]);
@@ -207,7 +207,7 @@ describe('[P3] reconcileMember — member_master + member_access (new schema)', 
     });
     // identity
     db.query.mockResolvedValueOnce({
-      rows: [{ id: MEMBER_ID, platform_member_id: PLATFORM_MEMBER_ID, hardware_user_id: 'kisi-user-99', plan_holder_id: null, source_tag: 'accesssync' }],
+      rows: [{ id: MEMBER_ID, platform_member_id: PLATFORM_MEMBER_ID, hardware_user_id: 'kisi-user-99', sub_master_id: null, source_tag: 'accesssync' }],
     });
 
     wixPlansApi.listActiveOrders.mockResolvedValue([{ memberId: PLATFORM_MEMBER_ID, planId: 'wix-plan-aaa', email: 'test@test.com', name: 'Test' }]);
@@ -344,7 +344,7 @@ describe('[P3] OB-74 bi-directional — Kisi orphan queues synthetic revoke', ()
 
     // identity lookup → maps kisi-user-99 to PLATFORM_MEMBER_ID
     db.query.mockResolvedValueOnce({
-      rows: [{ platform_member_id: PLATFORM_MEMBER_ID, plan_holder_id: null }],
+      rows: [{ platform_member_id: PLATFORM_MEMBER_ID, sub_master_id: null }],
     });
 
     // OB-74: member_access_sources check → row EXISTS → no orphan (runs before multiMemberPlans)

@@ -80,13 +80,16 @@ class MemberSyncApi {
       }
 
       // 1. Resolve the holder identity row for this person.
+      // Composite key (client_id, source_platform, platform_member_id) per the schema's UNIQUE.
+      // Wix is the only source today; future platforms (Squarespace, etc.) require this filter
+      // to avoid cross-platform ID collisions.
       const holderResult = await db.query(
         `SELECT mm.id AS member_master_id, ma.id AS access_id,
                 ma.hardware_user_id, ma.hardware_platform, mm.source_platform
          FROM member_master mm
          JOIN member_access ma ON ma.member_master_id = mm.id
-         WHERE mm.platform_member_id = $1 AND ma.client_id = $2
-           AND ma.sub_master_id IS NULL
+         WHERE mm.platform_member_id = $1 AND mm.source_platform = 'wix'
+           AND ma.client_id = $2 AND ma.sub_master_id IS NULL
          LIMIT 1`,
         [platformMemberId, clientId]
       );
@@ -99,7 +102,8 @@ class MemberSyncApi {
                     ma.hardware_user_id, ma.hardware_platform, mm.source_platform
              FROM member_master mm
              JOIN member_access ma ON ma.member_master_id = mm.id
-             WHERE mm.platform_member_id = $1 AND ma.client_id = $2
+             WHERE mm.platform_member_id = $1 AND mm.source_platform = 'wix'
+               AND ma.client_id = $2
              LIMIT 1`,
             [platformMemberId, clientId]
           )).rows;

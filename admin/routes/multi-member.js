@@ -73,15 +73,18 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
   res.set('Expires', '0');
 
   try {
-    // 1. Find the holder's member_master + member_access row (sub_master_id IS NULL = holder)
+    // 1. Find the holder's member_master + member_access row (sub_master_id IS NULL = holder).
+    // The Member Hub iframe sends the platform's member ID (e.g. Wix Member ID) in the URL path —
+    // NOT the AccessSync internal UUID. Match against platform_member_id + source_platform + client_id
+    // to use the schema's UNIQUE composite (client_id, source_platform, platform_member_id).
     const holderResult = await db.query(
       `SELECT mm.id AS member_master_id, ma.id AS access_id,
               mm.platform_member_id, mm.first_name, mm.last_name, mm.email, mm.phone,
               ma.status AS access_status, ma.provisioned_at
        FROM member_master mm
        JOIN member_access ma ON ma.member_master_id = mm.id
-       WHERE mm.id = $1 AND ma.client_id = $2
-         AND ma.sub_master_id IS NULL`,
+       WHERE mm.platform_member_id = $1 AND mm.source_platform = 'wix'
+         AND ma.client_id = $2 AND ma.sub_master_id IS NULL`,
       [memberId, clientId]
     );
 

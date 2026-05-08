@@ -540,12 +540,14 @@ function startWorker() {
         platformMemberId,
         stage: 'queue', result: 'stalled',
       });
-      // Recover member_id from DB so we can release the lock
+      // Recover member_id from DB so we can release the lock.
+      // Composite key (client_id, source_platform, platform_member_id) — schema UNIQUE.
       if (tenantId && platformMemberId) {
         const result = await db.query(
           `SELECT ma.id FROM member_access ma
            JOIN member_master mm ON mm.id = ma.member_master_id
-           WHERE mm.client_id = $1 AND mm.platform_member_id = $2 AND ma.status = 'in_flight'`,
+           WHERE mm.client_id = $1 AND mm.source_platform = 'wix'
+             AND mm.platform_member_id = $2 AND ma.status = 'in_flight'`,
           [tenantId, platformMemberId]
         );
         if (result.rows.length) {
