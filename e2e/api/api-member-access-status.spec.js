@@ -12,15 +12,18 @@ const seed = require('../helpers/seed');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
-async function getAccessStatus(wixMemberId, siteId) {
+async function getAccessStatus(wixMemberId, clientId) {
   const params = new URLSearchParams({
-    memberId: wixMemberId,
-    siteId:   siteId || seed.HOG_WIX_SITE_ID,
+    platformMemberId: wixMemberId,
+    clientId:         clientId || seed.HOG_CLIENT_ID,
   });
   const res = await fetch(`${BASE_URL}/member/access-status?${params}`, {
     headers: auth.getMemberHubHeaders(wixMemberId),
   });
-  return { status: res.status, json: res.ok ? await res.json() : null };
+  // Always parse JSON regardless of status — error responses carry diagnostic detail.
+  let json = null;
+  try { json = await res.json(); } catch { /* non-JSON body, leave null */ }
+  return { status: res.status, json };
 }
 
 async function postWebhook(body) {
@@ -39,6 +42,8 @@ async function waitFor(fn, timeoutMs = 20_000) {
   return null;
 }
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('API — /member/access-status auth', () => {
   test('returns 200 with x-internal-proxy: 1', async () => {
     const memberId = seed.makeWixMemberId(`status-auth-${Date.now()}`);
@@ -47,7 +52,7 @@ test.describe('API — /member/access-status auth', () => {
   });
 
   test('returns 401 without auth header', async () => {
-    const params = new URLSearchParams({ memberId: 'test', siteId: 'test-site' });
+    const params = new URLSearchParams({ platformMemberId: 'test', clientId: seed.HOG_CLIENT_ID });
     const res = await fetch(`${BASE_URL}/member/access-status?${params}`);
     expect(res.status).toBe(401);
   });
@@ -84,45 +89,62 @@ test.describe('API — /member/access-status for active member (HOG)', () => {
     expect(status).toBe(200);
   });
 
-  test('active member response has hasAccess=true', async () => {
+  test('active member response has status=active', async () => {
     const { json } = await getAccessStatus(wixMemberId);
-    const hasAccess = json?.hasAccess ?? json?.has_access ?? json?.active;
-    expect(hasAccess).toBe(true);
+    expect(json?.status).toBe('active');
   });
 
-  test('response includes plan_name', async () => {
-    const { json } = await getAccessStatus(wixMemberId);
-    const planName = json?.plan_name ?? json?.planName ?? json?.plan;
-    expect(planName).toBeTruthy();
-  });
-
-  test('response includes hardware_user_id once provisioned', async () => {
-    // Wait for Kisi provisioning
+  test('response includes plans[].planName', async () => {
+    // Wait for member_access_sources to be written (post-Kisi assignRole) before asserting.
+    // The beforeEach only waits for member_access.status='active'; sources land slightly later.
     await waitFor(async () => {
-      const row = await db.queryOne(`
+      const r = await db.queryOne(`
+        SELECT mas.id FROM member_access_sources mas
+        JOIN member_access ma ON ma.id = mas.access_id
+        JOIN member_master mm ON ma.member_master_id = mm.id
+        WHERE mm.client_id = $1 AND mm.platform_member_id = $2
+      `, [seed.HOG_CLIENT_ID, wixMemberId]);
+      return r ? r : null;
+    }, 25_000);
+    const { json } = await getAccessStatus(wixMemberId);
+    expect(json?.plans?.[0]?.planName).toBeTruthy();
+  });
+
+  test('member_access.hardware_user_id is populated once provisioned (DB invariant)', async () => {
+    // hardware_user_id is internal infrastructure — not exposed in the public API.
+    // This test verifies the DB state directly (not via the API contract).
+    const row = await waitFor(async () => {
+      const r = await db.queryOne(`
         SELECT ma.hardware_user_id FROM member_access ma
         JOIN member_master mm ON ma.member_master_id = mm.id
         WHERE mm.client_id = $1 AND mm.platform_member_id = $2
       `, [seed.HOG_CLIENT_ID, wixMemberId]);
-      return row?.hardware_user_id ? row : null;
+      return r?.hardware_user_id ? r : null;
     }, 25_000);
-
-    const { json } = await getAccessStatus(wixMemberId);
-    const hwId = json?.hardware_user_id ?? json?.hardwareUserId ?? json?.kisi_user_id;
-    expect(hwId).toBeTruthy();
+    expect(row?.hardware_user_id).toBeTruthy();
   });
 
-  test('response includes source_plan_id', async () => {
+  test('response includes access[] entries with planName + groupId', async () => {
+    // Wait for grant to provision (member_access_sources row + role assignment).
+    await waitFor(async () => {
+      const r = await db.queryOne(`
+        SELECT mas.id FROM member_access_sources mas
+        JOIN member_access ma ON ma.id = mas.access_id
+        JOIN member_master mm ON ma.member_master_id = mm.id
+        WHERE mm.client_id = $1 AND mm.platform_member_id = $2
+      `, [seed.HOG_CLIENT_ID, wixMemberId]);
+      return r ? r : null;
+    }, 25_000);
     const { json } = await getAccessStatus(wixMemberId);
-    const planId = json?.source_plan_id ?? json?.sourcePlanId ?? json?.plan_id;
-    expect(planId).toBeTruthy();
+    expect(json?.access?.[0]?.planName).toBeTruthy();
+    expect(json?.access?.[0]?.groupId).toBeTruthy();
   });
 });
 
 test.describe('API — /member/access-status for inactive member', () => {
   test.afterEach(async () => { await seed.teardownHogTestMembers(); });
 
-  test('inactive member hasAccess=false', async () => {
+  test('inactive member status=inactive', async () => {
     const suffix     = `inactive-${Date.now()}`;
     const email      = seed.makeE2eEmail(suffix);
     const wixMemberId = seed.makeWixMemberId(suffix);
@@ -142,7 +164,10 @@ test.describe('API — /member/access-status for inactive member', () => {
       return row?.status === 'active' ? row : null;
     });
 
-    await postWebhook(seed.buildOrderCancelledPayload({ orderId, memberId: wixMemberId, email }));
+    await postWebhook(seed.buildOrderCancelledPayload({
+      orderId, memberId: wixMemberId, email,
+      planId: seed.HOG_SOURCE_PLAN_IDS.individual,
+    }));
     await waitFor(async () => {
       const row = await db.queryOne(`
         SELECT ma.status FROM member_access ma
@@ -153,18 +178,14 @@ test.describe('API — /member/access-status for inactive member', () => {
     });
 
     const { json } = await getAccessStatus(wixMemberId);
-    const hasAccess = json?.hasAccess ?? json?.has_access ?? json?.active ?? false;
-    expect(hasAccess).toBe(false);
+    expect(json?.status).toBe('inactive');
   });
 });
 
 test.describe('API — /member/access-status for unknown member', () => {
-  test('unknown memberId returns 200 or 404 with hasAccess=false', async () => {
-    const { status, json } = await getAccessStatus('unknown-member-00000');
-    expect([200, 404]).toContain(status);
-    if (json) {
-      const hasAccess = json?.hasAccess ?? json?.has_access ?? json?.active ?? false;
-      expect(hasAccess).toBe(false);
-    }
+  test('unknown memberId returns 404', async () => {
+    // Endpoint returns 404 with {error: 'Member not found'} when no member_master row exists.
+    const { status } = await getAccessStatus('unknown-member-00000');
+    expect(status).toBe(404);
   });
 });
