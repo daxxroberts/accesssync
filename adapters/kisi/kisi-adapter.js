@@ -40,10 +40,12 @@ class KisiAdapter {
   async createUser(apiKey, email, name, options = {}) {
     const pattern   = options.userPattern || 'invited';
     const sendEmails = pattern === 'invited';
+    // Kisi's POST /users schema accepts only email + send_emails + confirm. Name is not part
+    // of the request body — Kisi defaults it server-side from email. Email is the identity anchor.
     const data = await kisiConnector.makeRequest('/users', {
       method: 'POST',
       body: JSON.stringify({
-        user: { email, name, send_emails: sendEmails, confirm: true }
+        user: { email, send_emails: sendEmails, confirm: true }
       })
     }, apiKey);
     log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id });

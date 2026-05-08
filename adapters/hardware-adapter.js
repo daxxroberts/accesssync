@@ -60,7 +60,8 @@ function _requireFields(operation, inputs, requiredFields, hardwarePlatform) {
 const _requiredFieldsByPlatform = {
   kisi: {
     findUserByEmail: ['email'],
-    createUser:      ['email', 'name'],
+    // Per Kisi API: only email is required on POST /users. Name is not in the request schema.
+    createUser:      ['email'],
     assignRole:      ['userId', 'groupId'],
     removeRole:      ['roleAssignmentId'],
     suspendAccess:   ['userId'],

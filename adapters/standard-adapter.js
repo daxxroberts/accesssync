@@ -237,40 +237,36 @@ class StandardAdapter {
       return priorHardwareUserId;
     }
 
-    // OB-89 Gate 2: wrap hardware calls — recover missing email or name if needed.
-    // Some Wix events (orderStarted, orderCanceled) carry buyer.email but no buyer.fullName.
-    // We have email — that's the load-bearing identifier. Try to recover real name from
-    // Wix Members API; if unavailable, fall back to email-as-name so the grant can complete.
+    // OB-89 Gate 2: wrap hardware calls — recover missing email if needed.
+    // Email is the only identity anchor. Name is decoration (not used for matching, not
+    // sent to Kisi). If email is missing, run the recovery ladder (Wix Members API → DB cache → park).
     let hardwareUserId;
     try {
       hardwareUserId = await this._callHardwareToResolveIdentity(
         hardwarePlatform, apiKey, email, name, { userPattern }
       );
     } catch (err) {
-      const missingEmail = err.code === 'INVALID_HARDWARE_REQUEST' && err.missingFields?.includes('email');
-      const missingName  = err.code === 'INVALID_HARDWARE_REQUEST' && err.missingFields?.includes('name');
-      if (missingEmail || missingName) {
+      if (err.code === 'INVALID_HARDWARE_REQUEST' && err.missingFields?.includes('email')) {
         log.warn('adapter.identity.gate2_recovery_triggered', {
           memberId, platformMemberId, clientId: tenantId,
           missingFields: err.missingFields,
           stage: 'identity', result: 'retry',
         });
         const recovered = await this._recoverMissingEmail(memberId, tenantId, platformMemberId);
-        const finalEmail = recovered?.email || email;
-        const finalName  = recovered?.name  || name || finalEmail;  // email-as-name fallback
-        if (finalEmail && finalName) {
+        if (recovered && recovered.email) {
           log.info('adapter.identity.gate2_recovered', {
             memberId, platformMemberId, clientId: tenantId,
-            recoveredVia: recovered?.source || 'email_fallback',
+            recoveredVia: recovered.source,
             stage: 'identity', result: 'success',
           });
           hardwareUserId = await this._callHardwareToResolveIdentity(
-            hardwarePlatform, apiKey, finalEmail, finalName, { userPattern }
+            hardwarePlatform, apiKey, recovered.email, recovered.name || name || null,
+            { userPattern }
           );
         } else {
           log.warn('adapter.identity.parked_pending_identity', {
             memberId, platformMemberId, clientId: tenantId,
-            reason: 'identity_unrecoverable',
+            reason: 'email_unrecoverable',
             stage: 'identity', result: 'skipped',
           });
           await this._parkPendingIdentity(memberId, tenantId, err.missingFields);
