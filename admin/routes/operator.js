@@ -1146,6 +1146,10 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
         [clientId, locationId]
       ),
       db.query(
+        // Active members at this location. Pre-migration filtered out
+        // member_identity.sub_member_status IN ('removing','deleted'); new schema tracks
+        // sub-member lifecycle via member_access.status, so filter to status='active' which
+        // already excludes removing/deleted/revoked/cancelled rows.
         `SELECT DISTINCT ma.id, mm.platform_member_id, ma.status, ma.provisioned_at, ma.updated_at,
                 COALESCE(mm.display_name,
                   NULLIF(TRIM(COALESCE(mm.first_name,'') || ' ' || COALESCE(mm.last_name,'')), ''),
@@ -1155,7 +1159,7 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
          LEFT JOIN member_access_sources mas ON mas.access_id = ma.id
          LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
          WHERE ma.client_id = $1
-           AND (mm.sub_member_status IS NULL OR mm.sub_member_status NOT IN ('removing', 'deleted'))
+           AND ma.status = 'active'
            AND pm.location_id = $2
          ORDER BY ma.updated_at DESC NULLS LAST`,
         [clientId, locationId]
@@ -1655,8 +1659,10 @@ router.get('/:clientId/members', async (req, res) => {
     const params = [clientId];
     const conditions = ['ma.client_id = $1'];
 
-    // DR-044: exclude soft-deleted and in-flight-removing sub-members from operator listing
-    conditions.push(`(mm.sub_member_status IS NULL OR mm.sub_member_status NOT IN ('removing', 'deleted'))`);
+    // DR-044: exclude soft-deleted and in-flight-removing sub-members from operator listing.
+    // Pre-migration filtered member_identity.sub_member_status; new schema tracks the same
+    // lifecycle via member_access.status. 'deleted' and 'removing' are sub-member-specific.
+    conditions.push(`ma.status NOT IN ('deleted', 'removing')`);
 
     if (status && status !== 'all') {
       params.push(status);

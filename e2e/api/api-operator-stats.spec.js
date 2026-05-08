@@ -32,19 +32,23 @@ test.describe('API — /operator/:clientId stats', () => {
     expect(res.status).toBe(401);
   });
 
-  test('response has client_id field', async () => {
+  test('response has client.id field', async () => {
     const { json } = await fetchOperator(seed.HOG_CLIENT_ID, cookie);
     expect(json).toBeTruthy();
-    expect(json.client_id ?? json.clientId ?? json.id).toBeTruthy();
+    // Endpoint returns nested { client: { id, name, ... }, stats: {...} }.
+    expect(json?.client?.id).toBe(seed.HOG_CLIENT_ID);
   });
 
-  test('active_members count matches DB', async () => {
+  test('active_members count matches DB (DISTINCT member_master_id)', async () => {
+    // Endpoint uses COUNT(DISTINCT ma.member_master_id) — a member with multiple active
+    // member_access rows (e.g. couples plan with two access rows) counts once.
     const { json } = await fetchOperator(seed.HOG_CLIENT_ID, cookie);
     const dbCount = await db.queryOne(`
-      SELECT COUNT(*)::int AS cnt FROM member_access
-      WHERE client_id = $1 AND status = 'active'
+      SELECT COUNT(DISTINCT ma.member_master_id)::int AS cnt
+      FROM member_access ma
+      WHERE ma.client_id = $1 AND ma.status = 'active'
     `, [seed.HOG_CLIENT_ID]);
-    const apiCount = json?.active_members ?? json?.stats?.active_members ?? json?.activeMembers;
+    const apiCount = json?.stats?.active_members;
     expect(Number(apiCount)).toBe(dbCount.cnt);
   });
 
@@ -107,13 +111,14 @@ test.describe('API — /operator/:clientId stat consistency', () => {
     expect(pending).toBeGreaterThanOrEqual(0);
   });
 
-  test('pending_hardware matches DB (status=pending in member_access)', async () => {
+  test('pending_hardware matches DB (status=pending_hardware in member_access)', async () => {
+    // Endpoint queries status='pending_hardware' (parked-pending state for missing API key).
     const { json } = await fetchOperator(seed.HOG_CLIENT_ID, cookie);
     const dbCount = await db.queryOne(`
       SELECT COUNT(*)::int AS cnt FROM member_access
-      WHERE client_id = $1 AND status = 'pending'
+      WHERE client_id = $1 AND status = 'pending_hardware'
     `, [seed.HOG_CLIENT_ID]);
-    const apiCount = Number(json?.pending_hardware ?? json?.stats?.pending_hardware ?? 0);
+    const apiCount = Number(json?.stats?.pending_hardware ?? 0);
     expect(apiCount).toBe(dbCount.cnt);
   });
 });
