@@ -47,28 +47,29 @@ test.describe('API — /operator/:clientId/locations/:locationId', () => {
     expect(mappings.length).toBe(dbCount.cnt);
   });
 
-  test('response has active_members count for location', async () => {
+  test('response has active_members array for location', async () => {
+    // Endpoint returns active_members as an array of member rows, not a count.
     const res = await fetch(
       `${ADMIN_BASE_URL}/operator/${seed.HOG_CLIENT_ID}/locations/${seed.HOG_LOCATION_ID}`,
       { headers: { Cookie: cookie } }
     );
     const json = await res.json();
-    const count = json?.active_members ?? json?.stats?.active_members ?? json?.activeMembers;
-    expect(count).not.toBeUndefined();
-    expect(Number(count)).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(json?.active_members)).toBe(true);
   });
 
-  test('active_members for location matches DB', async () => {
+  test('active_members array length matches DB count for location', async () => {
     const res = await fetch(
       `${ADMIN_BASE_URL}/operator/${seed.HOG_CLIENT_ID}/locations/${seed.HOG_LOCATION_ID}`,
       { headers: { Cookie: cookie } }
     );
     const json = await res.json();
-    const apiCount = Number(json?.active_members ?? json?.stats?.active_members ?? 0);
+    const apiCount = (json?.active_members ?? []).length;
+    // Endpoint query: DISTINCT ma.id JOIN plan_mappings via member_access_sources, status='active'.
     const dbCount = await db.queryOne(`
       SELECT COUNT(DISTINCT ma.id)::int AS cnt
       FROM member_access ma
-      JOIN plan_mappings pm ON ma.plan_mapping_id = pm.id
+      LEFT JOIN member_access_sources mas ON mas.access_id = ma.id
+      LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
       WHERE ma.client_id = $1 AND pm.location_id = $2 AND ma.status = 'active'
     `, [seed.HOG_CLIENT_ID, seed.HOG_LOCATION_ID]);
     expect(apiCount).toBe(dbCount.cnt);
