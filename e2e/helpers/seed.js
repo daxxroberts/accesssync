@@ -209,10 +209,32 @@ async function seedHogMemberAccess(memberMasterId, planMappingId, opts = {}) {
  * Remove all HOG test member rows created by E2E runs.
  * Deletes by email pattern — cascades to member_access, member_billing, member_access_sources.
  */
+/**
+ * Delete all HOG e2e test members. Wipe-all by email pattern.
+ *
+ * IMPORTANT: this is the wipe-all variant. CASCADE deletes member_access rows.
+ * Calling this while a queue job is mid-completeGrant will cause MEMBER_ACCESS_GONE
+ * because the row vanishes between resolveAndLock COMMIT and completeGrant lookup.
+ * Always wait at least 3s after the last webhook POST before calling this in tests
+ * (queue worker takes ~2.2s for Kisi assignRole + completion), or use
+ * teardownHogMember(platformMemberId) for per-test scoped cleanup.
+ */
 async function teardownHogTestMembers() {
   await db.query(
     `DELETE FROM member_master WHERE client_id = $1 AND email LIKE $2`,
     [HOG_CLIENT_ID, E2E_EMAIL_PATTERN]
+  );
+}
+
+/**
+ * Per-test scoped cleanup. Deletes only the specified platform_member_id.
+ * Safe to call immediately after a test — does not affect siblings still in flight.
+ */
+async function teardownHogMember(platformMemberId) {
+  if (!platformMemberId) return;
+  await db.query(
+    `DELETE FROM member_master WHERE client_id = $1 AND platform_member_id = $2`,
+    [HOG_CLIENT_ID, platformMemberId]
   );
 }
 
@@ -348,6 +370,7 @@ module.exports = {
   seedHogMemberMaster,
   seedHogMemberAccess,
   teardownHogTestMembers,
+  teardownHogMember,
   makeE2eEmail,
   makeWixMemberId,
 
