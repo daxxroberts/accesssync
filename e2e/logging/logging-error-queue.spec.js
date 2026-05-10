@@ -14,6 +14,8 @@ const seed = require('../helpers/seed');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Logging — HMAC rejected events', () => {
   test('bad signature returns 401 and webhook_log has hmac_status=rejected', async () => {
     const suffix  = `badhmac-${Date.now()}`;
@@ -31,6 +33,10 @@ test.describe('Logging — HMAC rejected events', () => {
         'Content-Type':    'application/json',
         'x-wix-signature': 'INVALID_SIGNATURE_XXXX',
         'x-wix-site-id':   'test-site',
+        // wix-connector reads event_id for rejected logging from x-wix-event-id header
+        // (the body never gets parsed when HMAC fails). Send the same id both places
+        // so the spec's webhook_log lookup can find the row.
+        'x-wix-event-id':  eventId,
       },
       body,
     });
@@ -104,7 +110,9 @@ test.describe('Logging — HMAC rejected events', () => {
 
 test.describe('Logging — error_queue structure', () => {
   test('error_queue table exists and has expected columns', async () => {
-    const EXPECTED_COLS = ['id', 'trace_id', 'event_type', 'payload', 'error_message', 'attempts', 'max_attempts', 'created_at', 'next_retry_at'];
+    // Real schema (schema.sql): id, client_id, event_type, payload, error_reason,
+    // error_code, retry_count, status, created_at, resolved_at, etc.
+    const EXPECTED_COLS = ['id', 'client_id', 'event_type', 'payload', 'error_reason', 'error_code', 'retry_count', 'status', 'created_at'];
     for (const col of EXPECTED_COLS) {
       const row = await db.queryOne(`
         SELECT column_name FROM information_schema.columns
@@ -114,18 +122,18 @@ test.describe('Logging — error_queue structure', () => {
     }
   });
 
-  test('error_queue rows have attempts <= max_attempts', async () => {
+  test('error_queue rows have retry_count >= 0', async () => {
     const rows = await db.queryRows(`
-      SELECT attempts, max_attempts FROM error_queue LIMIT 100
+      SELECT retry_count FROM error_queue LIMIT 100
     `, []);
     for (const row of rows) {
-      expect(row.attempts).toBeLessThanOrEqual(row.max_attempts);
+      expect(Number(row.retry_count)).toBeGreaterThanOrEqual(0);
     }
   });
 
-  test('error_queue rows have non-null error_message', async () => {
+  test('error_queue rows have non-null error_reason', async () => {
     const rows = await db.queryRows(`
-      SELECT error_message FROM error_queue WHERE error_message IS NULL LIMIT 5
+      SELECT error_reason FROM error_queue WHERE error_reason IS NULL AND status = 'failed' LIMIT 5
     `, []);
     expect(rows.length).toBe(0);
   });

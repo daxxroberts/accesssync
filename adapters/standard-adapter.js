@@ -156,6 +156,36 @@ class StandardAdapter {
 
       await dbClient.query('COMMIT');
 
+      // DIAG: log what we just committed so we can correlate with completeGrant's later SELECT.
+      log.info('adapter.resolve_and_lock.committed', {
+        memberId, memberMasterId, tenantId,
+        platformMemberId: event.platformMemberId,
+        sourcePlatform: event.sourcePlatform || 'wix',
+        planMappingId: event.planMappingId || null,
+        hardwarePlatform: hardwarePlatform || null,
+        path: hardwarePlatform !== null ? 'grant' : 'revoke',
+        stage: 'resolve', result: 'committed',
+      });
+
+      // DIAG: re-query the row from a fresh connection to verify it's actually visible
+      // post-COMMIT. If this is null/0 rows, something deleted it during the txn or
+      // visibility is broken.
+      try {
+        const verify = await db.query(
+          `SELECT id, member_master_id, status FROM member_access WHERE id = $1`,
+          [memberId]
+        );
+        log.info('adapter.resolve_and_lock.post_commit_verify', {
+          memberId, memberMasterId,
+          verifyRowCount: verify.rowCount,
+          verifyMemberMasterId: verify.rows[0]?.member_master_id || null,
+          verifyStatus: verify.rows[0]?.status || null,
+          stage: 'resolve', result: verify.rowCount === 1 ? 'verified' : 'missing',
+        });
+      } catch (verifyErr) {
+        log.warn('adapter.resolve_and_lock.post_commit_verify_failed', { memberId }, verifyErr);
+      }
+
       // Increment events_received — fault-tolerant (DR-024)
       this._incrementActivity(tenantId, 'events_received').catch(err =>
         log.warn('adapter.activity_update_failed', { field: 'events_received' }, err)
@@ -320,12 +350,61 @@ class StandardAdapter {
     // Write hardware_platform from first assignment so the revoke path can read it back.
     const resolvedHardwarePlatform = assignments[0]?.hardwarePlatform || null;
 
-    // Resolve member_master_id once for member_billing rows
+    // DIAG: log entry into completeGrant with full context.
+    log.info('adapter.complete_grant.entry', {
+      memberId, tenantId,
+      assignmentCount: assignments.length,
+      hardwarePlatform: resolvedHardwarePlatform,
+      stage: 'grant', result: 'start',
+    });
+
+    // Resolve member_master_id once for member_billing rows.
+    // DIAG: select more columns + count so we can tell whether the row exists at all
+    // vs exists with a null FK.
     const masterRow = await db.query(
-      `SELECT member_master_id FROM member_access WHERE id = $1`,
+      `SELECT id, member_master_id, status, plan_mapping_id, created_at, updated_at
+       FROM member_access WHERE id = $1`,
       [memberId]
     );
     const memberMasterId = masterRow.rows[0]?.member_master_id;
+
+    log.info('adapter.complete_grant.lookup', {
+      memberId, tenantId,
+      lookupRowCount: masterRow.rowCount,
+      lookupMemberMasterId: memberMasterId || null,
+      lookupStatus: masterRow.rows[0]?.status || null,
+      lookupPlanMappingId: masterRow.rows[0]?.plan_mapping_id || null,
+      lookupCreatedAt: masterRow.rows[0]?.created_at || null,
+      lookupUpdatedAt: masterRow.rows[0]?.updated_at || null,
+      stage: 'grant', result: masterRow.rowCount === 1 ? 'lookup_ok' : 'lookup_missing',
+    });
+
+    // DIAG: if row missing, ALSO query for any member_access rows in the last 60s for
+    // this tenant — to see if a sibling row exists that we should have used.
+    if (masterRow.rowCount === 0) {
+      try {
+        const siblings = await db.query(
+          `SELECT ma.id, ma.member_master_id, ma.status, ma.plan_mapping_id, ma.created_at,
+                  mm.platform_member_id
+           FROM member_access ma
+           LEFT JOIN member_master mm ON mm.id = ma.member_master_id
+           WHERE ma.client_id = $1 AND ma.created_at > NOW() - INTERVAL '60 seconds'
+           ORDER BY ma.created_at DESC LIMIT 10`,
+          [tenantId]
+        );
+        log.warn('adapter.complete_grant.recent_siblings', {
+          memberId, tenantId,
+          siblingCount: siblings.rowCount,
+          siblings: siblings.rows.map(r => ({
+            id: r.id, mmid: r.member_master_id, status: r.status,
+            pm: r.plan_mapping_id, pmi: r.platform_member_id,
+            createdAt: r.created_at,
+          })),
+        });
+      } catch (siblingErr) {
+        log.warn('adapter.complete_grant.sibling_lookup_failed', { memberId }, siblingErr);
+      }
+    }
 
     // member_access row is missing or member_master_id is null — fail loud.
     // This means the row was CASCADE-deleted (member_master removed mid-grant) or never

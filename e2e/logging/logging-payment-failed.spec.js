@@ -32,6 +32,8 @@ async function waitForAccessStatus(memberId, status, timeoutMs = 20_000) {
   return null;
 }
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Logging — payment.failed (orderPaused)', () => {
   test.afterEach(async () => {
     await seed.teardownHogTestMembers();

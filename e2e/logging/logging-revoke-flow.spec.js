@@ -54,6 +54,8 @@ const CANCEL_EVENT_TYPES = [
   'wixPricingPlans.orderExpired',
 ];
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Logging — Revoke Flow', () => {
   test.afterEach(async () => {
     await seed.teardownHogTestMembers();

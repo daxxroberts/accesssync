@@ -11,6 +11,8 @@
 const { test, expect } = require('@playwright/test');
 const db = require('../helpers/db');
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Logging Gap — diagnostic_log captures only warn/error/critical', () => {
   test('diagnostic_log has level column', async () => {
     const row = await db.queryOne(`
@@ -41,7 +43,9 @@ test.describe('Logging Gap — diagnostic_log captures only warn/error/critical'
   });
 
   test('diagnostic_log has expected columns', async () => {
-    const COLS = ['id', 'level', 'event_key', 'message', 'meta', 'created_at'];
+    // Per migrations/diagnostic-log.sql: id, created_at, client_id, service, level,
+    // error_code, message, context, resolved_at.
+    const COLS = ['id', 'created_at', 'client_id', 'service', 'level', 'error_code', 'message', 'context', 'resolved_at'];
     for (const col of COLS) {
       const row = await db.queryOne(`
         SELECT column_name FROM information_schema.columns

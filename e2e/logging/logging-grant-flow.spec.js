@@ -14,14 +14,18 @@ const seed = require('../helpers/seed');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
-// Helper: wait for a v_trace_timeline row to appear (queue processing is async)
-async function waitForTraceRow(traceId, eventFilter, timeoutMs = 15_000) {
+// Helper: wait for a v_trace_timeline row to appear (queue processing is async).
+// Filter is matched against source OR event (case-insensitive substring) — sources are
+// 'webhook', 'member_access', 'diagnostic'; events are domain names like 'plan.purchased',
+// 'provisioned', 'KISI_RESPONSE_ERROR'.
+async function waitForTraceRow(traceId, filter, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const rows = await db.queryRows(`
-      SELECT * FROM v_trace_timeline WHERE trace_id = $1 AND event ILIKE $2
+      SELECT * FROM v_trace_timeline
+      WHERE trace_id = $1 AND (source ILIKE $2 OR event ILIKE $2)
       ORDER BY ts DESC LIMIT 1
-    `, [traceId, `%${eventFilter}%`]);
+    `, [traceId, `%${filter}%`]);
     if (rows.length > 0) return rows[0];
     await new Promise(r => setTimeout(r, 500));
   }
@@ -40,6 +44,8 @@ async function getTraceIdFromWebhookLog(eventId) {
   }
   return null;
 }
+
+test.describe.configure({ mode: 'serial' });
 
 test.describe('Logging — Grant Flow (HOG real Kisi)', () => {
   let email, wixMemberId, orderId, eventId;

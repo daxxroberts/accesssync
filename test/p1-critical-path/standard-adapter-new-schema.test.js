@@ -249,8 +249,9 @@ describe('[P1] completeGrant — INSERTs to member_access_sources (access_id FK)
 
     const calls = db.query.mock.calls;
 
-    // Step 1: resolve member_master_id
-    expect(calls[0][0]).toContain('SELECT member_master_id FROM member_access');
+    // Step 1: resolve member_master_id (SELECT widened with diagnostic columns)
+    expect(calls[0][0]).toContain('FROM member_access');
+    expect(calls[0][0]).toContain('member_master_id');
     expect(calls[0][1]).toEqual([MEMBER_ACCESS_ID]);
 
     // Step 2: INSERT member_billing
