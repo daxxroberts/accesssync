@@ -156,8 +156,8 @@ class StandardAdapter {
 
       await dbClient.query('COMMIT');
 
-      // DIAG: log what we just committed so we can correlate with completeGrant's later SELECT.
-      log.info('adapter.resolve_and_lock.committed', {
+      // DIAG: warn-level so it lands in diagnostic_log (info stays stdout-only).
+      log.warn('adapter.resolve_and_lock.committed', {
         memberId, memberMasterId, tenantId,
         platformMemberId: event.platformMemberId,
         sourcePlatform: event.sourcePlatform || 'wix',
@@ -167,15 +167,13 @@ class StandardAdapter {
         stage: 'resolve', result: 'committed',
       });
 
-      // DIAG: re-query the row from a fresh connection to verify it's actually visible
-      // post-COMMIT. If this is null/0 rows, something deleted it during the txn or
-      // visibility is broken.
+      // DIAG: re-query from a fresh connection to verify post-COMMIT visibility.
       try {
         const verify = await db.query(
           `SELECT id, member_master_id, status FROM member_access WHERE id = $1`,
           [memberId]
         );
-        log.info('adapter.resolve_and_lock.post_commit_verify', {
+        log.warn('adapter.resolve_and_lock.post_commit_verify', {
           memberId, memberMasterId,
           verifyRowCount: verify.rowCount,
           verifyMemberMasterId: verify.rows[0]?.member_master_id || null,
@@ -350,8 +348,8 @@ class StandardAdapter {
     // Write hardware_platform from first assignment so the revoke path can read it back.
     const resolvedHardwarePlatform = assignments[0]?.hardwarePlatform || null;
 
-    // DIAG: log entry into completeGrant with full context.
-    log.info('adapter.complete_grant.entry', {
+    // DIAG: warn-level so it lands in diagnostic_log.
+    log.warn('adapter.complete_grant.entry', {
       memberId, tenantId,
       assignmentCount: assignments.length,
       hardwarePlatform: resolvedHardwarePlatform,
@@ -368,7 +366,7 @@ class StandardAdapter {
     );
     const memberMasterId = masterRow.rows[0]?.member_master_id;
 
-    log.info('adapter.complete_grant.lookup', {
+    log.warn('adapter.complete_grant.lookup', {
       memberId, tenantId,
       lookupRowCount: masterRow.rowCount,
       lookupMemberMasterId: memberMasterId || null,
