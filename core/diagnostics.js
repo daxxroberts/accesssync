@@ -2,8 +2,19 @@
  * @file diagnostics.js
  * @layer core/shared
  * @role diagnostics
- * @reads member_identity, member_access_state, member_role_assignments, member_access_sources, plan_mappings, diagnostic_log, webhook_log, adapter_admin_log, error_queue, member_access_log
+ * @reads member_master, member_access, member_access_sources, plan_mappings,
+ *        diagnostic_log, webhook_log, adapter_admin_log, error_queue, member_access_log
  * @exports diagnoseMember, getTimeline
+ *
+ * Migration history: this file was originally written against
+ * member_identity / member_access_state / member_role_assignments. Schema
+ * restructure moved to member_master / member_access / member_access_sources.
+ * Rewritten 2026-05-10 to match current schema. The Member Incident drawer
+ * (Errors page) was returning 500 on every "View incident" click before this fix.
+ *
+ * memberId param semantics: this is the AccessSync internal ID — for the new
+ * schema, that's member_master.id (which is also what error_queue.member_id stores
+ * for migrated rows). Sub-member rows live on member_access.sub_master_id.
  */
 
 'use strict';
@@ -11,22 +22,28 @@
 const db = require('../db');
 
 /**
- * Runs the 4-check diagnostic for a member.
+ * Runs the diagnostic for a member.
  * Returns { verdict, member, roles, sources, findings }.
  * Throws if the member does not exist.
  *
- * @param {string} memberId  member_identity.id (UUID)
+ * @param {string} memberId  member_master.id (UUID)
  */
 async function diagnoseMember(memberId) {
   const findings = [];
   let verdict = 'healthy';
 
-  // 1. Identity + state
+  // 1. Identity + state. Pull the member_master row plus the holder's member_access
+  //    row (sub_master_id IS NULL = holder, not a sub-member).
   const memberResult = await db.query(
-    `SELECT mi.*, mas.status AS access_status, mas.provisioned_at
-     FROM member_identity mi
-     LEFT JOIN member_access_state mas ON mas.member_id = mi.id
-     WHERE mi.id = $1`,
+    `SELECT mm.id, mm.platform_member_id, mm.client_id, mm.email, mm.first_name,
+            mm.last_name, mm.display_name, mm.source_platform, c.name AS client_name,
+            ma.id AS access_id, ma.status AS access_status, ma.provisioned_at,
+            ma.hardware_user_id, ma.hardware_platform
+     FROM member_master mm
+     LEFT JOIN clients c ON c.id = mm.client_id
+     LEFT JOIN member_access ma ON ma.member_master_id = mm.id AND ma.sub_master_id IS NULL
+     WHERE mm.id = $1
+     LIMIT 1`,
     [memberId]
   );
   if (!memberResult.rows.length) {
@@ -38,40 +55,46 @@ async function diagnoseMember(memberId) {
 
   if (member.access_status === 'failed') {
     verdict = 'failed';
-    findings.push({ level: 'error', code: 'STATUS_FAILED', message: 'Member access_state is failed — grant job exhausted retries or was never completed.' });
+    findings.push({ level: 'error', code: 'STATUS_FAILED', message: 'Member access status is failed — grant job exhausted retries or was never completed.' });
+  } else if (!member.access_status) {
+    verdict = 'degraded';
+    findings.push({ level: 'warn', code: 'NO_ACCESS_ROW', message: 'No member_access row found — member identity exists but no access record.' });
   } else if (member.access_status !== 'active') {
     verdict = 'degraded';
     findings.push({ level: 'warn', code: 'STATUS_NOT_ACTIVE', message: `Access status is "${member.access_status}" — expected "active".` });
   }
 
-  // 2. Hardware role assignments
+  // 2. Hardware role assignments — now stored on member_access_sources.role_assignment_id
+  //    (member_role_assignments was retired during the schema migration).
   const rolesResult = await db.query(
-    `SELECT mra.*, pm.plan_name, pm.door_name, pm.hardware_group_id AS mapping_group_id
-     FROM member_role_assignments mra
-     LEFT JOIN plan_mappings pm ON pm.id = mra.mapping_id
-     WHERE mra.member_id = $1`,
+    `SELECT mas.role_assignment_id, mas.hardware_group_id, mas.mapping_id,
+            mas.source_type, mas.source_plan_id, mas.created_at,
+            pm.plan_name, pm.door_name
+     FROM member_access_sources mas
+     JOIN member_access ma ON ma.id = mas.access_id
+     LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
+     WHERE ma.member_master_id = $1
+       AND mas.role_assignment_id IS NOT NULL`,
     [memberId]
   );
   const roles = rolesResult.rows;
   if (roles.length === 0) {
     if (verdict === 'healthy') verdict = 'degraded';
-    findings.push({ level: 'warn', code: 'NO_ROLE_ASSIGNMENTS', message: 'No hardware role assignments found — member has no door access provisioned in DB.' });
+    findings.push({ level: 'warn', code: 'NO_ROLE_ASSIGNMENTS', message: 'No hardware role assignments found — member has no door access provisioned.' });
   }
 
-  // 3. Access sources vs active plan mappings
+  // 3. Access sources vs active plan mappings — surface stale/inactive mapping refs.
   const sourcesResult = await db.query(
-    `SELECT mas2.*, pm.plan_name, pm.status AS mapping_status
-     FROM member_access_sources mas2
-     LEFT JOIN plan_mappings pm ON pm.id = mas2.mapping_id
-     WHERE mas2.member_id = $1`,
+    `SELECT mas.id, mas.access_id, mas.mapping_id, mas.role_assignment_id,
+            mas.source_type, mas.source_plan_id, mas.effective_start, mas.valid_until,
+            pm.plan_name, pm.status AS mapping_status
+     FROM member_access_sources mas
+     JOIN member_access ma ON ma.id = mas.access_id
+     LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
+     WHERE ma.member_master_id = $1`,
     [memberId]
   );
   const sources = sourcesResult.rows;
-  if (sources.length === 0 && roles.length > 0) {
-    verdict = 'mismatch';
-    findings.push({ level: 'error', code: 'SOURCES_MISSING', message: 'Hardware role exists but no member_access_sources rows found — revoke logic will not fire correctly.' });
-  }
-
   for (const src of sources) {
     if (src.mapping_status === 'inactive') {
       findings.push({ level: 'warn', code: 'SOURCE_INACTIVE_MAPPING', message: `Source row references inactive mapping "${src.plan_name}" — plan was disabled but source row was not cleaned up.` });
@@ -79,15 +102,8 @@ async function diagnoseMember(memberId) {
     }
   }
 
-  for (const role of roles) {
-    const matchingSource = sources.find(s => s.mapping_id === role.mapping_id);
-    if (!matchingSource) {
-      verdict = 'mismatch';
-      findings.push({ level: 'error', code: 'ORPHANED_ROLE', message: `Role assignment for "${role.plan_name || role.mapping_id}" has no matching source row — revoke will not clean up this hardware role.` });
-    }
-  }
-
-  // 4. Recent diagnostic_log errors (last 24h)
+  // 4. Recent diagnostic_log errors (last 24h) — keyed off memberId AND platform_member_id.
+  //    Both stored in diagnostic_log.context per the trace context spec.
   const recentErrors = await db.query(
     `SELECT error_code, message, created_at, context
      FROM diagnostic_log
@@ -114,10 +130,15 @@ async function diagnoseMember(memberId) {
     verdict,
     member: {
       id:               member.id,
+      platform_member_id: member.platform_member_id,
       display_name:     member.display_name,
+      first_name:       member.first_name,
+      last_name:        member.last_name,
       email:            member.email,
+      client_name:      member.client_name,
       access_status:    member.access_status,
       hardware_user_id: member.hardware_user_id,
+      hardware_platform: member.hardware_platform,
       provisioned_at:   member.provisioned_at,
     },
     roles,
@@ -127,42 +148,45 @@ async function diagnoseMember(memberId) {
 }
 
 /**
- * Fetches the full lifecycle timeline for a member from 4 sources.
+ * Fetches the full lifecycle timeline for a member across multiple log sources.
  * Returns { member, timeline }.
  * Throws if the member does not exist.
  *
- * @param {string} memberId  member_identity.id (UUID)
+ * @param {string} memberId  member_master.id (UUID)
  */
 async function getTimeline(memberId) {
   const memberResult = await db.query(
-    `SELECT mi.*, mas.status AS access_status, mas.provisioned_at, c.name AS client_name,
+    `SELECT mm.id, mm.platform_member_id, mm.client_id, mm.email, mm.display_name,
+            c.name AS client_name,
+            ma.id AS access_id, ma.status AS access_status, ma.provisioned_at,
             lat.webhook_received_at, lat.enqueued_at, lat.kisi_confirmed_at,
             lat.ingest_s, lat.processing_s, lat.total_s
-     FROM member_identity mi
-     LEFT JOIN member_access_state mas ON mas.member_id = mi.id
-     LEFT JOIN clients c ON c.id = mi.client_id
+     FROM member_master mm
+     LEFT JOIN clients c ON c.id = mm.client_id
+     LEFT JOIN member_access ma ON ma.member_master_id = mm.id AND ma.sub_master_id IS NULL
      LEFT JOIN LATERAL (
        SELECT
-         wl.received_at                                                     AS webhook_received_at,
-         pei.processed_at                                                   AS enqueued_at,
-         mra.created_at                                                     AS kisi_confirmed_at,
-         ROUND(EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)))::int  AS ingest_s,
-         ROUND(EXTRACT(EPOCH FROM (mra.created_at   - pei.processed_at)))::int AS processing_s,
-         ROUND(EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at)))::int   AS total_s
+         wl.received_at                                                          AS webhook_received_at,
+         pei.processed_at                                                        AS enqueued_at,
+         mas2.created_at                                                         AS kisi_confirmed_at,
+         ROUND(EXTRACT(EPOCH FROM (pei.processed_at  - wl.received_at)))::int   AS ingest_s,
+         ROUND(EXTRACT(EPOCH FROM (mas2.created_at   - pei.processed_at)))::int AS processing_s,
+         ROUND(EXTRACT(EPOCH FROM (mas2.created_at   - wl.received_at)))::int   AS total_s
        FROM webhook_log wl
        JOIN processed_event_ids pei ON pei.event_id = wl.event_id
-       JOIN member_role_assignments mra
-         ON mra.member_id = mi.id
-        AND mra.created_at > wl.received_at
-        AND mra.created_at < wl.received_at + INTERVAL '1 hour'
-       WHERE wl.client_id = mi.client_id
-         AND wl.normalized_payload->>'platformMemberId' = mi.platform_member_id
+       JOIN member_access_sources mas2
+         ON mas2.access_id = ma.id
+        AND mas2.created_at > wl.received_at
+        AND mas2.created_at < wl.received_at + INTERVAL '1 hour'
+       WHERE wl.client_id = mm.client_id
+         AND wl.normalized_payload->>'platformMemberId' = mm.platform_member_id
          AND wl.hmac_status = 'accepted'
          AND wl.dedup_status = 'new'
        ORDER BY wl.received_at DESC
        LIMIT 1
      ) lat ON TRUE
-     WHERE mi.id = $1`,
+     WHERE mm.id = $1
+     LIMIT 1`,
     [memberId]
   );
   if (!memberResult.rows.length) {
@@ -170,6 +194,7 @@ async function getTimeline(memberId) {
     err.statusCode = 404;
     throw err;
   }
+  const member = memberResult.rows[0];
 
   const timeline = await db.query(
     `SELECT 'access_log'      AS source,
@@ -181,7 +206,8 @@ async function getTimeline(memberId) {
             mal.trace_id,
             mal.created_at
      FROM member_access_log mal
-     WHERE mal.member_id = $1
+     JOIN member_access ma ON ma.id = mal.member_id
+     WHERE ma.member_master_id = $1
 
      UNION ALL
 
@@ -207,11 +233,7 @@ async function getTimeline(memberId) {
             aal.trace_id,
             aal.created_at
      FROM adapter_admin_log aal
-     WHERE aal.platform_member_id = (
-       SELECT platform_member_id FROM member_identity WHERE id = $1
-     ) AND aal.client_id = (
-       SELECT client_id FROM member_identity WHERE id = $1
-     )
+     WHERE aal.platform_member_id = $2 AND aal.client_id = $3
 
      UNION ALL
 
@@ -224,8 +246,8 @@ async function getTimeline(memberId) {
             dl.trace_id,
             dl.created_at
      FROM diagnostic_log dl
-     WHERE dl.context->>'memberId' = (SELECT id::text FROM member_identity WHERE id = $1)
-        OR dl.context->>'platformMemberId' = (SELECT platform_member_id FROM member_identity WHERE id = $1)
+     WHERE dl.context->>'memberId' = $1::text
+        OR dl.context->>'platformMemberId' = $2
 
      UNION ALL
 
@@ -238,16 +260,16 @@ async function getTimeline(memberId) {
             wl.trace_id,
             wl.received_at     AS created_at
      FROM webhook_log wl
-     WHERE wl.client_id = (SELECT client_id FROM member_identity WHERE id = $1)
-       AND wl.normalized_payload->>'platformMemberId' = (SELECT platform_member_id FROM member_identity WHERE id = $1)
+     WHERE wl.client_id = $3
+       AND wl.normalized_payload->>'platformMemberId' = $2
 
      ORDER BY created_at DESC
      LIMIT 200`,
-    [memberId]
+    [memberId, member.platform_member_id, member.client_id]
   );
 
   return {
-    member:   memberResult.rows[0],
+    member,
     timeline: timeline.rows,
   };
 }
