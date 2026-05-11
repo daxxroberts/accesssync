@@ -9,7 +9,8 @@ const db   = require('../helpers/db');
 const auth = require('../helpers/auth');
 const seed = require('../helpers/seed');
 
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+const BASE_URL       = process.env.BASE_URL       || 'http://localhost:3000';
+const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || 'http://localhost:3001';
 
 async function postWebhook(body) {
   const raw = typeof body === 'string' ? body : JSON.stringify(body);
