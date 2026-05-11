@@ -153,7 +153,7 @@ async function _processJobBody(job, traceId) {
         }
 
         lastStep = 'grant.started.resolve_and_lock';
-        const startedLock = await standardAdapter.resolveAndLock(tenantId, standardEvent, mappings[0].hardwarePlatform);
+        const startedLock = await standardAdapter.resolveAndLock(tenantId, standardEvent, mappings[0].hardwarePlatform, mappings[0].mappingId);
         memberId = startedLock.memberId;
 
         lastStep = 'grant.started.get_api_key';
@@ -242,9 +242,13 @@ async function _processJobBody(job, traceId) {
         return;
       }
 
-      // Step 2: Resolve identity + acquire lock (all mappings share same hardwarePlatform)
+      // Step 2: Resolve identity + acquire lock (all mappings share same hardwarePlatform).
+      // Pass mappings[0].mappingId so member_access.plan_mapping_id is populated and the
+      // UNIQUE(member_master_id, plan_mapping_id) ON CONFLICT path actually distinguishes
+      // multi-plan-per-person grants. Pre-fix every row was inserted with NULL, allowing
+      // duplicate (mm_id, NULL) rows past the UNIQUE constraint.
       lastStep = 'grant.resolve_and_lock';
-      const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, mappings[0].hardwarePlatform);
+      const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, mappings[0].hardwarePlatform, mappings[0].mappingId);
       memberId = lockResult.memberId;
       logger.info('queue.grant.lock_acquired', {
         clientId, memberId, eventId,

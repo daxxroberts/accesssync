@@ -143,9 +143,14 @@ describe('[P1] Queue worker grant flow — resolve → lock → provision → co
     // Step 1: resolver called with tenant + plan
     expect(planMappingResolver.resolve).toHaveBeenCalledWith(HOG_CLIENT_ID, CONNECT_PLAN_ID);
 
-    // Step 2: identity resolved and locked
+    // Step 2: identity resolved and locked.
+    // 4th arg (planMappingId) added 2026-05-11 — queue-worker now threads
+    // mappings[0].mappingId so member_access.plan_mapping_id is populated.
     expect(standardAdapter.resolveAndLock).toHaveBeenCalledWith(
-      HOG_CLIENT_ID, expect.objectContaining({ planId: CONNECT_PLAN_ID }), 'kisi'
+      HOG_CLIENT_ID,
+      expect.objectContaining({ planId: CONNECT_PLAN_ID }),
+      'kisi',
+      expect.any(String)
     );
 
     // Step 3: hardware identity resolved

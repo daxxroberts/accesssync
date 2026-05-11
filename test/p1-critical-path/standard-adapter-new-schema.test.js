@@ -107,7 +107,9 @@ describe('[P1] resolveAndLock GRANT — UPSERTs member_master then member_access
     db.getClient.mockResolvedValue(dbClient);
     db.query.mockResolvedValue({ rows: [] }); // _incrementActivity
 
-    const result = await adapter.resolveAndLock(TENANT_ID, standardEvent, 'kisi');
+    // 4th arg (planMappingId) added 2026-05-11 — was previously read from event.planMappingId
+    // (which was always undefined) and is now passed explicitly by queue-worker.
+    const result = await adapter.resolveAndLock(TENANT_ID, standardEvent, 'kisi', PLAN_MAPPING_ID);
 
     expect(result).toEqual({ memberId: MEMBER_ACCESS_ID });
 
@@ -119,7 +121,7 @@ describe('[P1] resolveAndLock GRANT — UPSERTs member_master then member_access
     expect(calls[1][0]).toContain('ON CONFLICT');
     expect(calls[1][1]).toEqual([TENANT_ID, 'wix', PLATFORM_MEMBER_ID, null, null]);
 
-    // Step 2: FOR UPDATE NOWAIT
+    // Step 2: FOR UPDATE NOWAIT (non-null mappingId branch)
     expect(calls[2][0]).toContain('FOR UPDATE NOWAIT');
     expect(calls[2][0]).toContain('member_access');
     expect(calls[2][1]).toEqual([MEMBER_MASTER_ID, PLAN_MAPPING_ID]);

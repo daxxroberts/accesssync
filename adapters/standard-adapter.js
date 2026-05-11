@@ -40,7 +40,7 @@ class StandardAdapter {
    * @param {string|null} hardwarePlatform  null for revoke path
    * @returns {Object|null}
    */
-  async resolveAndLock(tenantId, event, hardwarePlatform) {
+  async resolveAndLock(tenantId, event, hardwarePlatform, planMappingId = null) {
     const dbClient = await db.getClient();
     try {
       await dbClient.query('BEGIN');
@@ -66,12 +66,24 @@ class StandardAdapter {
         // Step 2: Acquire row lock before UPSERT (Q-2: prevents deadlock on concurrent grant)
         // 55P03 = lock_not_available — thrown by FOR UPDATE NOWAIT when row is already locked
         try {
-          await dbClient.query(
-            `SELECT id FROM member_access
-             WHERE member_master_id = $1 AND plan_mapping_id = $2
-             FOR UPDATE NOWAIT`,
-            [memberMasterId, event.planMappingId]
-          );
+          // Postgres treats NULL = NULL as unknown, so when planMappingId is null we
+          // must use IS NULL or the lock SELECT returns zero rows and skips the lock.
+          // Both arms cover the same logical "(member_master_id, plan_mapping_id) tuple."
+          if (planMappingId === null) {
+            await dbClient.query(
+              `SELECT id FROM member_access
+               WHERE member_master_id = $1 AND plan_mapping_id IS NULL
+               FOR UPDATE NOWAIT`,
+              [memberMasterId]
+            );
+          } else {
+            await dbClient.query(
+              `SELECT id FROM member_access
+               WHERE member_master_id = $1 AND plan_mapping_id = $2
+               FOR UPDATE NOWAIT`,
+              [memberMasterId, planMappingId]
+            );
+          }
         } catch (lockErr) {
           if (lockErr.code === '55P03') {
             const err = new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId} (clientId=${tenantId})`);
@@ -91,7 +103,7 @@ class StandardAdapter {
            ON CONFLICT (member_master_id, plan_mapping_id) DO UPDATE
              SET status = 'in_flight', updated_at = NOW()
            RETURNING id, hardware_user_id`,
-          [memberMasterId, tenantId, event.planMappingId, event.sourcePlatform || 'wix', event.platformMemberId, isPlanHolder]
+          [memberMasterId, tenantId, planMappingId, event.sourcePlatform || 'wix', event.platformMemberId, isPlanHolder]
         );
         memberId = accessResult.rows[0].id;
         hardwareUserId = accessResult.rows[0].hardware_user_id;
@@ -161,7 +173,7 @@ class StandardAdapter {
         memberId, memberMasterId, tenantId,
         platformMemberId: event.platformMemberId,
         sourcePlatform: event.sourcePlatform || 'wix',
-        planMappingId: event.planMappingId || null,
+        planMappingId,
         hardwarePlatform: hardwarePlatform || null,
         path: hardwarePlatform !== null ? 'grant' : 'revoke',
         stage: 'resolve', result: 'committed',
