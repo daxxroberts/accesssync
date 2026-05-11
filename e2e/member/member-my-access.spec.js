@@ -28,11 +28,17 @@ async function waitFor(fn, timeoutMs = 25_000) {
 }
 
 async function getAccessStatus(wixMemberId) {
-  const params = new URLSearchParams({ memberId: wixMemberId, siteId: seed.HOG_WIX_SITE_ID });
+  // Endpoint expects platformMemberId + clientId, not memberId + siteId.
+  const params = new URLSearchParams({
+    platformMemberId: wixMemberId,
+    clientId:         seed.HOG_CLIENT_ID,
+  });
   const res = await fetch(`${BASE_URL}/member/access-status?${params}`, {
     headers: auth.getMemberHubHeaders(wixMemberId),
   });
-  return { status: res.status, json: res.ok ? await res.json() : null };
+  let json = null;
+  try { json = await res.json(); } catch { /* non-JSON */ }
+  return { status: res.status, json };
 }
 
 test.describe('Member My Access — Active individual plan (HOG)', () => {
@@ -66,21 +72,30 @@ test.describe('Member My Access — Active individual plan (HOG)', () => {
     expect(status).toBe(200);
   });
 
-  test('hasAccess is true', async () => {
+  test('status field is "active" (replaces hasAccess)', async () => {
+    // Endpoint returns { status, plans[], access[], lastEvent } — no hasAccess flag.
     const { json } = await getAccessStatus(wixMemberId);
-    const hasAccess = json?.hasAccess ?? json?.has_access ?? json?.active;
-    expect(hasAccess).toBe(true);
+    expect(json?.status).toBe('active');
   });
 
-  test('plan_name is returned', async () => {
+  test('plans[] contains a planName entry after grant', async () => {
+    // Wait for member_access_sources to land before asserting (sources arrive after status flips).
+    await waitFor(async () => {
+      const r = await db.queryOne(`
+        SELECT mas.id FROM member_access_sources mas
+        JOIN member_access ma ON ma.id = mas.access_id
+        JOIN member_master mm ON ma.member_master_id = mm.id
+        WHERE mm.client_id = $1 AND mm.platform_member_id = $2
+      `, [seed.HOG_CLIENT_ID, wixMemberId]);
+      return r ? r : null;
+    });
     const { json } = await getAccessStatus(wixMemberId);
-    expect(json?.plan_name ?? json?.planName).toBeTruthy();
+    expect(json?.plans?.[0]?.planName).toBeTruthy();
   });
 
   test('status is active', async () => {
     const { json } = await getAccessStatus(wixMemberId);
-    const status = json?.status ?? json?.accessStatus ?? json?.access_status;
-    expect(status).toBe('active');
+    expect(json?.status).toBe('active');
   });
 
   test('source_platform is wix', async () => {
@@ -180,21 +195,14 @@ test.describe('Member My Access — After cancel', () => {
     });
 
     const { json } = await getAccessStatus(memberId);
-    const hasAccess = json?.hasAccess ?? json?.has_access ?? json?.active ?? false;
-    expect(hasAccess).toBe(false);
+    expect(json?.status).toBe('inactive');
   });
 });
 
 test.describe('Member My Access — member hub page renders', () => {
-  test('GET /member-hub returns 200 with x-internal-proxy', async () => {
-    const res = await fetch(`${BASE_URL}/member-hub`, {
-      headers: auth.getMemberHubHeaders('test-member-id'),
-    });
+  test('GET /member-hub on Admin Hub returns 200 (member-facing iframe)', async () => {
+    // /member-hub lives on Admin Hub (member-hub.ejs), accessed by Wix iframe.
+    const res = await fetch(`${process.env.ADMIN_BASE_URL || 'http://localhost:3001'}/member-hub`);
     expect([200, 404]).toContain(res.status);
-  });
-
-  test('GET /member-hub without auth returns 401 or redirect', async () => {
-    const res = await fetch(`${BASE_URL}/member-hub`);
-    expect([401, 302, 200]).toContain(res.status);
   });
 });

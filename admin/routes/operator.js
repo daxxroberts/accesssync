@@ -1201,11 +1201,18 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
         [clientId]
       ),
       db.query(
+        // Per-plan member count: resolve via member_access_sources.mapping_id (always
+        // populated at grant time) rather than member_access.plan_mapping_id (which is
+        // currently inserted as NULL by resolveAndLock — see architectural OB
+        // project_ob_member_access_gone_race.md). Filter to active access rows only.
         `SELECT pm.id, pm.source_plan_id, pm.plan_name, pm.door_name, pm.hardware_group_id,
                 pm.status, pm.source_status, pm.allow_multiple, pm.max_members, pm.created_at,
                 COUNT(DISTINCT ma.member_master_id)::int AS member_count
          FROM plan_mappings pm
-         LEFT JOIN member_access ma ON ma.plan_mapping_id = pm.id AND ma.client_id = pm.client_id
+         LEFT JOIN member_access_sources mas ON mas.mapping_id = pm.id
+         LEFT JOIN member_access ma ON ma.id = mas.access_id
+                                   AND ma.client_id = pm.client_id
+                                   AND ma.status = 'active'
          WHERE pm.client_id = $2 AND (pm.location_id = $1 OR pm.location_id IS NULL)
          GROUP BY pm.id
          ORDER BY pm.plan_name`,

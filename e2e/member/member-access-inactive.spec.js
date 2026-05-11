@@ -28,11 +28,13 @@ async function waitFor(fn, timeoutMs = 20_000) {
 }
 
 async function getAccessStatus(memberId) {
-  const params = new URLSearchParams({ memberId, siteId: seed.HOG_WIX_SITE_ID });
+  const params = new URLSearchParams({ platformMemberId: memberId, clientId: seed.HOG_CLIENT_ID });
   const res = await fetch(`${BASE_URL}/member/access-status?${params}`, {
     headers: auth.getMemberHubHeaders(memberId),
   });
-  return { status: res.status, json: res.ok ? await res.json() : null };
+  let json = null;
+  try { json = await res.json(); } catch { /* non-JSON */ }
+  return { status: res.status, json };
 }
 
 test.describe('Member Access — Inactive member state', () => {
@@ -57,8 +59,10 @@ test.describe('Member Access — Inactive member state', () => {
       return row?.status === 'active' ? row : null;
     });
 
-    // Cancel
-    await postWebhook(seed.buildOrderCancelledPayload({ orderId, memberId, email }));
+    // Cancel — pass HOG planId so revoke routes to correct mapping (default is test client).
+    await postWebhook(seed.buildOrderCancelledPayload({
+      orderId, memberId, email, planId: seed.HOG_SOURCE_PLAN_IDS.individual,
+    }));
     await waitFor(async () => {
       const row = await db.queryOne(`
         SELECT ma.status FROM member_access ma
@@ -80,16 +84,9 @@ test.describe('Member Access — Inactive member state', () => {
     expect(row?.status).toBe('inactive');
   });
 
-  test('/member/access-status returns hasAccess=false', async () => {
+  test('/member/access-status status is "inactive" (replaces hasAccess)', async () => {
     const { json } = await getAccessStatus(memberId);
-    const hasAccess = json?.hasAccess ?? json?.has_access ?? json?.active ?? false;
-    expect(hasAccess).toBe(false);
-  });
-
-  test('/member/access-status returns status=inactive', async () => {
-    const { json } = await getAccessStatus(memberId);
-    const status = json?.status ?? json?.accessStatus ?? json?.access_status;
-    expect(['inactive', 'cancelled', 'cancelled']).toContain(status);
+    expect(json?.status).toBe('inactive');
   });
 
   test('widget-data reflects inactive status', async () => {
@@ -119,15 +116,10 @@ test.describe('Member Access — Inactive member state', () => {
 });
 
 test.describe('Member Access — Unknown member state', () => {
-  test('unknown member returns hasAccess=false', async () => {
-    const { json } = await getAccessStatus('completely-unknown-member-xyz');
-    const hasAccess = json?.hasAccess ?? json?.has_access ?? json?.active ?? false;
-    expect(hasAccess).toBe(false);
-  });
-
-  test('unknown member does not return 500', async () => {
-    const { status } = await getAccessStatus('completely-unknown-member-xyz');
-    expect(status).not.toBe(500);
+  test('unknown member returns 404 (Member not found)', async () => {
+    const { status, json } = await getAccessStatus('completely-unknown-member-xyz');
+    expect(status).toBe(404);
+    expect(json?.error).toBeTruthy();
   });
 });
 
@@ -152,7 +144,9 @@ test.describe('Member Access — Suspended state', () => {
       return row?.status === 'active' ? row : null;
     });
 
-    await postWebhook(seed.buildOrderPausedPayload({ orderId, memberId }));
+    await postWebhook(seed.buildOrderPausedPayload({
+      orderId, memberId, planId: seed.HOG_SOURCE_PLAN_IDS.individual,
+    }));
 
     const row = await waitFor(async () => {
       const r = await db.queryOne(`

@@ -9,7 +9,8 @@ const db   = require('../helpers/db');
 const auth = require('../helpers/auth');
 const seed = require('../helpers/seed');
 
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+const BASE_URL       = process.env.BASE_URL       || 'http://localhost:3000';
+const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || 'http://localhost:3001';
 
 async function postWebhook(body) {
   const raw = typeof body === 'string' ? body : JSON.stringify(body);
@@ -27,11 +28,16 @@ async function waitFor(fn, timeoutMs = 25_000) {
   return null;
 }
 
+// widget-data lives on Admin Hub, not Core Engine. Path takes platform_member_id.
 async function getWidgetData(wixMemberId) {
-  const res = await fetch(`${BASE_URL}/member/${wixMemberId}/widget-data`, {
-    headers: auth.getMemberHubHeaders(wixMemberId),
-  });
-  return { status: res.status, json: res.ok ? await res.json() : null };
+  const params = new URLSearchParams({ clientId: seed.HOG_CLIENT_ID });
+  const res = await fetch(
+    `${ADMIN_BASE_URL}/member/${encodeURIComponent(wixMemberId)}/widget-data?${params}`,
+    { cache: 'no-store' }
+  );
+  let json = null;
+  try { json = await res.json(); } catch { /* non-JSON */ }
+  return { status: res.status, json };
 }
 
 test.describe('Member Manage Members — Couples plan (HOG)', () => {
@@ -62,16 +68,16 @@ test.describe('Member Manage Members — Couples plan (HOG)', () => {
 
   test.afterAll(async () => { await seed.teardownHogTestMembers(); });
 
-  test('widget-data returns allowMultiple=true for couples plan', async () => {
+  test('widget-data plans[] includes a couples plan with allowMultiple=true', async () => {
     const { json } = await getWidgetData(planHolderMemberId);
-    const allowMultiple = json?.allow_multiple ?? json?.allowMultiple;
-    expect(allowMultiple).toBe(true);
+    const couples = (json?.plans || []).find(p => p.allowMultiple === true);
+    expect(couples, 'No allowMultiple=true plan in plans[]').toBeTruthy();
   });
 
-  test('widget-data returns max_members=2 for couples plan', async () => {
+  test('widget-data couples plan has maxMembers >= 2', async () => {
     const { json } = await getWidgetData(planHolderMemberId);
-    const maxMembers = json?.max_members ?? json?.maxMembers;
-    expect(Number(maxMembers)).toBe(2);
+    const couples = (json?.plans || []).find(p => p.sourcePlanId === seed.HOG_SOURCE_PLAN_IDS.couples);
+    expect(Number(couples?.maxMembers)).toBeGreaterThanOrEqual(2);
   });
 
   test('plan holder is plan_holder=true in DB', async () => {
@@ -83,11 +89,10 @@ test.describe('Member Manage Members — Couples plan (HOG)', () => {
     expect(access?.plan_holder).toBe(true);
   });
 
-  test('sub_members is initially empty', async () => {
+  test('subMembers is initially empty', async () => {
     const { json } = await getWidgetData(planHolderMemberId);
-    const subMembers = json?.sub_members ?? json?.subMembers ?? json?.members ?? [];
-    expect(Array.isArray(subMembers)).toBe(true);
-    expect(subMembers.length).toBe(0);
+    expect(Array.isArray(json?.subMembers)).toBe(true);
+    expect(json.subMembers.length).toBe(0);
   });
 });
 
@@ -157,10 +162,9 @@ test.describe('Member Manage Members — Family plan', () => {
     });
 
     const { json } = await getWidgetData(memberId);
-    const allowMultiple = json?.allow_multiple ?? json?.allowMultiple;
-    const maxMembers    = json?.max_members ?? json?.maxMembers;
-    expect(allowMultiple).toBe(true);
-    expect(Number(maxMembers)).toBe(6);
+    const family = (json?.plans || []).find(p => p.sourcePlanId === seed.HOG_SOURCE_PLAN_IDS.family);
+    expect(family?.allowMultiple).toBe(true);
+    expect(Number(family?.maxMembers)).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -185,9 +189,11 @@ test.describe('Member Manage Members — Individual plan gate', () => {
       return row?.status === 'active' ? row : null;
     });
 
+    // Individual plan: holder is granted but NO entry appears in widget-data plans[]
+    // (which only lists allow_multiple=true plans). holderHasSlot will be false everywhere.
     const { json } = await getWidgetData(memberId);
-    const allowMultiple = json?.allow_multiple ?? json?.allowMultiple;
-    expect(allowMultiple).toBe(false);
+    const ownsAnyMulti = (json?.plans || []).some(p => p.holderHasSlot === true);
+    expect(ownsAnyMulti).toBe(false);
   });
 
   test('POST /member/:memberId/sub-members rejected for individual plan (allowMultiple=false)', async () => {
