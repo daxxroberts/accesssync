@@ -213,10 +213,15 @@ async function _reconcileGroups(loc, platform, apiKey) {
       );
     }
 
-    // Get affected member count for this group
+    // Affected member count for this group.
+    // Pre-migration this counted DISTINCT member_id from member_role_assignments;
+    // member_role_assignments was folded into member_access_sources, so count
+    // distinct member_master_id via the access JOIN.
     const memberCount = await db.query(
-      `SELECT COUNT(DISTINCT member_id) AS cnt FROM member_role_assignments
-       WHERE mapping_id = $1 AND hardware_group_id = $2`,
+      `SELECT COUNT(DISTINCT ma.member_master_id) AS cnt
+       FROM member_access_sources mas
+       JOIN member_access ma ON ma.id = mas.access_id
+       WHERE mas.mapping_id = $1 AND mas.hardware_group_id = $2`,
       [orphan.mapping_id, orphan.hardware_group_id]
     );
     orphan.affectedMembers = parseInt(memberCount.rows[0].cnt, 10);
@@ -357,10 +362,12 @@ async function _reconcileWixPlans(loc) {
         `UPDATE plan_mappings SET source_status = 'archived' WHERE id = $1`,
         [mapping.id]
       );
-      // Get affected member count
+      // Affected member count — see comment above for member_role_assignments → member_access_sources migration.
       const memberCount = await db.query(
-        `SELECT COUNT(DISTINCT mra.member_id) AS cnt
-         FROM member_role_assignments mra WHERE mra.mapping_id = $1`,
+        `SELECT COUNT(DISTINCT ma.member_master_id) AS cnt
+         FROM member_access_sources mas
+         JOIN member_access ma ON ma.id = mas.access_id
+         WHERE mas.mapping_id = $1`,
         [mapping.id]
       );
       newlyArchived.push({

@@ -91,7 +91,7 @@ class PlanMappingResolver {
     // Enrich trace_context with plan/door/mapping context now that they're resolved.
     // Use the first row (typical case: single plan, single door). For multi-door
     // mappings we still surface the first door's name — log viewer cards can show
-    // the full set on demand from member_role_assignments.
+    // the full set on demand from member_access_sources.
     const _tid = getTraceId();
     if (_tid && result.rows[0]) {
       const r0 = result.rows[0];

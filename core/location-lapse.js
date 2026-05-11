@@ -18,7 +18,7 @@
  *   1. Resolve client hardware platform + API key
  *   2. Find all active members with role assignments tied to this location
  *   3. Call hardwareAdapter.suspendAccess() per member
- *   4. Update member_access_state → 'disabled'
+ *   4. Update member_access.status → 'disabled'
  *   5. Log to member_access_log
  *   6. Set locations.subscription_status → target status
  *

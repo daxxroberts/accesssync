@@ -106,7 +106,7 @@ class NightlyReconciliation {
   }
 
   /**
-   * Step 0: Pull Wix active orders + confirmed bookings, diff against member_identity.
+   * Step 0: Pull Wix active orders + confirmed bookings, diff against member_master/member_access.
    * Queue synthetic grant/revoke jobs for any mismatches found.
    *
    * Sub-members (platform_member_id containing '###as' or sub_master_id IS NOT NULL)
@@ -147,8 +147,9 @@ class NightlyReconciliation {
    *   Wix  — who should have access (active orders + confirmed bookings)
    *   Kisi — who currently has access (live role assignments, filtered to AccessSync users)
    *
-   * The DB is used only as a bridge: member_identity.hardware_user_id maps Kisi user IDs
-   * back to Wix platform_member_ids, and source_tag = 'accesssync' filters out staff/contractors.
+   * The DB is used only as a bridge: member_access.hardware_user_id maps Kisi user IDs
+   * back to Wix platform_member_ids (on member_master), and member_master.source_tag = 'accesssync'
+   * filters out staff/contractors.
    *
    * Hardening (2026-04-28):
    *  - Opens a reconciliation_run audit row at start, closes at end with full counts
@@ -232,7 +233,7 @@ class NightlyReconciliation {
 
     // Map: platform_member_id (Wix member ID) → { isSubMember }
     // Only includes users AccessSync created (source_tag = 'accesssync').
-    // Staff, contractors, manually-added Kisi users have no member_identity row and are excluded.
+    // Staff, contractors, manually-added Kisi users have no member_master row and are excluded.
     const kisiMembers = new Map();
 
     if (kisiUserIds.length > 0) {
@@ -514,11 +515,11 @@ class NightlyReconciliation {
    * Reconcile a single member's access state against Wix and the hardware platform.
    *
    * Closes OB-49 at the per-member level: detects database drift (missing
-   * member_role_assignments / member_access_sources rows) and surfaces config
-   * integrity issues that require operator attention.
+   * member_access_sources rows) and surfaces config integrity issues that
+   * require operator attention.
    *
    * Architectural rules (DR-023):
-   *  - This function NEVER writes member_role_assignments or member_access_sources
+   *  - This function NEVER writes member_access or member_access_sources
    *    directly. All repairs flow through Standard Adapter Layer (L3) via the
    *    event queue, which makes completeGrant() handle the inserts idempotently.
    *  - Sub-members (sub_master_id != null OR platform_member_id contains '###as')
@@ -535,10 +536,10 @@ class NightlyReconciliation {
    *   needs_attention       — Integrity issue surfaced. No grant/revoke fires.
    *                           See `alerts` array. Operator must resolve.
    *   wix_unavailable       — Wix API failed. No changes made. Retry later.
-   *   no_identity           — Member not provisioned in AccessSync (no member_identity row).
+   *   no_identity           — Member not provisioned in AccessSync (no member_master/member_access row).
    *   sub_member_skipped    — Caller passed a sub-member; reconcile plan holder instead.
    *
-   * @param {string} memberId  - member_identity.id (UUID)
+   * @param {string} memberId  - member_access.id (UUID)
    * @param {string} clientId  - clients.id (UUID)
    * @returns {Object} { action, granted, revoked, repaired, alerts: [...] }
    */
