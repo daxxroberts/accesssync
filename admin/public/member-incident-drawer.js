@@ -245,27 +245,43 @@
   }
 
   function fetchAll() {
-    var diagnoseUrl = endpointBase() + '/diagnose';
+    // If memberId is missing (e.g. error_queue.member_id was null because retry-engine
+    // couldn't resolve it before its own fix landed), skip the per-member endpoints —
+    // they would hit /members/null/diagnose and 500. Use the trace-only path if available.
+    var hasMember = !!state.memberId;
     var timelineUrl;
 
-    // If we have a traceId, prefer the focused trace event chain from
-    // /admin/logs/trace/:id (also shipped in Sprint 6, role-scoped server-side).
     if (state.traceId) {
       timelineUrl = '/admin/logs/trace/' + encodeURIComponent(state.traceId);
-    } else {
+    } else if (hasMember) {
       timelineUrl = endpointBase() + '/timeline';
       state.fellBackToMemberTimeline = true;
+    } else {
+      timelineUrl = null;
     }
 
-    fetch(diagnoseUrl, { credentials: 'include' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) { state.diagnose = j; render(); })
-      .catch(function () { state.diagnose = { _error: true }; render(); });
+    if (hasMember) {
+      var diagnoseUrl = endpointBase() + '/diagnose';
+      fetch(diagnoseUrl, { credentials: 'include' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { state.diagnose = j; render(); })
+        .catch(function () { state.diagnose = { _error: true }; render(); });
+    } else {
+      // No member context — surface a sensible empty state rather than spinning forever.
+      state.diagnose = { _error: true, _reason: 'no_member_id' };
+      render();
+    }
+
+    if (!timelineUrl) {
+      state.timeline = { _error: true, _reason: 'no_member_id_or_trace_id' };
+      render();
+      return;
+    }
 
     fetch(timelineUrl, { credentials: 'include' })
       .then(function (r) {
-        if (r.status === 404 && state.traceId) {
-          // Trace not found (e.g. cross-tenant or NULL trace_id). Fall back.
+        if (r.status === 404 && state.traceId && hasMember) {
+          // Trace not found (e.g. cross-tenant or NULL trace_id). Fall back to member timeline.
           state.fellBackToMemberTimeline = true;
           return fetch(endpointBase() + '/timeline', { credentials: 'include' })
             .then(function (r2) { return r2.ok ? r2.json() : null; });
@@ -482,8 +498,6 @@
       });
   }
 
-  // Fetch a member bundle for the current member, copy to clipboard, and
-  // offer the optional log-stub follow-up.
   function onBundleClick() {
     if (!state.memberId) return;
     var btn = document.getElementById('mid-bundle');
@@ -491,50 +505,14 @@
 
     fetch('/admin/logs/bundle/member/' + encodeURIComponent(state.memberId), { credentials: 'include' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
-      .then(function (j) {
-        return navigator.clipboard.writeText(j.text).then(function () { return j; });
-      })
-      .then(function (j) {
+      .then(function (j) { return navigator.clipboard.writeText(j.text); })
+      .then(function () {
         if (btn) { btn.disabled = false; btn.textContent = '⧉ Bundle'; }
-        showStubDialog(j);
+        showToast('Member bundle copied');
       })
       .catch(function () {
         if (btn) { btn.disabled = false; btn.textContent = 'Bundle failed'; setTimeout(function(){ btn.textContent = '⧉ Bundle'; }, 1500); }
       });
-  }
-
-  // Two-step UX: bundle is on the clipboard; ask if Daxx wants to log it.
-  function showStubDialog(bundleResp) {
-    var existing = document.getElementById('mid-stub-dialog');
-    if (existing) existing.remove();
-    var d = document.createElement('div');
-    d.id = 'mid-stub-dialog';
-    d.style.cssText = 'position:fixed;inset:0;background:rgba(15,25,35,0.45);backdrop-filter:blur(2px);z-index:9050;display:flex;align-items:center;justify-content:center;font-family:Sora,sans-serif';
-    d.innerHTML = [
-      '<div style="background:#fff;border:1px solid #E2E5EA;border-radius:10px;padding:18px 20px;width:480px;max-width:92vw;color:#1A2130">',
-      '  <div style="font-size:14px;font-weight:600;margin-bottom:6px">Bundle copied to clipboard</div>',
-      '  <div style="font-size:11.5px;color:#4A5568;margin-bottom:14px;line-height:1.5">' + (bundleResp.chars||'?').toLocaleString() + ' characters · ' + (bundleResp.trace_count||0) + ' traces · paste into Claude.ai for analysis.</div>',
-      '  <div style="font-size:11px;color:#4A5568;margin-bottom:8px">Want to log this for the AI review team?</div>',
-      '  <div style="display:flex;gap:8px;justify-content:flex-end">',
-      '    <button id="mid-stub-no" style="padding:6px 12px;border-radius:6px;border:1px solid #E2E5EA;background:#fff;font:inherit;font-size:11.5px;cursor:pointer">✗ No log</button>',
-      '    <button id="mid-stub-yes" style="padding:6px 12px;border-radius:6px;border:1px solid #4F6EF7;background:#4F6EF7;color:#fff;font:inherit;font-size:11.5px;font-weight:600;cursor:pointer">✓ Yes — copy log stub</button>',
-      '  </div>',
-      '</div>',
-    ].join('');
-    document.body.appendChild(d);
-    document.getElementById('mid-stub-no').onclick = function () { d.remove(); };
-    document.getElementById('mid-stub-yes').onclick = function () {
-      var btn = document.getElementById('mid-stub-yes');
-      navigator.clipboard.writeText(bundleResp.stub || '')
-        .then(function () {
-          btn.textContent = '✓ Stub copied — paste into bundle_gap_log.md';
-          setTimeout(function () { d.remove(); }, 1400);
-        })
-        .catch(function () {
-          btn.textContent = 'Stub copy failed';
-          setTimeout(function () { d.remove(); }, 1400);
-        });
-    };
   }
 
   window.MemberIncidentDrawer = { open: open, close: close };
