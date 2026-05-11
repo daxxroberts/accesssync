@@ -794,7 +794,7 @@ router.patch('/clients/:clientId', async (req, res) => {
 router.get('/:clientId', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const [clientResult, errorCount, activeMembers, totalMembers, locationCount, pendingHardware] = await Promise.all([
+    const [clientResult, errorCount, activeMembers, totalMembers, locationCount, pendingHardware, hardwareKeyResult] = await Promise.all([
       db.query(
         `SELECT id, name, source_site_url, source_site_name, platform, hardware_platform, tier,
                 last_sync_at, last_webhook_at
@@ -826,6 +826,12 @@ router.get('/:clientId', async (req, res) => {
          WHERE client_id = $1 AND status = 'pending_hardware'`,
         [clientId]
       ),
+      db.query(
+        `SELECT 1 FROM connector_subscriptions
+         WHERE client_id = $1 AND hardware_api_key IS NOT NULL AND status = 'active'
+         LIMIT 1`,
+        [clientId]
+      ),
     ]);
 
     if (!clientResult.rows.length) {
@@ -834,6 +840,7 @@ router.get('/:clientId', async (req, res) => {
 
     res.json({
       client: clientResult.rows[0],
+      has_hardware_key: hardwareKeyResult.rows.length > 0,
       stats: {
         error_count:      errorCount.rows[0].count,
         active_members:   activeMembers.rows[0].count,
@@ -1155,10 +1162,12 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
         // member_identity.sub_member_status IN ('removing','deleted'); new schema tracks
         // sub-member lifecycle via member_access.status, so filter to status='active' which
         // already excludes removing/deleted/revoked/cancelled rows.
-        `SELECT DISTINCT ma.id, mm.platform_member_id, ma.status, ma.provisioned_at, ma.updated_at,
+        `SELECT ma.id, mm.platform_member_id, ma.status, ma.provisioned_at, ma.updated_at,
+                mm.first_name, mm.last_name, mm.email,
                 COALESCE(mm.display_name,
                   NULLIF(TRIM(COALESCE(mm.first_name,'') || ' ' || COALESCE(mm.last_name,'')), ''),
-                  mm.email) AS member_name
+                  mm.email) AS member_name,
+                STRING_AGG(DISTINCT pm.plan_name, ', ' ORDER BY pm.plan_name) AS plan_names
          FROM member_access ma
          JOIN member_master mm ON mm.id = ma.member_master_id
          LEFT JOIN member_access_sources mas ON mas.access_id = ma.id
@@ -1166,6 +1175,8 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
          WHERE ma.client_id = $1
            AND ma.status = 'active'
            AND pm.location_id = $2
+         GROUP BY ma.id, mm.platform_member_id, ma.status, ma.provisioned_at, ma.updated_at,
+                  mm.first_name, mm.last_name, mm.email, mm.display_name
          ORDER BY ma.updated_at DESC NULLS LAST`,
         [clientId, locationId]
       ),
@@ -2149,9 +2160,9 @@ router.get('/:clientId/access-stats', async (req, res) => {
 // ══ Provisioning Latency endpoint ══════════════════════════════════
 // GET /operator/:clientId/latency-stats
 // Computes purchase→provisioned timing from existing tables — no new columns needed.
-// T0 = webhook_log.received_at (purchase webhook received)
+// T0 = webhook_log.received_at          (purchase webhook received)
 // T1 = processed_event_ids.processed_at (job enqueued)
-// T2 = member_role_assignments.created_at (Kisi confirmed role assigned)
+// T2 = member_access_sources.created_at (Kisi role recorded — was mra.created_at pre-migration)
 // Intervals: ingest (T1-T0), processing (T2-T1), total (T2-T0)
 router.get('/:clientId/latency-stats', async (req, res) => {
   const { clientId } = req.params;
@@ -2162,10 +2173,10 @@ router.get('/:clientId/latency-stats', async (req, res) => {
          SELECT
            wl.received_at                                          AS t0,
            pei.processed_at                                        AS t1,
-           mra.created_at                                          AS t2,
+           mas.created_at                                          AS t2,
            EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)) AS ingest_s,
-           EXTRACT(EPOCH FROM (mra.created_at   - pei.processed_at)) AS processing_s,
-           EXTRACT(EPOCH FROM (mra.created_at   - wl.received_at))  AS total_s
+           EXTRACT(EPOCH FROM (mas.created_at   - pei.processed_at)) AS processing_s,
+           EXTRACT(EPOCH FROM (mas.created_at   - wl.received_at))  AS total_s
          FROM webhook_log wl
          JOIN processed_event_ids pei ON pei.event_id = wl.event_id
          JOIN member_master mm
