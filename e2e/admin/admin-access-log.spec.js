@@ -33,65 +33,63 @@ test.describe('Admin Logs — Page Renders', () => {
   });
 });
 
-test.describe('Admin Logs — API /logs endpoint', () => {
+test.describe('Admin Logs — API /admin/logs/events endpoint', () => {
   let cookie;
   test.beforeAll(async () => { cookie = await auth.getAdminCookie(); });
 
-  test('GET /logs returns 200', async () => {
-    const res = await fetch(`${ADMIN_BASE_URL}/logs?client_id=${seed.HOG_CLIENT_ID}`, {
+  test('GET /admin/logs/events returns 200', async () => {
+    const res = await fetch(`${ADMIN_BASE_URL}/admin/logs/events?client_id=${seed.HOG_CLIENT_ID}`, {
       headers: { Cookie: cookie },
     });
     expect(res.status).toBe(200);
   });
 
-  test('GET /logs returns array', async () => {
-    const res = await fetch(`${ADMIN_BASE_URL}/logs?client_id=${seed.HOG_CLIENT_ID}`, {
+  test('GET /admin/logs/events returns events array', async () => {
+    const res = await fetch(`${ADMIN_BASE_URL}/admin/logs/events?client_id=${seed.HOG_CLIENT_ID}`, {
       headers: { Cookie: cookie },
     });
     const json = await res.json();
-    const rows = json?.rows ?? json?.logs ?? json?.data ?? json;
-    expect(Array.isArray(rows)).toBe(true);
+    expect(Array.isArray(json?.events)).toBe(true);
   });
 
   test('log rows have trace_id, ts, event, source', async () => {
-    const res = await fetch(`${ADMIN_BASE_URL}/logs?client_id=${seed.HOG_CLIENT_ID}&since=${new Date(Date.now() - 86400000).toISOString()}`, {
+    const res = await fetch(`${ADMIN_BASE_URL}/admin/logs/events?client_id=${seed.HOG_CLIENT_ID}&since=${new Date(Date.now() - 86400000).toISOString()}`, {
       headers: { Cookie: cookie },
     });
     const json = await res.json();
-    const rows = json?.rows ?? json?.logs ?? json?.data ?? (Array.isArray(json) ? json : []);
+    const rows = json?.events || [];
     for (const row of rows.slice(0, 5)) {
-      expect(row.trace_id ?? row.traceId).toBeTruthy();
-      expect(row.ts ?? row.timestamp ?? row.created_at).toBeTruthy();
-      expect(row.event ?? row.event_key).toBeTruthy();
+      expect(row.trace_id).toBeTruthy();
+      expect(row.ts).toBeTruthy();
+      expect(row.event).toBeTruthy();
+      expect(row.source).toBeTruthy();
     }
   });
 
-  test('GET /logs without auth returns 401', async () => {
-    const res = await fetch(`${ADMIN_BASE_URL}/logs?client_id=${seed.HOG_CLIENT_ID}`);
+  test('GET /admin/logs/events without auth returns 401', async () => {
+    const res = await fetch(`${ADMIN_BASE_URL}/admin/logs/events?client_id=${seed.HOG_CLIENT_ID}`);
     expect(res.status).toBe(401);
   });
 
   test('filter by source=webhook returns only webhook rows', async () => {
-    const res = await fetch(`${ADMIN_BASE_URL}/logs?client_id=${seed.HOG_CLIENT_ID}&source=webhook`, {
+    const res = await fetch(`${ADMIN_BASE_URL}/admin/logs/events?client_id=${seed.HOG_CLIENT_ID}&source=webhook`, {
       headers: { Cookie: cookie },
     });
     if (res.status === 200) {
       const json = await res.json();
-      const rows = json?.rows ?? json?.logs ?? json?.data ?? (Array.isArray(json) ? json : []);
-      for (const row of rows) {
-        expect(row.source).toContain('webhook');
+      for (const row of json?.events || []) {
+        expect(row.source).toBe('webhook');
       }
     }
   });
 
   test('filter by result=success returns only success rows', async () => {
-    const res = await fetch(`${ADMIN_BASE_URL}/logs?client_id=${seed.HOG_CLIENT_ID}&result=success`, {
+    const res = await fetch(`${ADMIN_BASE_URL}/admin/logs/events?client_id=${seed.HOG_CLIENT_ID}&result=success`, {
       headers: { Cookie: cookie },
     });
     if (res.status === 200) {
       const json = await res.json();
-      const rows = json?.rows ?? json?.logs ?? json?.data ?? (Array.isArray(json) ? json : []);
-      for (const row of rows) {
+      for (const row of json?.events || []) {
         expect(row.result).toBe('success');
       }
     }
@@ -99,14 +97,13 @@ test.describe('Admin Logs — API /logs endpoint', () => {
 
   test('filter by since date limits results', async () => {
     const since = new Date().toISOString();
-    const res = await fetch(`${ADMIN_BASE_URL}/logs?client_id=${seed.HOG_CLIENT_ID}&since=${since}`, {
+    const res = await fetch(`${ADMIN_BASE_URL}/admin/logs/events?client_id=${seed.HOG_CLIENT_ID}&since=${since}`, {
       headers: { Cookie: cookie },
     });
     if (res.status === 200) {
       const json = await res.json();
-      const rows = json?.rows ?? json?.logs ?? json?.data ?? (Array.isArray(json) ? json : []);
-      for (const row of rows) {
-        const ts = new Date(row.ts ?? row.timestamp ?? row.created_at);
+      for (const row of json?.events || []) {
+        const ts = new Date(row.ts);
         expect(ts.getTime()).toBeGreaterThanOrEqual(new Date(since).getTime() - 1000);
       }
     }
@@ -165,13 +162,12 @@ test.describe('Admin Logs — trace_id filter', () => {
     `, []);
     if (!traceRow) return; // Skip if no rows yet
 
-    const res = await fetch(`${ADMIN_BASE_URL}/logs?trace_id=${traceRow.trace_id}`, {
+    const res = await fetch(`${ADMIN_BASE_URL}/admin/logs/events?trace_id=${traceRow.trace_id}`, {
       headers: { Cookie: cookie },
     });
     if (res.status === 200) {
       const json = await res.json();
-      const rows = json?.rows ?? json?.logs ?? json?.data ?? (Array.isArray(json) ? json : []);
-      for (const row of rows) {
+      for (const row of json?.events || []) {
         expect(row.trace_id).toBe(traceRow.trace_id);
       }
     }
@@ -183,13 +179,12 @@ test.describe('Admin Logs — member_name enrichment', () => {
   test.beforeAll(async () => { cookie = await auth.getAdminCookie(); });
 
   test('log rows have member_name or client_name when trace context is present', async () => {
-    const res = await fetch(`${ADMIN_BASE_URL}/logs?client_id=${seed.HOG_CLIENT_ID}&since=${new Date(Date.now() - 3600000).toISOString()}`, {
+    const res = await fetch(`${ADMIN_BASE_URL}/admin/logs/events?client_id=${seed.HOG_CLIENT_ID}&since=${new Date(Date.now() - 3600000).toISOString()}`, {
       headers: { Cookie: cookie },
     });
     if (res.status !== 200) return;
     const json = await res.json();
-    const rows = json?.rows ?? json?.logs ?? json?.data ?? (Array.isArray(json) ? json : []);
-    // At least some rows should have enriched context fields
+    const rows = json?.events || [];
     const enriched = rows.filter(r => r.client_name ?? r.member_name ?? r.actor_type);
     expect(enriched.length).toBeGreaterThanOrEqual(0);
   });

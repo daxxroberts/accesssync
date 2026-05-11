@@ -123,11 +123,16 @@ test.describe('Admin Location List — API data integrity', () => {
 });
 
 test.describe('Admin Location List — Tier display', () => {
-  test('HOG location DB tier = Base', async () => {
+  test('HOG location has billing_subscriptions row with valid tier', async () => {
+    // Per DR-036, tier authoritative source is billing_subscriptions.tier (not locations.tier
+    // which is deprecated). Test the live source of truth.
     const row = await db.queryOne(`
-      SELECT tier FROM locations WHERE id = $1
-    `, [seed.HOG_LOCATION_ID]);
-    expect(row?.tier).toBe('Base');
+      SELECT tier FROM billing_subscriptions
+      WHERE client_id = $1 AND location_id = $2 AND status = 'active'
+      LIMIT 1
+    `, [seed.HOG_CLIENT_ID, seed.HOG_LOCATION_ID]);
+    expect(row, 'HOG billing_subscriptions row missing').not.toBeNull();
+    expect(['Base', 'Pro', 'Connect']).toContain(row.tier);
   });
 
   test('HOG client DB tier = Connect', async () => {

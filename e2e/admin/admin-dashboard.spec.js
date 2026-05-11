@@ -73,19 +73,22 @@ test.describe('Admin Dashboard — Client List', () => {
 });
 
 test.describe('Admin Dashboard — Metrics match DB', () => {
-  test('active member count shown matches DB for HOG', async ({ page, context }) => {
-    await auth.setAdminCookieOnContext(context);
-    await page.goto(`/operator/${seed.HOG_CLIENT_ID}`);
-    await page.waitForLoadState('networkidle');
+  test('active member count from API matches DB DISTINCT count for HOG', async () => {
+    // Page renders via JS; assert against the API the page consumes.
+    const cookie = await auth.getAdminCookie();
+    const res = await fetch(`https://accesssync-admin.up.railway.app/operator/${seed.HOG_CLIENT_ID}`, {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    const apiCount = Number(json?.stats?.active_members);
 
     const dbCount = await db.queryOne(`
-      SELECT COUNT(*)::int AS cnt FROM member_access
+      SELECT COUNT(DISTINCT member_master_id)::int AS cnt FROM member_access
       WHERE client_id = $1 AND status = 'active'
     `, [seed.HOG_CLIENT_ID]);
 
-    // Try to find a number in the page that matches the DB count
-    const content = await page.content();
-    expect(content).toContain(String(dbCount.cnt));
+    expect(apiCount).toBe(dbCount.cnt);
   });
 
   test('total member count shown matches DB for HOG', async ({ page, context }) => {

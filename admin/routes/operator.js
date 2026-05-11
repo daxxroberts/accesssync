@@ -1054,7 +1054,11 @@ router.get('/:clientId/locations', async (req, res) => {
   try {
     const [locations, errorCounts, doorCounts, planCounts] = await Promise.all([
       db.query(
-        `SELECT l.id, l.name, l.city, l.state,
+        // DISTINCT ON (l.id) prevents row-multiplication when a location has multiple
+        // billing_subscriptions rows (accumulated migrations or duplicate inserts).
+        // Prefer 'active' billing subscription, then most recent.
+        `SELECT DISTINCT ON (l.id)
+                l.id, l.name, l.city, l.state,
                 COALESCE(bs.status, 'inactive') AS subscription_status,
                 bs.tier,
                 bs.subscribed_at,
@@ -1066,7 +1070,8 @@ router.get('/:clientId/locations', async (req, res) => {
          JOIN clients c ON c.id = l.client_id
          LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
          LEFT JOIN connector_subscriptions cs ON cs.client_id = l.client_id AND cs.status = 'active'
-         WHERE l.client_id = $1 ORDER BY l.created_at ASC`,
+         WHERE l.client_id = $1
+         ORDER BY l.id, (bs.status = 'active') DESC NULLS LAST, bs.subscribed_at DESC NULLS LAST`,
         [clientId]
       ),
       db.query(
