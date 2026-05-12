@@ -46,7 +46,8 @@ async function runHealthCheck() {
 async function _runHealthCheckBody() {
   log.info('health.check_start', {});
 
-  // Per-location iteration: each active location gets its own key + platform check
+  // Per-location iteration: each active location gets its own key + platform check.
+  // Status filtering goes through billing_subscriptions.
   const locationsResult = await db.query(
     `SELECT l.id AS location_id, l.name AS location_name, l.client_id,
             cs.hardware_api_key, cs.hardware_platform, cs.id AS connector_id,
@@ -55,7 +56,8 @@ async function _runHealthCheckBody() {
      FROM locations l
      JOIN clients c ON c.id = l.client_id
      JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
-     WHERE c.status = 'active' AND l.subscription_status = 'active'`
+     JOIN billing_subscriptions   bs ON bs.location_id = l.id AND bs.client_id = l.client_id
+     WHERE c.status = 'active' AND bs.status = 'active'`
   );
 
   for (const loc of locationsResult.rows) {

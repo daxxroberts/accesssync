@@ -271,7 +271,11 @@ class GrantRevokeLogic {
    * Looks up and decrypts the client-level hardware API key for revoke operations.
    */
   async _getClientApiKey(tenantId) {
-    const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [tenantId]);
+    const result = await db.query(
+      `SELECT hardware_api_key FROM connector_subscriptions
+        WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+      [tenantId]
+    );
     const enc = result.rows[0]?.hardware_api_key;
     if (enc) return decryptApiKey(enc);
     return null;

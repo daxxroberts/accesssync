@@ -48,11 +48,14 @@ const connection = getRedisConnection();
 /**
  * Resolves the client-level hardware API key for a tenant.
  * Used for user resolution (findUserByEmail, createUser) and payment.recovered.
- * DR-028: KISI_API_KEY_MOCK fallback removed — set key via Admin Hub.
- * DR-035: Column renamed kisi_api_key → hardware_api_key.
+ * DR-028: hardware_api_key lives on connector_subscriptions.
  */
 async function getClientApiKey(tenantId) {
-  const result = await db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [tenantId]);
+  const result = await db.query(
+    `SELECT hardware_api_key FROM connector_subscriptions
+      WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+    [tenantId]
+  );
   const enc = result.rows[0]?.hardware_api_key;
   if (enc) return decryptApiKey(enc);
   return null;
