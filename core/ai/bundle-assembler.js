@@ -2,8 +2,8 @@
  * @file bundle-assembler.js
  * @layer core/ai
  * @role bundle-assembly
- * @reads v_trace_timeline, trace_context, member_identity, member_access_state,
- *        member_role_assignments, member_access_sources, plan_mappings,
+ * @reads v_trace_timeline, trace_context, member_master, member_access,
+ *        member_access_sources, plan_mappings,
  *        core/ai/static/*.md, core/EVENT_REGISTRY.md
  * @exports buildTraceBundle(traceId), buildMemberBundle(memberId)
  *
@@ -255,40 +255,45 @@ async function loadWebhookPayloads(traceId) {
 }
 
 async function loadMemberSnapshot(memberId) {
+  // Post-migration shape:
+  //   identity = member_access JOIN member_master (status/hardware on access, name/email on master)
+  //   state = folded into the identity row (status, provisioned_at, scheduled_start_date now live on member_access)
+  //   roles = member_access_sources JOIN plan_mappings (member_role_assignments retired, role_assignment_id moved to source row)
+  //   sources = member_access_sources keyed by access_id (was member_id pre-migration)
+  // memberId is member_access.id.
   const identity = await db.query(
-    `SELECT id, client_id, email, first_name, last_name, display_name,
-            platform_member_id, source_platform, hardware_user_id, hardware_platform,
-            plan_holder_id, source_tag, created_at, updated_at
-     FROM member_identity WHERE id = $1`, [memberId]
+    `SELECT ma.id, ma.client_id, mm.email, mm.first_name, mm.last_name, mm.display_name,
+            mm.platform_member_id, mm.source_platform,
+            ma.hardware_user_id, ma.hardware_platform,
+            mm.source_tag, ma.created_at, ma.updated_at,
+            ma.status, ma.provisioned_at, ma.scheduled_start_date,
+            ma.pending_plan_id, ma.sub_master_id
+       FROM member_access ma
+       JOIN member_master mm ON mm.id = ma.member_master_id
+      WHERE ma.id = $1`, [memberId]
   );
   if (!identity.rows.length) return null;
 
-  const state = await db.query(
-    `SELECT status, role_assignment_id, provisioned_at, updated_at,
-            plan_holder_id, pending_plan_id, scheduled_start_date
-     FROM member_access_state WHERE member_id = $1`, [memberId]
-  );
-
   const roles = await db.query(
-    `SELECT mra.id, mra.role_assignment_id, mra.hardware_group_id, mra.created_at,
-            mra.mapping_id, pm.plan_name, pm.door_name
-     FROM member_role_assignments mra
-     LEFT JOIN plan_mappings pm ON pm.id = mra.mapping_id
-     WHERE mra.member_id = $1
-     ORDER BY mra.created_at ASC`, [memberId]
+    `SELECT mas.id, mas.role_assignment_id, mas.hardware_group_id, mas.created_at,
+            mas.mapping_id, pm.plan_name, pm.door_name
+       FROM member_access_sources mas
+       LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
+      WHERE mas.access_id = $1
+      ORDER BY mas.created_at ASC`, [memberId]
   );
 
   const sources = await db.query(
-    `SELECT id, hardware_group_id, source_type, source_plan_id, source_booking_id,
-            mapping_id, valid_until, granted_at
-     FROM member_access_sources
-     WHERE member_id = $1
-     ORDER BY granted_at ASC`, [memberId]
+    `SELECT id, hardware_group_id, source_type, source_plan_id,
+            mapping_id, valid_until, created_at, effective_start
+       FROM member_access_sources
+      WHERE access_id = $1
+      ORDER BY created_at ASC`, [memberId]
   );
 
   return {
     identity: identity.rows[0],
-    state:    state.rows[0] || null,
+    state:    null, // state fields are on the identity row post-migration; kept null for shape compat
     roles:    roles.rows,
     sources:  sources.rows,
   };
@@ -297,14 +302,21 @@ async function loadMemberSnapshot(memberId) {
 async function loadMemberTraces(memberId, limit = MAX_MEMBER_TRACES) {
   // Pull the most recent N traces that touched this member, oldest first
   // within the window (so chronological reading is natural).
+  // Post-migration: name/email come from member_master via JOIN through member_access.
   const r = await db.query(
     `SELECT DISTINCT trace_id, MIN(ts) AS first_ts
-     FROM v_trace_timeline
-     WHERE member_name = (SELECT display_name FROM member_identity WHERE id = $1)
-        OR member_email = (SELECT email FROM member_identity WHERE id = $1)
-     GROUP BY trace_id
-     ORDER BY first_ts DESC
-     LIMIT $2`,
+       FROM v_trace_timeline
+      WHERE member_name = (SELECT mm.display_name
+                             FROM member_access ma
+                             JOIN member_master mm ON mm.id = ma.member_master_id
+                            WHERE ma.id = $1)
+         OR member_email = (SELECT mm.email
+                              FROM member_access ma
+                              JOIN member_master mm ON mm.id = ma.member_master_id
+                             WHERE ma.id = $1)
+      GROUP BY trace_id
+      ORDER BY first_ts DESC
+      LIMIT $2`,
     [memberId, limit]
   );
   return r.rows.map(x => x.trace_id);

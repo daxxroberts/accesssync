@@ -123,7 +123,7 @@ function mintTraceId() {
  * @param {Object} opts
  * @param {string}  opts.entryPoint   - 'webhook' | 'operator_ui' | 'admin_ui' | 'cron' | 'queue' | 'api'
  * @param {string}  [opts.clientId]
- * @param {string}  [opts.memberId]   - member_identity.id (UUID)
+ * @param {string}  [opts.memberId]   - member_access.id (UUID)
  * @param {string}  [opts.actorType]
  * @param {string}  [opts.actorId]
  * @param {string}  [opts.planName]
@@ -154,11 +154,17 @@ function registerTrace(traceId, opts = {}) {
       }
 
       if (opts.memberId) {
+        // Post-migration: name/email/platform_member_id live on member_master,
+        // hardware fields live on member_access. The memberId argument is
+        // member_access.id (set by resolveAndLock).
         const mr = await db.query(
-          `SELECT first_name, last_name, display_name, email,
-                  platform_member_id, source_platform,
-                  hardware_platform, hardware_user_id
-           FROM member_identity WHERE id = $1 LIMIT 1`,
+          `SELECT mm.first_name, mm.last_name, mm.display_name, mm.email,
+                  mm.platform_member_id, mm.source_platform,
+                  ma.hardware_platform, ma.hardware_user_id
+             FROM member_access ma
+             JOIN member_master mm ON mm.id = ma.member_master_id
+            WHERE ma.id = $1
+            LIMIT 1`,
           [opts.memberId]
         );
         if (mr.rows[0]) {
@@ -219,13 +225,13 @@ function registerTrace(traceId, opts = {}) {
  *
  * Use this from L3/L4 sites where memberId/planName/doorName/mappingId
  * become known mid-request (resolveAndLock, plan-mapping-resolver, etc.).
- * Re-resolves member name + hardware identifiers from member_identity
+ * Re-resolves member name + hardware identifiers from member_master/member_access
  * when memberId is provided, mirroring registerTrace.
  *
  * @param {string} traceId
  * @param {Object} opts
  * @param {string} [opts.clientId]   - upgrade NULL clientId once tenant is resolved
- * @param {string} [opts.memberId]   - member_identity.id (UUID) — triggers name lookup
+ * @param {string} [opts.memberId]   - member_access.id (UUID) — triggers JOIN to member_master for name lookup
  * @param {string} [opts.planName]
  * @param {string} [opts.doorName]
  * @param {string} [opts.mappingId]
@@ -242,11 +248,15 @@ function setTraceContext(traceId, opts = {}) {
       // gets full enrichment for free.
       let memberFields = null;
       if (opts.memberId) {
+        // Same JOIN as registerTrace — name/email on master, hardware on access.
         const mr = await db.query(
-          `SELECT first_name, last_name, display_name, email,
-                  platform_member_id, source_platform,
-                  hardware_platform, hardware_user_id
-           FROM member_identity WHERE id = $1 LIMIT 1`,
+          `SELECT mm.first_name, mm.last_name, mm.display_name, mm.email,
+                  mm.platform_member_id, mm.source_platform,
+                  ma.hardware_platform, ma.hardware_user_id
+             FROM member_access ma
+             JOIN member_master mm ON mm.id = ma.member_master_id
+            WHERE ma.id = $1
+            LIMIT 1`,
           [opts.memberId]
         );
         if (mr.rows[0]) {
