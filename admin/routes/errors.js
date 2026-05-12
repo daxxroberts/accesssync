@@ -39,13 +39,23 @@ router.get('/', async (req, res) => {
     const limitIdx  = params.length - 1;
     const offsetIdx = params.length;
 
+    // Post-migration: error_queue.member_id references member_access.id.
+    // JOIN through to member_master for the affected person, plus a self-JOIN
+    // through ma.sub_master_id to surface the holder when the affected person
+    // is a sub-member (Q3 ruling 2026-05-11: show sub-member identity + holder context).
     const result = await db.query(
       `SELECT eq.*,
-              c.name  AS client_name,
-              mi.email        AS member_email
+              c.name AS client_name,
+              mm.email           AS member_email,
+              mm.display_name    AS member_name,
+              holder_mm.email        AS holder_email,
+              holder_mm.display_name AS holder_name,
+              (ma.sub_master_id IS NOT NULL) AS is_sub_member
        FROM error_queue eq
-       LEFT JOIN clients        c  ON c.id  = eq.client_id
-       LEFT JOIN member_identity mi ON mi.id = eq.member_id
+       LEFT JOIN clients       c  ON c.id  = eq.client_id
+       LEFT JOIN member_access ma ON ma.id = eq.member_id
+       LEFT JOIN member_master mm ON mm.id = ma.member_master_id
+       LEFT JOIN member_master holder_mm ON holder_mm.id = ma.sub_master_id
        WHERE ${conditions.join(' AND ')}
        ORDER BY eq.created_at DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -72,15 +82,23 @@ router.get('/', async (req, res) => {
 // ── GET /admin/errors/:id ──────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
+    // Same post-migration JOIN as the list endpoint, plus full member identity
+    // fields (platform_member_id, source_platform) for the detail view.
     const result = await db.query(
       `SELECT eq.*,
-              c.name          AS client_name,
-              mi.email        AS member_email,
-              mi.platform_member_id,
-              mi.source_platform
+              c.name AS client_name,
+              mm.email             AS member_email,
+              mm.display_name      AS member_name,
+              mm.platform_member_id,
+              mm.source_platform,
+              holder_mm.email        AS holder_email,
+              holder_mm.display_name AS holder_name,
+              (ma.sub_master_id IS NOT NULL) AS is_sub_member
        FROM error_queue eq
-       LEFT JOIN clients         c  ON c.id  = eq.client_id
-       LEFT JOIN member_identity mi ON mi.id = eq.member_id
+       LEFT JOIN clients       c  ON c.id  = eq.client_id
+       LEFT JOIN member_access ma ON ma.id = eq.member_id
+       LEFT JOIN member_master mm ON mm.id = ma.member_master_id
+       LEFT JOIN member_master holder_mm ON holder_mm.id = ma.sub_master_id
        WHERE eq.id = $1`,
       [req.params.id]
     );
