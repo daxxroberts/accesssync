@@ -43,14 +43,15 @@ async function activateLocationMembersAdmin(clientId, locationId) {
       const groupIds = oldGroupsResult.rows.map(r => r.hardware_group_id);
       if (!groupIds.length) continue;
 
+      // Post-migration: hardware_platform comes from connector_subscriptions, not
+      // clients/locations. The dual COALESCE was a bridge during the migration —
+      // reading from cs is now canonical (Q1 ruling 2026-05-11).
       const ctxResult = await db.query(
-        `SELECT COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform,
+        `SELECT cs.hardware_platform,
                 cs.hardware_api_key AS api_key_enc,
                 pm.source_plan_id
          FROM plan_mappings pm
-         JOIN clients c ON c.id = pm.client_id
-         JOIN locations l ON l.id = pm.location_id
-         LEFT JOIN connector_subscriptions cs ON cs.client_id = pm.client_id AND cs.status = 'active'
+         JOIN connector_subscriptions cs ON cs.client_id = pm.client_id AND cs.status = 'active'
          WHERE pm.id = $1`, [m.id]
       );
       if (!ctxResult.rows.length) continue;
@@ -129,14 +130,19 @@ router.get('/', async (req, res) => {
       whereClause = "WHERE c.status != 'archived'";
     }
 
+    // Post-migration: hardware_platform now lives on connector_subscriptions,
+    // tier now lives on billing_subscriptions (per-location). For the clients-list
+    // surface we surface the hardware_platform (one per client) and a representative
+    // tier from any active billing subscription (operator typically has one tier
+    // across their locations; multi-tier per client is a future case).
     const result = await db.query(
       `SELECT c.id,
               c.name,
               c.platform,
               c.source_site_id,
               c.source_site_name,
-              c.hardware_platform,
-              c.tier,
+              cs.hardware_platform,
+              (ARRAY_AGG(DISTINCT bs.tier) FILTER (WHERE bs.tier IS NOT NULL))[1] AS tier,
               c.status,
               c.notification_email,
               c.last_sync_at,
@@ -146,10 +152,12 @@ router.get('/', async (req, res) => {
               COUNT(DISTINCT mm.id)::int  AS member_count,
               COUNT(DISTINCT CASE WHEN ma.status = 'active' THEN mm.id END)::int AS active_count
        FROM clients c
+       LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
+       LEFT JOIN billing_subscriptions   bs ON bs.client_id = c.id AND bs.status = 'active'
        LEFT JOIN member_master mm ON mm.client_id = c.id
        LEFT JOIN member_access ma ON ma.member_master_id = mm.id
        ${whereClause}
-       GROUP BY c.id
+       GROUP BY c.id, cs.hardware_platform
        ORDER BY c.created_at ASC`,
       params
     );
@@ -411,10 +419,15 @@ router.post('/:id/locations/:locationId/api-key', async (req, res) => {
     if (apiKey.trim().length < 20) return res.status(400).json({ error: 'API key must be at least 20 characters' });
 
     const encrypted = encryptApiKey(apiKey.trim());
+    // Post-migration: hardware_platform comes from connector_subscriptions.
+    // Default to 'kisi' if no connector_subscriptions row exists yet — this is
+    // the operator's first key set, which is the moment we create the cs row.
     const locCheck = await db.query(
-      `SELECT l.id, l.name, COALESCE(c.hardware_platform, 'kisi') AS hardware_platform
-       FROM locations l JOIN clients c ON c.id = l.client_id
-       WHERE l.id = $1 AND l.client_id = $2`,
+      `SELECT l.id, l.name,
+              COALESCE(cs.hardware_platform, 'kisi') AS hardware_platform
+         FROM locations l
+         LEFT JOIN connector_subscriptions cs ON cs.client_id = l.client_id AND cs.status = 'active'
+        WHERE l.id = $1 AND l.client_id = $2`,
       [locationId, id]
     );
     if (!locCheck.rows.length) return res.status(404).json({ error: 'Location not found' });

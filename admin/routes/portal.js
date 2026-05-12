@@ -38,13 +38,19 @@ router.get('/', requireWixInstance, async (req, res) => {
   });
 
   try {
-    // Check setup status — not set up if no API key AND no locations
-    const [clientResult, locationResult] = await Promise.all([
-      db.query('SELECT hardware_api_key FROM clients WHERE id = $1', [clientId]),
+    // Check setup status — not set up if no API key AND no locations.
+    // Post-migration: hardware_api_key lives on connector_subscriptions, not clients.
+    const [keyResult, locationResult] = await Promise.all([
+      db.query(
+        `SELECT 1 FROM connector_subscriptions
+          WHERE client_id = $1 AND hardware_api_key IS NOT NULL AND status = 'active'
+          LIMIT 1`,
+        [clientId]
+      ),
       db.query('SELECT COUNT(*)::int AS count FROM locations WHERE client_id = $1', [clientId]),
     ]);
 
-    const hasApiKey   = clientResult.rows[0]?.hardware_api_key != null;
+    const hasApiKey   = keyResult.rows.length > 0;
     const hasLocation = locationResult.rows[0]?.count > 0;
 
     if (!hasApiKey && !hasLocation) {

@@ -90,10 +90,11 @@ async function resolveApiKey(clientId, locationId) {
  */
 async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, newStatus, oldStatus) {
   try {
+    // Post-migration: hardware_platform comes from connector_subscriptions, not clients.
     const mapping = await db.query(
-      `SELECT pm.source_plan_id, pm.location_id, c.hardware_platform
+      `SELECT pm.source_plan_id, pm.location_id, cs.hardware_platform
        FROM plan_mappings pm
-       JOIN clients c ON c.id = pm.client_id
+       JOIN connector_subscriptions cs ON cs.client_id = pm.client_id AND cs.status = 'active'
        WHERE pm.id = $1 AND pm.client_id = $2`,
       [mappingId, clientId]
     );
@@ -422,12 +423,19 @@ router.get('/site-id/verify', requireInviteToken, async (req, res) => {
   }
 
   try {
+    // Post-migration: hardware_platform on connector_subscriptions, tier on
+    // billing_subscriptions. Same query, just sourced from the new tables.
     const existing = await db.query(
-      `SELECT c.id, c.name, c.tier, c.hardware_platform,
+      `SELECT c.id, c.name,
+              cs.hardware_platform,
+              (ARRAY_AGG(DISTINCT bs.tier) FILTER (WHERE bs.tier IS NOT NULL))[1] AS tier,
               (cs.id IS NOT NULL) AS has_api_key
        FROM clients c
        LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
-       WHERE c.source_site_id = $1 LIMIT 1`,
+       LEFT JOIN billing_subscriptions   bs ON bs.client_id = c.id AND bs.status = 'active'
+       WHERE c.source_site_id = $1
+       GROUP BY c.id, cs.id, cs.hardware_platform
+       LIMIT 1`,
       [siteId.trim()]
     );
     if (existing.rows.length) {
@@ -524,14 +532,27 @@ router.post('/clients/:clientId/locations', requireInviteToken, async (req, res)
     const clientCheck = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
     if (!clientCheck.rows.length) return res.status(404).json({ error: 'Client not found' });
 
+    // Post-migration: tier + subscription_status no longer live on locations.
+    // Split into two INSERTs — locations row, then a paired billing_subscriptions
+    // row (status='inactive' until activate endpoint fires).
     const result = await db.query(
-      `INSERT INTO locations (client_id, name, city, state, tier, subscription_status, created_at)
-       VALUES ($1, $2, $3, $4, $5, 'inactive', NOW())
-       RETURNING id, client_id, name, city, state, tier, subscription_status, created_at`,
-      [clientId, name.trim(), city || null, state || null, tier || null]
+      `INSERT INTO locations (client_id, name, city, state, created_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       RETURNING id, client_id, name, city, state, created_at`,
+      [clientId, name.trim(), city || null, state || null]
     );
+    if (tier) {
+      await db.query(
+        `INSERT INTO billing_subscriptions (client_id, location_id, tier, status)
+         VALUES ($1, $2, $3, 'inactive')`,
+        [clientId, result.rows[0].id, tier]
+      );
+    }
     log.info('operator.setup.location_created', { clientId, locationName: result.rows[0].name });
-    res.status(201).json({ ok: true, location: result.rows[0] });
+    res.status(201).json({
+      ok: true,
+      location: { ...result.rows[0], tier: tier || null, subscription_status: 'inactive' },
+    });
   } catch (err) {
     log.error('operator.setup.location_create_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -579,23 +600,42 @@ router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) =
 router.post('/clients/:clientId/locations/:locationId/activate', requireInviteToken, async (req, res) => {
   const { clientId, locationId } = req.params;
   try {
-    const result = await db.query(
-      `UPDATE locations
-       SET subscription_status = 'active', subscribed_at = NOW()
-       WHERE id = $1 AND client_id = $2 AND subscription_status = 'inactive'
-       RETURNING id, name, subscription_status, subscribed_at`,
+    // Post-migration: subscription_status moved to billing_subscriptions.status.
+    // Activate by updating bs status; if no bs row exists yet, create one (handles
+    // legacy rows or operators who created the location before bs was a thing).
+    const bsUpdate = await db.query(
+      `UPDATE billing_subscriptions
+         SET status = 'active', subscribed_at = NOW(), updated_at = NOW()
+       WHERE location_id = $1 AND client_id = $2 AND status = 'inactive'
+       RETURNING location_id, status, subscribed_at`,
       [locationId, clientId]
     );
-    if (!result.rows.length) {
-      const check = await db.query(
-        'SELECT subscription_status FROM locations WHERE id = $1 AND client_id = $2',
+    if (!bsUpdate.rows.length) {
+      // Check if location exists at all
+      const locCheck = await db.query(
+        `SELECT l.id, l.name, COALESCE(bs.status, 'inactive') AS subscription_status
+           FROM locations l
+           LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
+          WHERE l.id = $1 AND l.client_id = $2`,
         [locationId, clientId]
       );
-      if (!check.rows.length) return res.status(404).json({ error: 'Location not found' });
-      return res.json({ ok: true, location: check.rows[0], already_active: true });
+      if (!locCheck.rows.length) return res.status(404).json({ error: 'Location not found' });
+      // Location exists but no inactive bs row to flip — either already active
+      // or no bs row at all. If already active, signal that to caller; otherwise
+      // create a fresh active bs row now.
+      if (locCheck.rows[0].subscription_status === 'active') {
+        return res.json({ ok: true, location: { id: locationId, subscription_status: 'active' }, already_active: true });
+      }
+      await db.query(
+        `INSERT INTO billing_subscriptions (client_id, location_id, status, subscribed_at)
+         VALUES ($1, $2, 'active', NOW())`,
+        [clientId, locationId]
+      );
+      log.info('operator.setup.location_activated', { clientId, locationId, created_bs: true });
+      return res.json({ ok: true, location: { id: locationId, name: locCheck.rows[0].name, subscription_status: 'active', subscribed_at: new Date().toISOString() } });
     }
     log.info('operator.setup.location_activated', { clientId, locationId });
-    res.json({ ok: true, location: result.rows[0] });
+    res.json({ ok: true, location: { id: locationId, subscription_status: 'active', subscribed_at: bsUpdate.rows[0].subscribed_at } });
   } catch (err) {
     log.error('operator.onboard.activate_failed', { clientId, locationId }, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -912,11 +952,14 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
       return res.status(400).json({ error: 'API key too short' });
     }
     const encrypted = encryptApiKey(apiKey.trim());
-    // Verify the location exists and resolve hardware_platform for the UNIQUE key
+    // Verify the location exists and resolve hardware_platform for the UNIQUE key.
+    // Post-migration: hardware_platform comes from connector_subscriptions. Default
+    // to 'kisi' on first key set (no cs row exists yet — this is the moment we create it).
     const locCheck = await db.query(
-      `SELECT l.id, COALESCE(c.hardware_platform, 'kisi') AS hardware_platform
-       FROM locations l JOIN clients c ON c.id = l.client_id
-       WHERE l.id = $1 AND l.client_id = $2`,
+      `SELECT l.id, COALESCE(cs.hardware_platform, 'kisi') AS hardware_platform
+         FROM locations l
+         LEFT JOIN connector_subscriptions cs ON cs.client_id = l.client_id AND cs.status = 'active'
+        WHERE l.id = $1 AND l.client_id = $2`,
       [locationId, clientId]
     );
     if (!locCheck.rows.length) return res.status(404).json({ error: 'Location not found' });
@@ -952,22 +995,60 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
 // are provisioned would leave them in the wrong hardware system with no sync.
 router.patch('/:clientId/locations/:locationId', async (req, res) => {
   const { clientId, locationId } = req.params;
-  const ALLOWED = ['name', 'city', 'state', 'tier'];
-  const updates = {};
-  for (const f of ALLOWED) {
-    if (req.body[f] !== undefined) updates[f] = req.body[f];
+  // Post-migration: tier moved to billing_subscriptions; name/city/state stay on locations.
+  // Split the update across the two tables so a single PATCH can touch both.
+  const LOCATION_FIELDS = ['name', 'city', 'state'];
+  const locationUpdates = {};
+  for (const f of LOCATION_FIELDS) {
+    if (req.body[f] !== undefined) locationUpdates[f] = req.body[f];
   }
-  if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields to update' });
+  const tierUpdate = req.body.tier !== undefined ? req.body.tier : undefined;
+  if (!Object.keys(locationUpdates).length && tierUpdate === undefined) {
+    return res.status(400).json({ error: 'No valid fields to update' });
+  }
   try {
-    const setClauses = Object.keys(updates).map((k, i) => `${k} = $${i + 3}`);
-    const values = [locationId, clientId, ...Object.values(updates)];
-    const result = await db.query(
-      `UPDATE locations SET ${setClauses.join(', ')} WHERE id = $1 AND client_id = $2
-       RETURNING id, name, city, state, tier, hardware_platform, subscription_status`,
-      values
+    let locationRow = null;
+    if (Object.keys(locationUpdates).length) {
+      const setClauses = Object.keys(locationUpdates).map((k, i) => `${k} = $${i + 3}`);
+      const values = [locationId, clientId, ...Object.values(locationUpdates)];
+      const result = await db.query(
+        `UPDATE locations SET ${setClauses.join(', ')} WHERE id = $1 AND client_id = $2
+         RETURNING id, name, city, state`,
+        values
+      );
+      if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
+      locationRow = result.rows[0];
+    } else {
+      const check = await db.query(
+        'SELECT id, name, city, state FROM locations WHERE id = $1 AND client_id = $2',
+        [locationId, clientId]
+      );
+      if (!check.rows.length) return res.status(404).json({ error: 'Location not found' });
+      locationRow = check.rows[0];
+    }
+    // Tier — UPSERT into billing_subscriptions
+    if (tierUpdate !== undefined) {
+      await db.query(
+        `INSERT INTO billing_subscriptions (client_id, location_id, tier, status)
+         VALUES ($1, $2, $3, 'inactive')
+         ON CONFLICT (client_id, location_id) DO UPDATE
+           SET tier = EXCLUDED.tier, updated_at = NOW()`,
+        [clientId, locationId, tierUpdate]
+      );
+    }
+    // Re-read merged view for the response
+    const enriched = await db.query(
+      `SELECT l.id, l.name, l.city, l.state,
+              cs.hardware_platform,
+              bs.tier,
+              COALESCE(bs.status, 'inactive') AS subscription_status
+         FROM locations l
+         LEFT JOIN connector_subscriptions cs ON cs.client_id = l.client_id AND cs.status = 'active'
+         LEFT JOIN billing_subscriptions   bs ON bs.location_id = l.id AND bs.client_id = l.client_id
+        WHERE l.id = $1 AND l.client_id = $2`,
+      [locationId, clientId]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'Location not found' });
-    res.json({ ok: true, location: result.rows[0] });
+    res.json({ ok: true, location: enriched.rows[0] || locationRow });
   } catch (err) {
     log.error('operator.location.patch_failed', { clientId, locationId }, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -1064,17 +1145,18 @@ router.get('/:clientId/locations', async (req, res) => {
         // DISTINCT ON (l.id) prevents row-multiplication when a location has multiple
         // billing_subscriptions rows (accumulated migrations or duplicate inserts).
         // Prefer 'active' billing subscription, then most recent.
+        // Post-migration: hardware_platform comes from connector_subscriptions only.
+        // Drop the COALESCE to clients/locations — Q1 ruling, no fallback to retired columns.
         `SELECT DISTINCT ON (l.id)
                 l.id, l.name, l.city, l.state,
                 COALESCE(bs.status, 'inactive') AS subscription_status,
                 bs.tier,
                 bs.subscribed_at,
-                COALESCE(l.hardware_platform, c.hardware_platform) AS hardware_platform,
+                cs.hardware_platform,
                 l.notification_email,
                 (cs.hardware_api_key IS NOT NULL) AS has_location_key,
                 (cs.hardware_api_key IS NOT NULL) AS has_key
          FROM locations l
-         JOIN clients c ON c.id = l.client_id
          LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
          LEFT JOIN connector_subscriptions cs ON cs.client_id = l.client_id AND cs.status = 'active'
          WHERE l.client_id = $1
