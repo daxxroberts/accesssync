@@ -39,10 +39,9 @@ router.get('/', async (req, res) => {
     const limitIdx  = params.length - 1;
     const offsetIdx = params.length;
 
-    // Post-migration: error_queue.member_id references member_access.id.
-    // JOIN through to member_master for the affected person, plus a self-JOIN
-    // through ma.sub_master_id to surface the holder when the affected person
-    // is a sub-member (Q3 ruling 2026-05-11: show sub-member identity + holder context).
+    // JOIN through member_access -> member_master for the affected person, plus a
+    // self-JOIN through ma.sub_master_id to surface the holder when the affected
+    // person is a sub-member.
     const result = await db.query(
       `SELECT eq.*,
               c.name AS client_name,
@@ -82,8 +81,8 @@ router.get('/', async (req, res) => {
 // ── GET /admin/errors/:id ──────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
-    // Same post-migration JOIN as the list endpoint, plus full member identity
-    // fields (platform_member_id, source_platform) for the detail view.
+    // Same JOIN as the list endpoint, plus full member identity
+    // (platform_member_id, source_platform) for the detail view.
     const result = await db.query(
       `SELECT eq.*,
               c.name AS client_name,

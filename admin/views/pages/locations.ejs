@@ -701,9 +701,12 @@
         ? '<div class="loc-address">' + esc(loc.city) + (loc.state ? ', ' + esc(loc.state) : '') + '</div>'
         : '';
 
-      var platform = loc.hardware_platform || 'kisi';
-      var keyStatusLabel = loc.has_key
-        ? '<span class="config-row-status set">✓ Key set' + (loc.has_location_key ? ' (override)' : ' (org)') + '</span>'
+      var billingTier      = loc.billing && loc.billing.tier ? loc.billing.tier : null;
+      var billingStatus    = loc.billing && loc.billing.status ? loc.billing.status : 'inactive';
+      var connectorPlatform = loc.connector && loc.connector.platform ? loc.connector.platform : null;
+      var hasKey           = !!(loc.connector && loc.connector.has_key);
+      var keyStatusLabel = hasKey
+        ? '<span class="config-row-status set">✓ Key set</span>'
         : '<span class="config-row-status warn">✗ Not set</span>';
       var locEmail = loc.notification_email;
       var emailStatusLabel = locEmail
@@ -720,7 +723,7 @@
             '<div class="loc-name">' + esc(loc.name) + '</div>' +
             addressHTML +
           '</div>' +
-          '<div class="loc-pills">' + subPill(loc.subscription_status) + '</div>' +
+          '<div class="loc-pills">' + subPill(billingStatus) + '</div>' +
           '<button class="btn btn-sm btn-ghost" onclick="toggleEditLocation(\'' + loc.id + '\')" title="Edit name/address">Edit</button>' +
         '</div>' +
         // ── Edit name/address form
@@ -744,8 +747,8 @@
             '<div class="config-row">' +
               '<div class="config-row-header">' +
                 '<span class="config-row-label">Tier</span>' +
-                (loc.tier
-                  ? '<span class="config-row-status set">' + esc(loc.tier) + '</span>'
+                (billingTier
+                  ? '<span class="config-row-status set">' + esc(billingTier) + '</span>'
                   : '<select class="config-select" id="tier-' + loc.id + '" onchange="saveLocTier(\'' + loc.id + '\')">' +
                       '<option value="" selected>Not set</option>' +
                       '<option value="Base">Base</option>' +
@@ -759,8 +762,8 @@
             '<div class="config-row">' +
               '<div class="config-row-header">' +
                 '<span class="config-row-label">Platform</span>' +
-                (loc.hardware_platform
-                  ? '<span class="config-row-status set">' + esc(loc.hardware_platform.charAt(0).toUpperCase() + loc.hardware_platform.slice(1)) + '</span>'
+                (connectorPlatform
+                  ? '<span class="config-row-status set">' + esc(connectorPlatform.charAt(0).toUpperCase() + connectorPlatform.slice(1)) + '</span>'
                   : '<select class="config-select" id="platform-' + loc.id + '" onchange="saveLocPlatform(\'' + loc.id + '\')">' +
                       '<option value="kisi" selected>Kisi</option>' +
                     '</select>'
@@ -775,7 +778,7 @@
                 '<div style="display:flex;gap:6px;">' +
                   '<button class="btn btn-sm btn-ghost" id="test-' + loc.id + '" onclick="testLocKey(\'' + loc.id + '\')">Test</button>' +
                   '<button class="btn btn-sm btn-secondary" onclick="toggleLocKeyForm(\'' + loc.id + '\')">' +
-                    (loc.has_location_key ? 'Rotate' : 'Set Key') +
+                    (hasKey ? 'Rotate' : 'Set Key') +
                   '</button>' +
                 '</div>' +
               '</div>' +
@@ -819,7 +822,7 @@
             '<div class="loc-stat"><div class="loc-stat-val" style="color:' + errorColor + '">' + loc.error_count + '</div><div class="loc-stat-lbl">Errors</div></div>' +
           '</div>' +
           '<div class="loc-actions">' +
-            (loc.subscription_status === 'active'
+            (billingStatus === 'active'
               ? '<button class="btn btn-sm btn-danger" onclick="suspendLocation(\'' + loc.id + '\')">Suspend Location</button>'
               : '<button class="btn btn-sm btn-secondary" onclick="reactivateLocation(\'' + loc.id + '\')">Reactivate Location</button>'
             ) +
@@ -863,9 +866,12 @@
           })
             .then(function(r) { return r.json(); })
             .then(function(actData) {
-              loc.subscription_status = actData.ok ? 'active' : loc.subscription_status;
-              loc.has_location_key = false;
-              loc.hardware_platform = null;
+              // Newly-created location: build nested billing/connector shape from what we just wrote.
+              var newBillingStatus = actData.ok ? 'active' : ((loc.billing && loc.billing.status) || 'inactive');
+              loc.billing = (loc.billing && loc.billing.tier) || tier
+                ? { tier: loc.billing && loc.billing.tier ? loc.billing.tier : (tier || null), status: newBillingStatus, subscribed_at: null }
+                : { tier: null, status: newBillingStatus, subscribed_at: null };
+              loc.connector = null;  // No connector_subscriptions row until key is set
               loc.notification_email = null;
               loc.door_count  = 0;
               loc.plan_count  = 0;
@@ -938,7 +944,10 @@
         .then(function(data) {
           if (!data.ok) { toast(data.error || 'Save failed', 'error'); return; }
           var loc = state.locations.find(function(l) { return l.id === locationId; });
-          if (loc) loc.tier = data.location.tier;
+          if (loc) {
+            loc.billing = data.location.billing || { tier: null, status: 'inactive' };
+            renderLocations();
+          }
           toast('Tier updated', 'success');
         })
         .catch(function() { toast('Save failed', 'error'); });
@@ -956,7 +965,10 @@
         .then(function(data) {
           if (!data.ok) { toast(data.error || 'Save failed', 'error'); return; }
           var loc = state.locations.find(function(l) { return l.id === locationId; });
-          if (loc) loc.hardware_platform = data.location.hardware_platform;
+          if (loc) {
+            loc.connector = data.location.connector || null;
+            renderLocations();
+          }
           toast('Platform updated', 'success');
         })
         .catch(function() { toast('Save failed', 'error'); });
@@ -1017,7 +1029,11 @@
           if (data.ok) {
             toast('Location API key override saved', 'success');
             var loc = state.locations.find(function(l) { return l.id === locationId; });
-            if (loc) { loc.has_location_key = true; }
+            if (loc) {
+              loc.connector = loc.connector || { platform: 'kisi' };
+              loc.connector.has_key = true;
+              renderLocations();
+            }
             renderLocations();
             document.getElementById('keyinput-' + locationId).value = '';
           } else {
@@ -1063,7 +1079,11 @@
           if (data.ok) {
             toast('Location suspended — ' + (data.suspended || 0) + ' member(s) affected', 'success');
             var loc = state.locations.find(function(l) { return l.id === locationId; });
-            if (loc) { loc.subscription_status = 'lapsed'; }
+            if (loc) {
+              loc.billing = loc.billing || {};
+              loc.billing.status = 'lapsed';
+              renderLocations();
+            }
             renderLocations();
           } else {
             toast(data.error || 'Suspend failed', 'error');
@@ -1082,7 +1102,11 @@
           if (data.ok) {
             toast('Location reactivated', 'success');
             var loc = state.locations.find(function(l) { return l.id === locationId; });
-            if (loc) { loc.subscription_status = 'active'; }
+            if (loc) {
+              loc.billing = loc.billing || {};
+              loc.billing.status = 'active';
+              renderLocations();
+            }
             renderLocations();
           } else {
             toast(data.error || 'Reactivate failed', 'error');

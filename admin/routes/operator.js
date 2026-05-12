@@ -90,7 +90,6 @@ async function resolveApiKey(clientId, locationId) {
  */
 async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, newStatus, oldStatus) {
   try {
-    // Post-migration: hardware_platform comes from connector_subscriptions, not clients.
     const mapping = await db.query(
       `SELECT pm.source_plan_id, pm.location_id, cs.hardware_platform
        FROM plan_mappings pm
@@ -423,8 +422,6 @@ router.get('/site-id/verify', requireInviteToken, async (req, res) => {
   }
 
   try {
-    // Post-migration: hardware_platform on connector_subscriptions, tier on
-    // billing_subscriptions. Same query, just sourced from the new tables.
     const existing = await db.query(
       `SELECT c.id, c.name,
               cs.hardware_platform,
@@ -532,9 +529,8 @@ router.post('/clients/:clientId/locations', requireInviteToken, async (req, res)
     const clientCheck = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
     if (!clientCheck.rows.length) return res.status(404).json({ error: 'Client not found' });
 
-    // Post-migration: tier + subscription_status no longer live on locations.
-    // Split into two INSERTs — locations row, then a paired billing_subscriptions
-    // row (status='inactive' until activate endpoint fires).
+    // Two INSERTs — locations row, then a paired billing_subscriptions row
+    // ('inactive' until activate endpoint fires).
     const result = await db.query(
       `INSERT INTO locations (client_id, name, city, state, created_at)
        VALUES ($1, $2, $3, $4, NOW())
@@ -600,9 +596,7 @@ router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) =
 router.post('/clients/:clientId/locations/:locationId/activate', requireInviteToken, async (req, res) => {
   const { clientId, locationId } = req.params;
   try {
-    // Post-migration: subscription_status moved to billing_subscriptions.status.
-    // Activate by updating bs status; if no bs row exists yet, create one (handles
-    // legacy rows or operators who created the location before bs was a thing).
+    // Activate by updating bs.status; create bs row if it doesn't exist yet.
     const bsUpdate = await db.query(
       `UPDATE billing_subscriptions
          SET status = 'active', subscribed_at = NOW(), updated_at = NOW()
@@ -834,9 +828,9 @@ router.patch('/clients/:clientId', async (req, res) => {
 router.get('/:clientId', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const [clientResult, errorCount, activeMembers, totalMembers, locationCount, pendingHardware, hardwareKeyResult] = await Promise.all([
+    const [clientResult, errorCount, activeMembers, totalMembers, locationCount, pendingHardware, connectorResult, billingTierResult] = await Promise.all([
       db.query(
-        `SELECT id, name, source_site_url, source_site_name, platform, hardware_platform, tier,
+        `SELECT id, name, source_site_url, source_site_name, platform,
                 last_sync_at, last_webhook_at
          FROM clients WHERE id = $1`,
         [clientId]
@@ -867,9 +861,16 @@ router.get('/:clientId', async (req, res) => {
         [clientId]
       ),
       db.query(
-        `SELECT 1 FROM connector_subscriptions
-         WHERE client_id = $1 AND hardware_api_key IS NOT NULL AND status = 'active'
+        `SELECT hardware_platform, (hardware_api_key IS NOT NULL) AS has_key
+         FROM connector_subscriptions
+         WHERE client_id = $1 AND status = 'active'
          LIMIT 1`,
+        [clientId]
+      ),
+      db.query(
+        `SELECT (ARRAY_AGG(tier ORDER BY subscribed_at DESC NULLS LAST))[1] AS tier
+         FROM billing_subscriptions
+         WHERE client_id = $1 AND status = 'active'`,
         [clientId]
       ),
     ]);
@@ -878,9 +879,25 @@ router.get('/:clientId', async (req, res) => {
       return res.status(404).json({ error: 'Client not found' });
     }
 
+    const c = clientResult.rows[0];
+    const connector = connectorResult.rows[0] || null;
+    const billingTier = billingTierResult.rows[0]?.tier || null;
+
     res.json({
-      client: clientResult.rows[0],
-      has_hardware_key: hardwareKeyResult.rows.length > 0,
+      client: {
+        id:                c.id,
+        name:              c.name,
+        source_site_url:   c.source_site_url,
+        source_site_name:  c.source_site_name,
+        platform:          c.platform,
+        last_sync_at:      c.last_sync_at,
+        last_webhook_at:   c.last_webhook_at,
+        billing: billingTier === null ? null : { tier: billingTier },
+        connector: connector === null ? null : {
+          platform: connector.hardware_platform,
+          has_key:  connector.has_key,
+        },
+      },
       stats: {
         error_count:      errorCount.rows[0].count,
         active_members:   activeMembers.rows[0].count,
@@ -953,8 +970,7 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
     }
     const encrypted = encryptApiKey(apiKey.trim());
     // Verify the location exists and resolve hardware_platform for the UNIQUE key.
-    // Post-migration: hardware_platform comes from connector_subscriptions. Default
-    // to 'kisi' on first key set (no cs row exists yet — this is the moment we create it).
+    // Default to 'kisi' on first key set (no cs row exists yet — this UPSERT creates it).
     const locCheck = await db.query(
       `SELECT l.id, COALESCE(cs.hardware_platform, 'kisi') AS hardware_platform
          FROM locations l
@@ -995,7 +1011,7 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
 // are provisioned would leave them in the wrong hardware system with no sync.
 router.patch('/:clientId/locations/:locationId', async (req, res) => {
   const { clientId, locationId } = req.params;
-  // Post-migration: tier moved to billing_subscriptions; name/city/state stay on locations.
+  // tier lives on billing_subscriptions; name/city/state live on locations.
   // Split the update across the two tables so a single PATCH can touch both.
   const LOCATION_FIELDS = ['name', 'city', 'state'];
   const locationUpdates = {};
@@ -1036,19 +1052,37 @@ router.patch('/:clientId/locations/:locationId', async (req, res) => {
         [clientId, locationId, tierUpdate]
       );
     }
-    // Re-read merged view for the response
+    // Re-read merged view for the response (nested shape)
     const enriched = await db.query(
       `SELECT l.id, l.name, l.city, l.state,
-              cs.hardware_platform,
-              bs.tier,
-              COALESCE(bs.status, 'inactive') AS subscription_status
+              cs.hardware_platform AS connector_platform,
+              bs.tier              AS billing_tier,
+              bs.status            AS billing_status
          FROM locations l
          LEFT JOIN connector_subscriptions cs ON cs.client_id = l.client_id AND cs.status = 'active'
          LEFT JOIN billing_subscriptions   bs ON bs.location_id = l.id AND bs.client_id = l.client_id
         WHERE l.id = $1 AND l.client_id = $2`,
       [locationId, clientId]
     );
-    res.json({ ok: true, location: enriched.rows[0] || locationRow });
+    const e = enriched.rows[0];
+    if (!e) {
+      // Fall back to locationRow if the JOIN somehow returned nothing
+      return res.json({ ok: true, location: { ...locationRow, billing: null, connector: null } });
+    }
+    res.json({
+      ok: true,
+      location: {
+        id:    e.id,
+        name:  e.name,
+        city:  e.city,
+        state: e.state,
+        billing: e.billing_status === null && e.billing_tier === null ? null : {
+          tier:   e.billing_tier,
+          status: e.billing_status || 'inactive',
+        },
+        connector: e.connector_platform === null ? null : { platform: e.connector_platform },
+      },
+    });
   } catch (err) {
     log.error('operator.location.patch_failed', { clientId, locationId }, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -1145,17 +1179,14 @@ router.get('/:clientId/locations', async (req, res) => {
         // DISTINCT ON (l.id) prevents row-multiplication when a location has multiple
         // billing_subscriptions rows (accumulated migrations or duplicate inserts).
         // Prefer 'active' billing subscription, then most recent.
-        // Post-migration: hardware_platform comes from connector_subscriptions only.
-        // Drop the COALESCE to clients/locations — Q1 ruling, no fallback to retired columns.
         `SELECT DISTINCT ON (l.id)
                 l.id, l.name, l.city, l.state,
-                COALESCE(bs.status, 'inactive') AS subscription_status,
-                bs.tier,
-                bs.subscribed_at,
-                cs.hardware_platform,
-                l.notification_email,
-                (cs.hardware_api_key IS NOT NULL) AS has_location_key,
-                (cs.hardware_api_key IS NOT NULL) AS has_key
+                bs.status            AS billing_status,
+                bs.tier              AS billing_tier,
+                bs.subscribed_at     AS billing_subscribed_at,
+                cs.hardware_platform AS connector_platform,
+                (cs.hardware_api_key IS NOT NULL) AS connector_has_key,
+                l.notification_email
          FROM locations l
          LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
          LEFT JOIN connector_subscriptions cs ON cs.client_id = l.client_id AND cs.status = 'active'
@@ -1190,10 +1221,23 @@ router.get('/:clientId/locations', async (req, res) => {
 
     res.json({
       locations: locations.rows.map(loc => ({
-        ...loc,
-        error_count:      errMap[loc.id] || 0,
-        door_count:       doorMap[loc.id] || 0,
-        plan_count:       planMap[loc.id] || 0,
+        id:                 loc.id,
+        name:               loc.name,
+        city:               loc.city,
+        state:              loc.state,
+        notification_email: loc.notification_email,
+        billing: loc.billing_tier === null && loc.billing_status === null ? null : {
+          tier:          loc.billing_tier,
+          status:        loc.billing_status || 'inactive',
+          subscribed_at: loc.billing_subscribed_at,
+        },
+        connector: loc.connector_platform === null ? null : {
+          platform: loc.connector_platform,
+          has_key:  loc.connector_has_key,
+        },
+        error_count: errMap[loc.id] || 0,
+        door_count:  doorMap[loc.id] || 0,
+        plan_count:  planMap[loc.id] || 0,
       })),
     });
   } catch (err) {
@@ -1240,10 +1284,8 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
         [clientId, locationId]
       ),
       db.query(
-        // Active members at this location. Pre-migration filtered out
-        // member_identity.sub_member_status IN ('removing','deleted'); new schema tracks
-        // sub-member lifecycle via member_access.status, so filter to status='active' which
-        // already excludes removing/deleted/revoked/cancelled rows.
+        // Active members at this location.
+        // status='active' excludes removing/deleted/revoked/cancelled rows for sub-members.
         `SELECT ma.id, mm.platform_member_id, ma.status, ma.provisioned_at, ma.updated_at,
                 mm.first_name, mm.last_name, mm.email,
                 COALESCE(mm.display_name,
@@ -1765,8 +1807,7 @@ router.get('/:clientId/members', async (req, res) => {
     const conditions = ['ma.client_id = $1'];
 
     // DR-044: exclude soft-deleted and in-flight-removing sub-members from operator listing.
-    // Pre-migration filtered member_identity.sub_member_status; new schema tracks the same
-    // lifecycle via member_access.status. 'deleted' and 'removing' are sub-member-specific.
+    // 'deleted' and 'removing' are sub-member-specific lifecycle states on member_access.status.
     conditions.push(`ma.status NOT IN ('deleted', 'removing')`);
 
     if (status && status !== 'all') {
@@ -2244,7 +2285,7 @@ router.get('/:clientId/access-stats', async (req, res) => {
 // Computes purchase→provisioned timing from existing tables — no new columns needed.
 // T0 = webhook_log.received_at          (purchase webhook received)
 // T1 = processed_event_ids.processed_at (job enqueued)
-// T2 = member_access_sources.created_at (Kisi role recorded — was mra.created_at pre-migration)
+// T2 = member_access_sources.created_at (Kisi role recorded)
 // Intervals: ingest (T1-T0), processing (T2-T1), total (T2-T0)
 router.get('/:clientId/latency-stats', async (req, res) => {
   const { clientId } = req.params;

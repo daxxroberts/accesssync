@@ -40,7 +40,7 @@ class StandardAdapter {
    * @param {string|null} hardwarePlatform  null for revoke path
    * @returns {Object|null}
    */
-  async resolveAndLock(tenantId, event, hardwarePlatform, planMappingId = null) {
+  async resolveAndLock(tenantId, event, hardwarePlatform, planMappingId) {
     const dbClient = await db.getClient();
     try {
       await dbClient.query('BEGIN');

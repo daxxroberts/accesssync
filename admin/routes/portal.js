@@ -39,7 +39,6 @@ router.get('/', requireWixInstance, async (req, res) => {
 
   try {
     // Check setup status — not set up if no API key AND no locations.
-    // Post-migration: hardware_api_key lives on connector_subscriptions, not clients.
     const [keyResult, locationResult] = await Promise.all([
       db.query(
         `SELECT 1 FROM connector_subscriptions

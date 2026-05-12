@@ -110,7 +110,7 @@ async function _processJobBody(job, traceId) {
       // payment.recovered: user is suspended — re-enable only (no new role assignments)
       if (standardEvent.eventType === 'payment.recovered') {
         lastStep = 'grant.recovered.resolve_lock';
-        const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null);
+        const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null, null);
         if (!lockResult) {
           logger.warn('queue.grant.recovered.no_identity', {
             clientId, eventId,
@@ -229,8 +229,9 @@ async function _processJobBody(job, traceId) {
         return;
       }
       if (mappings.length === 0) {
-        // Plan recognized but no hardware group mapped yet (Wix-first flow) — park member
-        const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, 'kisi');
+        // Plan recognized but no hardware group mapped yet (Wix-first flow) — park member.
+        // planMappingId=null because no mapping exists; the row gets created without a plan binding.
+        const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, 'kisi', null);
         memberId = lockResult.memberId;
         await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
         logger.info('queue.grant.parked.no_mapping', {
@@ -360,9 +361,10 @@ async function _processJobBody(job, traceId) {
       });
 
     } else if (job.name === 'revoke') {
-      // Step 1: Resolve identity + acquire lock (reads hardwarePlatform from existing row)
+      // Step 1: Resolve identity + acquire lock (reads hardwarePlatform from existing row).
+      // Revoke is per-member (all access rows), not per-plan — planMappingId=null.
       lastStep = 'revoke.resolve_and_lock';
-      const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null);
+      const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, null, null);
 
       if (!lockResult) {
         logger.warn('queue.revoke.no_identity', {

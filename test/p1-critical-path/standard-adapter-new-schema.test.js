@@ -154,7 +154,7 @@ describe('[P1] resolveAndLock REVOKE — SELECTs member_access via member_master
     db.getClient.mockResolvedValue(dbClient);
     db.query.mockResolvedValue({ rows: [] }); // _incrementActivity
 
-    const result = await adapter.resolveAndLock(TENANT_ID, standardEvent, null);
+    const result = await adapter.resolveAndLock(TENANT_ID, standardEvent, null, null);
 
     expect(result.memberId).toBe(MEMBER_ACCESS_ID);
     expect(result.hardwareUserId).toBe(HARDWARE_USER_ID);
@@ -195,7 +195,7 @@ describe('[P1] FOR UPDATE NOWAIT contention — Postgres 55P03 → IN_FLIGHT_LOC
     db.getClient.mockResolvedValue(dbClient);
 
     await expect(
-      adapter.resolveAndLock(TENANT_ID, standardEvent, 'kisi')
+      adapter.resolveAndLock(TENANT_ID, standardEvent, 'kisi', PLAN_MAPPING_ID)
     ).rejects.toMatchObject({ code: 'IN_FLIGHT_LOCK' });
   });
 
@@ -213,7 +213,7 @@ describe('[P1] FOR UPDATE NOWAIT contention — Postgres 55P03 → IN_FLIGHT_LOC
     });
 
     await expect(
-      adapter.resolveAndLock(TENANT_ID, standardEvent, 'kisi')
+      adapter.resolveAndLock(TENANT_ID, standardEvent, 'kisi', PLAN_MAPPING_ID)
     ).rejects.toMatchObject({ code: '23505' });
   });
 });

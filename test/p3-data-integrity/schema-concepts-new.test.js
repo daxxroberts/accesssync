@@ -241,7 +241,7 @@ describe('[P3] member_master UPSERT idempotency — same (client_id, platform, m
       planMappingId:    'pm-uuid-001',
     };
 
-    const result = await standardAdapter.resolveAndLock(HOG_CLIENT_ID, event, 'kisi');
+    const result = await standardAdapter.resolveAndLock(HOG_CLIENT_ID, event, 'kisi', event.planMappingId);
 
     expect(result.memberId).toBe(MEMBER_INTERNAL_ID);
 

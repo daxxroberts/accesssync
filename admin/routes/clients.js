@@ -43,9 +43,6 @@ async function activateLocationMembersAdmin(clientId, locationId) {
       const groupIds = oldGroupsResult.rows.map(r => r.hardware_group_id);
       if (!groupIds.length) continue;
 
-      // Post-migration: hardware_platform comes from connector_subscriptions, not
-      // clients/locations. The dual COALESCE was a bridge during the migration —
-      // reading from cs is now canonical (Q1 ruling 2026-05-11).
       const ctxResult = await db.query(
         `SELECT cs.hardware_platform,
                 cs.hardware_api_key AS api_key_enc,
@@ -130,25 +127,20 @@ router.get('/', async (req, res) => {
       whereClause = "WHERE c.status != 'archived'";
     }
 
-    // Post-migration: hardware_platform now lives on connector_subscriptions,
-    // tier now lives on billing_subscriptions (per-location). For the clients-list
-    // surface we surface the hardware_platform (one per client) and a representative
-    // tier from any active billing subscription (operator typically has one tier
-    // across their locations; multi-tier per client is a future case).
     const result = await db.query(
       `SELECT c.id,
               c.name,
               c.platform,
               c.source_site_id,
               c.source_site_name,
-              cs.hardware_platform,
-              (ARRAY_AGG(DISTINCT bs.tier) FILTER (WHERE bs.tier IS NOT NULL))[1] AS tier,
               c.status,
               c.notification_email,
               c.last_sync_at,
               c.archived_at,
               c.created_at,
               c.updated_at,
+              cs.hardware_platform AS connector_platform,
+              (ARRAY_AGG(DISTINCT bs.tier) FILTER (WHERE bs.tier IS NOT NULL))[1] AS billing_tier,
               COUNT(DISTINCT mm.id)::int  AS member_count,
               COUNT(DISTINCT CASE WHEN ma.status = 'active' THEN mm.id END)::int AS active_count
        FROM clients c
@@ -161,7 +153,25 @@ router.get('/', async (req, res) => {
        ORDER BY c.created_at ASC`,
       params
     );
-    res.json({ data: result.rows });
+    res.json({
+      data: result.rows.map(c => ({
+        id:                 c.id,
+        name:               c.name,
+        platform:           c.platform,
+        source_site_id:     c.source_site_id,
+        source_site_name:   c.source_site_name,
+        status:             c.status,
+        notification_email: c.notification_email,
+        last_sync_at:       c.last_sync_at,
+        archived_at:        c.archived_at,
+        created_at:         c.created_at,
+        updated_at:         c.updated_at,
+        member_count:       c.member_count,
+        active_count:       c.active_count,
+        billing: c.billing_tier === null ? null : { tier: c.billing_tier },
+        connector: c.connector_platform === null ? null : { platform: c.connector_platform },
+      })),
+    });
   } catch (err) {
     log.error('admin.clients_list_error', {}, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -286,22 +296,41 @@ router.get('/:id/locations', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await db.query(
-      `SELECT l.id, l.name, l.city, l.state,
-              COALESCE(bs.status, 'inactive') AS subscription_status,
-              bs.tier, bs.subscribed_at,
-              l.created_at,
-              (cs.hardware_api_key IS NOT NULL) AS has_location_key,
+      `SELECT l.id, l.name, l.city, l.state, l.created_at,
+              bs.status            AS billing_status,
+              bs.tier              AS billing_tier,
+              bs.subscribed_at     AS billing_subscribed_at,
+              cs.hardware_platform AS connector_platform,
+              (cs.hardware_api_key IS NOT NULL) AS connector_has_key,
               COUNT(DISTINCT pm.id)::int  AS mapping_count
        FROM locations l
        LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
        LEFT JOIN connector_subscriptions cs ON cs.client_id = l.client_id AND cs.status = 'active'
        LEFT JOIN plan_mappings pm ON pm.location_id = l.id
        WHERE l.client_id = $1
-       GROUP BY l.id, bs.status, bs.tier, bs.subscribed_at, cs.hardware_api_key
+       GROUP BY l.id, bs.status, bs.tier, bs.subscribed_at, cs.hardware_platform, cs.hardware_api_key
        ORDER BY l.created_at ASC`,
       [id]
     );
-    res.json({ data: result.rows });
+    res.json({
+      data: result.rows.map(loc => ({
+        id:            loc.id,
+        name:          loc.name,
+        city:          loc.city,
+        state:         loc.state,
+        created_at:    loc.created_at,
+        mapping_count: loc.mapping_count,
+        billing: loc.billing_status === null && loc.billing_tier === null ? null : {
+          tier:          loc.billing_tier,
+          status:        loc.billing_status || 'inactive',
+          subscribed_at: loc.billing_subscribed_at,
+        },
+        connector: loc.connector_platform === null ? null : {
+          platform: loc.connector_platform,
+          has_key:  loc.connector_has_key,
+        },
+      })),
+    });
   } catch (err) {
     log.error('admin.clients_locations_error', {}, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -419,9 +448,8 @@ router.post('/:id/locations/:locationId/api-key', async (req, res) => {
     if (apiKey.trim().length < 20) return res.status(400).json({ error: 'API key must be at least 20 characters' });
 
     const encrypted = encryptApiKey(apiKey.trim());
-    // Post-migration: hardware_platform comes from connector_subscriptions.
-    // Default to 'kisi' if no connector_subscriptions row exists yet — this is
-    // the operator's first key set, which is the moment we create the cs row.
+    // 'kisi' default for first-onboarding case (no connector_subscriptions row yet —
+    // this UPSERT is what creates it).
     const locCheck = await db.query(
       `SELECT l.id, l.name,
               COALESCE(cs.hardware_platform, 'kisi') AS hardware_platform

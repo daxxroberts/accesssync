@@ -1812,7 +1812,7 @@ async function runValidation() {
       const r = await apiFetch(`/operator/${state.clientId}/locations`);
       if (r && r.ok) {
         const d = await r.json();
-        locationActive = d.locations && d.locations.some(l => l.subscription_status === 'active');
+        locationActive = d.locations && d.locations.some(l => l.billing && l.billing.status === 'active');
       }
     } catch {}
   }

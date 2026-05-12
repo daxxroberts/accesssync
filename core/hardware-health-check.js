@@ -213,10 +213,7 @@ async function _reconcileGroups(loc, platform, apiKey) {
       );
     }
 
-    // Affected member count for this group.
-    // Pre-migration this counted DISTINCT member_id from member_role_assignments;
-    // member_role_assignments was folded into member_access_sources, so count
-    // distinct member_master_id via the access JOIN.
+    // Distinct member count for this (mapping, hardware_group) pair, via the access JOIN.
     const memberCount = await db.query(
       `SELECT COUNT(DISTINCT ma.member_master_id) AS cnt
        FROM member_access_sources mas

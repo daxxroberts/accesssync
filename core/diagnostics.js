@@ -64,8 +64,7 @@ async function diagnoseMember(memberId) {
     findings.push({ level: 'warn', code: 'STATUS_NOT_ACTIVE', message: `Access status is "${member.access_status}" — expected "active".` });
   }
 
-  // 2. Hardware role assignments — now stored on member_access_sources.role_assignment_id
-  //    (member_role_assignments was retired during the schema migration).
+  // 2. Hardware role assignments — stored on member_access_sources.role_assignment_id.
   const rolesResult = await db.query(
     `SELECT mas.role_assignment_id, mas.hardware_group_id, mas.mapping_id,
             mas.source_type, mas.source_plan_id, mas.created_at,

@@ -154,9 +154,8 @@ function registerTrace(traceId, opts = {}) {
       }
 
       if (opts.memberId) {
-        // Post-migration: name/email/platform_member_id live on member_master,
-        // hardware fields live on member_access. The memberId argument is
-        // member_access.id (set by resolveAndLock).
+        // memberId is member_access.id (set by resolveAndLock).
+        // name/email live on member_master; hardware fields live on member_access.
         const mr = await db.query(
           `SELECT mm.first_name, mm.last_name, mm.display_name, mm.email,
                   mm.platform_member_id, mm.source_platform,

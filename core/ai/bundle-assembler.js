@@ -255,54 +255,88 @@ async function loadWebhookPayloads(traceId) {
 }
 
 async function loadMemberSnapshot(memberId) {
-  // Post-migration shape:
-  //   identity = member_access JOIN member_master (status/hardware on access, name/email on master)
-  //   state = folded into the identity row (status, provisioned_at, scheduled_start_date now live on member_access)
-  //   roles = member_access_sources JOIN plan_mappings (member_role_assignments retired, role_assignment_id moved to source row)
-  //   sources = member_access_sources keyed by access_id (was member_id pre-migration)
   // memberId is member_access.id.
-  const identity = await db.query(
-    `SELECT ma.id, ma.client_id, mm.email, mm.first_name, mm.last_name, mm.display_name,
-            mm.platform_member_id, mm.source_platform,
-            ma.hardware_user_id, ma.hardware_platform,
-            mm.source_tag, ma.created_at, ma.updated_at,
-            ma.status, ma.provisioned_at, ma.scheduled_start_date,
-            ma.pending_plan_id, ma.sub_master_id
+  // Returns:
+  //   master  — member_master columns (person identity: email, name, platform_member_id, source_tag)
+  //   access  — member_access columns (the seat: status, hardware_user_id, hardware_platform, etc.)
+  //   sources — member_access_sources rows (the receipts justifying the seat, with plan/door denormalized)
+  const row = await db.query(
+    `SELECT mm.id           AS master_id,
+            mm.email,
+            mm.first_name,
+            mm.last_name,
+            mm.display_name,
+            mm.platform_member_id,
+            mm.source_platform,
+            mm.source_tag,
+            ma.id            AS access_id,
+            ma.client_id,
+            ma.hardware_user_id,
+            ma.hardware_platform,
+            ma.status,
+            ma.provisioned_at,
+            ma.scheduled_start_date,
+            ma.pending_plan_id,
+            ma.sub_master_id,
+            ma.created_at    AS access_created_at,
+            ma.updated_at    AS access_updated_at
        FROM member_access ma
        JOIN member_master mm ON mm.id = ma.member_master_id
       WHERE ma.id = $1`, [memberId]
   );
-  if (!identity.rows.length) return null;
+  if (!row.rows.length) return null;
+  const r = row.rows[0];
 
-  const roles = await db.query(
-    `SELECT mas.id, mas.role_assignment_id, mas.hardware_group_id, mas.created_at,
-            mas.mapping_id, pm.plan_name, pm.door_name
+  const sources = await db.query(
+    `SELECT mas.id,
+            mas.role_assignment_id,
+            mas.hardware_group_id,
+            mas.source_type,
+            mas.source_plan_id,
+            mas.mapping_id,
+            mas.effective_start,
+            mas.valid_until,
+            mas.created_at,
+            pm.plan_name,
+            pm.door_name
        FROM member_access_sources mas
        LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
       WHERE mas.access_id = $1
       ORDER BY mas.created_at ASC`, [memberId]
   );
 
-  const sources = await db.query(
-    `SELECT id, hardware_group_id, source_type, source_plan_id,
-            mapping_id, valid_until, created_at, effective_start
-       FROM member_access_sources
-      WHERE access_id = $1
-      ORDER BY created_at ASC`, [memberId]
-  );
-
   return {
-    identity: identity.rows[0],
-    state:    null, // state fields are on the identity row post-migration; kept null for shape compat
-    roles:    roles.rows,
-    sources:  sources.rows,
+    master: {
+      id:                 r.master_id,
+      email:              r.email,
+      first_name:         r.first_name,
+      last_name:          r.last_name,
+      display_name:       r.display_name,
+      platform_member_id: r.platform_member_id,
+      source_platform:    r.source_platform,
+      source_tag:         r.source_tag,
+    },
+    access: {
+      id:                   r.access_id,
+      client_id:            r.client_id,
+      hardware_user_id:     r.hardware_user_id,
+      hardware_platform:    r.hardware_platform,
+      status:               r.status,
+      provisioned_at:       r.provisioned_at,
+      scheduled_start_date: r.scheduled_start_date,
+      pending_plan_id:      r.pending_plan_id,
+      sub_master_id:        r.sub_master_id,
+      created_at:           r.access_created_at,
+      updated_at:           r.access_updated_at,
+    },
+    sources: sources.rows,
   };
 }
 
 async function loadMemberTraces(memberId, limit = MAX_MEMBER_TRACES) {
   // Pull the most recent N traces that touched this member, oldest first
   // within the window (so chronological reading is natural).
-  // Post-migration: name/email come from member_master via JOIN through member_access.
+  // name/email come from member_master via JOIN through member_access.
   const r = await db.query(
     `SELECT DISTINCT trace_id, MIN(ts) AS first_ts
        FROM v_trace_timeline
@@ -417,9 +451,8 @@ async function buildMemberBundle(memberId) {
     throw err;
   }
 
-  const identity = snapshot.identity;
-  const sourcePlatform   = identity.source_platform || null;
-  const hardwarePlatform = identity.hardware_platform || null;
+  const sourcePlatform   = snapshot.master.source_platform || null;
+  const hardwarePlatform = snapshot.access.hardware_platform || null;
 
   const traceIds = await loadMemberTraces(memberId);
 
@@ -468,9 +501,8 @@ async function buildMemberBundle(memberId) {
     .replace(/\{generated_at_iso\}/g, new Date().toISOString())
     .replace(/\{template_version\}/g, templateVersion()));
 
-  out.push('\n\n=== Member identity ===\n' + JSON.stringify(identity, null, 2));
-  out.push('\n\n=== Member access state ===\n' + JSON.stringify(snapshot.state, null, 2));
-  out.push('\n\n=== Member role assignments ===\n' + JSON.stringify(snapshot.roles, null, 2));
+  out.push('\n\n=== Member (master) ===\n' + JSON.stringify(snapshot.master, null, 2));
+  out.push('\n\n=== Member access ===\n'    + JSON.stringify(snapshot.access, null, 2));
   out.push('\n\n=== Member access sources ===\n' + JSON.stringify(snapshot.sources, null, 2));
 
   out.push(`\n\n=== Member's last ${traceIds.length} trace(s), oldest first ===`);

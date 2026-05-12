@@ -357,8 +357,7 @@ router.get('/bundle/member/:member_id', async (req, res) => {
     }
     const scopeId = scopedClientId(req, null);
     if (scopeId !== null) {
-      // Post-migration: member_id refers to member_access.id (matches the
-      // bundle-assembler interface). Existence check moves to member_access.
+      // member_id refers to member_access.id (matches the bundle-assembler interface).
       const check = await db.query(
         'SELECT 1 FROM member_access WHERE id = $1 AND client_id = $2 LIMIT 1',
         [memberId, scopeId]

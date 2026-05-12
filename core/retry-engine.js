@@ -53,10 +53,8 @@ class RetryEngine {
    */
   async _moveToDeadLetter(tenantId, platformMemberId, eventType, standardEvent, error) {
     try {
-      // Resolve internal member_master.id from (client_id, source_platform, platform_member_id).
-      // Pre-migration this read from member_identity; the table was retired during the
-      // schema restructure. This was returning null on every error_queue row, breaking the
-      // operator's "View incident" drawer (sent /members/null/diagnose).
+      // Resolve internal member_master.id from (client_id, source_platform, platform_member_id)
+      // so error_queue.member_id can be set for the operator's "View incident" drawer.
       let memberId = null;
       if (tenantId && platformMemberId) {
         const identityResult = await db.query(
