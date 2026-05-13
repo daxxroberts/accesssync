@@ -444,7 +444,12 @@ router.get('/site-id/verify', requireInviteToken, async (req, res) => {
       return res.json({
         valid: false,
         alreadyRegistered: true,
-        client: { id: c.id, name: c.name, tier: c.tier, hardware_platform: c.hardware_platform, has_api_key: c.has_api_key },
+        client: {
+          id: c.id,
+          name: c.name,
+          billing:   c.tier === null ? null : { tier: c.tier },
+          connector: c.hardware_platform === null ? null : { platform: c.hardware_platform, has_key: c.has_api_key },
+        },
         locations: locs.rows,
       });
     }
@@ -566,9 +571,13 @@ router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) =
       return res.status(400).json({ error: 'apiKey is required' });
     }
     const encrypted = encryptApiKey(apiKey.trim());
-    const platformRow = await db.query('SELECT hardware_platform FROM clients WHERE id = $1', [clientId]);
-    if (!platformRow.rows.length) return res.status(404).json({ error: 'Client not found' });
-    const hwPlatform = platformRow.rows[0].hardware_platform || 'kisi';
+    const clientCheck = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!clientCheck.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const existingCs = await db.query(
+      `SELECT hardware_platform FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+      [clientId]
+    );
+    const hwPlatform = existingCs.rows[0]?.hardware_platform || 'kisi';
     await db.query(
       `INSERT INTO connector_subscriptions (client_id, hardware_platform, hardware_api_key, status, updated_at)
        VALUES ($1, $2, $3, 'active', NOW())
@@ -731,10 +740,13 @@ router.put('/clients/:clientId/api-key', async (req, res) => {
       return res.status(400).json({ error: 'apiKey is required' });
     }
     const encrypted = encryptApiKey(apiKey.trim());
-    // Resolve hardware_platform from clients (needed for UNIQUE(client_id, hardware_platform))
-    const platformRow = await db.query('SELECT hardware_platform FROM clients WHERE id = $1', [clientId]);
-    if (!platformRow.rows.length) return res.status(404).json({ error: 'Client not found' });
-    const hwPlatform = platformRow.rows[0].hardware_platform || 'kisi';
+    const clientCheck = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!clientCheck.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const existingCs = await db.query(
+      `SELECT hardware_platform FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+      [clientId]
+    );
+    const hwPlatform = existingCs.rows[0]?.hardware_platform || 'kisi';
     const result = await db.query(
       `INSERT INTO connector_subscriptions (client_id, hardware_platform, hardware_api_key, status, updated_at)
        VALUES ($1, $2, $3, 'active', NOW())
@@ -754,8 +766,7 @@ router.put('/clients/:clientId/api-key', async (req, res) => {
     res.json({ ok: true, message: 'API key updated', pendingRetried: retried });
 
     // GAP 7: validate new key can reach all active groups — writes config_alert_log on failure
-    const clientRow = await db.query('SELECT hardware_platform FROM clients WHERE id = $1', [clientId]);
-    validateApiKeyGroups(clientId, apiKey.trim(), clientRow.rows[0]?.hardware_platform)
+    validateApiKeyGroups(clientId, apiKey.trim(), hwPlatform)
       .catch(err => log.warn('operator.apikey.validation_fire_forget_failed', { clientId }, err));
   } catch (err) {
     log.error('operator.apikey.update_failed', { clientId }, err);
@@ -2548,9 +2559,11 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
   try {
     const clientResult = await db.query(
-      `SELECT id, source_site_id, source_api_key, hardware_api_key, hardware_platform,
-              last_active_member_count
-       FROM clients WHERE id = $1 AND status = 'active'`,
+      `SELECT c.id, c.source_site_id, c.source_api_key, c.last_active_member_count,
+              cs.hardware_api_key, cs.hardware_platform
+       FROM clients c
+       LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
+       WHERE c.id = $1 AND c.status = 'active'`,
       [clientId]
     );
     if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });

@@ -227,9 +227,15 @@ router.post('/:id/api-key', async (req, res) => {
       return res.status(400).json({ error: 'API key too short — must be at least 20 characters' });
     }
     const encrypted = encryptApiKey(apiKey.trim());
-    const clientRow = await db.query('SELECT id, name, hardware_platform FROM clients WHERE id = $1', [id]);
+    const clientRow = await db.query(
+      `SELECT c.id, c.name, COALESCE(cs.hardware_platform, 'kisi') AS hardware_platform
+         FROM clients c
+         LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
+        WHERE c.id = $1`,
+      [id]
+    );
     if (!clientRow.rows.length) return res.status(404).json({ error: 'Client not found' });
-    const hwPlatform = clientRow.rows[0].hardware_platform || 'kisi';
+    const hwPlatform = clientRow.rows[0].hardware_platform;
     await db.query(
       `INSERT INTO connector_subscriptions (client_id, hardware_platform, hardware_api_key, status, updated_at)
        VALUES ($1, $2, $3, 'active', NOW())

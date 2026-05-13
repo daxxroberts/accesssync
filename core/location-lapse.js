@@ -3,7 +3,7 @@
  * @layer core/layer4
  * @role subscription-lapse
  * @reads locations, clients, connector_subscriptions, member_access, plan_mappings
- * @writes member_access, member_access_log, locations.subscription_status
+ * @writes member_access, member_access_log, billing_subscriptions.status
  * @calls hardware-adapter (suspendAccess)
  * @exports suspendLocationMembers(locationId, clientId, targetStatus)
  * @dr DR-027, DR-028
@@ -48,15 +48,16 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
     throw new Error(`[LocationLapse] Invalid targetStatus: ${targetStatus}`);
   }
 
-  // 1. Resolve client + location context via connector_subscriptions
+  // 1. Resolve client + location context via connector_subscriptions + billing_subscriptions
   const ctxResult = await db.query(
     `SELECT cs.hardware_platform,
-            cs.hardware_api_key  AS enc_key,
-            l.name               AS location_name,
-            l.subscription_status AS current_status
+            cs.hardware_api_key                 AS enc_key,
+            l.name                              AS location_name,
+            COALESCE(bs.status, 'inactive')     AS current_status
      FROM locations l
      JOIN clients c ON c.id = $1
      JOIN connector_subscriptions cs ON cs.client_id = $1 AND cs.status = 'active'
+     LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
      WHERE l.id = $2 AND l.client_id = $1
      LIMIT 1`,
     [clientId, locationId]
@@ -142,8 +143,11 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
 }
 
 async function _setLocationStatus(locationId, status) {
+  // billing_subscriptions.status is now the canonical subscription state.
+  // UPSERT in case no bs row exists yet (rare — most flows create it during onboarding).
   await db.query(
-    `UPDATE locations SET subscription_status = $1 WHERE id = $2`,
+    `UPDATE billing_subscriptions SET status = $1, updated_at = NOW()
+      WHERE location_id = $2`,
     [status, locationId]
   );
 }

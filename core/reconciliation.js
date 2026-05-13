@@ -856,7 +856,8 @@ class NightlyReconciliation {
        FROM locations l
        JOIN clients c ON l.client_id = c.id
        JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
-       WHERE c.status = 'active' AND l.subscription_status = 'active'`
+       JOIN billing_subscriptions   bs ON bs.location_id = l.id AND bs.client_id = l.client_id
+       WHERE c.status = 'active' AND bs.status = 'active'`
     );
 
     for (const loc of locationsResult.rows) {

@@ -69,7 +69,7 @@
     if (!CLIENT_ID) { loadError = 'No clientId in URL'; loading = false; return; }
     try {
       const data = await apiFetch(`/operator/${CLIENT_ID}/locations`);
-      locations = (data.locations || data || []).filter(l => l.subscription_status !== 'inactive');
+      locations = (data.locations || data || []).filter(l => (l.billing && l.billing.status) !== 'inactive');
       if (locations.length) {
         activeLocId = locations[0].id;
         await loadMappings(activeLocId);

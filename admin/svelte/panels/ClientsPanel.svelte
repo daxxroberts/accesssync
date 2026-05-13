@@ -276,8 +276,8 @@
           {#if c.source_site_id}<div class="cell-sub"><CodeChip text={c.source_site_id} /></div>{/if}
         </td>
         <td>{#if c.platform}<PillBadge text={c.platform} type="info" />{:else}<span class="muted">—</span>{/if}</td>
-        <td>{#if c.hardware_platform}<PillBadge text={c.hardware_platform} type="muted" />{:else}<span class="muted">—</span>{/if}</td>
-        <td>{c.tier || '—'}</td>
+        <td>{#if c.connector && c.connector.platform}<PillBadge text={c.connector.platform} type="muted" />{:else}<span class="muted">—</span>{/if}</td>
+        <td>{(c.billing && c.billing.tier) || '—'}</td>
         <td>
           <span title="{c.active_count} active">{c.member_count} total</span>
           {#if c.active_count > 0}<div class="cell-sub">{c.active_count} active</div>{/if}

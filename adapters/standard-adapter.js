@@ -248,12 +248,13 @@ class StandardAdapter {
   async resolveIdentity(memberId, email, name, hardwarePlatform, apiKey, opts = {}) {
     const { force = false, tenantId = null, platformMemberId = null } = opts;
 
-    // DR-043: resolve per-tenant user pattern
+    // DR-043: resolve per-tenant user pattern from connector_subscriptions.
     let userPattern = opts.userPattern || null;
     if (!userPattern && tenantId) {
       try {
         const patternRow = await db.query(
-          `SELECT kisi_user_pattern FROM clients WHERE id = $1`,
+          `SELECT kisi_user_pattern FROM connector_subscriptions
+            WHERE client_id = $1 AND status = 'active' LIMIT 1`,
           [tenantId]
         );
         userPattern = patternRow.rows[0]?.kisi_user_pattern || 'invited';

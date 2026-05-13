@@ -1,7 +1,7 @@
 /**
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │  PRIORITY 2 — ONBOARDING / CONFIGURATION                                │
- * │  Scenario: DR-043 clients.kisi_user_pattern column contract             │
+ * │  Scenario: DR-043 connector_subscriptions.kisi_user_pattern contract    │
  * │                                                                         │
  * │  Business consequence: If the column is absent or the default is wrong, │
  * │  new tenants onboarded after the migration will either throw on first   │
@@ -55,9 +55,9 @@ beforeEach(() => {
   hardwareAdapter.createUser.mockResolvedValue(KISI_HARDWARE_USER_ID);
 });
 
-describe('[P2] DR-043 clients.kisi_user_pattern — standard-adapter reads it correctly', () => {
+describe('[P2] DR-043 connector_subscriptions.kisi_user_pattern — standard-adapter reads it correctly', () => {
 
-  it('reads kisi_user_pattern from clients table for the correct tenantId', async () => {
+  it('reads kisi_user_pattern from connector_subscriptions for the correct tenantId', async () => {
     mockDbForPattern('invited');
 
     await standardAdapter.resolveIdentity(
