@@ -4,6 +4,18 @@
  * TRUNCATES all tables then inserts demo data that populates every admin screen.
  * Uses fixed UUIDs so it's safe to run multiple times.
  * Run via: railway run node seed.js
+ *
+ * ⚠️  PARTIALLY UPDATED FOR POST-S-9 SCHEMA (2026-05-12).
+ * Client + connector_subscriptions + locations + billing_subscriptions sections
+ * are clean. Plan mappings clean.
+ *
+ * Member fixture sections (5: member identities, 6: member access states,
+ * 7: member role assignments) STILL REFERENCE RETIRED TABLES and will fail.
+ * Filed as F-22 — rewrite member fixtures using member_master + member_access +
+ * member_access_sources before next dev seed run.
+ *
+ * Until then: this script will fail at section 5. Either skip member sections
+ * for now, or seed members via Wix webhook replay (see Phase 7 onboarding test).
  */
 
 require('dotenv').config();
@@ -113,11 +125,14 @@ async function seed() {
       processed_event_ids,
       error_queue,
       member_access_log,
-      member_role_assignments,
-      member_access_state,
-      member_identity,
+      member_access_sources,
+      member_access,
+      member_billing,
+      member_master,
       plan_mapping_groups,
       plan_mappings,
+      billing_subscriptions,
+      connector_subscriptions,
       locations,
       clients
     CASCADE
@@ -126,23 +141,39 @@ async function seed() {
 
   // ── 1. Client ─────────────────────────────────────────────────
   await db.query(`
-    INSERT INTO clients (id, name, platform, source_site_id, source_site_name, hardware_platform, tier, status,
+    INSERT INTO clients (id, name, platform, source_site_id, source_site_name, status,
                          notification_email, last_sync_at, source_site_url, last_webhook_at)
-    VALUES ($1, 'House of Gains', 'wix', 'hog-wix-site-001', 'House of Gains', 'kisi', 'Pro', 'active',
+    VALUES ($1, 'House of Gains', 'wix', 'hog-wix-site-001', 'House of Gains', 'active',
             'chad@houseofgains.com', NOW() - INTERVAL '4 minutes', 'houseofgains.com', NOW() - INTERVAL '2 hours')
   `, [CLIENT]);
-  console.log('[seed] ✓ Client: House of Gains (Pro tier, Kisi)');
+  console.log('[seed] ✓ Client: House of Gains');
+
+  // ── 1b. Connector subscription (hardware platform) ────────────
+  await db.query(`
+    INSERT INTO connector_subscriptions (client_id, hardware_platform, status)
+    VALUES ($1, 'kisi', 'active')
+  `, [CLIENT]);
+  console.log('[seed] ✓ Connector: Kisi');
 
   // ── 2. Locations ──────────────────────────────────────────────
-  // Requires per-location-config migration (hardware_platform + notification_email columns)
   await db.query(`
-    INSERT INTO locations (id, client_id, name, city, state, subscription_status, tier, hardware_platform, notification_email, subscribed_at)
+    INSERT INTO locations (id, client_id, name, city, state, notification_email)
     VALUES
-      ($1, $4, 'Fort Smith — Main',       'Fort Smith',   'AR', 'active',  'Pro',  'kisi', 'fortsmith@houseofgains.com', NOW() - INTERVAL '90 days'),
-      ($2, $4, 'Roland — Annex',          'Roland',       'AR', 'active',  'Pro',  'kisi', NULL,                         NOW() - INTERVAL '60 days'),
-      ($3, $4, 'Fayetteville — Downtown', 'Fayetteville', 'AR', 'lapsed',  'Base', 'kisi', 'fayetteville@houseofgains.com', NOW() - INTERVAL '120 days')
+      ($1, $4, 'Fort Smith — Main',       'Fort Smith',   'AR', 'fortsmith@houseofgains.com'),
+      ($2, $4, 'Roland — Annex',          'Roland',       'AR', NULL),
+      ($3, $4, 'Fayetteville — Downtown', 'Fayetteville', 'AR', 'fayetteville@houseofgains.com')
   `, [LOC.fs, LOC.ro, LOC.fv, CLIENT]);
-  console.log('[seed] ✓ Locations: Fort Smith (active), Roland (active), Fayetteville (lapsed)');
+  console.log('[seed] ✓ Locations: Fort Smith, Roland, Fayetteville');
+
+  // ── 2b. Billing subscriptions (per-location tier + status) ───
+  await db.query(`
+    INSERT INTO billing_subscriptions (client_id, location_id, tier, status, subscribed_at)
+    VALUES
+      ($4, $1, 'Pro',  'active',  NOW() - INTERVAL '90 days'),
+      ($4, $2, 'Pro',  'active',  NOW() - INTERVAL '60 days'),
+      ($4, $3, 'Base', 'lapsed',  NOW() - INTERVAL '120 days')
+  `, [LOC.fs, LOC.ro, LOC.fv, CLIENT]);
+  console.log('[seed] ✓ Billing subscriptions: 2 active, 1 lapsed');
 
   // ── 3. Plan Mappings ──────────────────────────────────────────
   await db.query(`

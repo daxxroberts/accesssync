@@ -68,19 +68,19 @@ async function seedTestClient() {
   try {
     await client.query('BEGIN');
 
-    // Client
+    // Client (post-S-9: hardware_platform/tier moved to cs/bs)
     await client.query(`
-      INSERT INTO clients (id, name, notification_email, hardware_platform, tier)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO clients (id, name, notification_email)
+      VALUES ($1, $2, $3)
       ON CONFLICT (id) DO NOTHING
-    `, [TEST_CLIENT_ID, 'E2E_Test_Client', 'e2e@accesssync.test', 'kisi', 'Base']);
+    `, [TEST_CLIENT_ID, 'E2E_Test_Client', 'e2e@accesssync.test']);
 
-    // Location
+    // Location (post-S-9: tier/subscription_status moved to billing_subscriptions)
     await client.query(`
-      INSERT INTO locations (id, client_id, name, tier, subscription_status)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO locations (id, client_id, name)
+      VALUES ($1, $2, $3)
       ON CONFLICT (id) DO NOTHING
-    `, [TEST_LOCATION_ID, TEST_CLIENT_ID, 'E2E Test Location', 'Base', 'active']);
+    `, [TEST_LOCATION_ID, TEST_CLIENT_ID, 'E2E Test Location']);
 
     // connector_subscriptions (no real Kisi key — verifies endpoint fires, no actual write)
     await client.query(`
