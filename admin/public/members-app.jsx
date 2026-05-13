@@ -43,22 +43,19 @@ function App() {
 
   const filtered = useMemo(() => {
     let rows = members;
-    if (filter === "active") rows = rows.filter(m => m.status === "active");
-    else if (filter === "holder") rows = rows.filter(m => m.role === "Plan Holder");
-    else if (filter === "suspended") rows = rows.filter(m => m.status === "suspended" || m.status === "expired");
-    else if (filter === "pending") rows = rows.filter(m => m.status === "pending");
+    if (filter === "holder") rows = rows.filter(m => m.role === "holder");
+    else if (filter === "sub") rows = rows.filter(m => m.role === "sub");
+    else if (filter === "suspended") rows = rows.filter(m => m.hasError);
 
     const q = query.trim().toLowerCase();
     if (q) {
       rows = rows.filter(m => {
         if (memberFullName(m).toLowerCase().includes(q)) return true;
-        if (m.email.toLowerCase().includes(q)) return true;
-        if ((m.plans || []).some(p => p.planName.toLowerCase().includes(q))) return true;
-        return (m.plans || []).some(p =>
-          (p.additional || []).some(a =>
-            memberFullName(a).toLowerCase().includes(q) || a.email.toLowerCase().includes(q)
-          )
-        );
+        if ((m.email || "").toLowerCase().includes(q)) return true;
+        if ((m.plans || []).some(p => (p.planName || "").toLowerCase().includes(q))) return true;
+        // Also match by linked holder name (so searching "Daxx" surfaces Drew + Brittany as subs of Daxx)
+        if (m.linkedHolder && (m.linkedHolder.name || "").toLowerCase().includes(q)) return true;
+        return false;
       });
     }
 
@@ -82,17 +79,16 @@ function App() {
 
   const counts = useMemo(() => ({
     all: members.length,
-    active: members.filter(m => m.status === "active").length,
-    holder: members.filter(m => m.role === "Plan Holder").length,
-    suspended: members.filter(m => m.status === "suspended" || m.status === "expired").length,
-    pending: members.filter(m => m.status === "pending").length,
+    active: members.filter(m => !m.hasError).length,
+    holder: members.filter(m => m.role === "holder").length,
+    sub: members.filter(m => m.role === "sub").length,
+    suspended: members.filter(m => m.hasError).length,
+    pending: 0,
   }), [members]);
 
-  const totalAdditional = useMemo(
-    () => members.reduce((n, m) =>
-      n + (m.plans || []).reduce((pn, p) => pn + (p.additional?.length || 0), 0), 0),
-    [members]
-  );
+  // Subs are now first-class top-level people. The "additional members" framing is retired;
+  // we keep the variable as the sub count so existing references keep working.
+  const totalAdditional = counts.sub;
 
   const errorMembers = useMemo(
     () => members.filter(m => m.error),
@@ -140,7 +136,7 @@ function App() {
           </div>
           <h1 className="title">Members</h1>
           <div className="subtitle">
-            {members.length} plan holders · {totalAdditional} additional members{pageContext.lastSyncedLabel ? ` · synced ${pageContext.lastSyncedLabel}` : ""}
+            {members.length} {members.length === 1 ? "member" : "members"} · {counts.holder} plan {counts.holder === 1 ? "holder" : "holders"} · {counts.sub} sub-{counts.sub === 1 ? "member" : "members"}{pageContext.lastSyncedLabel ? ` · synced ${pageContext.lastSyncedLabel}` : ""}
           </div>
         </div>
         <div className="head-actions">
@@ -152,8 +148,8 @@ function App() {
         <div className="stats">
           <div className="stat">
             <div className="stat-label">Active members</div>
-            <div className="stat-value tabular">{counts.active + totalAdditional}</div>
-            <div className="stat-meta"><span>{members.length} plan holders + {totalAdditional} additional</span></div>
+            <div className="stat-value tabular">{counts.active}</div>
+            <div className="stat-meta"><span>{counts.holder} holders + {counts.sub} sub-members</span></div>
           </div>
           <div className="stat">
             <div className="stat-label">Plan holders</div>
@@ -217,200 +213,169 @@ function App() {
             <button className="show-link" onClick={() => setFilter("suspended")}>Show only errors →</button>
           </div>
         )}
+        {/*
+          Person-row layout (2026-05-13 redesign):
+          - Each row is one PERSON (holder OR sub-member, both top-level).
+          - No status pill on the row in normal state — only an error chip when something
+            actually needs operator attention.
+          - Click the row to expand: shows a nested plans table with one row per plan,
+            including Plan / Rate / Added / Access / Auto-renew / Billing Member.
+          - Sub-member rows show a "linked to <holder>" tag inline; they expand the same way.
+        */}
         <table className="members-tbl">
           <thead>
             <tr>
-              <th style={{width:"30%"}}>
+              <th style={{width:"40%"}}>
                 <button className={`sort-btn ${sort.key==="name"?"sorted":""}`} onClick={() => handleSort("name")}>
                   Member <span className="sort-arrow">{sortIcon("name")}</span>
                 </button>
               </th>
-              <th style={{width:"22%"}}>Plan</th>
-              <th style={{width:"14%"}}>Role</th>
-              <th style={{width:"14%"}}>Access</th>
-              <th style={{width:"12%"}}>
+              <th style={{width:"22%"}}>Relationship</th>
+              <th style={{width:"14%",textAlign:"center"}}>Plans</th>
+              <th style={{width:"14%"}}>
                 <button className={`sort-btn ${sort.key==="since"?"sorted":""}`} onClick={() => handleSort("since")}>
                   Added <span className="sort-arrow">{sortIcon("since")}</span>
                 </button>
               </th>
-              <th style={{width:"80px",textAlign:"right"}}></th>
+              <th style={{width:"10%",textAlign:"right"}}></th>
             </tr>
           </thead>
           <tbody>
             {pageRows.length === 0 && (
-              <tr><td colSpan="6"><div className="empty">No members match your search.</div></td></tr>
+              <tr><td colSpan="5"><div className="empty">No members match your search.</div></td></tr>
             )}
             {pageRows.flatMap(m => {
-              const accessKind = m.status === "active"
-                ? (m.role === "Plan Holder" ? "holder" : "active")
-                : m.status;
-              const plans = m.plans || [];
-              const rows = [];
+              const plans         = m.plans || [];
+              const expandKey     = `person_${m.id}`;
+              const isOpen        = expandedPlans.has(expandKey);
+              const rows          = [];
 
-              // One plan group header + member rows per plan the holder owns.
-              plans.forEach((plan, planIdx) => {
-                const groupKey   = `${m.id}_${planIdx}`;
-                const detailKey  = `${m.id}_${planIdx}_detail`;
-                const isGroupOpen  = !expandedSubs.has(groupKey + "_collapsed");
-                const isPlanOpen   = expandedPlans.has(detailKey);
-                const hasSubs      = (plan.additional?.length || 0) > 0;
-                const totalInGroup = 1 + (plan.additional?.length || 0);
+              const isHolder = m.role === "holder" || m.role === "Plan Holder";
+              const linkedHolder = m.linkedHolder || null;
 
-                // Plan group header
+              // Avatar shading: muted by default — pull status only if there's an error,
+              // since we don't want a colored pill cluttering the quiet state.
+              const avatarKind = m.hasError ? "suspended" : "active";
+
+              // Top-level person row
+              rows.push(
+                <tr key={`p-${m.id}`} className={`row-main ${m.hasError ? "has-error" : ""}`}>
+                  <td>
+                    <div className="member-cell">
+                      <Avatar member={m} kind={avatarKind} />
+                      <div style={{minWidth:0}}>
+                        <div className="member-name" onClick={() => setDrawerId(m.id)}>
+                          <span className="name-link">{memberFullName(m)}</span>
+                          {m.hasError && (
+                            <span className="member-tag" style={{background:"var(--rose-dim, #fde8eb)",color:"var(--rose, #b42044)",borderColor:"rgba(180,32,68,.22)"}}>
+                              Needs attention
+                            </span>
+                          )}
+                        </div>
+                        <div className="member-email">{m.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{fontSize:12.5,color:"var(--text2)"}}>
+                    {isHolder
+                      ? <span style={{color:"var(--muted)"}}>Pays for own plans</span>
+                      : (linkedHolder
+                          ? <>Sub-member of <span style={{color:"var(--text)",fontWeight:500}}>{linkedHolder.name}</span></>
+                          : <span style={{color:"var(--muted)"}}>—</span>)
+                    }
+                  </td>
+                  <td style={{textAlign:"center"}}>
+                    <button
+                      className={`plan-group-details-btn ${isOpen ? "open" : ""}`}
+                      onClick={(e)=>{ e.stopPropagation(); togglePlan(expandKey); }}
+                      style={{padding:"4px 10px"}}
+                    >
+                      {plans.length} {plans.length === 1 ? "plan" : "plans"} <span className="chev">▼</span>
+                    </button>
+                  </td>
+                  <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{m.since}</td>
+                  <td style={{textAlign:"right"}}>
+                    <div className={`row-actions ${openMenu === m.id || openError === m.id ? "open" : ""}`}>
+                      {m.error && (
+                        <div className="menu-anchor">
+                          <button
+                            className="row-btn"
+                            title="See error"
+                            style={{color:"var(--red)"}}
+                            onClick={(e)=>{e.stopPropagation(); setOpenError(openError === m.id ? null : m.id); setOpenMenu(null);}}
+                          >
+                            <Icon name="alert" />
+                          </button>
+                          {openError === m.id && (
+                            <ErrorPopover error={m.error} onClose={() => setOpenError(null)} />
+                          )}
+                        </div>
+                      )}
+                      <div className="menu-anchor">
+                        <button className="row-btn" onClick={(e)=>{e.stopPropagation(); setOpenMenu(openMenu === m.id ? null : m.id); setOpenError(null);}}>
+                          <Icon name="more" />
+                        </button>
+                        <ActionsMenu
+                          open={openMenu === m.id}
+                          onClose={() => setOpenMenu(null)}
+                          onAction={(a) => {
+                            setOpenMenu(null);
+                            if (a === "error") setOpenError(m.id);
+                            if (a === "remove") setRemoveTarget(m);
+                          }}
+                          member={m}
+                        />
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              );
+
+              // Expanded plans table — one row per plan-access this person holds.
+              if (isOpen) {
                 rows.push(
-                  <tr key={`gh-${groupKey}`} className="row-plan-group">
-                    <td colSpan="6">
-                      <div className="plan-group-head">
-                        <button
-                          className="plan-group-toggle"
-                          onClick={() => toggleSubs(groupKey + "_collapsed")}
-                        >
-                          <span className={`plan-group-chev ${isGroupOpen ? "open" : ""}`}>▶</span>
-                          <PlanBadge plan={plan.planName} />
-                        </button>
-                        <span className="plan-group-count">
-                          {totalInGroup === 1 ? "1 member" : `${totalInGroup} members`}
-                        </span>
-                        <button
-                          className={`plan-group-details-btn ${isPlanOpen ? "open" : ""}`}
-                          onClick={() => togglePlan(detailKey)}
-                        >
-                          Plan details <span className="chev">▼</span>
-                        </button>
+                  <tr key={`pd-${m.id}`} className="plan-detail-row-wrap">
+                    <td colSpan="5">
+                      <div className="plan-detail-card" style={{padding:"12px 16px"}}>
+                        {plans.length === 0 ? (
+                          <div className="empty" style={{padding:"16px"}}>No plan information available.</div>
+                        ) : (
+                          <table className="members-tbl" style={{boxShadow:"none",margin:0}}>
+                            <thead>
+                              <tr>
+                                <th style={{width:"24%"}}>Plan</th>
+                                <th style={{width:"14%"}}>Rate</th>
+                                <th style={{width:"14%"}}>Added</th>
+                                <th style={{width:"14%"}}>Access</th>
+                                <th style={{width:"14%"}}>Auto-renew</th>
+                                <th style={{width:"20%"}}>Billing Member</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {plans.map((plan, pIdx) => (
+                                <tr key={`plan-${m.id}-${pIdx}`}>
+                                  <td><PlanBadge plan={plan.planName} /></td>
+                                  <td className="tabular">{plan.rate}{plan.coupon && (<div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{plan.coupon}</div>)}</td>
+                                  <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{plan.addedAt}</td>
+                                  <td><StatusPill status={
+                                    plan.rawStatus === "active" ? "active"
+                                    : plan.rawStatus === "suspended" || plan.rawStatus === "failed" || plan.rawStatus === "revoked" ? "suspended"
+                                    : "pending"
+                                  } label={plan.accessStatus} /></td>
+                                  <td style={{fontSize:12.5,color: plan.autoRenewCanceled ? "var(--amber, #d97706)" : "var(--text2)"}}>
+                                    {plan.autoRenewCanceled ? "Cancels at end" : "On"}
+                                  </td>
+                                  <td style={{fontSize:13}}>{plan.billingMemberName}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
                       </div>
                     </td>
                   </tr>
                 );
-
-                // Plan detail row (expanded) — billing comes from holder
-                if (isPlanOpen) {
-                  rows.push(
-                    <tr key={`pd-${groupKey}`} className="plan-detail-row-wrap">
-                      <td colSpan="6">
-                        <div className="plan-detail-card" style={{marginLeft:0}}>
-                          <div className="pd-cell">
-                            <div className="pd-label">Plan type</div>
-                            <div className="pd-value">{m.planType}</div>
-                          </div>
-                          <div className="pd-cell">
-                            <div className="pd-label">Rate</div>
-                            <div className="pd-value tabular">{m.rate}</div>
-                            {m.coupon && (
-                              <div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{m.coupon}</div>
-                            )}
-                          </div>
-                          <div className="pd-cell">
-                            <div className="pd-label">Renewal</div>
-                            <div className={`pd-value ${m.expiresLabel.startsWith("No") ? "muted" : ""}`}
-                              style={{color: m.status === "suspended" ? "var(--rose)" : undefined}}>
-                              {m.autoRenewCanceled ? "Cancels at period end" : m.expiresLabel}
-                            </div>
-                          </div>
-                          <div className="pd-cell">
-                            <div className="pd-label">Member since</div>
-                            <div className="pd-value">{m.since}</div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-
-                if (!isGroupOpen) return;
-
-                // Holder row — only rendered once, under the first plan group.
-                // For subsequent plans the holder is already visible above.
-                if (planIdx === 0) {
-                  rows.push(
-                    <tr key={`r-${m.id}`} className={`row-main row-grouped ${m.error ? "has-error" : ""}`}>
-                      <td>
-                        <div className="member-cell">
-                          <Avatar member={m} kind={accessKind} />
-                          <div style={{minWidth:0}}>
-                            <div className="member-name" onClick={() => setDrawerId(m.id)}>
-                              <span className="name-link">{memberFullName(m)}</span>
-                              <span className="member-tag" style={{background:"var(--brand-dim)",color:"var(--brand)",borderColor:"rgba(79,110,247,.22)"}}>Holder</span>
-                            </div>
-                            <div className="member-email">{m.email}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td style={{color:"var(--muted)",fontSize:12.5}}>—</td>
-                      <td style={{color:"var(--text2)",fontSize:13}}>{m.role}</td>
-                      <td><StatusPill status={accessKind} label={m.accessStatus} /></td>
-                      <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{m.since}</td>
-                      <td style={{textAlign:"right"}}>
-                        <div className={`row-actions ${openMenu === m.id || openError === m.id ? "open" : ""}`}>
-                          {m.error && (
-                            <div className="menu-anchor">
-                              <button
-                                className="row-btn"
-                                title="See error"
-                                style={{color:"var(--red)"}}
-                                onClick={(e)=>{e.stopPropagation(); setOpenError(openError === m.id ? null : m.id); setOpenMenu(null);}}
-                              >
-                                <Icon name="alert" />
-                              </button>
-                              {openError === m.id && (
-                                <ErrorPopover error={m.error} onClose={() => setOpenError(null)} />
-                              )}
-                            </div>
-                          )}
-                          <div className="menu-anchor">
-                            <button className="row-btn" onClick={(e)=>{e.stopPropagation(); setOpenMenu(openMenu === m.id ? null : m.id); setOpenError(null);}}>
-                              <Icon name="more" />
-                            </button>
-                            <ActionsMenu
-                              open={openMenu === m.id}
-                              onClose={() => setOpenMenu(null)}
-                              onAction={(a) => {
-                                setOpenMenu(null);
-                                if (a === "error") setOpenError(m.id);
-                                if (a === "remove") setRemoveTarget(m);
-                              }}
-                              member={m}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-
-                // Additional member rows for this plan
-                if (hasSubs) {
-                  plan.additional.forEach(a => {
-                    rows.push(
-                      <tr key={`sub-${a.id}`} className="row-sub row-grouped">
-                        <td>
-                          <div className="member-cell">
-                            <span className="sub-indent" />
-                            <Avatar member={a} kind={a.status} size="sm" />
-                            <div style={{minWidth:0}}>
-                              <div className="member-name" onClick={() => setDrawerId(a.id)}>
-                                <span className="name-link">{memberFullName(a)}</span>
-                                <span className="member-tag sub">Additional</span>
-                              </div>
-                              <div className="member-email">{a.email}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td style={{color:"var(--muted)",fontSize:12.5}}>—</td>
-                        <td style={{color:"var(--muted)",fontSize:12.5}}>Additional Member</td>
-                        <td><StatusPill status={a.status} /></td>
-                        <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{a.since}</td>
-                        <td style={{textAlign:"right"}}>
-                          <div className="row-actions">
-                            <button className="row-btn" title="Remove member" onClick={(e)=>{e.stopPropagation(); setRemoveTarget(a);}}>
-                              <Icon name="trash" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  });
-                }
-              });
+              }
 
               return rows;
             })}

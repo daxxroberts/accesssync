@@ -1881,6 +1881,10 @@ router.get('/:clientId/members', async (req, res) => {
                 ma.status           AS access_status,
                 ma.provisioned_at,
                 -- Plan(s) this member is in, aggregated.
+                -- Primary: aggregate via member_access_sources (multi-source design, DR-034).
+                -- Holder fallback: aggregate from this member's sub-members' sources.
+                -- Direct-link fallback: when no sources rows exist (the post-S-10 HOG state),
+                -- fall back to ma.plan_mapping_id which is populated by the grant path directly.
                 COALESCE(
                   (
                     SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
@@ -1888,13 +1892,17 @@ router.get('/:clientId/members', async (req, res) => {
                     JOIN plan_mappings pm ON pm.id = mas.mapping_id
                     WHERE mas.access_id = ma.id AND pm.plan_name IS NOT NULL
                   ),
-                  -- Holder-only: pull plan names from sub-members
                   (
                     SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
                     FROM member_access sub_ma
                     JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
                     JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
                     WHERE sub_ma.sub_master_id = ma.member_master_id AND pm.plan_name IS NOT NULL
+                  ),
+                  (
+                    SELECT ARRAY[pm.plan_name]
+                    FROM plan_mappings pm
+                    WHERE pm.id = ma.plan_mapping_id AND pm.plan_name IS NOT NULL
                   )
                 )                                AS plan_names,
                 COALESCE(
@@ -1910,6 +1918,11 @@ router.get('/:clientId/members', async (req, res) => {
                     JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
                     JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
                     WHERE sub_ma.sub_master_id = ma.member_master_id AND pm.source_plan_id IS NOT NULL
+                  ),
+                  (
+                    SELECT ARRAY[pm.source_plan_id]
+                    FROM plan_mappings pm
+                    WHERE pm.id = ma.plan_mapping_id AND pm.source_plan_id IS NOT NULL
                   )
                 )                                AS plan_ids,
                 (
@@ -1935,6 +1948,11 @@ router.get('/:clientId/members', async (req, res) => {
                     WHERE sub_ma.sub_master_id = ma.member_master_id AND pm.plan_name IS NOT NULL
                     ORDER BY sub_mas.created_at ASC
                     LIMIT 1
+                  ),
+                  (
+                    SELECT pm.plan_name
+                    FROM plan_mappings pm
+                    WHERE pm.id = ma.plan_mapping_id
                   )
                 )                                AS plan_name,
                 -- DR-042: billing snapshot on member_access directly.

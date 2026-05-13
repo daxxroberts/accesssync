@@ -147,102 +147,142 @@
     };
   }
 
-  // ── Flat → nested (plan-grouped) ───────────────────────────────────
-  // Each holder row produces m.plans[] — one entry per plan the holder owns.
-  // Sub-members are partitioned by plan_mapping_id into the correct plan entry.
-  // Solo plans (no subs) get an entry with additional: [].
-  // Subs with null plan_mapping_id go into an "Unknown Plan" fallback entry.
+  // ── Flat rows → person-rows ────────────────────────────────────────
+  // Person-row model (2026-05-13 redesign):
+  //   - Top-level rows are PEOPLE (one row per master member, holders + subs both)
+  //   - Each person has a plans[] array, one entry per plan-access this person holds
+  //   - Each plan entry carries: planName, rate, addedAt, accessStatus, autoRenew, billingMemberName
+  //   - billingMemberName is the holder of that plan — themselves if they're the holder, the holder's name if they're a sub
+  //   - Top-level person row shows NO status badge by default (quiet UI); errors surface via .error
+  //
+  // The API returns one row per member_access. A person with 3 plans = 3 rows, all sharing
+  // the same member_master id (mm.id, exposed as r.member_master_id when added — falls back
+  // to r.id matching). We group by member_master to collapse 3 access-rows into 1 person row.
   function buildMembersArray(flatRows) {
     if (!Array.isArray(flatRows)) return [];
 
-    var holders = [];
-    var subsByHolder = {};  // holderId → shaped sub[]
+    // Group flat rows by master person. For a holder row, the master is the holder
+    // themselves (no sub_master). For a sub row, the master is whoever the access
+    // row points at (the sub themselves, not the holder — sub IS a master record).
+    //
+    // Identity key: prefer mm.platform_member_id when present (stable across access
+    // rows); fall back to email; finally fall back to access.id as last resort.
+    var groups = {};         // key → { masterRow, accessRows[] }
+    var holderInfoById = {}; // master_id-ish key → { name, email } so subs can resolve their holder name
 
+    function personKeyFor(r) {
+      return r.platform_member_id
+          || r.email
+          || ("__access_" + r.id);
+    }
+
+    // Pass 1: index every row by its person key + build holder lookup.
+    // A "row" from the API == one member_access row, with member_master fields joined.
+    // For sub rows, holder_name / holder_email are denormalized on the row already.
     for (var i = 0; i < flatRows.length; i++) {
       var r = flatRows[i];
-      if (r.plan_holder_id) {
-        if (!subsByHolder[r.plan_holder_id]) subsByHolder[r.plan_holder_id] = [];
-        subsByHolder[r.plan_holder_id].push(shapeMember(r));
-      } else {
-        holders.push(r);
+      var key = personKeyFor(r);
+      if (!groups[key]) groups[key] = { rows: [], firstRow: r };
+      groups[key].rows.push(r);
+
+      // Track holder info so we can resolve billingMemberName for sub-plan entries.
+      // For holder rows, we know the holder's own identity from mm fields.
+      // For sub rows, holder_name / holder_email come from the API JOIN on sub_master_id.
+      if (r.role === "holder" || !r.plan_holder_id) {
+        // This row is for a holder — record their info under the same key.
+        holderInfoById[key] = {
+          name:  (r.display_name || ((r.first_name || "") + " " + (r.last_name || "")).trim() || r.email || "Unknown"),
+          email: r.email || null,
+        };
       }
     }
 
-    return holders.map(function (h) {
-      var shaped = shapeMember(h);
-      var allSubs = subsByHolder[h.id] || [];
+    // Pass 2: collapse each person's access rows into a single person record with plans[].
+    var people = [];
 
-      // DR-042: subs inherit holder's billing snapshot when their own is missing.
-      if (shaped.billing && shaped.billing.raw) {
-        allSubs = allSubs.map(function (s) {
-          if (s.billing && s.billing.raw) return s;
-          return Object.assign({}, s, {
-            rate:              shaped.rate,
-            coupon:            shaped.coupon,
-            autoRenewCanceled: shaped.autoRenewCanceled,
-            lastPaymentStatus: shaped.lastPaymentStatus,
-            subscriptionId:    shaped.subscriptionId,
-            orderId:           shaped.orderId,
-            billing:           shaped.billing,
-          });
-        });
-      }
+    Object.keys(groups).forEach(function (key) {
+      var group = groups[key];
+      var firstRow = group.firstRow;
+      var personRow = shapeMember(firstRow);
 
-      // Group subs by planMappingId so each plan entry gets the right subs.
-      var subsByMapping = {};
-      var orphanSubs = [];  // subs with null plan_mapping_id
-      allSubs.forEach(function (s) {
-        if (s.planMappingId) {
-          if (!subsByMapping[s.planMappingId]) subsByMapping[s.planMappingId] = [];
-          subsByMapping[s.planMappingId].push(s);
+      // Compose plans[] — one entry per access row this person holds.
+      // Each access row may map to a single plan_mapping; collect those into per-person plans.
+      var plans = [];
+      var billingForFallback = null; // first non-empty billing snapshot, used for subs without their own
+
+      group.rows.forEach(function (accessRow) {
+        var billing = shapeBilling(accessRow.billing_snapshot);
+        if (!billingForFallback && billing.raw) billingForFallback = billing;
+
+        // Resolve plan name: prefer single sub_plan_name (when set via plan_mapping_id JOIN),
+        // else first entry of plan_names[], else "Unknown Plan".
+        var planName = accessRow.sub_plan_name
+                    || (Array.isArray(accessRow.plan_names) && accessRow.plan_names[0])
+                    || accessRow.plan_name
+                    || "Unknown Plan";
+
+        // Billing Member = whoever pays. If this access row is a sub_master_id !== null
+        // (sub-member access), billing is the holder's. Otherwise it's the person themselves.
+        var billingMemberName;
+        if (accessRow.plan_holder_id) {
+          // sub-access — holder paid
+          billingMemberName = accessRow.holder_name || accessRow.holder_email || "Holder";
         } else {
-          orphanSubs.push(s);
+          billingMemberName = (personRow.first + " " + personRow.last).trim() || personRow.email || "—";
         }
-      });
 
-      // Build one plans[] entry per plan the holder owns.
-      // plan_names[] comes from the API (aggregated from MRAs). Each name maps to
-      // a set of subs whose sub_plan_name matches — we use planMappingId for
-      // the keying since names can collide; plan_ids[] gives source_plan_ids in
-      // the same order as plan_names[].
-      var planNames  = shaped.planNames;
-      var planIds    = Array.isArray(h.plan_ids) ? h.plan_ids : [];
-
-      if (planNames.length === 0) planNames = ["Unknown Plan"];
-
-      // Build a mapping from sub_plan_name → subs for name-based fallback
-      var subsByPlanName = {};
-      allSubs.forEach(function (s) {
-        var key = s.subPlanName || "Unknown Plan";
-        if (!subsByPlanName[key]) subsByPlanName[key] = [];
-        subsByPlanName[key].push(s);
-      });
-
-      // Build plans[] — prefer planMappingId keying; fall back to plan name matching.
-      var usedSubIds = {};
-      var plans = planNames.map(function (planName, idx) {
-        // Collect subs that belong to this plan by name
-        var planSubs = (subsByPlanName[planName] || []).filter(function (s) {
-          if (usedSubIds[s.id]) return false;
-          usedSubIds[s.id] = true;
-          return true;
+        plans.push({
+          accessId:          accessRow.id,
+          planName:          planName,
+          planSourceId:      Array.isArray(accessRow.plan_ids) ? accessRow.plan_ids[0] : null,
+          planMappingId:     accessRow.plan_mapping_id || null,
+          rate:              billing.rate,
+          coupon:            billing.coupon,
+          autoRenewCanceled: billing.autoRenewCanceled,
+          billing:           billing,
+          addedAt:           formatDate(accessRow.provisioned_at),
+          accessStatus:      mapAccessStatus(accessRow.effective_status, accessRow.role),
+          rawStatus:         accessRow.effective_status,
+          billingMemberName: billingMemberName,
+          isSubAccess:       !!accessRow.plan_holder_id,
         });
-        return {
-          planName:      planName,
-          planSourceId:  planIds[idx] || null,
-          additional:    planSubs,
-        };
       });
 
-      // Orphan subs (null plan_mapping_id, unmatched by name) go to a fallback entry.
-      var unusedOrphans = orphanSubs.filter(function (s) { return !usedSubIds[s.id]; });
-      if (unusedOrphans.length > 0) {
-        plans.push({ planName: "Unknown Plan", planSourceId: null, additional: unusedOrphans });
+      // Sort plans by addedAt date ascending (oldest plan first — common reading order)
+      plans.sort(function (a, b) {
+        var ta = new Date(a._sortKey || 0).getTime() || 0;
+        var tb = new Date(b._sortKey || 0).getTime() || 0;
+        return ta - tb;
+      });
+
+      personRow.plans = plans;
+      personRow.planCount = plans.length;
+      // Has any plan in an error/suspended state? Drives the top-row error badge.
+      personRow.hasError = plans.some(function (p) {
+        return p.rawStatus === "suspended" || p.rawStatus === "failed" || p.rawStatus === "revoked";
+      });
+
+      // Top-row role: "holder" if any of their access rows is a holder; else "sub"
+      personRow.role = group.rows.some(function (r) { return !r.plan_holder_id; })
+        ? "holder"
+        : "sub";
+
+      // Linked-to-holder label for pure-sub people: pull from any sub access row
+      var subAccess = group.rows.find(function (r) { return r.plan_holder_id; });
+      if (personRow.role === "sub" && subAccess) {
+        personRow.linkedHolder = {
+          id:    subAccess.holder_id,
+          name:  subAccess.holder_name || subAccess.holder_email,
+          email: subAccess.holder_email,
+        };
+      } else {
+        personRow.linkedHolder = null;
       }
 
-      shaped.plans = plans;
-      return shaped;
+      people.push(personRow);
     });
+
+    return people;
   }
 
   // ── Error attachment ───────────────────────────────────────────────

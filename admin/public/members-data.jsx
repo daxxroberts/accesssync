@@ -6,11 +6,10 @@
 window.MEMBERS = window.MEMBERS || [];
 
 const FILTERS = [
-  { id: "all",      label: "All" },
-  { id: "active",   label: "Active" },
-  { id: "holder",   label: "Plan Holders" },
-  { id: "suspended",label: "Suspended" },
-  { id: "pending",  label: "Pending" },
+  { id: "all",       label: "All" },
+  { id: "holder",    label: "Plan Holders" },
+  { id: "sub",       label: "Sub-members" },
+  { id: "suspended", label: "Needs attention" },
 ];
 
 function memberInitials(m) {
