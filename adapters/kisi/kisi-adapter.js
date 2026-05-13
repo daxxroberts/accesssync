@@ -48,6 +48,35 @@ function parseAccessSyncMarker(notes) {
   return { clientId: match[1], createdAt: match[2], reason: match[3] || '' };
 }
 
+/**
+ * Layer C of the delete guard — elevated-role check (DR-045 amendment).
+ *
+ * AccessSync only ever issues `group_basic` role assignments scoped to Groups. Any
+ * other role on a Kisi user means a human operator promoted them: org administrator,
+ * place manager, owner, etc. Those users must never be deleted by AccessSync — even
+ * if the AS ownership marker says we created them — because the elevated role is
+ * outside our scope of ownership.
+ *
+ * Verified live against HOG Kisi org 2026-05-13: 3 of 6 remaining users hold elevated
+ * roles (Daxx admin, houseofgains@mail.com admin, kalib@getkisi.com owner).
+ *
+ * Detection: any role_assignment with scope ∈ {organization, place} OR role_id
+ * outside the allowed group-member set is considered elevated. Belt + suspenders.
+ */
+const ALLOWED_MEMBER_ROLE_IDS = new Set(['group_basic']);
+const ELEVATED_SCOPES = new Set(['organization', 'place']);
+
+function findElevatedAssignments(roleAssignments) {
+  if (!Array.isArray(roleAssignments)) return [];
+  return roleAssignments.filter(ra => {
+    const scope = ra?.scope || ra?.applies_to_type?.toLowerCase();
+    const roleId = ra?.role_id;
+    if (scope && ELEVATED_SCOPES.has(scope)) return true;
+    if (roleId && !ALLOWED_MEMBER_ROLE_IDS.has(roleId)) return true;
+    return false;
+  });
+}
+
 class KisiAdapter {
 
   /**
@@ -229,24 +258,49 @@ class KisiAdapter {
   }
 
   /**
+   * Fetch all role assignments for a single Kisi user. Used by Layer C of the delete
+   * guard. Distinct from `getManagedRoleAssignments()` which fetches org-wide.
+   *
+   * Returns [] on 404 (user gone). Other errors propagate.
+   */
+  async getRoleAssignmentsForUser(apiKey, userId) {
+    try {
+      const data = await kisiConnector.makeRequest(
+        `/role_assignments?user_id=${userId}&limit=100`,
+        { method: 'GET' },
+        apiKey
+      );
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      if (err.statusCode === 404) return [];
+      throw err;
+    }
+  }
+
+  /**
    * Completely remove user from Kisi org (member.deleted flow).
    *
-   * **Two-layer delete guard (defense in depth):**
+   * **Three-layer delete guard (defense in depth):**
    *
-   *   Layer A (DB):  caller in core/grant-revoke.js verifies member_master.source_tag = 'accesssync'.
-   *   Layer B (Kisi): this method GETs the user, parses the `[AS|managed|<clientId>|...]`
-   *                   marker from the `notes` field, and refuses to DELETE if the marker
-   *                   is absent — or if `options.clientId` is supplied and does not
-   *                   match the marker's clientId (cross-tenant protection).
+   *   Layer A (DB):    caller in core/grant-revoke.js verifies member_master.source_tag = 'accesssync'.
+   *   Layer B (Kisi):  GET /users/:id → parse `[AS|managed|<clientId>|...]` marker from `notes`.
+   *                    Refuse if marker absent (UNOWNED_USER) or clientId mismatches (CLIENT_MISMATCH).
+   *   Layer C (Kisi):  GET /role_assignments?user_id=:id → refuse if ANY assignment has
+   *                    scope ∈ {organization, place} OR role_id outside the AccessSync allowed
+   *                    set (`group_basic` only). Catches the case where the marker says we own
+   *                    the user but an operator separately granted them elevated rights
+   *                    (admin / manager / owner) post-creation. ELEVATED_ROLE_ATTACHED.
    *
-   * Either guard failing alone fails closed. Both must pass for DELETE to fire.
+   * Any single guard failing alone fails closed. All three must pass for DELETE to fire.
    *
-   * Call count: 1 GET + 1 DELETE. The extra GET is the cost of protecting an irreversible
-   * destructive operation. All other adapter methods remain single-call.
+   * Call count: 2 GETs + 1 DELETE on the destructive path. All other adapter methods remain
+   * single-call. The added cost protects an irreversible operation against a real failure
+   * mode (verified live 2026-05-13: 3 of 6 HOG Kisi users hold elevated roles).
    *
-   * Throws `KisiAdapterError` with code 'UNOWNED_USER' if the marker is absent.
-   * Throws `KisiAdapterError` with code 'CLIENT_MISMATCH' if the marker's clientId
-   * doesn't match `options.clientId`.
+   * Throws `KisiAdapterError` with one of:
+   *   code='UNOWNED_USER'           Layer B failure — marker absent
+   *   code='CLIENT_MISMATCH'        Layer B failure — marker names different tenant
+   *   code='ELEVATED_ROLE_ATTACHED' Layer C failure — user holds non-member role(s)
    */
   async deleteUser(apiKey, userId, options = {}) {
     log.info('kisi.user.delete_guard_check', { userId, clientId: options.clientId });
@@ -264,6 +318,7 @@ class KisiAdapter {
       throw err;
     }
 
+    // Layer B — ownership marker
     const marker = parseAccessSyncMarker(user.notes);
     if (!marker) {
       const err = new Error(`Kisi user ${userId} has no AccessSync ownership marker — refusing to delete`);
@@ -284,6 +339,27 @@ class KisiAdapter {
       err.requestingClientId = options.clientId;
       log.warn('kisi.user.delete_refused_cross_tenant', {
         userId, ownerClientId: marker.clientId, requestingClientId: options.clientId,
+      });
+      throw err;
+    }
+
+    // Layer C — elevated-role check
+    const roleAssignments = await this.getRoleAssignmentsForUser(apiKey, userId);
+    const elevated = findElevatedAssignments(roleAssignments);
+    if (elevated.length > 0) {
+      const summary = elevated.map(ra => ({
+        role_id: ra.role_id,
+        scope: ra.scope || ra.applies_to_type,
+        applies_to: ra.applies_to?.name || ra.applies_to_id,
+      }));
+      const err = new Error(
+        `Kisi user ${userId} holds ${elevated.length} elevated role assignment(s) — refusing to delete`
+      );
+      err.code = 'ELEVATED_ROLE_ATTACHED';
+      err.userId = userId;
+      err.elevatedAssignments = summary;
+      log.warn('kisi.user.delete_refused_elevated', {
+        userId, ownerClientId: marker.clientId, elevatedAssignments: summary,
       });
       throw err;
     }
@@ -394,4 +470,5 @@ class KisiAdapter {
 const adapter = new KisiAdapter();
 adapter.buildAccessSyncMarker = buildAccessSyncMarker;
 adapter.parseAccessSyncMarker = parseAccessSyncMarker;
+adapter.findElevatedAssignments = findElevatedAssignments;
 module.exports = adapter;

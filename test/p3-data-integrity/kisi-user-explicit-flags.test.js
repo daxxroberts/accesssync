@@ -122,18 +122,27 @@ describe('[P3] kisi-adapter.deleteUser — two-layer ownership guard', () => {
     expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('fires DELETE when marker is present and clientId matches', async () => {
+  it('fires DELETE when marker is present, clientId matches, and no elevated roles attached', async () => {
+    // GET /users/:id → user with marker
     kisiConnector.makeRequest.mockResolvedValueOnce({
       id: 999,
       notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
     });
+    // GET /role_assignments → only group_basic, no elevated roles
+    kisiConnector.makeRequest.mockResolvedValueOnce([
+      { role_id: 'group_basic', scope: 'group', applies_to: { name: 'Front Door' } },
+    ]);
+    // DELETE /users/:id → success
     kisiConnector.makeRequest.mockResolvedValueOnce({});
 
     await kisiAdapter.deleteUser(API_KEY, 999, { clientId: CLIENT_ID });
 
-    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(2);
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(3);
     expect(kisiConnector.makeRequest.mock.calls[0][1].method).toBe('GET');
-    expect(kisiConnector.makeRequest.mock.calls[1][1].method).toBe('DELETE');
+    expect(kisiConnector.makeRequest.mock.calls[0][0]).toBe('/users/999');
+    expect(kisiConnector.makeRequest.mock.calls[1][1].method).toBe('GET');
+    expect(kisiConnector.makeRequest.mock.calls[1][0]).toMatch(/^\/role_assignments\?user_id=999/);
+    expect(kisiConnector.makeRequest.mock.calls[2][1].method).toBe('DELETE');
   });
 
   it('treats 404 on GET as idempotent success (user already gone)', async () => {
@@ -150,12 +159,159 @@ describe('[P3] kisi-adapter.deleteUser — two-layer ownership guard', () => {
       id: 999,
       notes: '[AS|managed|some-tenant|2026-05-13T00:00:00Z] Created by AccessSync',
     });
+    kisiConnector.makeRequest.mockResolvedValueOnce([
+      { role_id: 'group_basic', scope: 'group' },
+    ]);
     kisiConnector.makeRequest.mockResolvedValueOnce({});
 
     await kisiAdapter.deleteUser(API_KEY, 999);
 
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(3);
+    expect(kisiConnector.makeRequest.mock.calls[2][1].method).toBe('DELETE');
+  });
+
+});
+
+describe('[P3] kisi-adapter.deleteUser — Layer C elevated-role guard', () => {
+
+  it('refuses to DELETE when user holds an organization-scoped role (admin)', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({
+      id: 999,
+      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+    });
+    kisiConnector.makeRequest.mockResolvedValueOnce([
+      { role_id: 'group_basic', scope: 'group', applies_to: { name: 'Front Door' } },
+      { role_id: 'administrator', scope: 'organization', applies_to: { name: 'House of Gains' } },
+    ]);
+
+    await expect(
+      kisiAdapter.deleteUser(API_KEY, 999, { clientId: CLIENT_ID })
+    ).rejects.toMatchObject({
+      code: 'ELEVATED_ROLE_ATTACHED',
+      userId: 999,
+      elevatedAssignments: [
+        { role_id: 'administrator', scope: 'organization', applies_to: 'House of Gains' },
+      ],
+    });
+
+    // GET /users + GET /role_assignments fired; DELETE must NOT have fired.
     expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(2);
-    expect(kisiConnector.makeRequest.mock.calls[1][1].method).toBe('DELETE');
+    const lastCall = kisiConnector.makeRequest.mock.calls[1];
+    expect(lastCall[1].method).toBe('GET');
+  });
+
+  it('refuses to DELETE when user holds a place-scoped role (place_manager)', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({
+      id: 999,
+      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+    });
+    kisiConnector.makeRequest.mockResolvedValueOnce([
+      { role_id: 'place_manager', scope: 'place', applies_to: { name: 'HOG Roland' } },
+    ]);
+
+    await expect(
+      kisiAdapter.deleteUser(API_KEY, 999, { clientId: CLIENT_ID })
+    ).rejects.toMatchObject({
+      code: 'ELEVATED_ROLE_ATTACHED',
+      elevatedAssignments: [
+        { role_id: 'place_manager', scope: 'place', applies_to: 'HOG Roland' },
+      ],
+    });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses to DELETE when user holds the org owner role', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({
+      id: 999,
+      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+    });
+    kisiConnector.makeRequest.mockResolvedValueOnce([
+      { role_id: 'owner', scope: 'organization', applies_to: { name: 'House of Gains' } },
+    ]);
+
+    await expect(
+      kisiAdapter.deleteUser(API_KEY, 999, { clientId: CLIENT_ID })
+    ).rejects.toMatchObject({
+      code: 'ELEVATED_ROLE_ATTACHED',
+    });
+  });
+
+  it('refuses to DELETE on an unknown role_id (defensive — Kisi may add roles)', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({
+      id: 999,
+      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+    });
+    // Hypothetical future Kisi role we don't know about
+    kisiConnector.makeRequest.mockResolvedValueOnce([
+      { role_id: 'super_special_new_role', scope: 'group' },
+    ]);
+
+    await expect(
+      kisiAdapter.deleteUser(API_KEY, 999, { clientId: CLIENT_ID })
+    ).rejects.toMatchObject({ code: 'ELEVATED_ROLE_ATTACHED' });
+  });
+
+  it('falls back to applies_to_type when scope field is absent (defensive)', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({
+      id: 999,
+      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+    });
+    // Some Kisi responses may not include scope field — use applies_to_type as fallback
+    kisiConnector.makeRequest.mockResolvedValueOnce([
+      { role_id: 'administrator', applies_to_type: 'Organization', applies_to: { name: 'X' } },
+    ]);
+
+    await expect(
+      kisiAdapter.deleteUser(API_KEY, 999, { clientId: CLIENT_ID })
+    ).rejects.toMatchObject({ code: 'ELEVATED_ROLE_ATTACHED' });
+  });
+
+  it('proceeds to DELETE when user has zero role assignments (no elevated roles to find)', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({
+      id: 999,
+      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+    });
+    kisiConnector.makeRequest.mockResolvedValueOnce([]);
+    kisiConnector.makeRequest.mockResolvedValueOnce({});
+
+    await kisiAdapter.deleteUser(API_KEY, 999, { clientId: CLIENT_ID });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(3);
+    expect(kisiConnector.makeRequest.mock.calls[2][1].method).toBe('DELETE');
+  });
+
+});
+
+describe('[P3] kisi-adapter.findElevatedAssignments helper', () => {
+
+  it('returns empty array for non-array input', () => {
+    expect(kisiAdapter.findElevatedAssignments(null)).toEqual([]);
+    expect(kisiAdapter.findElevatedAssignments(undefined)).toEqual([]);
+    expect(kisiAdapter.findElevatedAssignments('not an array')).toEqual([]);
+  });
+
+  it('returns empty array when only group_basic roles present', () => {
+    const result = kisiAdapter.findElevatedAssignments([
+      { role_id: 'group_basic', scope: 'group' },
+      { role_id: 'group_basic', scope: 'group' },
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it('flags org-scoped assignments regardless of role_id', () => {
+    const elevated = { role_id: 'group_basic', scope: 'organization' };
+    expect(kisiAdapter.findElevatedAssignments([elevated])).toEqual([elevated]);
+  });
+
+  it('flags role_ids outside the allowed member set', () => {
+    const elevated = { role_id: 'manager', scope: 'group' };
+    expect(kisiAdapter.findElevatedAssignments([elevated])).toEqual([elevated]);
+  });
+
+  it('returns only the elevated subset, not the whole list', () => {
+    const member = { role_id: 'group_basic', scope: 'group' };
+    const admin = { role_id: 'administrator', scope: 'organization' };
+    const result = kisiAdapter.findElevatedAssignments([member, admin]);
+    expect(result).toEqual([admin]);
   });
 
 });
