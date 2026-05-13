@@ -497,26 +497,44 @@ router.post('/clients', requireInviteToken, async (req, res) => {
     } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
 
-    // Business rule: tier determines hardware_platform (Connect=Kisi, Base/Pro=Seam)
+    // Business rule: tier determines hardware_platform (Connect=Kisi, Base/Pro=Seam).
     // Explicit hardware_platform override allowed.
     const derivedHardware = hardware_platform || (tier === 'Connect' ? 'kisi' : tier ? 'seam' : null);
 
     // Encrypt source platform API key if provided (AES-256-GCM pattern, same as hardware keys)
     const encryptedSourceKey = source_api_key ? encryptApiKey(source_api_key.trim()) : null;
 
-    // Upsert on source_site_id — prevents duplicate clients if onboarding is re-run.
-    // On conflict, update platform_instance_id in case it changed (reinstall).
-    const result = await db.query(
-      `INSERT INTO clients (name, platform, hardware_platform, tier, source_site_id, platform_instance_id, source_site_name, source_site_url, notification_email, source_api_key, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', NOW(), NOW())
+    // Upsert clients on source_site_id — prevents duplicates if onboarding is re-run.
+    const clientResult = await db.query(
+      `INSERT INTO clients (name, platform, source_site_id, platform_instance_id, source_site_name, source_site_url, notification_email, source_api_key, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), NOW())
        ON CONFLICT (source_site_id) DO UPDATE
          SET platform_instance_id = EXCLUDED.platform_instance_id,
-             updated_at      = NOW()
-       RETURNING id, name, platform, hardware_platform, tier, source_site_id, platform_instance_id, source_site_name, notification_email, status, created_at`,
-      [name.trim(), platform, derivedHardware, tier || null, source_site_id || null, platform_instance_id || null, source_site_name || null, source_site_url || null, notification_email || null, encryptedSourceKey]
+             updated_at = NOW()
+       RETURNING id, name, platform, source_site_id, platform_instance_id, source_site_name, notification_email, status, created_at`,
+      [name.trim(), platform, source_site_id || null, platform_instance_id || null, source_site_name || null, source_site_url || null, notification_email || null, encryptedSourceKey]
     );
-    log.info('operator.setup.client_upserted', { clientId: result.rows[0].id, name: result.rows[0].name });
-    res.status(201).json({ ok: true, client: result.rows[0] });
+    const clientRow = clientResult.rows[0];
+
+    // Upsert connector_subscriptions if hardware platform was specified.
+    if (derivedHardware) {
+      await db.query(
+        `INSERT INTO connector_subscriptions (client_id, hardware_platform, status, created_at, updated_at)
+         VALUES ($1, $2, 'active', NOW(), NOW())
+         ON CONFLICT (client_id, hardware_platform) DO NOTHING`,
+        [clientRow.id, derivedHardware]
+      );
+    }
+
+    log.info('operator.setup.client_upserted', { clientId: clientRow.id, name: clientRow.name });
+    res.status(201).json({
+      ok: true,
+      client: {
+        ...clientRow,
+        billing:   tier ? { tier } : null,
+        connector: derivedHardware ? { platform: derivedHardware, has_key: false } : null,
+      },
+    });
   } catch (err) {
     log.error('operator.setup.client_create_failed', {}, err);
     res.status(500).json({ error: 'Internal server error' });

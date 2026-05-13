@@ -117,8 +117,8 @@
     drawerTitle           = `Edit: ${client.name}`;
     drawerOpen            = true;
     editName              = client.name              || '';
-    editHardwarePlatform  = client.hardware_platform || '';
-    editTier              = client.tier              || '';
+    editHardwarePlatform  = (client.connector && client.connector.platform) || '';
+    editTier              = (client.billing && client.billing.tier) || '';
     editSiteName          = client.source_site_name   || '';
     editSiteId            = client.source_site_id           || '';
     editNotificationEmail = client.notification_email || '';
@@ -314,8 +314,8 @@
         {/if}
       </div>
       <div class="detail-row"><span class="detail-label">Platform</span><span>{activeClient.platform || '—'}</span></div>
-      <div class="detail-row"><span class="detail-label">Hardware</span><span>{activeClient.hardware_platform || '—'}</span></div>
-      <div class="detail-row"><span class="detail-label">Tier</span><span>{activeClient.tier || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Hardware</span><span>{(activeClient.connector && activeClient.connector.platform) || '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Tier</span><span>{(activeClient.billing && activeClient.billing.tier) || '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Site ID</span><CodeChip text={activeClient.source_site_id} full={true} /></div>
       <div class="detail-row"><span class="detail-label">Site Name</span><span>{activeClient.source_site_name || '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Notification Email</span><span>{activeClient.notification_email || '—'}</span></div>

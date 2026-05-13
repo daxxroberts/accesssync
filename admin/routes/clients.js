@@ -23,7 +23,10 @@ const hardwareAdapter = require('../../adapters/hardware-adapter');
 const { getTraceId, getActor } = require('../../core/trace-context');
 
 // hardware_platform is intentionally excluded — blocked once members are provisioned (GAP 1/2)
-const EDITABLE_FIELDS = ['name', 'tier', 'notification_email', 'status', 'source_site_id', 'source_site_name', 'platform'];
+// Fields editable directly on the clients row. tier moved to billing_subscriptions —
+// PATCH handler intercepts it separately and routes through bs UPSERT.
+// hardware_platform moved to connector_subscriptions — same intercept pattern via the api-key endpoint.
+const EDITABLE_FIELDS = ['name', 'notification_email', 'status', 'source_site_id', 'source_site_name', 'platform'];
 
 /**
  * GAP 3 (admin path) — Re-provision members after location reactivation.
@@ -91,18 +94,36 @@ router.post('/', async (req, res) => {
     const { name, platform = 'wix', hardware_platform, tier, source_site_id, source_site_name, notification_email, source_site_url } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
 
-    // Business rule: tier determines hardware_platform (DR — Connect=Kisi, Base/Pro=Seam)
+    // Business rule: tier determines hardware_platform (Connect=Kisi, Base/Pro=Seam).
     // Explicit hardware_platform override allowed for admin use only.
     const derivedHardware = hardware_platform || (tier === 'Connect' ? 'kisi' : tier ? 'seam' : null);
 
     const result = await db.query(
-      `INSERT INTO clients (name, platform, hardware_platform, tier, source_site_id, source_site_name, source_site_url, notification_email, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), NOW())
-       RETURNING id, name, platform, hardware_platform, tier, source_site_id, source_site_name, notification_email, status, created_at`,
-      [name.trim(), platform, derivedHardware, tier || null, source_site_id || null, source_site_name || null, source_site_url || null, notification_email || null]
+      `INSERT INTO clients (name, platform, source_site_id, source_site_name, source_site_url, notification_email, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), NOW())
+       RETURNING id, name, platform, source_site_id, source_site_name, notification_email, status, created_at`,
+      [name.trim(), platform, source_site_id || null, source_site_name || null, source_site_url || null, notification_email || null]
     );
-    log.info('admin.client_created', { name: result.rows[0].name, clientId: result.rows[0].id });
-    res.status(201).json({ ok: true, client: result.rows[0] });
+    const clientRow = result.rows[0];
+
+    if (derivedHardware) {
+      await db.query(
+        `INSERT INTO connector_subscriptions (client_id, hardware_platform, status, created_at, updated_at)
+         VALUES ($1, $2, 'active', NOW(), NOW())
+         ON CONFLICT (client_id, hardware_platform) DO NOTHING`,
+        [clientRow.id, derivedHardware]
+      );
+    }
+
+    log.info('admin.client_created', { name: clientRow.name, clientId: clientRow.id });
+    res.status(201).json({
+      ok: true,
+      client: {
+        ...clientRow,
+        billing:   tier ? { tier } : null,
+        connector: derivedHardware ? { platform: derivedHardware, has_key: false } : null,
+      },
+    });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Site ID already in use' });
     log.error('admin.clients_create_error', {}, err);
@@ -186,26 +207,85 @@ router.patch('/:id', async (req, res) => {
     for (const field of EDITABLE_FIELDS) {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
     }
-    if (!Object.keys(updates).length) {
+    const tierUpdate              = req.body.tier;
+    const hardwarePlatformUpdate  = req.body.hardware_platform;
+
+    if (!Object.keys(updates).length && tierUpdate === undefined && hardwarePlatformUpdate === undefined) {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
 
-    const setClauses = Object.keys(updates).map((k, i) => `${k} = $${i + 2}`);
-    const values     = [id, ...Object.values(updates)];
+    let updatedClient = null;
+    if (Object.keys(updates).length) {
+      const setClauses = Object.keys(updates).map((k, i) => `${k} = $${i + 2}`);
+      const values     = [id, ...Object.values(updates)];
+      const result = await db.query(
+        `UPDATE clients
+         SET ${setClauses.join(', ')}, updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        values
+      );
+      if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+      updatedClient = result.rows[0];
+    } else {
+      const r = await db.query('SELECT * FROM clients WHERE id = $1', [id]);
+      if (!r.rows.length) return res.status(404).json({ error: 'Client not found' });
+      updatedClient = r.rows[0];
+    }
 
-    const result = await db.query(
-      `UPDATE clients
-       SET ${setClauses.join(', ')}, updated_at = NOW()
-       WHERE id = $1
-       RETURNING *`,
-      values
+    // Tier — UPSERT into billing_subscriptions at the client level (location_id NULL).
+    // For multi-location clients with per-location tiers, use the per-location PATCH instead.
+    if (tierUpdate !== undefined) {
+      await db.query(
+        `INSERT INTO billing_subscriptions (client_id, location_id, tier, status)
+         VALUES ($1, NULL, $2, 'active')
+         ON CONFLICT (client_id, location_id) DO UPDATE
+           SET tier = EXCLUDED.tier, updated_at = NOW()`,
+        [id, tierUpdate || null]
+      );
+    }
+
+    // Hardware platform — UPSERT into connector_subscriptions.
+    if (hardwarePlatformUpdate !== undefined && hardwarePlatformUpdate) {
+      await db.query(
+        `INSERT INTO connector_subscriptions (client_id, hardware_platform, status, created_at, updated_at)
+         VALUES ($1, $2, 'active', NOW(), NOW())
+         ON CONFLICT (client_id, hardware_platform) DO NOTHING`,
+        [id, hardwarePlatformUpdate]
+      );
+    }
+
+    // Re-read merged view for the response
+    const enriched = await db.query(
+      `SELECT c.*,
+              cs.hardware_platform AS connector_platform,
+              (cs.hardware_api_key IS NOT NULL) AS connector_has_key,
+              (ARRAY_AGG(DISTINCT bs.tier) FILTER (WHERE bs.tier IS NOT NULL))[1] AS billing_tier
+         FROM clients c
+         LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
+         LEFT JOIN billing_subscriptions   bs ON bs.client_id = c.id AND bs.status = 'active'
+        WHERE c.id = $1
+        GROUP BY c.id, cs.hardware_platform, cs.hardware_api_key`,
+      [id]
     );
+    const e = enriched.rows[0] || updatedClient;
+    const { hardware_api_key, source_api_key, connector_platform, connector_has_key, billing_tier, ...safeClient } = e;
 
-    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
-    // S1: Strip encrypted API key — never return it in responses
-    const { hardware_api_key, source_api_key, ...safeClient } = result.rows[0];
-    logAdminAction(id, 'client_edited', { fields: Object.keys(updates), values: updates });
-    res.json({ ok: true, client: safeClient });
+    logAdminAction(id, 'client_edited', {
+      fields: [...Object.keys(updates), ...(tierUpdate !== undefined ? ['tier'] : []), ...(hardwarePlatformUpdate !== undefined ? ['hardware_platform'] : [])],
+    });
+
+    res.json({
+      ok: true,
+      client: {
+        ...safeClient,
+        billing:   billing_tier === undefined || billing_tier === null ? null : { tier: billing_tier },
+        connector: connector_platform === undefined || connector_platform === null ? null : {
+          platform: connector_platform,
+          has_key:  connector_has_key,
+        },
+      },
+    });
   } catch (err) {
     log.error('admin.clients_patch_error', {}, err);
     res.status(500).json({ error: 'Internal server error' });
