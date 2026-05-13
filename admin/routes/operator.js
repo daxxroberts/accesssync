@@ -1343,14 +1343,19 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
         [locationId, clientId]
       ),
       db.query(
-        `SELECT id, name, hardware_platform, tier FROM clients WHERE id = $1`,
+        `SELECT c.id, c.name,
+                cs.hardware_platform AS connector_platform,
+                (ARRAY_AGG(DISTINCT bs.tier) FILTER (WHERE bs.tier IS NOT NULL))[1] AS billing_tier
+         FROM clients c
+         LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
+         LEFT JOIN billing_subscriptions   bs ON bs.client_id = c.id AND bs.status = 'active'
+         WHERE c.id = $1
+         GROUP BY c.id, cs.hardware_platform`,
         [clientId]
       ),
       db.query(
-        // Per-plan member count: resolve via member_access_sources.mapping_id (always
-        // populated at grant time) rather than member_access.plan_mapping_id (which is
-        // currently inserted as NULL by resolveAndLock — see architectural OB
-        // project_ob_member_access_gone_race.md). Filter to active access rows only.
+        // Per-plan member count via member_access_sources.mapping_id (the source rows
+        // always carry the mapping). Filter to active access rows only.
         `SELECT pm.id, pm.source_plan_id, pm.plan_name, pm.door_name, pm.hardware_group_id,
                 pm.status, pm.source_status, pm.allow_multiple, pm.max_members, pm.created_at,
                 COUNT(DISTINCT ma.member_master_id)::int AS member_count
@@ -1366,9 +1371,15 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
       ),
     ]);
     if (!locationResult.rows.length) return res.status(404).json({ error: 'Location not found' });
+    const c = clientResult.rows[0] || null;
     res.json({
       location: locationResult.rows[0],
-      client:   clientResult.rows[0] || null,
+      client: c === null ? null : {
+        id:   c.id,
+        name: c.name,
+        billing:   c.billing_tier === null ? null : { tier: c.billing_tier },
+        connector: c.connector_platform === null ? null : { platform: c.connector_platform },
+      },
       mappings: mappingsResult.rows,
     });
   } catch (err) {

@@ -417,7 +417,7 @@ describe('[P1] Gate 2 DB cache tier — reads email from member_master, not memb
     invalidReqError.missingFields = ['email'];
 
     // DB query sequence for resolveIdentity:
-    // 1. SELECT kisi_user_pattern FROM clients
+    // 1. SELECT kisi_user_pattern FROM connector_subscriptions
     // 2. SELECT hardware_user_id FROM member_access (cache miss)
     // --- Gate 2 recovery triggers ---
     // 3. SELECT source_api_key, source_site_id FROM clients (Tier 1 setup — no API key found)
