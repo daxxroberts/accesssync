@@ -295,7 +295,8 @@ class GrantRevokeLogic {
       case 'payment.failed': {
         await hardwareAdapter.suspendAccess(
           hardwarePlatform, apiKey, hardwareUserId,
-          `Payment failed on ${new Date().toISOString()}`
+          `Payment failed on ${new Date().toISOString()}`,
+          { clientId: tenantId }
         );
         {
           const _actor = getActor() || {};
@@ -419,7 +420,7 @@ class GrantRevokeLogic {
           );
           const sourceTag = tagResult.rows[0]?.source_tag;
           if (sourceTag === 'accesssync') {
-            await hardwareAdapter.deleteUser(hardwarePlatform, apiKey, hardwareUserId);
+            await hardwareAdapter.deleteUser(hardwarePlatform, apiKey, hardwareUserId, { clientId: tenantId });
           } else {
             log.warn('kisi.user.delete_skipped_foreign', {
               clientId: tenantId, memberId,

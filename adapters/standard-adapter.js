@@ -284,7 +284,7 @@ class StandardAdapter {
     let hardwareUserId;
     try {
       hardwareUserId = await this._callHardwareToResolveIdentity(
-        hardwarePlatform, apiKey, email, name, { userPattern }
+        hardwarePlatform, apiKey, email, name, { userPattern, clientId: tenantId }
       );
     } catch (err) {
       if (err.code === 'INVALID_HARDWARE_REQUEST' && err.missingFields?.includes('email')) {
@@ -302,7 +302,7 @@ class StandardAdapter {
           });
           hardwareUserId = await this._callHardwareToResolveIdentity(
             hardwarePlatform, apiKey, recovered.email, recovered.name || name || null,
-            { userPattern }
+            { userPattern, clientId: tenantId }
           );
         } else {
           log.warn('adapter.identity.parked_pending_identity', {

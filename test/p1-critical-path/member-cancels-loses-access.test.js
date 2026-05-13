@@ -212,7 +212,8 @@ describe('[P1] Deleted member → hardware user removed from org', () => {
     expect(hardwareAdapter.deleteUser).toHaveBeenCalledWith(
       'kisi',
       expect.any(String),
-      KISI_HARDWARE_USER_ID
+      KISI_HARDWARE_USER_ID,
+      { clientId: HOG_CLIENT_ID }
     );
     expect(targetStatus).toBe('deleted');
   });

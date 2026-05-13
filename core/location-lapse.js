@@ -108,7 +108,11 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
   for (const row of rows) {
     try {
       if (row.hardware_user_id) {
-        await hardwareAdapter.suspendAccess(platform, apiKey, row.hardware_user_id);
+        await hardwareAdapter.suspendAccess(
+          platform, apiKey, row.hardware_user_id,
+          `Location subscription lapsed on ${new Date().toISOString()}`,
+          { clientId }
+        );
       } else {
         log.warn('location.no_hardware_user', { memberId: row.member_id });
         skipped++;

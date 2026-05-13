@@ -159,7 +159,7 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
     // Assert
     expect(hardwareUserId).toBe(String(KISI_USER_ID));
     expect(wixMembersApi.getMemberById).toHaveBeenCalledWith('plaintext-enc-wix-key', 'site-123', PLATFORM_MEMBER_ID);
-    expect(kisiAdapter.createUser).toHaveBeenCalledWith('kisi-api-key', RECOVERED_EMAIL, RECOVERED_NAME, { userPattern: 'invited' });
+    expect(kisiAdapter.createUser).toHaveBeenCalledWith('kisi-api-key', RECOVERED_EMAIL, RECOVERED_NAME, { userPattern: 'invited', clientId: TENANT_ID });
   });
 
   test('parks as pending_identity when Wix Members API returns null email AND DB cache empty', async () => {
@@ -233,7 +233,7 @@ describe('[P1] Gate 2 — standard adapter recovers missing email via Wix Member
     );
 
     expect(hardwareUserId).toBe(String(KISI_USER_ID));
-    expect(kisiAdapter.createUser).toHaveBeenCalledWith('kisi-api-key', RECOVERED_EMAIL, RECOVERED_NAME, { userPattern: 'invited' });
+    expect(kisiAdapter.createUser).toHaveBeenCalledWith('kisi-api-key', RECOVERED_EMAIL, RECOVERED_NAME, { userPattern: 'invited', clientId: TENANT_ID });
   });
 
   test('parks pending_identity when tenantId missing (cannot call Wix Members API)', async () => {
@@ -328,7 +328,7 @@ describe('[P1] Gate 2 — synthetic @users.wix.com emails are rejected as unqual
 
     expect(hardwareUserId).toBe(String(KISI_USER_ID));
     expect(kisiAdapter.createUser).toHaveBeenCalledWith(
-      'kisi-api-key', 'chad@houseofgains.com', 'Chad Owner', { userPattern: 'invited' }
+      'kisi-api-key', 'chad@houseofgains.com', 'Chad Owner', { userPattern: 'invited', clientId: TENANT_ID }
     );
   });
 });

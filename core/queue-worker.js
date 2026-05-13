@@ -126,7 +126,7 @@ async function _processJobBody(job, traceId) {
         memberId = resolvedMemberId;
         lastStep = 'grant.recovered.enable_access';
         const apiKey = await getClientApiKey(tenantId);
-        await hardwareAdapter.enableAccess(hardwarePlatform, apiKey, hardwareUserId);
+        await hardwareAdapter.enableAccess(hardwarePlatform, apiKey, hardwareUserId, { clientId: tenantId });
         lastStep = 'grant.recovered.complete_revoke';
         await standardAdapter.completeRevoke(memberId, tenantId, 'active');
         // OB-162: enrich trace_context on payment.recovered path (no mapping context available)

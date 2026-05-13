@@ -12,6 +12,42 @@
 const kisiConnector = require('./kisi-connector');
 const { log } = require('../../core/logger');
 
+/**
+ * AccessSync ownership marker stored in Kisi user `notes` field.
+ *
+ * Format: `[AS|managed|<clientId>|<createdAt-ISO>] <free-text reason>`
+ *
+ * Why this exists: Kisi `deleteUser` is destructive and irreversible. Relying on
+ * `member_master.source_tag = 'accesssync'` as the only guard means a DB wipe would
+ * cascade into a mass Kisi-user wipe. Stamping ownership on the Kisi user itself —
+ * inside its own `notes` field — makes the guard survive any DB disaster.
+ *
+ * Verified 2026-05-13 against live HOG Kisi org: POST /users accepts `notes` in the
+ * body and the value persists exactly on GET /users/:id (status 200, no munging).
+ *
+ * Maintenance contract: anything that PATCHes `notes` on a managed user MUST preserve
+ * the `[AS|managed|...]` prefix. See `_preserveMarker()`.
+ */
+const AS_MARKER_PREFIX = '[AS|managed|';
+const AS_MARKER_REGEX = /^\[AS\|managed\|([^|]+)\|([^\]]+)\] ?(.*)$/;
+
+function buildAccessSyncMarker(clientId, reason) {
+  const createdAt = new Date().toISOString();
+  const text = reason || 'Managed by AccessSync';
+  return `[AS|managed|${clientId}|${createdAt}] ${text}`;
+}
+
+/**
+ * Parse a Kisi user's `notes` field. Returns null if the marker is absent or malformed.
+ * Returns `{ clientId, createdAt, reason }` on a valid marker.
+ */
+function parseAccessSyncMarker(notes) {
+  if (!notes || typeof notes !== 'string') return null;
+  const match = notes.match(AS_MARKER_REGEX);
+  if (!match) return null;
+  return { clientId: match[1], createdAt: match[2], reason: match[3] || '' };
+}
+
 class KisiAdapter {
 
   /**
@@ -38,17 +74,28 @@ class KisiAdapter {
    * Returns new Kisi user ID.
    */
   async createUser(apiKey, email, name, options = {}) {
-    const pattern   = options.userPattern || 'invited';
+    const pattern    = options.userPattern || 'invited';
     const sendEmails = pattern === 'invited';
-    // Kisi's POST /users schema accepts only email + send_emails + confirm. Name is not part
-    // of the request body — Kisi defaults it server-side from email. Email is the identity anchor.
+    const clientId   = options.clientId;
+
+    if (!clientId) {
+      // Hard requirement: every AccessSync-created Kisi user must carry an ownership
+      // marker. Without clientId we cannot stamp it, so we cannot create.
+      throw new Error('[KisiAdapter] createUser requires options.clientId for ownership marker');
+    }
+
+    const notes = buildAccessSyncMarker(clientId, 'Created by AccessSync');
+
+    // Kisi POST /users accepts: email, send_emails, confirm, notes (verified 2026-05-13).
+    // notes carries the [AS|managed|clientId|createdAt] marker that deleteUser checks
+    // before destroying the user.
     const data = await kisiConnector.makeRequest('/users', {
       method: 'POST',
       body: JSON.stringify({
-        user: { email, send_emails: sendEmails, confirm: true }
+        user: { email, send_emails: sendEmails, confirm: true, notes }
       })
     }, apiKey);
-    log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id });
+    log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id, clientId });
     return data.id;
   }
 
@@ -122,14 +169,30 @@ class KisiAdapter {
 
   /**
    * Suspend access without deleting role (payment.failed flow).
+   *
+   * Re-stamps the `[AS|managed|clientId|...]` marker so the deleteUser guard survives
+   * the suspend cycle. The createdAt in the marker resets to "now" on each suspend —
+   * the marker's job is ownership-proof, not provenance audit (member_access_log holds
+   * provenance). One call, no preceding GET.
+   *
+   * If clientId is not supplied (legacy call sites), we fall back to the bare context
+   * message and emit a warning — the user loses delete-guard protection until the next
+   * grant re-stamps it.
    */
-  async suspendAccess(apiKey, userId, contextMessage = 'Access suspended') {
+  async suspendAccess(apiKey, userId, contextMessage = 'Access suspended', options = {}) {
     log.info('kisi.user.suspending', { userId });
+    const clientId = options.clientId;
+    const notes = clientId
+      ? buildAccessSyncMarker(clientId, contextMessage)
+      : contextMessage;
+    if (!clientId) {
+      log.warn('kisi.user.suspend_without_marker', { userId, reason: 'clientId not supplied' });
+    }
     try {
       await kisiConnector.makeRequest(`/users/${userId}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          user: { access_enabled: false, notes: contextMessage }
+          user: { access_enabled: false, notes }
         })
       }, apiKey);
       log.info('kisi.user.suspended', { userId });
@@ -141,15 +204,22 @@ class KisiAdapter {
 
   /**
    * Re-enable access (payment.recovered flow).
+   *
+   * Re-stamps the marker when clientId is supplied so the access cycle leaves a tagged
+   * user behind. We only patch `access_enabled` plus `notes` — same single PATCH call as
+   * before. If clientId is missing we skip touching notes entirely (avoids clobbering
+   * an existing marker with no context).
    */
-  async enableAccess(apiKey, userId) {
+  async enableAccess(apiKey, userId, options = {}) {
     log.info('kisi.user.enabling', { userId });
+    const clientId = options.clientId;
+    const body = clientId
+      ? { user: { access_enabled: true, notes: buildAccessSyncMarker(clientId, 'Access restored') } }
+      : { user: { access_enabled: true } };
     try {
       await kisiConnector.makeRequest(`/users/${userId}`, {
         method: 'PATCH',
-        body: JSON.stringify({
-          user: { access_enabled: true }
-        })
+        body: JSON.stringify(body)
       }, apiKey);
       log.info('kisi.user.enabled', { userId });
     } catch (err) {
@@ -160,14 +230,68 @@ class KisiAdapter {
 
   /**
    * Completely remove user from Kisi org (member.deleted flow).
-   * OB-125: callers must check member_identity.source_tag = 'accesssync' before invoking
-   * — AccessSync deletes only Kisi users it created.
+   *
+   * **Two-layer delete guard (defense in depth):**
+   *
+   *   Layer A (DB):  caller in core/grant-revoke.js verifies member_master.source_tag = 'accesssync'.
+   *   Layer B (Kisi): this method GETs the user, parses the `[AS|managed|<clientId>|...]`
+   *                   marker from the `notes` field, and refuses to DELETE if the marker
+   *                   is absent — or if `options.clientId` is supplied and does not
+   *                   match the marker's clientId (cross-tenant protection).
+   *
+   * Either guard failing alone fails closed. Both must pass for DELETE to fire.
+   *
+   * Call count: 1 GET + 1 DELETE. The extra GET is the cost of protecting an irreversible
+   * destructive operation. All other adapter methods remain single-call.
+   *
+   * Throws `KisiAdapterError` with code 'UNOWNED_USER' if the marker is absent.
+   * Throws `KisiAdapterError` with code 'CLIENT_MISMATCH' if the marker's clientId
+   * doesn't match `options.clientId`.
    */
-  async deleteUser(apiKey, userId) {
-    log.info('kisi.user.deleting', { userId });
+  async deleteUser(apiKey, userId, options = {}) {
+    log.info('kisi.user.delete_guard_check', { userId, clientId: options.clientId });
+
+    let user;
+    try {
+      user = await kisiConnector.makeRequest(`/users/${userId}`, { method: 'GET' }, apiKey);
+    } catch (err) {
+      if (err.statusCode === 404) {
+        // User already gone — idempotent success. Nothing to delete, nothing to guard.
+        log.info('kisi.user.delete_skipped_already_gone', { userId });
+        return;
+      }
+      log.error('kisi.user.delete_guard_fetch_failed', { userId, statusCode: err.statusCode }, err);
+      throw err;
+    }
+
+    const marker = parseAccessSyncMarker(user.notes);
+    if (!marker) {
+      const err = new Error(`Kisi user ${userId} has no AccessSync ownership marker — refusing to delete`);
+      err.code = 'UNOWNED_USER';
+      err.userId = userId;
+      err.kisiNotes = user.notes || null;
+      log.warn('kisi.user.delete_refused_unowned', { userId, kisiNotes: user.notes || null });
+      throw err;
+    }
+    if (options.clientId && marker.clientId !== options.clientId) {
+      const err = new Error(
+        `Kisi user ${userId} is owned by clientId ${marker.clientId}, ` +
+        `not requesting clientId ${options.clientId} — refusing to delete`
+      );
+      err.code = 'CLIENT_MISMATCH';
+      err.userId = userId;
+      err.ownerClientId = marker.clientId;
+      err.requestingClientId = options.clientId;
+      log.warn('kisi.user.delete_refused_cross_tenant', {
+        userId, ownerClientId: marker.clientId, requestingClientId: options.clientId,
+      });
+      throw err;
+    }
+
+    log.info('kisi.user.deleting', { userId, ownerClientId: marker.clientId });
     try {
       await kisiConnector.makeRequest(`/users/${userId}`, { method: 'DELETE' }, apiKey);
-      log.info('kisi.user.deleted', { userId });
+      log.info('kisi.user.deleted', { userId, ownerClientId: marker.clientId });
     } catch (err) {
       log.error('kisi.user.delete_failed', { userId, statusCode: err.statusCode }, err);
       throw err;
@@ -267,4 +391,7 @@ class KisiAdapter {
   }
 }
 
-module.exports = new KisiAdapter();
+const adapter = new KisiAdapter();
+adapter.buildAccessSyncMarker = buildAccessSyncMarker;
+adapter.parseAccessSyncMarker = parseAccessSyncMarker;
+module.exports = adapter;

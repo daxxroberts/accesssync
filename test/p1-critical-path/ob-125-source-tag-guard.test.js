@@ -97,7 +97,7 @@ describe('[P1] OB-125 source_tag guard on member.deleted → deleteUser', () => 
     expect(hardwareAdapter.deleteUser).toHaveBeenCalledTimes(1);
     // The mock decrypt strips 'enc:' prefix; the test fixture has no prefix so
     // the decrypted value equals the encrypted value (intentional in fixtures.js).
-    expect(hardwareAdapter.deleteUser).toHaveBeenCalledWith('kisi', ENCRYPTED_API_KEY_DB_VALUE, KISI_HARDWARE_USER_ID);
+    expect(hardwareAdapter.deleteUser).toHaveBeenCalledWith('kisi', ENCRYPTED_API_KEY_DB_VALUE, KISI_HARDWARE_USER_ID, { clientId: HOG_CLIENT_ID });
     expect(targetStatus).toBe('deleted');
   });
 

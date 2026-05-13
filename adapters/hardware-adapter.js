@@ -146,19 +146,25 @@ class HardwareAdapter {
     return this._getAdapter(hardwarePlatform).removeRole(apiKey, roleAssignmentId);
   }
 
-  async suspendAccess(hardwarePlatform, apiKey, userId, contextMessage) {
+  async suspendAccess(hardwarePlatform, apiKey, userId, contextMessage, options = {}) {
     this._validate(hardwarePlatform, 'suspendAccess', { userId });
-    return this._getAdapter(hardwarePlatform).suspendAccess(apiKey, userId, contextMessage);
+    return this._getAdapter(hardwarePlatform).suspendAccess(apiKey, userId, contextMessage, options);
   }
 
-  async enableAccess(hardwarePlatform, apiKey, userId) {
+  async enableAccess(hardwarePlatform, apiKey, userId, options = {}) {
     this._validate(hardwarePlatform, 'enableAccess', { userId });
-    return this._getAdapter(hardwarePlatform).enableAccess(apiKey, userId);
+    return this._getAdapter(hardwarePlatform).enableAccess(apiKey, userId, options);
   }
 
-  async deleteUser(hardwarePlatform, apiKey, userId) {
+  /**
+   * deleteUser carries an `options.clientId` payload that the Kisi adapter uses to
+   * verify the `[AS|managed|<clientId>|...]` marker stamped into the user's `notes`
+   * field at create time. See adapters/kisi/kisi-adapter.js deleteUser for the full
+   * two-layer guard description.
+   */
+  async deleteUser(hardwarePlatform, apiKey, userId, options = {}) {
     this._validate(hardwarePlatform, 'deleteUser', { userId });
-    return this._getAdapter(hardwarePlatform).deleteUser(apiKey, userId);
+    return this._getAdapter(hardwarePlatform).deleteUser(apiKey, userId, options);
   }
 
   async getLocks(hardwarePlatform, apiKey) {

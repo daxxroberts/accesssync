@@ -203,7 +203,7 @@ describe('[P1] processRevoke — OB-125 source_tag guard from member_master (new
       TENANT_ID, MEMBER_ID, 'kisi-user-99', [], 'kisi', 'member.deleted', deletedEvent
     );
 
-    expect(hardwareAdapter.deleteUser).toHaveBeenCalledWith('kisi', null, 'kisi-user-99');
+    expect(hardwareAdapter.deleteUser).toHaveBeenCalledWith('kisi', null, 'kisi-user-99', { clientId: TENANT_ID });
 
     // Verify source_tag query uses member_master JOIN, not member_identity
     const tagCall = db.query.mock.calls[1];
