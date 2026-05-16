@@ -32,11 +32,13 @@ jest.mock('../../core/plan-mapping-resolver', () => ({
 }));
 
 jest.mock('../../adapters/standard-adapter', () => ({
-  resolveAndLock:  jest.fn(),
-  resolveIdentity: jest.fn(),
-  completeGrant:   jest.fn(),
-  completeRevoke:  jest.fn(),
-  releaseLock:     jest.fn(),
+  resolveAndLock:       jest.fn(),
+  resolveIdentity:      jest.fn(),
+  completeGrant:        jest.fn(),
+  completeRevoke:       jest.fn(),
+  releaseLock:          jest.fn(),
+  parkPendingStart:     jest.fn(),
+  parkPendingHardware:  jest.fn(),
 }));
 
 jest.mock('../../core/grant-revoke', () => ({
@@ -214,16 +216,17 @@ describe('[P1] Queue worker handles unknown plan — PLAN_NOT_MAPPED path (W-1)'
 
 describe('[P1] Queue worker parks member when plan has no hardware group (Wix-first flow)', () => {
 
-  it('parks member as pending_hardware when resolver returns empty array', async () => {
+  it('parks member via parkPendingHardware([]) when resolver returns empty array', async () => {
     planMappingResolver.resolve.mockResolvedValue([]);
 
     const job = makeJob('grant');
     await processJob(job);
 
     expect(standardAdapter.resolveAndLock).toHaveBeenCalled();
-    expect(standardAdapter.releaseLock).toHaveBeenCalledWith(
-      MEMBER_INTERNAL_ID, HOG_CLIENT_ID, 'pending_hardware',
-      expect.objectContaining({ planId: CONNECT_PLAN_ID })
+    // S-11/DR-046: no-mapping case calls parkPendingHardware with empty array.
+    // No source row gets written; access stays 'inactive'; signal lives in config_alert_log.
+    expect(standardAdapter.parkPendingHardware).toHaveBeenCalledWith(
+      MEMBER_INTERNAL_ID, HOG_CLIENT_ID, []
     );
     expect(grantRevokeLogic.processGrant).not.toHaveBeenCalled();
   });
@@ -232,16 +235,18 @@ describe('[P1] Queue worker parks member when plan has no hardware group (Wix-fi
 
 describe('[P1] Queue worker parks member when no API key is configured', () => {
 
-  it('parks member as pending_hardware when client has no hardware API key', async () => {
+  it('parks member via parkPendingHardware(mappings) when client has no hardware API key', async () => {
     // Return no API key from client lookup
     db.query.mockResolvedValue({ rows: [{ hardware_api_key: null }] });
 
     const job = makeJob('grant');
     await processJob(job);
 
-    expect(standardAdapter.releaseLock).toHaveBeenCalledWith(
-      MEMBER_INTERNAL_ID, HOG_CLIENT_ID, 'pending_hardware',
-      expect.objectContaining({ planId: CONNECT_PLAN_ID })
+    // S-11/DR-046: API-key-missing case calls parkPendingHardware with the mappings array
+    // so per-mapping source rows get written in 'pending_hardware' status. Reconcile picks
+    // them up when the API key arrives.
+    expect(standardAdapter.parkPendingHardware).toHaveBeenCalledWith(
+      MEMBER_INTERNAL_ID, HOG_CLIENT_ID, expect.any(Array)
     );
     expect(grantRevokeLogic.processGrant).not.toHaveBeenCalled();
   });

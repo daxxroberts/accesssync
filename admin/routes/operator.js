@@ -139,24 +139,34 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
     }
 
     // ── Status activation: grant all members with active access on this plan ──
+    // S-11/DR-046: "members on this plan" = members whose source rows reference this mapping.
     if (newStatus === 'active' && oldStatus === 'inactive') {
       const members = await db.query(
-        `SELECT ma.id AS member_id, ma.hardware_user_id
+        `SELECT DISTINCT ma.id AS member_id, ma.hardware_user_id
          FROM member_access ma
+         JOIN member_access_sources mas ON mas.access_id = ma.id
          WHERE ma.client_id = $1
            AND ma.status = 'active'
-           AND ma.plan_mapping_id = (SELECT id FROM plan_mappings WHERE source_plan_id = $2 AND client_id = $1 LIMIT 1)
+           AND mas.mapping_id = $3
+           AND mas.status = 'active'
            AND ma.hardware_user_id IS NOT NULL`,
-        [clientId, source_plan_id]
+        [clientId, source_plan_id, mappingId]
       );
       for (const m of members.rows) {
         for (const groupId of newGroupIds) {
           try {
             const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, m.hardware_user_id, groupId);
             await db.query(
-              `INSERT INTO member_access_sources (access_id, mapping_id, hardware_group_id, role_assignment_id)
-               VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-              [m.member_id, mappingId, groupId, String(roleId)]
+              // S-11/A9: client_id required + 'active' status on new source rows.
+              `INSERT INTO member_access_sources
+                 (client_id, access_id, source_type, source_plan_id, mapping_id,
+                  hardware_group_id, role_assignment_id, status, provisioned_at)
+               VALUES ($1, $2, 'plan', $3, $4, $5, $6, 'active', NOW())
+               ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
+                 SET role_assignment_id = EXCLUDED.role_assignment_id,
+                     status = 'active',
+                     updated_at = NOW()`,
+              [clientId, m.member_id, source_plan_id, mappingId, groupId, String(roleId)]
             );
             log.info('operator.sync.granted', { memberId: m.member_id, hardwareGroupId: groupId, reason: 'mapping_activated' });
           } catch (err) {
@@ -181,14 +191,16 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
       [mappingId]
     );
 
-    // Also get members with active access (for added groups — they may not have source rows yet for new groups)
+    // S-11/DR-046: members "on this plan" = members with active source rows under this mapping.
     const activeMembersForGrant = await db.query(
       `SELECT DISTINCT ma.id AS member_id, ma.hardware_user_id
        FROM member_access ma
+       JOIN member_access_sources mas ON mas.access_id = ma.id
        WHERE ma.client_id = $1 AND ma.status = 'active'
-         AND ma.plan_mapping_id = (SELECT id FROM plan_mappings WHERE source_plan_id = $2 AND client_id = $1 LIMIT 1)
+         AND mas.mapping_id = $2
+         AND mas.status = 'active'
          AND ma.hardware_user_id IS NOT NULL`,
-      [clientId, source_plan_id]
+      [clientId, mappingId]
     );
 
     // Grant added groups to all active members
@@ -196,10 +208,17 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
       for (const m of activeMembersForGrant.rows) {
         try {
           const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, m.hardware_user_id, groupId);
+          // S-11/A9: client_id required on every member_access_sources INSERT.
           await db.query(
-            `INSERT INTO member_access_sources (access_id, mapping_id, hardware_group_id, role_assignment_id)
-             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-            [m.member_id, mappingId, groupId, String(roleId)]
+            `INSERT INTO member_access_sources
+               (client_id, access_id, source_type, mapping_id, hardware_group_id,
+                role_assignment_id, status, provisioned_at)
+             VALUES ($1, $2, 'plan', $3, $4, $5, 'active', NOW())
+             ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
+               SET role_assignment_id = EXCLUDED.role_assignment_id,
+                   status = 'active',
+                   updated_at = NOW()`,
+            [clientId, m.member_id, mappingId, groupId, String(roleId)]
           );
           log.info('operator.sync.granted', { memberId: m.member_id, hardwareGroupId: groupId, reason: 'group_added' });
         } catch (err) {
@@ -309,19 +328,24 @@ async function validateApiKeyGroups(clientId, apiKey, hardwarePlatform) {
  * Returns the count of members re-queued.
  */
 async function retryPendingHardwareMembers(clientId, planId = null) {
+  // S-11/DR-046: pending_hardware lives on member_access_sources. Find members with at
+  // least one source row in pending_hardware status. Source row carries the source_plan_id
+  // we need for the synthetic re-grant event.
   const result = await db.query(
     planId
-      ? `SELECT mm.platform_member_id, mm.source_platform, pm.source_plan_id AS pending_plan_id
-         FROM member_access ma
-         JOIN member_master mm ON mm.id = ma.member_master_id
-         JOIN plan_mappings pm ON pm.id = ma.plan_mapping_id
-         WHERE ma.client_id = $1 AND ma.status = 'pending_hardware'
-           AND pm.source_plan_id = $2`
-      : `SELECT mm.platform_member_id, mm.source_platform, pm.source_plan_id AS pending_plan_id
-         FROM member_access ma
-         JOIN member_master mm ON mm.id = ma.member_master_id
-         LEFT JOIN plan_mappings pm ON pm.id = ma.plan_mapping_id
-         WHERE ma.client_id = $1 AND ma.status = 'pending_hardware'`,
+      ? `SELECT DISTINCT mm.platform_member_id, mm.source_platform,
+                mas.source_plan_id AS pending_plan_id
+         FROM member_access_sources mas
+         JOIN member_access ma  ON ma.id = mas.access_id
+         JOIN member_master mm  ON mm.id = ma.member_master_id
+         WHERE ma.client_id = $1 AND mas.status = 'pending_hardware'
+           AND mas.source_plan_id = $2`
+      : `SELECT DISTINCT mm.platform_member_id, mm.source_platform,
+                mas.source_plan_id AS pending_plan_id
+         FROM member_access_sources mas
+         JOIN member_access ma  ON ma.id = mas.access_id
+         JOIN member_master mm  ON mm.id = ma.member_master_id
+         WHERE ma.client_id = $1 AND mas.status = 'pending_hardware'`,
     planId ? [clientId, planId] : [clientId]
   );
   if (result.rows.length === 0) return 0;
@@ -885,8 +909,12 @@ router.get('/:clientId', async (req, res) => {
         [clientId]
       ),
       db.query(
-        `SELECT COUNT(*)::int AS count FROM member_access
-         WHERE client_id = $1 AND status = 'pending_hardware'`,
+        // S-11/DR-046: pending_hardware lives on source rows. Count distinct access rows
+        // that have at least one source row in pending_hardware state.
+        `SELECT COUNT(DISTINCT ma.id)::int AS count
+         FROM member_access ma
+         JOIN member_access_sources mas ON mas.access_id = ma.id
+         WHERE ma.client_id = $1 AND mas.status = 'pending_hardware'`,
         [clientId]
       ),
       db.query(
@@ -1647,10 +1675,14 @@ router.get('/:clientId/plan-mappings/:mappingId/members', async (req, res) => {
     const check = await db.query('SELECT id FROM plan_mappings WHERE id = $1 AND client_id = $2', [mappingId, clientId]);
     if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
 
+    // S-11/DR-046: members "on this mapping" = members with active source rows under this mapping.
     const result = await db.query(
       `SELECT COUNT(DISTINCT ma.member_master_id) AS count
        FROM member_access ma
-       WHERE ma.plan_mapping_id = $1 AND ma.client_id = $2`,
+       JOIN member_access_sources mas ON mas.access_id = ma.id
+       WHERE mas.mapping_id = $1
+         AND ma.client_id = $2
+         AND mas.status NOT IN ('cancelled','revoked')`,
       [mappingId, clientId]
     );
     res.json({ count: parseInt(result.rows[0].count, 10) });
@@ -1671,19 +1703,24 @@ router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
     const check = await db.query('SELECT id FROM plan_mappings WHERE id = $1 AND client_id = $2', [mappingId, clientId]);
     if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
 
+    // S-11/DR-046: holders+subs "on this mapping" = distinct access rows with source rows
+    // under this mapping. Source-row status surfaces per-plan state (active/pending_hardware/etc).
     const result = await db.query(
-      `SELECT ma.id,
+      `SELECT DISTINCT ON (ma.id) ma.id,
               mm.platform_member_id,
               mm.first_name,
               mm.last_name,
               ma.sub_master_id AS plan_holder_id,
-              ma.status,
+              mas.status AS source_status,
+              ma.status  AS access_status,
               CASE WHEN ma.sub_master_id IS NULL THEN 'holder' ELSE 'sub' END AS role
        FROM member_access ma
-       JOIN member_master mm ON mm.id = ma.member_master_id
-       WHERE ma.plan_mapping_id = $1
+       JOIN member_master mm           ON mm.id = ma.member_master_id
+       JOIN member_access_sources mas  ON mas.access_id = ma.id
+       WHERE mas.mapping_id = $1
          AND ma.client_id = $2
-       ORDER BY ma.sub_master_id NULLS FIRST, mm.platform_member_id`,
+         AND mas.status NOT IN ('cancelled','revoked')
+       ORDER BY ma.id, ma.sub_master_id NULLS FIRST, mm.platform_member_id`,
       [mappingId, clientId]
     );
     res.json({
@@ -1805,13 +1842,15 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
         await db.query('DELETE FROM member_access_sources WHERE id = ANY($1::uuid[])', [oldMraIds]);
 
         if (newAssignments.length > 0) {
+          // S-11/A9: client_id required + status='active' since these are post-Kisi-call.
           const values = [];
           const placeholders = newAssignments.map((a, i) => {
-            values.push(memberId, mappingId, a.roleAssignmentId, a.groupId);
-            return `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`;
+            values.push(clientId, memberId, mappingId, a.roleAssignmentId, a.groupId);
+            return `($${i * 5 + 1}, $${i * 5 + 2}, 'plan', $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5}, 'active', NOW())`;
           });
           await db.query(
-            `INSERT INTO member_access_sources (access_id, mapping_id, role_assignment_id, hardware_group_id)
+            `INSERT INTO member_access_sources
+               (client_id, access_id, source_type, mapping_id, role_assignment_id, hardware_group_id, status, provisioned_at)
              VALUES ${placeholders.join(', ')}
              ON CONFLICT DO NOTHING`,
             values
@@ -1871,6 +1910,9 @@ router.get('/:clientId/members', async (req, res) => {
 
     const [rows, countRow] = await Promise.all([
       db.query(
+        // S-11/DR-046: per-plan info comes via member_access_sources joined to plan_mappings.
+        // billing_snapshot lives on member_billing, joined through mas.billing_id (A1 spec fix).
+        // Holder fallback: holders may have no source rows themselves; aggregate from sub-members.
         `SELECT ma.id,
                 mm.platform_member_id,
                 ma.hardware_platform,
@@ -1880,29 +1922,25 @@ router.get('/:clientId/members', async (req, res) => {
                 mm.email,
                 ma.status           AS access_status,
                 ma.provisioned_at,
-                -- Plan(s) this member is in, aggregated.
-                -- Primary: aggregate via member_access_sources (multi-source design, DR-034).
-                -- Holder fallback: aggregate from this member's sub-members' sources.
-                -- Direct-link fallback: when no sources rows exist (the post-S-10 HOG state),
-                -- fall back to ma.plan_mapping_id which is populated by the grant path directly.
+                -- Plan(s) this member is in: source rows under this access OR (for holders)
+                -- under their sub-members' access rows.
                 COALESCE(
                   (
                     SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
                     FROM member_access_sources mas
                     JOIN plan_mappings pm ON pm.id = mas.mapping_id
-                    WHERE mas.access_id = ma.id AND pm.plan_name IS NOT NULL
+                    WHERE mas.access_id = ma.id
+                      AND mas.status NOT IN ('cancelled','revoked')
+                      AND pm.plan_name IS NOT NULL
                   ),
                   (
                     SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
                     FROM member_access sub_ma
                     JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
                     JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
-                    WHERE sub_ma.sub_master_id = ma.member_master_id AND pm.plan_name IS NOT NULL
-                  ),
-                  (
-                    SELECT ARRAY[pm.plan_name]
-                    FROM plan_mappings pm
-                    WHERE pm.id = ma.plan_mapping_id AND pm.plan_name IS NOT NULL
+                    WHERE sub_ma.sub_master_id = ma.member_master_id
+                      AND sub_mas.status NOT IN ('cancelled','revoked')
+                      AND pm.plan_name IS NOT NULL
                   )
                 )                                AS plan_names,
                 COALESCE(
@@ -1910,33 +1948,36 @@ router.get('/:clientId/members', async (req, res) => {
                     SELECT ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)
                     FROM member_access_sources mas
                     JOIN plan_mappings pm ON pm.id = mas.mapping_id
-                    WHERE mas.access_id = ma.id AND pm.source_plan_id IS NOT NULL
+                    WHERE mas.access_id = ma.id
+                      AND mas.status NOT IN ('cancelled','revoked')
+                      AND pm.source_plan_id IS NOT NULL
                   ),
                   (
                     SELECT ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)
                     FROM member_access sub_ma
                     JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
                     JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
-                    WHERE sub_ma.sub_master_id = ma.member_master_id AND pm.source_plan_id IS NOT NULL
-                  ),
-                  (
-                    SELECT ARRAY[pm.source_plan_id]
-                    FROM plan_mappings pm
-                    WHERE pm.id = ma.plan_mapping_id AND pm.source_plan_id IS NOT NULL
+                    WHERE sub_ma.sub_master_id = ma.member_master_id
+                      AND sub_mas.status NOT IN ('cancelled','revoked')
+                      AND pm.source_plan_id IS NOT NULL
                   )
                 )                                AS plan_ids,
                 (
                   SELECT ARRAY_AGG(mas.valid_until ORDER BY pm.plan_name)
                   FROM member_access_sources mas
                   JOIN plan_mappings pm ON pm.id = mas.mapping_id
-                  WHERE mas.access_id = ma.id AND pm.plan_name IS NOT NULL
+                  WHERE mas.access_id = ma.id
+                    AND mas.status NOT IN ('cancelled','revoked')
+                    AND pm.plan_name IS NOT NULL
                 )                                AS plan_valid_untils,
                 COALESCE(
                   (
                     SELECT pm.plan_name
                     FROM member_access_sources mas
                     JOIN plan_mappings pm ON pm.id = mas.mapping_id
-                    WHERE mas.access_id = ma.id AND pm.plan_name IS NOT NULL
+                    WHERE mas.access_id = ma.id
+                      AND mas.status NOT IN ('cancelled','revoked')
+                      AND pm.plan_name IS NOT NULL
                     ORDER BY mas.created_at ASC
                     LIMIT 1
                   ),
@@ -1945,24 +1986,39 @@ router.get('/:clientId/members', async (req, res) => {
                     FROM member_access sub_ma
                     JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
                     JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
-                    WHERE sub_ma.sub_master_id = ma.member_master_id AND pm.plan_name IS NOT NULL
+                    WHERE sub_ma.sub_master_id = ma.member_master_id
+                      AND sub_mas.status NOT IN ('cancelled','revoked')
+                      AND pm.plan_name IS NOT NULL
                     ORDER BY sub_mas.created_at ASC
                     LIMIT 1
-                  ),
-                  (
-                    SELECT pm.plan_name
-                    FROM plan_mappings pm
-                    WHERE pm.id = ma.plan_mapping_id
                   )
                 )                                AS plan_name,
-                -- DR-042: billing snapshot on member_access directly.
-                ma.billing_snapshot,
-                -- Count of active source rows (hardware group assignments).
+                -- A1 fix: billing snapshot lives on member_billing, joined via mas.billing_id.
+                -- The most-recent active source's billing row carries the rate / coupon / autoRenew.
+                (
+                  SELECT mb.billing_snapshot
+                  FROM member_access_sources mas
+                  LEFT JOIN member_billing mb ON mb.id = mas.billing_id
+                  WHERE mas.access_id = ma.id
+                    AND mas.status NOT IN ('cancelled','revoked')
+                    AND mb.billing_snapshot IS NOT NULL
+                  ORDER BY mas.created_at DESC
+                  LIMIT 1
+                )                                AS billing_snapshot,
+                -- Count of source rows that are active or in-progress (not cancelled/revoked).
                 (
                   SELECT COUNT(*)::int
                   FROM member_access_sources mas
                   WHERE mas.access_id = ma.id
+                    AND mas.status NOT IN ('cancelled','revoked')
                 )                                AS assignment_count,
+                -- Number of sources currently in 'active' state — separates "has door access right now"
+                -- from "has a source row at all" (which may be pending_hardware/pending_start).
+                (
+                  SELECT COUNT(*)::int
+                  FROM member_access_sources mas
+                  WHERE mas.access_id = ma.id AND mas.status = 'active'
+                )                                AS active_source_count,
                 lat.webhook_received_at,
                 lat.enqueued_at,
                 lat.kisi_confirmed_at,
@@ -1970,11 +2026,24 @@ router.get('/:clientId/members', async (req, res) => {
                 lat.processing_s,
                 lat.total_s,
                 ma.sub_master_id    AS plan_holder_id,
-                ma.plan_mapping_id,
+                -- For sub-members: the mapping_id from their (single) source row, surfacing the
+                -- per-plan binding. Holder rows return NULL here.
+                (
+                  SELECT mas.mapping_id
+                  FROM member_access_sources mas
+                  WHERE mas.access_id = ma.id
+                    AND mas.status NOT IN ('cancelled','revoked')
+                  ORDER BY mas.created_at ASC
+                  LIMIT 1
+                )                                AS plan_mapping_id,
                 (
                   SELECT pm.plan_name
-                  FROM plan_mappings pm
-                  WHERE pm.id = ma.plan_mapping_id
+                  FROM member_access_sources mas
+                  JOIN plan_mappings pm ON pm.id = mas.mapping_id
+                  WHERE mas.access_id = ma.id
+                    AND mas.status NOT IN ('cancelled','revoked')
+                  ORDER BY mas.created_at ASC
+                  LIMIT 1
                 )                                AS sub_plan_name,
                 CASE WHEN ma.sub_master_id IS NULL THEN 'holder' ELSE 'sub' END AS role,
                 holder_mm.id          AS holder_id,
@@ -2016,17 +2085,20 @@ router.get('/:clientId/members', async (req, res) => {
       ),
     ]);
 
-    // Derive effective_status: if mas.status is 'failed' but the member has at least one
-    // successful role assignment, they have partial access — don't show blanket failure.
+    // S-11/DR-046: derive effective_status from access_status + source-row counts.
+    //   inactive + assignment_count > 0  → 'partial' (sources exist but none active —
+    //                                       e.g. all in pending_hardware, or some failed)
+    //   active   + active_source_count = 0 (holder) → 'holder_only' (billing identity, no door)
+    //   else                              → access_status as-is
     const members = rows.rows.map(m => {
       let effectiveStatus = m.access_status;
-      if (m.access_status === 'failed' && m.assignment_count > 0) {
+      if (m.access_status === 'inactive' && m.assignment_count > 0 && m.active_source_count === 0) {
         effectiveStatus = 'partial';
       }
-      // Plan holder with active status but no role assignments: they're the billing identity
-      // with no door access of their own. Show as 'holder_only' so the UI doesn't imply
-      // they have a door assigned.
-      if (m.role === 'holder' && m.access_status === 'active' && m.assignment_count === 0) {
+      // Plan holder with active status but no active source rows of their own: they're the
+      // billing identity with no door access of their own. Show as 'holder_only' so the UI
+      // doesn't imply they have a door assigned.
+      if (m.role === 'holder' && m.access_status === 'active' && m.active_source_count === 0) {
         effectiveStatus = 'holder_only';
       }
       return { ...m, effective_status: effectiveStatus };

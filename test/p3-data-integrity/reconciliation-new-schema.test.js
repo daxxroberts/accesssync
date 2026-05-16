@@ -94,8 +94,11 @@ describe('[P3] Stale lock cleanup — UPDATE member_access (new schema)', () => 
 
     await reconciliation.runNightlySweep();
 
+    // S-11/DR-046: stale-lock cleanup now writes 'inactive' (was 'failed' pre-S-11).
+    // Status enum collapsed to 4 values; per-plan failure lives on member_access_sources.
     const staleCall = db.query.mock.calls.find(c =>
-      typeof c[0] === 'string' && c[0].includes('UPDATE') && c[0].includes("status = 'failed'")
+      typeof c[0] === 'string' && c[0].includes('UPDATE') && c[0].includes("status = 'inactive'")
+        && c[0].includes('member_access') && c[0].includes("status = 'in_flight'")
     );
     expect(staleCall).toBeDefined();
     expect(staleCall[0]).toMatch(/UPDATE member_access/);

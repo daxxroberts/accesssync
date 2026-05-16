@@ -132,6 +132,20 @@
     if (e === 'member.synced')          return (who || 'An operator') + ' ran a per-member sync' + at + '.';
     if (e === 'error.retried')          return (who || 'An operator') + ' retried a failed job' + at + '.';
     if (e === 'client_deleted')         return (who || 'An owner') + ' deleted client ' + (c.client || '') + '.';
+    if (e === 'sub_member.revoke_queued')
+      return (who || 'A plan holder') + ' removed a sub-member' + onPlan + at + '.';
+    if (e === 'sub_member.grant_queued')
+      return (who || 'A plan holder') + ' added a sub-member' + onPlan + at + '.';
+    if (e === 'holder.claim_slot_queued')
+      return (who || 'A plan holder') + ' claimed their own access slot' + onPlan + at + '.';
+    if (e === 'holder.release_slot_queued')
+      return (who || 'A plan holder') + ' released their access slot' + onPlan + at + '.';
+    if (e === 'sub_member_soft_deleted')
+      return 'Sub-member record finalized — personal info purged, audit row preserved.';
+    if (e === 'member.sub_member.soft_deleted')
+      return 'Sub-member soft-deleted — DB record kept as audit shell, PII purged.';
+    if (e === 'member.sub_member.soft_delete_idempotent_skip')
+      return 'Soft-delete already done — no-op (race or replay).';
 
     // Internal infrastructure failures (route handlers + logger fault paths).
     // These bubble up when the system itself can't talk to Postgres or is

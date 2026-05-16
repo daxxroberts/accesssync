@@ -15,12 +15,13 @@
 
 jest.mock('../../db',                          () => ({ query: jest.fn() }));
 jest.mock('../../adapters/standard-adapter',   () => ({
-  resolveAndLock:  jest.fn(),
-  resolveIdentity: jest.fn(),
-  completeGrant:   jest.fn(),
-  completeRevoke:  jest.fn(),
-  releaseLock:     jest.fn(),
-  parkPendingStart: jest.fn(),
+  resolveAndLock:       jest.fn(),
+  resolveIdentity:      jest.fn(),
+  completeGrant:        jest.fn(),
+  completeRevoke:       jest.fn(),
+  releaseLock:          jest.fn(),
+  parkPendingStart:     jest.fn(),
+  parkPendingHardware:  jest.fn(),
 }));
 jest.mock('../../adapters/hardware-adapter',   () => ({
   assignRole:     jest.fn(),
@@ -274,12 +275,15 @@ describe('[P1] queue-worker: early-exit paths do not throw', () => {
 
   test('no-api-key path parks member and returns without throwing', async () => {
     const job = makeJob();
-    mappingResolver.resolve.mockResolvedValue([{ hardwarePlatform: 'kisi', hardwareGroupId: 'g-1', mappingId: 'm-1', apiKey: 'key' }]);
+    const mappings = [{ hardwarePlatform: 'kisi', hardwareGroupId: 'g-1', mappingId: 'm-1', sourcePlanId: 'p-1', apiKey: 'key' }];
+    mappingResolver.resolve.mockResolvedValue(mappings);
     standardAdapter.resolveAndLock.mockResolvedValue({ memberId: 'm-001', hardwareUserId: 'hw-001', hardwarePlatform: 'kisi' });
     db.query.mockResolvedValue({ rows: [] }); // no API key row
 
     await expect(processJob(job)).resolves.toBeUndefined();
-    expect(standardAdapter.releaseLock).toHaveBeenCalledWith('m-001', 'tenant-001', 'pending_hardware', expect.any(Object));
+    // S-11: parking states moved from releaseLock(..., 'pending_hardware') to parkPendingHardware
+    // which writes per-mapping source rows in 'pending_hardware' status.
+    expect(standardAdapter.parkPendingHardware).toHaveBeenCalledWith('m-001', 'tenant-001', mappings);
   });
 
   test('resolveIdentity returning null parks as pending_identity and returns', async () => {

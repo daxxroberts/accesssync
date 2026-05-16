@@ -121,18 +121,19 @@ describe('[P1] resolveAndLock GRANT — UPSERTs member_master then member_access
     expect(calls[1][0]).toContain('ON CONFLICT');
     expect(calls[1][1]).toEqual([TENANT_ID, 'wix', PLATFORM_MEMBER_ID, null, null]);
 
-    // Step 2: FOR UPDATE NOWAIT (non-null mappingId branch)
+    // Step 2: FOR UPDATE NOWAIT — S-11/DR-046 lock scope is per-(person × client)
     expect(calls[2][0]).toContain('FOR UPDATE NOWAIT');
     expect(calls[2][0]).toContain('member_access');
-    expect(calls[2][1]).toEqual([MEMBER_MASTER_ID, PLAN_MAPPING_ID]);
+    expect(calls[2][0]).toContain('client_id');
+    expect(calls[2][1]).toEqual([MEMBER_MASTER_ID, TENANT_ID]);
 
-    // Step 3: UPSERT member_access with status='in_flight'
+    // Step 3: UPSERT member_access with status='in_flight' (no plan_mapping_id post-S-11)
     expect(calls[3][0]).toContain('INSERT INTO member_access');
     expect(calls[3][0]).toContain("'in_flight'");
-    expect(calls[3][0]).toContain('ON CONFLICT');
+    expect(calls[3][0]).toContain('ON CONFLICT (member_master_id, client_id)');
+    expect(calls[3][0]).not.toContain('plan_mapping_id');
     expect(calls[3][1]).toContain(MEMBER_MASTER_ID);
     expect(calls[3][1]).toContain(TENANT_ID);
-    expect(calls[3][1]).toContain(PLAN_MAPPING_ID);
 
     expect(calls[4][0]).toBe('COMMIT');
   });
@@ -256,22 +257,27 @@ describe('[P1] completeGrant — INSERTs to member_access_sources (access_id FK)
     expect(calls[0][0]).toContain('member_master_id');
     expect(calls[0][1]).toEqual([MEMBER_ACCESS_ID]);
 
-    // Step 2: INSERT member_billing
+    // Step 2: INSERT member_billing — S-11/A10: UNIQUE includes client_id
     expect(calls[1][0]).toContain('INSERT INTO member_billing');
-    expect(calls[1][0]).toContain('ON CONFLICT (wix_order_id, cycle_index) DO NOTHING');
+    expect(calls[1][0]).toContain('ON CONFLICT (client_id, wix_order_id, cycle_index) DO NOTHING');
     expect(calls[1][1]).toContain(MEMBER_MASTER_ID);
 
-    // Step 3: INSERT member_access_sources — access_id FK (not member_id)
+    // Step 3: INSERT member_access_sources — S-11/A9: client_id NOT NULL, status='active'
     expect(calls[2][0]).toContain('INSERT INTO member_access_sources');
+    expect(calls[2][0]).toContain('client_id');
     expect(calls[2][0]).toContain('access_id');
-    expect(calls[2][0]).not.toContain('member_id');
-    expect(calls[2][1][0]).toBe(MEMBER_ACCESS_ID); // access_id = $1
+    expect(calls[2][0]).not.toContain(' member_id ');
+    // Param order: client_id=$1, access_id=$2, ...
+    expect(calls[2][1][0]).toBe(TENANT_ID);
+    expect(calls[2][1][1]).toBe(MEMBER_ACCESS_ID);
 
-    // Step 4: UPDATE member_access status='active' + hardware_platform
+    // Step 4: UPDATE member_access — S-11/DR-046 status is source-aggregate rollup
     expect(calls[3][0]).toContain('UPDATE member_access');
-    expect(calls[3][0]).toContain("status = 'active'");
+    expect(calls[3][0]).toContain('CASE');
+    expect(calls[3][0]).toContain("'active'");
+    expect(calls[3][0]).toContain("'inactive'");
     expect(calls[3][0]).not.toContain('member_access_state');
-    expect(calls[3][1][0]).toBe(MEMBER_ACCESS_ID); // $1 = member_access.id
+    expect(calls[3][1][0]).toBe(MEMBER_ACCESS_ID);
   });
 });
 
@@ -345,12 +351,12 @@ describe('[P1] completeGrant RI-03 — valid_until written to member_access_sour
 // Test 6 — completeRevoke: DELETE member_access_sources, UPDATE member_access
 // ════════════════════════════════════════════════════════════════════════════
 describe('[P1] completeRevoke — DELETEs from member_access_sources, UPDATEs member_access.status', () => {
-  it('DELETEs from member_access_sources WHERE access_id, not member_id', async () => {
+  it('DELETEs from member_access_sources WHERE access_id, then rolls up access status', async () => {
     const dbClient = {
       query: jest.fn()
         .mockResolvedValueOnce({ rows: [] }) // BEGIN
         .mockResolvedValueOnce({ rows: [] }) // DELETE member_access_sources
-        .mockResolvedValueOnce({ rows: [] }) // UPDATE member_access
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE member_access (rollup)
         .mockResolvedValueOnce({ rows: [] }),// COMMIT
       release: jest.fn(),
     };
@@ -363,13 +369,17 @@ describe('[P1] completeRevoke — DELETEs from member_access_sources, UPDATEs me
     const deleteCall = calls[1];
     expect(deleteCall[0]).toContain('DELETE FROM member_access_sources');
     expect(deleteCall[0]).toContain('access_id');
-    expect(deleteCall[0]).not.toContain('member_id');
+    expect(deleteCall[0]).not.toContain(' member_id ');
     expect(deleteCall[1][0]).toBe(MEMBER_ACCESS_ID);
 
+    // S-11: access status is now source-aggregate rollup, not a literal value.
     const updateCall = calls[2];
     expect(updateCall[0]).toContain('UPDATE member_access');
+    expect(updateCall[0]).toContain('CASE');
+    expect(updateCall[0]).toContain("'active'");
+    expect(updateCall[0]).toContain("'inactive'");
     expect(updateCall[0]).not.toContain('member_access_state');
-    expect(updateCall[1]).toEqual(['revoked', MEMBER_ACCESS_ID]);
+    expect(updateCall[1]).toEqual([MEMBER_ACCESS_ID]);
   });
 });
 
@@ -377,7 +387,7 @@ describe('[P1] completeRevoke — DELETEs from member_access_sources, UPDATEs me
 // Test 7 — releaseLock: UPDATE member_access.status='failed'
 // ════════════════════════════════════════════════════════════════════════════
 describe('[P1] releaseLock — UPDATEs member_access.status (not member_access_state)', () => {
-  it("writes status='failed' to member_access", async () => {
+  it("translates legacy 'failed' to 'inactive' on member_access (S-11 enum collapse)", async () => {
     db.query.mockResolvedValue({ rows: [] });
 
     await adapter.releaseLock(MEMBER_ACCESS_ID, TENANT_ID, 'failed');
@@ -385,7 +395,9 @@ describe('[P1] releaseLock — UPDATEs member_access.status (not member_access_s
     const updateCall = db.query.mock.calls[0];
     expect(updateCall[0]).toContain('UPDATE member_access');
     expect(updateCall[0]).not.toContain('member_access_state');
-    expect(updateCall[1]).toEqual(['failed', MEMBER_ACCESS_ID]);
+    // S-11/DR-046: 'failed' is no longer a valid access status. Translates to 'inactive'.
+    // Per-plan failure lives on member_access_sources.status='failed'.
+    expect(updateCall[1]).toEqual(['inactive', MEMBER_ACCESS_ID]);
   });
 });
 

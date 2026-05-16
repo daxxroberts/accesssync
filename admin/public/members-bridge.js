@@ -16,17 +16,21 @@
   "use strict";
 
   // ── Status mapping ─────────────────────────────────────────────────
-  // API effective_status → prototype status enum (active/suspended/pending/expired)
+  // S-11/DR-046: API effective_status comes from operator.js members SQL:
+  //   active        — access row status='active' AND ≥1 source row active
+  //   holder_only   — access row status='active' but no active sources of own (sub-members only)
+  //   inactive      — access row status='inactive', no active source
+  //   partial       — access row status='inactive' AND has source rows (e.g. pending_hardware)
+  //   pending_identity — never resolved; kept as "pending"
+  //   in_flight     — actively being processed (lock state)
   function mapStatus(effectiveStatus) {
     var map = {
-      active:           "active",
-      holder_only:      "active",
-      pending:          "pending",
-      pending_hardware: "pending",
-      partial:          "active",
-      failed:           "suspended",
-      suspended:        "suspended",
-      revoked:          "suspended",
+      active:            "active",
+      holder_only:       "active",
+      partial:           "pending",
+      inactive:          "suspended",
+      pending_identity:  "pending",
+      in_flight:         "pending",
     };
     return map[effectiveStatus] || "pending";
   }
@@ -35,16 +39,14 @@
     if (effectiveStatus === "holder_only") return "Holder";
     if (effectiveStatus === "active" && role === "holder") return "Holder";
     if (effectiveStatus === "active") return "Active";
-    if (effectiveStatus === "pending" || effectiveStatus === "pending_hardware") return "Pending Setup";
-    if (effectiveStatus === "suspended" || effectiveStatus === "failed" || effectiveStatus === "revoked") return "Suspended";
-    // partial coverage or unknown — treat active sub-member as active
+    if (effectiveStatus === "partial" || effectiveStatus === "pending_identity" || effectiveStatus === "in_flight") return "Pending Setup";
+    if (effectiveStatus === "inactive") return "Inactive";
     if (role === "sub") return "Active";
     return "Pending";
   }
 
   function deriveExpiresLabel(member) {
-    if (member.effective_status === "suspended" || member.effective_status === "failed") return "Payment failed";
-    if (member.effective_status === "revoked") return "Access revoked";
+    if (member.effective_status === "inactive") return "Payment failed";
     return "No expiry";
   }
 
