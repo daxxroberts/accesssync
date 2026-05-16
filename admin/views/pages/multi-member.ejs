@@ -1495,26 +1495,38 @@ function maybeStartPoll(prevMembers) {
   // Kick off pipelines for any newly-pending members
   pending.forEach(m => startPipeline(m.id));
 
-  // Check if anyone just flipped from pending → active
+  // Detect transitions from pending → active for banner + pipeline completion.
+  // Defensive: prevMembers may include members that were in the previous
+  // S.subMembers but are now active. We compare by id alone.
   if (prevMembers && prevMembers.length > 0) {
-    const prevPendingIds = new Set(prevMembers.filter(isNonTerminal).map(m => m.id));
-    const newlyActive = S.subMembers.filter(m => prevPendingIds.has(m.id) && m.accessStatus === 'active');
-    newlyActive.forEach(m => {
-      completePipeline(m.id);
+    const prevById = new Map(prevMembers.map(m => [m.id, m]));
+    const newlyActive = S.subMembers.filter(m => {
+      const wasPending = prevById.has(m.id) && isNonTerminal(prevById.get(m.id));
+      return wasPending && m.accessStatus === 'active';
     });
+    newlyActive.forEach(m => completePipeline(m.id));
     if (newlyActive.length > 0) {
       renderMemberList();
       showConfirmationBanner(newlyActive);
     }
   }
 
+  // Stop polling if everything has settled
   if (pending.length === 0) { stopPoll(); return; }
-  if (S.pollTimer) return; // already polling
+
+  // Already polling — no-op (poller calls loadData → re-enters here, ensures it stays alive)
+  if (S.pollTimer) return;
+
   S.pollTimer = setInterval(async () => {
     S.pollCount++;
     if (S.pollCount > POLL_MAX) { stopPoll(); return; }
+    // Snapshot BEFORE loadData fetches; loadData overwrites S.subMembers on success
     const prev = S.subMembers.slice();
-    await loadData(prev);
+    try {
+      await loadData(prev);
+    } catch (_) {
+      // loadData has its own error handling — never let a poll exception kill the timer
+    }
   }, POLL_INTERVAL_MS);
 }
 
