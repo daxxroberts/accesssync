@@ -6,15 +6,45 @@
 --
 -- PRESERVE + MIGRATE: existing rows transform, none drop.
 -- Single transaction. Idempotent (re-runnable). Rollback in spec Section 4.
+--
+-- ORDERING NOTE (added 2026-05-15 build, per RULE-15 design rationale):
+-- Spec listed STEP 1 (derive source rows) BEFORE STEP 4 (add columns to source table),
+-- but STEP 1's INSERT references status / provisioned_at / client_id columns that
+-- only exist after STEP 4. First migration attempt aborted on missing column.
+-- Corrected order: STEP 0 = add new source-table columns first, THEN derive rows.
+-- The remaining STEPs (collapse → recompute → drop+rename on member_access → A10
+-- on billing) keep their original positions because they only depend on member_access
+-- still having plan_mapping_id (STEP 4a drops it last) and on source rows being
+-- correctly populated (STEP 1 + 2 finish first).
 
 BEGIN;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- STEP 1: Generate source rows from existing access rows BEFORE altering schema
+-- STEP 0: Add new columns + CHECK to member_access_sources FIRST
 -- ─────────────────────────────────────────────────────────────────────────────
--- Why first: we need plan_mapping_id on member_access to derive source rows.
--- After step 1, source rows preserve the access→plan_mapping relationship
--- that we're about to lose from member_access itself.
+-- STEP 1 below INSERTs rows that write to status / provisioned_at — those columns
+-- must exist before the INSERT runs. A9 client_id column is added later (STEP 4e)
+-- because it can be backfilled from member_access AFTER source rows exist.
+--
+-- Status enum includes 'draft' for sub-member draft-submit flow (DR-040 multi-member).
+-- Drafts are sub-members added via the Member Hub but not yet batch-submitted for
+-- provisioning. Draft sources have no role_assignment_id and no Kisi call has fired.
+-- Submit flow flips 'draft' → 'pending_hardware' and enqueues the synthetic grant.
+
+ALTER TABLE member_access_sources ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'active';
+ALTER TABLE member_access_sources DROP CONSTRAINT IF EXISTS member_access_sources_status_check;
+ALTER TABLE member_access_sources ADD CONSTRAINT member_access_sources_status_check
+  CHECK (status IN ('draft','active','pending_hardware','pending_start','failed','cancelled','revoked'));
+ALTER TABLE member_access_sources ADD COLUMN IF NOT EXISTS provisioned_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE member_access_sources ADD COLUMN IF NOT EXISTS scheduled_start_date TIMESTAMP WITH TIME ZONE;
+ALTER TABLE member_access_sources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 1: Generate source rows from existing access rows BEFORE dropping columns
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Why first (after column adds): we need plan_mapping_id on member_access to
+-- derive source rows. After step 1, source rows preserve the access→plan_mapping
+-- relationship that we're about to lose from member_access itself (STEP 4a).
 
 INSERT INTO member_access_sources
   (access_id, source_type, source_plan_id, hardware_group_id,
@@ -53,7 +83,9 @@ SELECT
   COALESCE(ma.created_at, NOW())         AS created_at
 FROM   member_access ma
 LEFT JOIN plan_mappings pm   ON pm.id = ma.plan_mapping_id
-LEFT JOIN plan_mapping_groups pmg ON pmg.plan_mapping_id = ma.plan_mapping_id
+-- plan_mapping_groups uses 'mapping_id' (NOT 'plan_mapping_id') — confirmed against live schema 2026-05-15.
+-- Spec text had this wrong (RULE-15 design rationale: spec was written from memory, not from live introspection).
+LEFT JOIN plan_mapping_groups pmg ON pmg.mapping_id = ma.plan_mapping_id
 WHERE  ma.plan_mapping_id IS NOT NULL
   AND  NOT EXISTS (
     -- Idempotency: don't double-write if a source row already exists for this
@@ -146,7 +178,7 @@ SET    status = CASE
 END;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- STEP 4: Alter the schema
+-- STEP 4: Alter the schema (drop legacy columns + add new constraints)
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- 4a: member_access drops
@@ -157,6 +189,7 @@ ALTER TABLE member_access DROP COLUMN IF EXISTS scheduled_start_date;
 ALTER TABLE member_access DROP COLUMN IF EXISTS pending_plan_id;
 
 -- 4b: member_access new UNIQUE + CHECK
+ALTER TABLE member_access DROP CONSTRAINT IF EXISTS member_access_member_master_id_client_id_key;
 ALTER TABLE member_access ADD CONSTRAINT member_access_member_master_id_client_id_key
   UNIQUE (member_master_id, client_id);
 
@@ -165,21 +198,9 @@ ALTER TABLE member_access DROP CONSTRAINT IF EXISTS member_access_status_check;
 ALTER TABLE member_access ADD CONSTRAINT member_access_status_check
   CHECK (status IN ('active','inactive','in_flight','pending_identity'));
 
--- 4d: member_access_sources new columns
--- Status enum includes 'draft' for sub-member draft-submit flow (DR-040 multi-member).
--- Drafts are sub-members added via the Member Hub but not yet batch-submitted for
--- provisioning. Draft sources have no role_assignment_id and no Kisi call has fired.
--- Submit flow flips 'draft' → 'pending_hardware' and enqueues the synthetic grant.
-ALTER TABLE member_access_sources ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'active';
-ALTER TABLE member_access_sources DROP CONSTRAINT IF EXISTS member_access_sources_status_check;
-ALTER TABLE member_access_sources ADD CONSTRAINT member_access_sources_status_check
-  CHECK (status IN ('draft','active','pending_hardware','pending_start','failed','cancelled','revoked'));
-ALTER TABLE member_access_sources ADD COLUMN IF NOT EXISTS provisioned_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE member_access_sources ADD COLUMN IF NOT EXISTS scheduled_start_date TIMESTAMP WITH TIME ZONE;
-ALTER TABLE member_access_sources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
-
 -- 4e: A9 — multi-tenancy hardening on member_access_sources
--- Add client_id, derive from access_id → member_access.client_id, then enforce NOT NULL + FK
+-- Add client_id, derive from access_id → member_access.client_id, then enforce NOT NULL + FK.
+-- (4d's column adds happened in STEP 0 so STEP 1 could write to them.)
 ALTER TABLE member_access_sources ADD COLUMN IF NOT EXISTS client_id UUID;
 UPDATE member_access_sources mas
 SET    client_id = ma.client_id
