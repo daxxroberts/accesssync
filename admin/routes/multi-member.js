@@ -104,28 +104,42 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
       [clientId]
     );
 
-    // 3. Get existing sub-members for this holder (sub_master_id = holder's member_master_id)
+    // 3. Get existing sub-members for this holder (sub_master_id = holder's member_master_id).
+    // S-11/DR-046: per-plan state lives on member_access_sources. Each sub-member's
+    // (mapping_id, source-row status) tuple comes from the sources JOIN. A sub-member with
+    // multiple plans (rare) yields one row per plan-source. If they have NO source row yet
+    // (legacy data before S-11, or unprovisioned), the LEFT JOIN preserves them with NULL.
     const subMembersResult = await db.query(
       `SELECT mm.id AS member_master_id, ma.id AS access_id,
               mm.first_name, mm.last_name, mm.email, mm.phone,
-              ma.platform_member_id, ma.status, ma.plan_mapping_id,
-              ma.provisioned_at
+              ma.platform_member_id, ma.status AS access_status,
+              ma.provisioned_at,
+              mas.mapping_id  AS plan_mapping_id,
+              mas.status      AS source_status
        FROM member_access ma
-       JOIN member_master mm ON mm.id = ma.member_master_id
+       JOIN member_master mm        ON mm.id = ma.member_master_id
+       LEFT JOIN member_access_sources mas
+                                    ON mas.access_id = ma.id
+                                   AND mas.status NOT IN ('cancelled','revoked')
        WHERE ma.sub_master_id = $1
          AND ma.status NOT IN ('deleted')
-       ORDER BY ma.plan_mapping_id, ma.created_at`,
+       ORDER BY mas.mapping_id, ma.created_at`,
       [holder.member_master_id]
     );
 
-    // 4. Holder slot check — does the holder have an active member_access row per plan?
-    //    member_role_assignments replaced by member_access (count per plan_mapping_id)
+    // 4. Holder slot check — does the holder have an active source row per plan?
+    // S-11/DR-046: holder "having a slot on plan X" means they have an active source row
+    // with mapping_id=X under their (non-sub-member) access row.
     const holderSlotResult = await db.query(
-      `SELECT plan_mapping_id FROM member_access
-       WHERE member_master_id = $1 AND sub_master_id IS NULL AND status = 'active'`,
+      `SELECT mas.mapping_id
+       FROM member_access_sources mas
+       JOIN member_access ma ON ma.id = mas.access_id
+       WHERE ma.member_master_id = $1
+         AND ma.sub_master_id IS NULL
+         AND mas.status = 'active'`,
       [holder.member_master_id]
     );
-    const holderMappingIds = new Set(holderSlotResult.rows.map(r => r.plan_mapping_id));
+    const holderMappingIds = new Set(holderSlotResult.rows.map(r => r.mapping_id));
 
     res.json({
       holder: {
@@ -155,7 +169,9 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
         lastName:         m.last_name,
         email:            m.email,
         phone:            m.phone,
-        status:           m.status,
+        // status: prefer source-row status (per-plan state). Fall back to access status when
+        // the sub-member has no source row yet (e.g. mid-add, before provisioning).
+        status:           m.source_status || m.access_status,
         planMappingId:    m.plan_mapping_id,
         provisionedAt:    m.provisioned_at,
       })),
@@ -194,9 +210,10 @@ router.post('/api/multi-member/members', async (req, res) => {
       return res.status(404).json({ error: 'Plan holder not found' });
     }
 
-    // Validate plan mapping exists, belongs to this client, and allows multiple (DR-040)
+    // Validate plan mapping exists, belongs to this client, and allows multiple (DR-040).
+    // Also fetch source_plan_id and hardware_group_id so we can write the source row.
     const planCheck = await db.query(
-      `SELECT id, max_members FROM plan_mappings
+      `SELECT id, max_members, source_plan_id, hardware_group_id FROM plan_mappings
        WHERE id = $1 AND client_id = $2 AND allow_multiple = true AND status = 'active'`,
       [planMappingId, clientId]
     );
@@ -204,12 +221,16 @@ router.post('/api/multi-member/members', async (req, res) => {
       return res.status(404).json({ error: 'Plan not found or does not allow additional members' });
     }
 
-    // Check limit per plan — pending/active/in_flight consume a slot (DR-040)
+    // Check limit per plan — count source rows that occupy a slot.
+    // S-11/DR-046: drafts/active/pending_hardware/pending_start all consume a slot.
     const maxMembers = planCheck.rows[0].max_members || 1;
     const currentCount = await db.query(
-      `SELECT COUNT(*)::int AS cnt FROM member_access
-       WHERE sub_master_id = $1 AND plan_mapping_id = $2
-         AND status IN ('active', 'in_flight', 'pending')`,
+      `SELECT COUNT(DISTINCT mas.access_id)::int AS cnt
+       FROM member_access_sources mas
+       JOIN member_access ma ON ma.id = mas.access_id
+       WHERE ma.sub_master_id = $1
+         AND mas.mapping_id  = $2
+         AND mas.status IN ('draft','active','pending_hardware','pending_start','in_flight')`,
       [holderId, planMappingId]
     );
     if (currentCount.rows[0].cnt >= maxMembers) {
@@ -218,9 +239,15 @@ router.post('/api/multi-member/members', async (req, res) => {
 
     const holderRow = holderCheck.rows[0];
     const holderId_str = holderRow.platform_member_id;
+    const planRow = planCheck.rows[0];
 
     // Generate sub-member platform ID (DR-029): {holderPlatformId}###as{6-char-hex}
     // Retry on 23505 collision; UNIQUE on (client_id, source_platform, platform_member_id) is backstop.
+    //
+    // S-11 row layout for a draft sub-member:
+    //   member_master            — PII anchor
+    //   member_access            — sub_master_id=holderId, status='pending_identity' until submitted
+    //   member_access_sources    — mapping_id=planMappingId, status='draft', no role_assignment_id yet
     let masterResult, accessResult;
     let subPlatformMemberId;
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -237,16 +264,26 @@ router.post('/api/multi-member/members', async (req, res) => {
           [clientId, holderRow.source_platform, subPlatformMemberId,
            firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim()]
         );
-        // Row 2: access/role record
+        // Row 2: access/role record (S-11: no plan_mapping_id column; status='pending_identity'
+        // since no source row is active yet — submit flow flips this when grant lands)
         accessResult = await db.query(
           `INSERT INTO member_access
              (member_master_id, client_id, source_platform, platform_member_id,
-              hardware_platform, plan_mapping_id, sub_master_id, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
-           RETURNING id, status, plan_mapping_id`,
+              hardware_platform, sub_master_id, status)
+           VALUES ($1, $2, $3, $4, $5, $6, 'pending_identity')
+           RETURNING id, status`,
           [masterResult.rows[0].id, clientId, holderRow.source_platform,
-           subPlatformMemberId, holderRow.hardware_platform,
-           planMappingId, holderId]
+           subPlatformMemberId, holderRow.hardware_platform, holderId]
+        );
+        // Row 3: source row in 'draft' status — per-plan state per DR-046
+        await db.query(
+          `INSERT INTO member_access_sources
+             (client_id, access_id, source_type, source_plan_id, hardware_group_id,
+              mapping_id, status)
+           VALUES ($1, $2, 'plan', $3, $4, $5, 'draft')`,
+          [clientId, accessResult.rows[0].id,
+           planRow.source_plan_id || null, planRow.hardware_group_id || null,
+           planMappingId]
         );
         break;
       } catch (e) {
@@ -291,16 +328,27 @@ router.put('/api/multi-member/members/:subId', async (req, res) => {
   }
 
   try {
-    // Verify the access row is in a pending state and is a sub-member
+    // Verify the sub-member is in a draft state (editable). S-11/DR-046: draft state lives
+    // on the source row, not the access row. Editable means the sub-member has at least one
+    // source row in 'draft' status and no source row has reached 'active'/'pending_hardware'.
     const accessCheck = await db.query(
-      `SELECT ma.member_master_id FROM member_access ma
+      `SELECT ma.member_master_id
+       FROM member_access ma
        WHERE ma.id = $1 AND ma.sub_master_id IS NOT NULL
-         AND ma.status IN ('pending', 'draft')`,
+         AND EXISTS (
+           SELECT 1 FROM member_access_sources mas
+           WHERE mas.access_id = ma.id AND mas.status = 'draft'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM member_access_sources mas
+           WHERE mas.access_id = ma.id
+             AND mas.status NOT IN ('draft','cancelled','revoked')
+         )`,
       [subId]
     );
 
     if (!accessCheck.rows.length) {
-      return res.status(404).json({ error: 'Draft sub-member not found (only pending members can be edited)' });
+      return res.status(404).json({ error: 'Draft sub-member not found (only draft members can be edited)' });
     }
 
     const masterResult = await db.query(
@@ -336,14 +384,26 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
   const { subId } = req.params;
 
   try {
+    // S-11/DR-046: plan_mapping_id and source_plan_id come from member_access_sources, not access.
+    // A sub-member should have exactly one source row at this point in the lifecycle (draft,
+    // pending_hardware, or active). Pick the most recent non-cancelled source for context.
     const memberResult = await db.query(
-      `SELECT ma.id, ma.status, ma.hardware_user_id, ma.client_id,
-              ma.plan_mapping_id, ma.member_master_id, ma.sub_master_id,
+      `SELECT ma.id, ma.status AS access_status, ma.hardware_user_id, ma.client_id,
+              ma.member_master_id, ma.sub_master_id,
               mm.platform_member_id,
-              pm.source_plan_id
+              mas.mapping_id        AS plan_mapping_id,
+              mas.status            AS source_status,
+              mas.source_plan_id    AS source_plan_id
        FROM member_access ma
        JOIN member_master mm ON mm.id = ma.member_master_id
-       JOIN plan_mappings pm ON pm.id = ma.plan_mapping_id
+       LEFT JOIN LATERAL (
+         SELECT mapping_id, status, source_plan_id
+         FROM   member_access_sources
+         WHERE  access_id = ma.id
+           AND  status NOT IN ('cancelled','revoked')
+         ORDER  BY created_at DESC
+         LIMIT  1
+       ) mas ON TRUE
        WHERE ma.id = $1 AND ma.sub_master_id IS NOT NULL`,
       [subId]
     );
@@ -355,20 +415,22 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
     const member = memberResult.rows[0];
 
     // DR-044: terminal state — already soft-deleted. Return 410 Gone.
-    if (member.status === 'deleted') {
+    if (member.access_status === 'deleted') {
       return res.status(410).json({ error: 'Sub-member already removed' });
     }
 
-    if (member.status === 'pending') {
-      // Pending: hard delete — no hardware to clean up
+    // S-11: a draft sub-member has source_status='draft' and no hardware call has fired.
+    // Hard delete is safe — no Kisi role assignment to clean up.
+    if (member.source_status === 'draft') {
+      // Hard delete source rows + access + member_master
+      await db.query('DELETE FROM member_access_sources WHERE access_id = $1', [subId]);
       await db.query('DELETE FROM member_access WHERE id = $1', [subId]);
-      // Delete member_master only if no other member_access rows reference it
       await db.query(
         `DELETE FROM member_master WHERE id = $1
          AND NOT EXISTS (SELECT 1 FROM member_access WHERE member_master_id = $1)`,
         [member.member_master_id]
       );
-      log.info('admin.sub_member_deleted', { subId });
+      log.info('admin.sub_member_deleted', { subId, sourceStatus: 'draft' });
       return res.json({ ok: true, message: 'Draft member removed' });
     }
 
@@ -431,15 +493,19 @@ router.post('/api/multi-member/submit', async (req, res) => {
   }
 
   try {
-    // Fetch all pending sub-members for this holder (DR-040: per-plan source_plan_id)
+    // S-11/DR-046: per-plan draft state lives on member_access_sources (status='draft').
+    // Fetch all draft sub-members for this holder by joining sources.
     const drafts = await db.query(
-      `SELECT ma.id AS access_id, ma.platform_member_id, ma.plan_mapping_id,
+      `SELECT ma.id AS access_id, ma.platform_member_id,
               mm.first_name, mm.last_name, mm.email, mm.phone,
-              pm.source_plan_id
+              mas.id            AS source_id,
+              mas.mapping_id    AS plan_mapping_id,
+              mas.source_plan_id
        FROM member_access ma
-       JOIN member_master mm ON mm.id = ma.member_master_id
-       JOIN plan_mappings pm ON pm.id = ma.plan_mapping_id
-       WHERE ma.sub_master_id = $1 AND ma.client_id = $2 AND ma.status = 'pending'
+       JOIN member_master mm           ON mm.id = ma.member_master_id
+       JOIN member_access_sources mas  ON mas.access_id = ma.id
+       WHERE ma.sub_master_id = $1 AND ma.client_id = $2
+         AND mas.status = 'draft'
        ORDER BY ma.created_at`,
       [holderId, clientId]
     );
@@ -448,16 +514,22 @@ router.post('/api/multi-member/submit', async (req, res) => {
       return res.status(400).json({ error: 'No draft members to submit' });
     }
 
-    // Move all pending to 'pending_hardware' (member_access_state retired — status lives here)
+    // S-11: flip draft source rows to 'pending_hardware' (member_access status stays
+    // 'pending_identity' until grant lands and rolls up to 'active').
     await db.query(
-      `UPDATE member_access
+      `UPDATE member_access_sources
        SET status = 'pending_hardware', updated_at = NOW()
-       WHERE sub_master_id = $1 AND client_id = $2 AND status = 'pending'`,
-      [holderId, clientId]
+       WHERE client_id = $1
+         AND status = 'draft'
+         AND access_id IN (
+           SELECT id FROM member_access
+           WHERE sub_master_id = $2 AND client_id = $1
+         )`,
+      [clientId, holderId]
     );
 
     // DR-031: Enqueue synthetic grant events via BullMQ — one per sub-member.
-    // DR-040: Each sub-member carries its own plan_mapping_id — use that source_plan_id.
+    // DR-040: Each sub-member's source row carries the source_plan_id we need.
     for (const draft of drafts.rows) {
       if (!draft.plan_mapping_id) {
         log.warn('admin.sub_member_no_plan_mapping', { draftId: draft.access_id });
@@ -533,20 +605,30 @@ router.post('/api/multi-member/holder-claim-slot', async (req, res) => {
     );
     if (!planResult.rows.length) return res.status(404).json({ error: 'Plan not found or does not allow additional members' });
 
-    // Slot occupancy check (member_role_assignments retired — use member_access counts)
+    // S-11/DR-046: slot occupancy = source rows in active/pending state for this mapping.
+    // Holder slot: count holder's own source rows on this mapping.
     const holderHasSlot = await db.query(
-      `SELECT COUNT(*)::int AS cnt FROM member_access
-       WHERE member_master_id = $1 AND plan_mapping_id = $2 AND status = 'active'`,
+      `SELECT COUNT(*)::int AS cnt
+       FROM member_access_sources mas
+       JOIN member_access ma ON ma.id = mas.access_id
+       WHERE ma.member_master_id = $1
+         AND ma.sub_master_id IS NULL
+         AND mas.mapping_id = $2
+         AND mas.status = 'active'`,
       [holderId, planMappingId]
     );
     if (holderHasSlot.rows[0].cnt > 0) {
       return res.status(409).json({ error: 'Already on this plan' });
     }
 
+    // Sub-member slot count: distinct sub-members holding any active/pending state source.
     const subCount = await db.query(
-      `SELECT COUNT(*)::int AS cnt FROM member_access
-       WHERE sub_master_id = $1 AND plan_mapping_id = $2
-         AND status IN ('active', 'pending_hardware', 'in_flight')`,
+      `SELECT COUNT(DISTINCT mas.access_id)::int AS cnt
+       FROM member_access_sources mas
+       JOIN member_access ma ON ma.id = mas.access_id
+       WHERE ma.sub_master_id = $1
+         AND mas.mapping_id  = $2
+         AND mas.status IN ('active','pending_hardware','pending_start','in_flight','draft')`,
       [holderId, planMappingId]
     );
     const totalOccupied = holderHasSlot.rows[0].cnt + subCount.rows[0].cnt;

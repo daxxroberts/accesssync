@@ -71,10 +71,13 @@ class NightlyReconciliation {
       // Step 0: True-source sync — Wix ↔ DB diff, queue corrections for missing/lapsed members
       await this._syncTrueSources();
 
-      // Step 1: Clean up stale in_flight records (crash protection)
+      // Step 1: Clean up stale in_flight records (crash protection).
+      // S-11/DR-046: status enum collapsed; 'failed' on access row is gone.
+      // Stale lock → 'inactive' (the rollup default for "no active sources").
+      // Reconcile picks these up on the next sweep and re-attempts via synthetic events.
       await db.query(
         `UPDATE member_access
-         SET status = 'failed', updated_at = NOW()
+         SET status = 'inactive', updated_at = NOW()
          WHERE status = 'in_flight'
            AND updated_at < NOW() - INTERVAL '${this.staleThresholdMinutes} minutes'`
       );

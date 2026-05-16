@@ -36,11 +36,13 @@ class StandardAdapter {
    * Throws IN_FLIGHT_LOCK if Postgres 55P03 lock-not-available (FOR UPDATE NOWAIT contention).
    *
    * @param {string} tenantId
-   * @param {Object} event             standard event (platformMemberId, sourcePlatform, planMappingId)
+   * @param {Object} event             standard event (platformMemberId, sourcePlatform)
    * @param {string|null} hardwarePlatform  null for revoke path
+   * @param {string|null} [_unused]    legacy planMappingId parameter — ignored after S-11
+   *                                   (lock is now per-(person × client) per DR-046)
    * @returns {Object|null}
    */
-  async resolveAndLock(tenantId, event, hardwarePlatform, planMappingId) {
+  async resolveAndLock(tenantId, event, hardwarePlatform, _unused) {
     const dbClient = await db.getClient();
     try {
       await dbClient.query('BEGIN');
@@ -49,6 +51,8 @@ class StandardAdapter {
 
       if (hardwarePlatform !== null) {
         // GRANT path
+        // S-11/DR-046: member_access is per-(person × client). plan_mapping_id is no
+        // longer on this table — per-plan state lives on member_access_sources.
 
         // Step 1: UPSERT person record (PII anchor) — write email/name from event when present
         const masterResult = await dbClient.query(
@@ -63,27 +67,17 @@ class StandardAdapter {
         );
         memberMasterId = masterResult.rows[0].id;
 
-        // Step 2: Acquire row lock before UPSERT (Q-2: prevents deadlock on concurrent grant)
-        // 55P03 = lock_not_available — thrown by FOR UPDATE NOWAIT when row is already locked
+        // Step 2: Acquire row lock before UPSERT (Q-2: prevents deadlock on concurrent grant).
+        // S-11: lock scope is per-(person × client). Two webhooks for the same person
+        // serialize through this lock regardless of which plan triggered them.
+        // 55P03 = lock_not_available — thrown by FOR UPDATE NOWAIT when row is already locked.
         try {
-          // Postgres treats NULL = NULL as unknown, so when planMappingId is null we
-          // must use IS NULL or the lock SELECT returns zero rows and skips the lock.
-          // Both arms cover the same logical "(member_master_id, plan_mapping_id) tuple."
-          if (planMappingId === null) {
-            await dbClient.query(
-              `SELECT id FROM member_access
-               WHERE member_master_id = $1 AND plan_mapping_id IS NULL
-               FOR UPDATE NOWAIT`,
-              [memberMasterId]
-            );
-          } else {
-            await dbClient.query(
-              `SELECT id FROM member_access
-               WHERE member_master_id = $1 AND plan_mapping_id = $2
-               FOR UPDATE NOWAIT`,
-              [memberMasterId, planMappingId]
-            );
-          }
+          await dbClient.query(
+            `SELECT id FROM member_access
+             WHERE member_master_id = $1 AND client_id = $2
+             FOR UPDATE NOWAIT`,
+            [memberMasterId, tenantId]
+          );
         } catch (lockErr) {
           if (lockErr.code === '55P03') {
             const err = new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId} (clientId=${tenantId})`);
@@ -93,17 +87,18 @@ class StandardAdapter {
           throw lockErr;
         }
 
-        // Step 3: UPSERT access record — sets in_flight sentinel (Option B stall recovery)
-        // plan_holder = true for primary members (event.planHolderId null means they are the holder)
+        // Step 3: UPSERT access record — sets in_flight sentinel (Option B stall recovery).
+        // plan_holder = true for primary members (event.planHolderId null means they are the holder).
+        // S-11: ON CONFLICT key is now (member_master_id, client_id) per the new UNIQUE.
         const isPlanHolder = !event.planHolderId;
         const accessResult = await dbClient.query(
           `INSERT INTO member_access
-             (member_master_id, client_id, plan_mapping_id, source_platform, platform_member_id, status, plan_holder)
-           VALUES ($1, $2, $3, $4, $5, 'in_flight', $6)
-           ON CONFLICT (member_master_id, plan_mapping_id) DO UPDATE
+             (member_master_id, client_id, source_platform, platform_member_id, status, plan_holder)
+           VALUES ($1, $2, $3, $4, 'in_flight', $5)
+           ON CONFLICT (member_master_id, client_id) DO UPDATE
              SET status = 'in_flight', updated_at = NOW()
            RETURNING id, hardware_user_id`,
-          [memberMasterId, tenantId, planMappingId, event.sourcePlatform || 'wix', event.platformMemberId, isPlanHolder]
+          [memberMasterId, tenantId, event.sourcePlatform || 'wix', event.platformMemberId, isPlanHolder]
         );
         memberId = accessResult.rows[0].id;
         hardwareUserId = accessResult.rows[0].hardware_user_id;
@@ -173,7 +168,6 @@ class StandardAdapter {
         memberId, memberMasterId, tenantId,
         platformMemberId: event.platformMemberId,
         sourcePlatform: event.sourcePlatform || 'wix',
-        planMappingId,
         hardwarePlatform: hardwarePlatform || null,
         path: hardwarePlatform !== null ? 'grant' : 'revoke',
         stage: 'resolve', result: 'committed',
@@ -373,7 +367,7 @@ class StandardAdapter {
     // DIAG: select more columns + count so we can tell whether the row exists at all
     // vs exists with a null FK.
     const masterRow = await db.query(
-      `SELECT id, member_master_id, status, plan_mapping_id, created_at, updated_at
+      `SELECT id, member_master_id, status, created_at, updated_at
        FROM member_access WHERE id = $1`,
       [memberId]
     );
@@ -384,7 +378,6 @@ class StandardAdapter {
       lookupRowCount: masterRow.rowCount,
       lookupMemberMasterId: memberMasterId || null,
       lookupStatus: masterRow.rows[0]?.status || null,
-      lookupPlanMappingId: masterRow.rows[0]?.plan_mapping_id || null,
       lookupCreatedAt: masterRow.rows[0]?.created_at || null,
       lookupUpdatedAt: masterRow.rows[0]?.updated_at || null,
       stage: 'grant', result: masterRow.rowCount === 1 ? 'lookup_ok' : 'lookup_missing',
@@ -392,10 +385,13 @@ class StandardAdapter {
 
     // DIAG: if row missing, ALSO query for any member_access rows in the last 60s for
     // this tenant — to see if a sibling row exists that we should have used.
+    // S-11: post-DR-046 there should be exactly one member_access row per (person, client),
+    // so a "missing" lookup means the row was CASCADE-deleted mid-grant, not that we picked
+    // the wrong sibling.
     if (masterRow.rowCount === 0) {
       try {
         const siblings = await db.query(
-          `SELECT ma.id, ma.member_master_id, ma.status, ma.plan_mapping_id, ma.created_at,
+          `SELECT ma.id, ma.member_master_id, ma.status, ma.created_at,
                   mm.platform_member_id
            FROM member_access ma
            LEFT JOIN member_master mm ON mm.id = ma.member_master_id
@@ -408,7 +404,7 @@ class StandardAdapter {
           siblingCount: siblings.rowCount,
           siblings: siblings.rows.map(r => ({
             id: r.id, mmid: r.member_master_id, status: r.status,
-            pm: r.plan_mapping_id, pmi: r.platform_member_id,
+            pmi: r.platform_member_id,
             createdAt: r.created_at,
           })),
         });
@@ -432,7 +428,8 @@ class StandardAdapter {
       planEndDate, wixOrderId, wixSubscriptionId, cycleIndex,
       planId, planName, effectiveStart, effectiveEnd, billingSnapshot,
     } of assignments) {
-      // INSERT member_billing — idempotency guard: ON CONFLICT (wix_order_id, cycle_index) DO NOTHING
+      // INSERT member_billing — S-11/A10: UNIQUE is (client_id, wix_order_id, cycle_index)
+      // (multi-tenancy hardening — no longer relies on Wix UUID global uniqueness).
       let billingId = null;
       if (wixOrderId) {
         const billingResult = await db.query(
@@ -440,7 +437,7 @@ class StandardAdapter {
              (member_master_id, client_id, wix_order_id, wix_subscription_id, cycle_index,
               plan_id, plan_name, effective_start, effective_end, status, billing_snapshot)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10)
-           ON CONFLICT (wix_order_id, cycle_index) DO NOTHING
+           ON CONFLICT (client_id, wix_order_id, cycle_index) DO NOTHING
            RETURNING id`,
           [
             memberMasterId, tenantId, wixOrderId, wixSubscriptionId || null,
@@ -454,26 +451,33 @@ class StandardAdapter {
           billingId = billingResult.rows[0].id;
         } else {
           const existing = await db.query(
-            `SELECT id FROM member_billing WHERE wix_order_id = $1 AND cycle_index = $2`,
-            [wixOrderId, cycleIndex || 1]
+            `SELECT id FROM member_billing
+             WHERE client_id = $1 AND wix_order_id = $2 AND cycle_index = $3`,
+            [tenantId, wixOrderId, cycleIndex || 1]
           );
           billingId = existing.rows[0]?.id || null;
         }
       }
 
-      // INSERT member_access_sources — new schema: access_id FK, billing_id FK, valid_until (RI-03)
+      // INSERT member_access_sources — S-11/A9: client_id NOT NULL (multi-tenancy hardening).
+      // status='active' since this row represents a successful grant. provisioned_at set NOW().
+      // UNIQUE constraint is now (client_id, access_id, source_type, source_plan_id, hardware_group_id).
       await db.query(
         `INSERT INTO member_access_sources
-           (access_id, billing_id, source_type, source_plan_id, hardware_group_id,
-            role_assignment_id, mapping_id, effective_start, valid_until)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
+           (client_id, access_id, billing_id, source_type, source_plan_id, hardware_group_id,
+            role_assignment_id, mapping_id, status, provisioned_at,
+            effective_start, valid_until)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), $9, $10)
+         ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
            SET role_assignment_id = EXCLUDED.role_assignment_id,
                billing_id = COALESCE(EXCLUDED.billing_id, member_access_sources.billing_id),
+               status = 'active',
+               provisioned_at = COALESCE(member_access_sources.provisioned_at, NOW()),
                effective_start = COALESCE(EXCLUDED.effective_start, member_access_sources.effective_start),
-               valid_until = EXCLUDED.valid_until`,
+               valid_until = EXCLUDED.valid_until,
+               updated_at = NOW()`,
         [
-          memberId, billingId || null, sourceType || 'plan',
+          tenantId, memberId, billingId || null, sourceType || 'plan',
           sourcePlanId || null, hardwareGroupId || null,
           roleAssignmentId || null, mappingId || null,
           effectiveStart || null, planEndDate || null,
@@ -481,10 +485,21 @@ class StandardAdapter {
       );
     }
 
+    // S-11/DR-046: member_access.status is the rollup of source-row state.
+    // active if ≥1 source is active, else inactive. provisioned_at stamps the
+    // first time we saw any successful hardware call land for this person.
     await db.query(
       `UPDATE member_access
-       SET status = 'active', provisioned_at = NOW(), updated_at = NOW(),
-           hardware_platform = COALESCE(hardware_platform, $2)
+       SET status = CASE
+                      WHEN EXISTS (
+                        SELECT 1 FROM member_access_sources mas
+                        WHERE mas.access_id = $1 AND mas.status = 'active'
+                      ) THEN 'active'
+                      ELSE 'inactive'
+                    END,
+           provisioned_at = COALESCE(provisioned_at, NOW()),
+           hardware_platform = COALESCE(hardware_platform, $2),
+           updated_at = NOW()
        WHERE id = $1`,
       [memberId, resolvedHardwarePlatform]
     );
@@ -548,14 +563,18 @@ class StandardAdapter {
    * Records a successful revoke — cleans up member_access_sources and sets member_access status.
    * Core Engine determines targetStatus from eventType; this layer never handles event type strings (DR-023).
    *
-   * targetStatus values:
-   *   'inactive'   — plan.cancelled, booking.cancelled (clears source rows)
-   *   'disabled'   — payment.failed path (preserve source rows for fast recovery)
-   *   'deleted'    — member.deleted (clears all source rows)
-   *   'revoked'    — legacy alias for 'inactive', kept for backwards compat
-   *   'cancelled'  — legacy alias for early-exit never-provisioned path
+   * S-11/DR-046: member_access.status enum is 4 values (active/inactive/in_flight/pending_identity).
+   * Caller's targetStatus values are translated:
+   *   'inactive'   — plan.cancelled, booking.cancelled. Clears source rows. Access → 'inactive'.
+   *   'active'     — payment.recovered (re-enable). Source rows preserved. Access → recomputed from sources.
+   *   'disabled'   — payment.failed path. Source rows preserved (fast recovery). Access → 'inactive'.
+   *                  The "disabled" semantic lives in source-row state + member_access_log.
+   *   'deleted'    — member.deleted. Clears all source rows. Access → 'inactive'.
+   *                  The "deleted" semantic lives in member_master soft-delete (DR-044) + log.
+   *   'revoked'    — legacy alias for 'inactive'.
+   *   'cancelled'  — legacy alias for never-provisioned early exit. Access → 'inactive'.
    *
-   * DR-034: For 'inactive'/'revoked'/'deleted'/'cancelled' paths, removes source rows from member_access_sources.
+   * DR-034: For clearing-state paths, removes source rows from member_access_sources.
    * Remaining-count check (before hardware removeRole call) is the caller's responsibility.
    *
    * @param {string} memberId   member_access.id
@@ -564,13 +583,16 @@ class StandardAdapter {
    * @param {Object} [options]  { sourcePlanId, sourceType, hardwareGroupId }
    */
   async completeRevoke(memberId, tenantId, targetStatus, options = {}) {
-    const clearRole = targetStatus === 'inactive' || targetStatus === 'revoked' || targetStatus === 'deleted' || targetStatus === 'cancelled';
-    const dbClient = await db.getClient();
+    const clearSources = targetStatus === 'inactive' || targetStatus === 'revoked' ||
+                         targetStatus === 'deleted'  || targetStatus === 'cancelled';
+    const isSuspend    = targetStatus === 'disabled';
+    const isReactivate = targetStatus === 'active';
+    const dbClient     = await db.getClient();
 
     try {
       await dbClient.query('BEGIN');
 
-      if (clearRole) {
+      if (clearSources) {
         if (options.sourcePlanId && options.hardwareGroupId) {
           await dbClient.query(
             `DELETE FROM member_access_sources
@@ -586,18 +608,41 @@ class StandardAdapter {
             [memberId]
           );
         }
-
+      } else if (isSuspend) {
+        // S-11: payment.failed suspends Kisi but preserves source rows for fast recovery.
+        // Flip active sources to 'failed' so the rollup sees no active source → access='inactive'.
+        // payment.recovered ('active' targetStatus) flips them back.
         await dbClient.query(
-          `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
-          [targetStatus, memberId]
+          `UPDATE member_access_sources
+           SET status = 'failed', updated_at = NOW()
+           WHERE access_id = $1 AND status = 'active'`,
+          [memberId]
         );
-      } else {
-        // 'disabled' path — preserve source rows, just update status
+      } else if (isReactivate) {
+        // S-11: payment.recovered re-enables. Flip 'failed' (suspended) sources back to 'active'.
+        // Sources that were already 'cancelled' or 'revoked' stay that way.
         await dbClient.query(
-          `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
-          [targetStatus, memberId]
+          `UPDATE member_access_sources
+           SET status = 'active', updated_at = NOW()
+           WHERE access_id = $1 AND status = 'failed'`,
+          [memberId]
         );
       }
+
+      // S-11: access-row status = source-aggregate rollup.
+      await dbClient.query(
+        `UPDATE member_access
+         SET status = CASE
+                        WHEN EXISTS (
+                          SELECT 1 FROM member_access_sources mas
+                          WHERE mas.access_id = $1 AND mas.status = 'active'
+                        ) THEN 'active'
+                        ELSE 'inactive'
+                      END,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [memberId]
+      );
 
       await dbClient.query('COMMIT');
     } catch (err) {
@@ -613,58 +658,203 @@ class StandardAdapter {
   }
 
   /**
-   * Releases the in_flight lock on error or pending_hardware park.
-   * Sets member_access.status = lockStatus (default: 'failed').
-   * Increments errors_count in client_activity_summary (except for pending_hardware).
+   * Releases the in_flight lock on error.
+   * Sets member_access.status to a valid post-S-11 value: 'inactive' or 'pending_identity'.
+   * Increments errors_count in client_activity_summary (always, since this is the error path).
+   *
+   * S-11/DR-046: member_access.status enum collapsed to 4 values
+   * (active/inactive/in_flight/pending_identity). Per-plan parking states moved to source rows.
+   *
+   *   - 'failed' (legacy)         → translated to 'inactive' on the access row.
+   *                                 Per-plan failure recorded on the source row by callers.
+   *   - 'pending_identity'        → preserved (access-row-level state per spec).
+   *   - 'pending_hardware' (legacy) / 'pending_start' (legacy) → callers MUST use the new
+   *                                 parkPendingHardware / parkPendingStart methods which write
+   *                                 source rows. If passed here, we translate to 'inactive'
+   *                                 and warn so the caller is migrated.
    *
    * Never throws — error handling in the error path must be bulletproof.
    *
    * @param {string} memberId   member_access.id
    * @param {string} tenantId
-   * @param {string} lockStatus  default 'failed'
-   * @param {Object} [options]   optional: { planId } — stored for pending_hardware retry
+   * @param {string} lockStatus  one of: 'failed' (default) | 'pending_identity'
+   * @param {Object} [_options]  legacy { planId } — ignored after S-11 (use parkPending* instead)
    */
-  async releaseLock(memberId, tenantId, lockStatus = 'failed', options = {}) {
-    if (lockStatus === 'pending_hardware' && options.planId) {
-      await db.query(
-        `UPDATE member_access SET status = $1, pending_plan_id = $2, updated_at = NOW() WHERE id = $3`,
-        [lockStatus, options.planId, memberId]
-      ).catch(err =>
-        log.error('adapter.pending_hardware_failed', { memberId }, err)
-      );
-    } else {
-      await db.query(
-        `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
-        [lockStatus, memberId]
-      ).catch(err =>
-        log.error('adapter.lock_release_failed', { memberId }, err)
-      );
+  async releaseLock(memberId, tenantId, lockStatus = 'failed', _options = {}) {
+    let resolvedStatus;
+    switch (lockStatus) {
+      case 'pending_identity':
+        resolvedStatus = 'pending_identity';
+        break;
+      case 'pending_hardware':
+      case 'pending_start':
+        // Callers passing these legacy values are not yet migrated — translate to 'inactive'
+        // and warn. After S-11 this branch should never be hit; if it is, the caller is
+        // bypassing parkPendingHardware / parkPendingStart and needs migration.
+        log.warn('adapter.release_lock.legacy_status_translated', {
+          memberId, tenantId, requestedStatus: lockStatus, resolvedStatus: 'inactive',
+          note: 'Caller should use parkPendingHardware / parkPendingStart for source-row state.',
+        });
+        resolvedStatus = 'inactive';
+        break;
+      case 'failed':
+      default:
+        // 'failed' is no longer a valid access-row status post-S-11.
+        // Failure is recorded on the source row; access row reflects rollup ('inactive' if
+        // no source is active).
+        resolvedStatus = 'inactive';
+        break;
     }
 
-    if (lockStatus !== 'pending_hardware') {
-      this._incrementActivity(tenantId, 'errors_count').catch(err =>
-        log.warn('adapter.activity_update_failed', { field: 'errors_count' }, err)
-      );
-    }
+    await db.query(
+      `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
+      [resolvedStatus, memberId]
+    ).catch(err =>
+      log.error('adapter.lock_release_failed', { memberId, resolvedStatus }, err)
+    );
+
+    this._incrementActivity(tenantId, 'errors_count').catch(err =>
+      log.warn('adapter.activity_update_failed', { field: 'errors_count' }, err)
+    );
   }
 
   /**
    * Parks a member whose Kisi user has been created but group assignment is deferred
    * because the plan's startDate is in the future.
    *
+   * S-11/DR-046: per-plan state ('pending_start' + scheduled_start_date) lives on
+   * member_access_sources. One source row written per mapping.
+   *
+   * The access row stays 'in_flight' temporarily and gets recomputed to 'inactive'
+   * (no active sources yet — pending_start is not 'active'). When orderStarted arrives,
+   * grant-revoke flips the source row to 'active' and the rollup picks up.
+   *
    * @param {string} memberId   member_access.id
    * @param {string} tenantId
    * @param {string} scheduledStartDate  ISO-8601 string
+   * @param {Array}  mappings  [{ mappingId, hardwareGroupId, sourcePlanId }] — required
    */
-  async parkPendingStart(memberId, tenantId, scheduledStartDate) {
+  async parkPendingStart(memberId, tenantId, scheduledStartDate, mappings) {
+    if (!Array.isArray(mappings) || mappings.length === 0) {
+      // No mappings means we have no source-row identity to write. Park access at
+      // 'inactive' — the parking signal lives in the queue/error path, not here.
+      log.warn('adapter.park_pending_start.no_mappings', {
+        memberId, tenantId, scheduledStartDate,
+      });
+      await db.query(
+        `UPDATE member_access SET status = 'inactive', updated_at = NOW() WHERE id = $1`,
+        [memberId]
+      ).catch(err =>
+        log.error('adapter.park_pending_start.update_failed', { memberId }, err)
+      );
+      return;
+    }
+
+    // Write one source row per mapping in 'pending_start' status with scheduled_start_date.
+    for (const { mappingId, hardwareGroupId, sourcePlanId } of mappings) {
+      await db.query(
+        `INSERT INTO member_access_sources
+           (client_id, access_id, source_type, source_plan_id, hardware_group_id,
+            mapping_id, status, scheduled_start_date)
+         VALUES ($1, $2, 'plan', $3, $4, $5, 'pending_start', $6)
+         ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
+           SET status = 'pending_start',
+               scheduled_start_date = EXCLUDED.scheduled_start_date,
+               updated_at = NOW()`,
+        [tenantId, memberId, sourcePlanId || null, hardwareGroupId || null,
+         mappingId || null, scheduledStartDate]
+      ).catch(err =>
+        log.error('adapter.park_pending_start.source_write_failed',
+                  { memberId, tenantId, mappingId }, err)
+      );
+    }
+
+    // Recompute access status from sources — 'pending_start' is not 'active' so this
+    // resolves to 'inactive'. Reconcile / orderStarted will flip when ready.
     await db.query(
       `UPDATE member_access
-       SET status = 'pending_start', scheduled_start_date = $2, updated_at = NOW()
+       SET status = CASE
+                      WHEN EXISTS (
+                        SELECT 1 FROM member_access_sources mas
+                        WHERE mas.access_id = $1 AND mas.status = 'active'
+                      ) THEN 'active'
+                      ELSE 'inactive'
+                    END,
+           updated_at = NOW()
        WHERE id = $1`,
-      [memberId, scheduledStartDate]
+      [memberId]
+    ).catch(err =>
+      log.error('adapter.park_pending_start.access_rollup_failed', { memberId }, err)
     );
+
     this._incrementActivity(tenantId, 'events_received').catch(err =>
       log.warn('adapter.activity_update_failed', { field: 'events_received' }, err)
+    );
+  }
+
+  /**
+   * Parks a member whose grant cannot complete because hardware isn't configured yet.
+   *
+   * Two sub-cases:
+   *   (a) mappings provided    → write source rows in 'pending_hardware' status. Reconcile
+   *                              picks them up when API key / groups become available.
+   *   (b) mappings empty/null  → no source-row identity to write. Access stays 'inactive'.
+   *                              The parking signal lives in config_alert_log (queue-worker
+   *                              already writes it via retryEngine.handleFailure / direct
+   *                              alert insert when mappings are empty).
+   *
+   * S-11/DR-046: per-plan parking state lives on member_access_sources, never on access row.
+   *
+   * @param {string} memberId   member_access.id
+   * @param {string} tenantId
+   * @param {Array}  [mappings]  optional [{ mappingId, hardwareGroupId, sourcePlanId }]
+   */
+  async parkPendingHardware(memberId, tenantId, mappings) {
+    if (!Array.isArray(mappings) || mappings.length === 0) {
+      // Sub-case (b): no mappings — access row goes to 'inactive', signal lives elsewhere.
+      log.info('adapter.park_pending_hardware.no_mappings', { memberId, tenantId });
+      await db.query(
+        `UPDATE member_access SET status = 'inactive', updated_at = NOW() WHERE id = $1`,
+        [memberId]
+      ).catch(err =>
+        log.error('adapter.park_pending_hardware.update_failed', { memberId }, err)
+      );
+      return;
+    }
+
+    // Sub-case (a): write source rows in 'pending_hardware' status. role_assignment_id NULL —
+    // no Kisi call has fired. Reconcile populates role_assignment_id when the actual grant lands.
+    for (const { mappingId, hardwareGroupId, sourcePlanId } of mappings) {
+      await db.query(
+        `INSERT INTO member_access_sources
+           (client_id, access_id, source_type, source_plan_id, hardware_group_id,
+            mapping_id, status)
+         VALUES ($1, $2, 'plan', $3, $4, $5, 'pending_hardware')
+         ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
+           SET status = 'pending_hardware', updated_at = NOW()`,
+        [tenantId, memberId, sourcePlanId || null, hardwareGroupId || null, mappingId || null]
+      ).catch(err =>
+        log.error('adapter.park_pending_hardware.source_write_failed',
+                  { memberId, tenantId, mappingId }, err)
+      );
+    }
+
+    // Recompute access status from sources — 'pending_hardware' is not 'active' so this
+    // resolves to 'inactive'. Operator UI surfaces the per-plan pending state from sources.
+    await db.query(
+      `UPDATE member_access
+       SET status = CASE
+                      WHEN EXISTS (
+                        SELECT 1 FROM member_access_sources mas
+                        WHERE mas.access_id = $1 AND mas.status = 'active'
+                      ) THEN 'active'
+                      ELSE 'inactive'
+                    END,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [memberId]
+    ).catch(err =>
+      log.error('adapter.park_pending_hardware.access_rollup_failed', { memberId }, err)
     );
   }
 

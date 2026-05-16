@@ -59,22 +59,28 @@ async function activateLocationMembersAdmin(clientId, locationId) {
       if (!api_key_enc) continue;
       const apiKey = decrypt(api_key_enc);
 
+      // S-11/DR-046: members "on this plan" = those with active source rows under this mapping.
       const members = await db.query(
-        `SELECT ma.id AS member_id, ma.hardware_user_id
+        `SELECT DISTINCT ma.id AS member_id, ma.hardware_user_id
          FROM member_access ma
+         JOIN member_access_sources mas ON mas.access_id = ma.id
          WHERE ma.client_id = $1 AND ma.status = 'active'
-           AND ma.plan_mapping_id = (SELECT id FROM plan_mappings WHERE source_plan_id = $2 AND client_id = $1 LIMIT 1)
+           AND mas.mapping_id = $2 AND mas.status = 'active'
            AND ma.hardware_user_id IS NOT NULL`,
-        [clientId, source_plan_id]
+        [clientId, m.id]
       );
       for (const mem of members.rows) {
         for (const groupId of groupIds) {
           try {
             const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, mem.hardware_user_id, groupId);
+            // S-11/A9: client_id required + status='active' + provisioned_at NOW().
             await db.query(
-              `INSERT INTO member_access_sources (access_id, mapping_id, role_assignment_id, hardware_group_id)
-               VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-              [mem.member_id, m.id, String(roleId), groupId]
+              `INSERT INTO member_access_sources
+                 (client_id, access_id, source_type, mapping_id, role_assignment_id,
+                  hardware_group_id, status, provisioned_at)
+               VALUES ($1, $2, 'plan', $3, $4, $5, 'active', NOW())
+               ON CONFLICT DO NOTHING`,
+              [clientId, mem.member_id, m.id, String(roleId), groupId]
             );
           } catch (err) {
             log.warn('admin.activate_member_failed', { memberId: mem.member_id, groupId }, err);

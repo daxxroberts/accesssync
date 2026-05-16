@@ -186,20 +186,23 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
     expect(slotSql).not.toMatch(/plan_holder_id/);
   });
 
-  test('DR-040: slot count is scoped to plan_mapping_id', async () => {
+  test('DR-040 / S-11: slot count is scoped to mapping via member_access_sources', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'holder-pid', source_platform: 'wix' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 2, source_plan_id: 'sp-1', hardware_group_id: 'g-1' }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] })
       .mockResolvedValueOnce({ rows: [{ id: 'mm-new', platform_member_id: 'p3', first_name: 'A', last_name: 'B', email: 'a@test.com', phone: '555' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'a3', status: 'pending', plan_mapping_id: 'pm1' }] });
+      .mockResolvedValueOnce({ rows: [{ id: 'a3', status: 'pending_identity' }] })
+      .mockResolvedValueOnce({ rows: [] }); // INSERT source row
 
     await request(app)
       .post('/api/multi-member/members')
       .send({ holderId: 'mm1', clientId: 'c1', firstName: 'A', lastName: 'B', email: 'a@test.com', phone: '555', planMappingId: 'pm1' });
 
+    // S-11/DR-046: slot count joins member_access_sources for per-mapping scoping.
     const slotSql = db.query.mock.calls[2]?.[0] || '';
-    expect(slotSql).toMatch(/plan_mapping_id/);
+    expect(slotSql).toMatch(/member_access_sources/);
+    expect(slotSql).toMatch(/mapping_id/);
   });
 
   test('returns 409 when plan is full', async () => {
@@ -254,14 +257,15 @@ describe('[P3] multi-member — DELETE /api/multi-member/members/:subId (OB-150)
     expect(jobPayload.standardEvent.planId).not.toBeNull();
   });
 
-  test('OB-150: query JOINs plan_mappings to get source_plan_id', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ id: 'a1', status: 'active', hardware_user_id: 'ku1', client_id: 'c1', plan_mapping_id: 'pm1', member_master_id: 'mm1', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: 'pid-1' }] });
+  test('S-11/OB-150: query gets source_plan_id from member_access_sources LATERAL JOIN', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'a1', access_status: 'active', hardware_user_id: 'ku1', client_id: 'c1', plan_mapping_id: 'pm1', source_status: 'active', member_master_id: 'mm1', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: 'pid-1' }] });
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await request(app).delete('/api/multi-member/members/a1');
 
+    // S-11/DR-046: source_plan_id now comes from member_access_sources, not plan_mappings JOIN.
     const memberLookupSql = db.query.mock.calls[0][0];
-    expect(memberLookupSql).toMatch(/plan_mappings/);
+    expect(memberLookupSql).toMatch(/member_access_sources/);
     expect(memberLookupSql).toMatch(/source_plan_id/);
     expect(memberLookupSql).not.toMatch(/member_identity/);
     expect(memberLookupSql).not.toMatch(/member_access_state/);
@@ -294,8 +298,10 @@ describe('[P3] multi-member — DELETE /api/multi-member/members/:subId (OB-150)
     expect(mockQueueAdd).not.toHaveBeenCalled();
   });
 
-  test('terminal state: returns 410 when status is deleted', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ id: 'a1', status: 'deleted', hardware_user_id: null, client_id: 'c1', plan_mapping_id: 'pm1', member_master_id: 'mm1', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: null }] });
+  test('terminal state: returns 410 when access_status is deleted', async () => {
+    // S-11/DR-046: SELECT now returns access_status (was status). 'deleted' is sub-member-only
+    // terminal state from DR-044 soft-delete.
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'a1', access_status: 'deleted', hardware_user_id: null, client_id: 'c1', plan_mapping_id: 'pm1', source_status: null, member_master_id: 'mm1', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: null }] });
 
     const res = await request(app).delete('/api/multi-member/members/a1');
 
@@ -388,7 +394,7 @@ describe('[P3] multi-member — POST /api/multi-member/holder-claim-slot', () =>
     expect(slotCountSqls.length).toBeGreaterThan(0);
   });
 
-  test('DR-040: holder slot check is scoped to plan_mapping_id', async () => {
+  test('DR-040 / S-11: holder slot check is scoped via member_access_sources mapping_id', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', platform_member_id: 'p1', first_name: 'H', last_name: 'H', email: 'h@x.com' }] })
       .mockResolvedValueOnce({ rows: [{ id: 'pm1', source_plan_id: 'sp1', max_members: 3 }] })
@@ -397,8 +403,10 @@ describe('[P3] multi-member — POST /api/multi-member/holder-claim-slot', () =>
 
     await request(app).post('/api/multi-member/holder-claim-slot').send({ holderId: 'mm1', clientId: 'c1', planMappingId: 'pm1' });
 
+    // S-11/DR-046: per-plan slot check now joins member_access_sources to scope by mapping_id.
     const holderSlotSql = db.query.mock.calls[2]?.[0] || '';
-    expect(holderSlotSql).toMatch(/plan_mapping_id/);
+    expect(holderSlotSql).toMatch(/member_access_sources/);
+    expect(holderSlotSql).toMatch(/mapping_id/);
   });
 
   test('returns 409 when holder already has slot', async () => {

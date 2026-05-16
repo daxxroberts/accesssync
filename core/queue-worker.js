@@ -162,10 +162,12 @@ async function _processJobBody(job, traceId) {
         lastStep = 'grant.started.get_api_key';
         const startedApiKey = await getClientApiKey(tenantId);
         if (!startedApiKey) {
-          await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
+          // S-11: park as pending_hardware via source-row writes (mappings present here).
+          await standardAdapter.parkPendingHardware(memberId, tenantId, mappings);
           logger.info('queue.grant.started.parked.no_api_key', {
             clientId, memberId, eventId,
             platformMemberId: standardEvent.platformMemberId,
+            mappingCount: mappings.length,
             stage: 'grant', result: 'skipped',
           });
           return;
@@ -233,10 +235,12 @@ async function _processJobBody(job, traceId) {
       }
       if (mappings.length === 0) {
         // Plan recognized but no hardware group mapped yet (Wix-first flow) — park member.
-        // planMappingId=null because no mapping exists; the row gets created without a plan binding.
+        // S-11: no mappings means we have no source-row identity to write. Access stays
+        // 'inactive'; the parking signal lives in config_alert_log (operator's "map this plan"
+        // alert). parkPendingHardware([]) handles the no-mapping case explicitly.
         const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, 'kisi', null);
         memberId = lockResult.memberId;
-        await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
+        await standardAdapter.parkPendingHardware(memberId, tenantId, []);
         logger.info('queue.grant.parked.no_mapping', {
           clientId, memberId, eventId,
           platformMemberId: standardEvent.platformMemberId,
@@ -262,15 +266,18 @@ async function _processJobBody(job, traceId) {
         stage: 'grant', result: 'start',
       });
 
-      // Step 3: Check for hardware API key — if missing, park as pending_hardware (Wix-first flow)
+      // Step 3: Check for hardware API key — if missing, park as pending_hardware (Wix-first flow).
+      // S-11: parkPendingHardware writes per-mapping source rows in 'pending_hardware' status;
+      // reconcile picks them up when API key arrives.
       lastStep = 'grant.get_api_key';
       const apiKey = await getClientApiKey(tenantId);
       if (!apiKey) {
-        await standardAdapter.releaseLock(memberId, tenantId, 'pending_hardware', { planId: standardEvent.planId });
+        await standardAdapter.parkPendingHardware(memberId, tenantId, mappings);
         logger.info('queue.grant.parked.no_api_key', {
           clientId, memberId, eventId,
           platformMemberId: standardEvent.platformMemberId,
           planId: standardEvent.planId,
+          mappingCount: mappings.length,
           stage: 'grant', result: 'skipped',
         });
         return;
@@ -327,11 +334,16 @@ async function _processJobBody(job, traceId) {
       // orderStarted fires when the start date arrives and completes the grant.
       const grantStartDate = standardEvent.startDate ? new Date(standardEvent.startDate) : null;
       if (grantStartDate && grantStartDate.getTime() > Date.now() + 60_000) {
-        await standardAdapter.parkPendingStart(memberId, tenantId, grantStartDate.toISOString());
+        // S-11: parkPendingStart writes per-mapping source rows in 'pending_start' status
+        // with scheduled_start_date populated. Access stays 'inactive' until orderStarted lands.
+        await standardAdapter.parkPendingStart(
+          memberId, tenantId, grantStartDate.toISOString(), mappings
+        );
         logger.info('queue.grant.parked.pending_start', {
           clientId, memberId, eventId,
           platformMemberId: standardEvent.platformMemberId,
           scheduledStartDate: grantStartDate.toISOString(),
+          mappingCount: mappings.length,
           stage: 'grant', result: 'skipped',
         });
         return;
