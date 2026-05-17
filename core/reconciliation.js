@@ -256,12 +256,44 @@ class NightlyReconciliation {
       }
     }
 
-    // OB-74: Verify each Kisi role assignment has a matching member_access_sources row.
-    // If not, queue a synthetic revoke — Kisi has a role with no AccessSync billing source.
+    // OB-185 / A11 — Pass-2 orphan handling:
+    // For each Kisi role assignment, check if it has a matching member_access_sources row.
+    // If NOT, do NOT queue a synthetic revoke. Log the observation for operator review
+    // (OB-186 will surface these in the Kisi tab dashboard). Operator-side manual grants
+    // are preserved indefinitely by default — AccessSync never removes a Kisi assignment
+    // we don't have a DB source row for.
+    //
+    // OB-185 / A12 — Pre-filter to AccessSync's universe of concern (STRATA contract):
+    //   - role_id MUST be group_basic (the only role AccessSync ever creates)
+    //   - group_id MUST be in plan_mappings.hardware_group_id for this client
+    // Anything outside this universe is invisible to reconcile — never logged as orphan,
+    // never matched against DB. Admin/manager/owner roles never reach this loop.
+    // PARSE-verified 2026-05-02: AccessSync uses only role_id='group_basic'.
+    // PARSE-verified 2026-05-13 via DR-045 Layer C: elevated roles return scope ∈
+    // {organization, place} or role_id outside {group_basic}.
+
+    // Build the universe filter once per sweep — set of (group_id) values AccessSync provisions to.
+    const accessSyncGroupsResult = await db.query(
+      `SELECT DISTINCT hardware_group_id FROM plan_mappings
+       WHERE client_id = $1 AND status = 'active' AND hardware_group_id IS NOT NULL`,
+      [client.id]
+    );
+    const accessSyncGroupIds = new Set(accessSyncGroupsResult.rows.map(r => String(r.hardware_group_id)));
+
     for (const assignment of kisiAssignments) {
       if (!assignment.userId) continue;
+
+      // A12 pre-filter — skip assignments outside AccessSync's universe of concern.
+      // Note: getManagedRoleAssignments doesn't return role_id/scope today (OB-184 CL-?),
+      // so the role-id filter is enforced upstream by Kisi (we only ever POST group_basic).
+      // The group_id filter is the strong defense here — any assignment to a group AccessSync
+      // doesn't provision (admin scope, side doors, staff-only groups) gets skipped silently.
+      if (!assignment.groupId || !accessSyncGroupIds.has(String(assignment.groupId))) {
+        continue; // Outside AccessSync's universe — invisible to reconcile
+      }
+
       const sourceCheck = await db.query(
-        `SELECT mas.id
+        `SELECT mas.id, mas.status
          FROM member_access_sources mas
          JOIN member_access ma ON ma.id = mas.access_id
          WHERE ma.client_id = $1
@@ -270,39 +302,132 @@ class NightlyReconciliation {
          LIMIT 1`,
         [client.id, assignment.userId, assignment.groupId]
       );
+
       if (sourceCheck.rows.length === 0) {
-        log.warn('reconciliation.kisi_orphan_detected', {
-          clientId: client.id, kisiUserId: assignment.userId,
-          hardwareGroupId: assignment.groupId, traceId: this._sweepTraceId,
+        // A11 — no matching DB source row. Operator-side grant or DB-loss orphan.
+        // DO NOT queue a synthetic revoke. Log only. OB-186 dashboard surfaces this.
+        log.warn('reconciliation.unmanaged_assignment_observed', {
+          clientId: client.id,
+          kisiUserId: assignment.userId,
+          hardwareGroupId: assignment.groupId,
+          roleAssignmentId: assignment.roleAssignmentId,
+          reason: 'no_matching_db_source_row',
+          action: 'preserved_pending_operator_review',
+          traceId: this._sweepTraceId,
+          stage: 'reconcile', result: 'observed',
         });
-        // Resolve which Wix member this Kisi user belongs to, so the synthetic revoke targets correctly
-        const memberRow = await db.query(
-          `SELECT mm.platform_member_id
-           FROM member_access ma
-           JOIN member_master mm ON mm.id = ma.member_master_id
-           WHERE ma.client_id = $1 AND ma.hardware_user_id = $2
-           LIMIT 1`,
-          [client.id, assignment.userId]
-        );
-        if (!memberRow.rows.length) continue; // No DB record — user was never AccessSync-managed, skip
-        const platformMemberId = memberRow.rows[0].platform_member_id;
-        const recoEventId = `recon-kisi-orphan-${client.id}-${assignment.userId}-${Date.now()}`;
-        const orphanTraceId = this._sweepTraceId || crypto.randomUUID();
-        const syntheticEvent = {
-          eventType:        'plan.cancelled',
-          sourcePlatform:   'wix',
-          platformMemberId,
-          wixSiteId:        siteId,
-          synthetic:        true,
-          syntheticSource:  'reconciliation.kisi_orphan',
-          traceId:          orphanTraceId,
-          eventId:          recoEventId,
-        };
-        const jobId = `revoke-kisi-orphan-${client.id}-${assignment.userId}-${Date.now()}`;
-        await eventQueue.add('revoke', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
-        revoked++;
+        // No revoke queued. No state change. Preserved.
       }
     }
+
+    // OB-185 Pass 1 promotion logic — for each Wix-active member who EXISTS in our DB,
+    // ensure their source rows reflect "active" status. This handles the post-S-11 case
+    // where migration translated existing access_status='inactive' → source.status='cancelled'
+    // for members who in reality had active Wix plans the whole time.
+    //
+    // The pre-S-11 set-membership-only diff (Wix∩Kisi → "no action") missed this entire
+    // class of stale-source-row situations. New behavior: if Wix has the member as active
+    // and DB has source rows in cancelled status for that member's mapped plan, flip them
+    // back to active. Pass 2 (the Kisi backfill block below) then picks up the
+    // role_assignment_id from live Kisi state.
+    let promoted = 0;
+    for (const [memberId, wixData] of wixMembers) {
+      if (!wixData.planId) continue;
+      try {
+        const promotionResult = await db.query(
+          `UPDATE member_access_sources mas
+           SET status = 'active', updated_at = NOW()
+           FROM member_access ma
+           JOIN member_master mm ON mm.id = ma.member_master_id
+           JOIN plan_mappings pm ON pm.id = mas.mapping_id
+           WHERE mas.access_id = ma.id
+             AND ma.client_id = $1
+             AND mm.platform_member_id = $2
+             AND pm.source_plan_id = $3
+             AND mas.status = 'cancelled'
+           RETURNING mas.id, mas.access_id`,
+          [client.id, memberId, wixData.planId]
+        );
+        if (promotionResult.rowCount > 0) {
+          promoted += promotionResult.rowCount;
+          // Roll up access status on the affected access rows (DR-046 contract).
+          const affectedAccessIds = [...new Set(promotionResult.rows.map(r => r.access_id))];
+          for (const accessId of affectedAccessIds) {
+            await db.query(
+              `UPDATE member_access
+               SET status = CASE
+                              WHEN EXISTS (
+                                SELECT 1 FROM member_access_sources mas
+                                WHERE mas.access_id = $1 AND mas.status = 'active'
+                              ) THEN 'active'
+                              ELSE 'inactive'
+                            END,
+                   updated_at = NOW()
+               WHERE id = $1`,
+              [accessId]
+            );
+          }
+          log.info('reconciliation.source_promoted_from_cancelled', {
+            clientId: client.id,
+            platformMemberId: memberId,
+            planId: wixData.planId,
+            sourceCount: promotionResult.rowCount,
+            accessRowsRolledUp: affectedAccessIds.length,
+            traceId: this._sweepTraceId,
+            stage: 'reconcile', result: 'promoted',
+          });
+        }
+      } catch (err) {
+        log.error('reconciliation.source_promotion_failed', {
+          clientId: client.id, platformMemberId: memberId, planId: wixData.planId,
+        }, err);
+      }
+    }
+
+    // OB-185 Pass 2 backfill — for each Wix-active member where DB now shows active source
+    // rows but role_assignment_id is NULL, populate role_assignment_id from live Kisi state.
+    // "I see you" backfill: AccessSync's DB declares this assignment exists; Kisi already
+    // has it; just write down the ID for future targeting on revoke. No assignRole call.
+    let backfilled = 0;
+    for (const assignment of kisiAssignments) {
+      if (!assignment.userId || !assignment.roleAssignmentId) continue;
+      if (!assignment.groupId || !accessSyncGroupIds.has(String(assignment.groupId))) continue;
+      try {
+        const backfillResult = await db.query(
+          `UPDATE member_access_sources mas
+           SET role_assignment_id = $4, updated_at = NOW()
+           FROM member_access ma
+           WHERE mas.access_id = ma.id
+             AND ma.client_id = $1
+             AND ma.hardware_user_id = $2
+             AND mas.hardware_group_id = $3
+             AND mas.role_assignment_id IS NULL
+             AND mas.status IN ('active', 'pending_hardware', 'pending_start')
+           RETURNING mas.id`,
+          [client.id, assignment.userId, assignment.groupId, String(assignment.roleAssignmentId)]
+        );
+        if (backfillResult.rowCount > 0) {
+          backfilled += backfillResult.rowCount;
+          log.info('reconciliation.role_assignment_backfilled', {
+            clientId: client.id,
+            kisiUserId: assignment.userId,
+            hardwareGroupId: assignment.groupId,
+            roleAssignmentId: assignment.roleAssignmentId,
+            sourceRowsUpdated: backfillResult.rowCount,
+            traceId: this._sweepTraceId,
+            stage: 'reconcile', result: 'backfilled',
+          });
+        }
+      } catch (err) {
+        log.error('reconciliation.role_assignment_backfill_failed', {
+          clientId: client.id, kisiUserId: assignment.userId, hardwareGroupId: assignment.groupId,
+        }, err);
+      }
+    }
+
+    log.info('reconciliation.pass_1_2_complete', {
+      clientId: client.id, promoted, backfilled, traceId: this._sweepTraceId,
+    });
 
     // 3A. In Wix, not in Kisi → paid but not provisioned → queue grant
     //     EXCEPT: opt-in holder rule (DR-040). If a Wix order is for a multi-member plan
