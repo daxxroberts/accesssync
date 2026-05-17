@@ -239,11 +239,16 @@ describe('[P3] reconcileMember — member_master + member_access (new schema)', 
   });
 });
 
-// ─── OB-74: bi-directional Kisi→Wix sweep ────────────────────────────────────
+// ─── OB-185 A11 — Kisi orphan handling (preserves operator-side grants) ──────
+// Replaces former OB-74 orphan-revoke behavior. New A11 contract:
+//   Kisi has assignment + no matching member_access_sources row →
+//   observe + log (config_alert_log target for OB-186 dashboard), NO revoke.
+// Operator-side manual grants are preserved indefinitely. AccessSync never
+// auto-removes a Kisi assignment we don't have a DB source row for.
 
-describe('[P3] OB-74 bi-directional — Kisi orphan queues synthetic revoke', () => {
+describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
 
-  test('Kisi assignment with no member_access_sources row triggers revoke', async () => {
+  test('Kisi assignment with no matching source row logs observation, queues NO revoke', async () => {
     // Gate: last_sync_at old enough
     db.query.mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] });
 
@@ -265,19 +270,19 @@ describe('[P3] OB-74 bi-directional — Kisi orphan queues synthetic revoke', ()
     wixPlansApi.listActiveOrders.mockResolvedValue([]);
     wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
 
-    // Kisi returns one role assignment
+    // Kisi returns one role assignment whose group IS in AccessSync's universe
     hardwareAdapter.getManagedRoleAssignments.mockResolvedValue([
-      { userId: 'kisi-user-orphan', groupId: 'kisi-group-orphan' },
+      { userId: 'kisi-user-orphan', groupId: 'kisi-group-managed', roleAssignmentId: 'ra-orphan-001' },
     ]);
 
     // kisiUserIds identity lookup → no DB row (not in kisiMembers map)
     db.query.mockResolvedValueOnce({ rows: [] });
 
-    // OB-74: member_access_sources check → NO matching row (runs before multiMemberPlans)
-    db.query.mockResolvedValueOnce({ rows: [] });
+    // A12 universe filter: plan_mappings.hardware_group_id query
+    db.query.mockResolvedValueOnce({ rows: [{ hardware_group_id: 'kisi-group-managed' }] });
 
-    // OB-74: member_access lookup for platform_member_id
-    db.query.mockResolvedValueOnce({ rows: [{ platform_member_id: PLATFORM_MEMBER_ID }] });
+    // A11 observation: member_access_sources check → NO matching row
+    db.query.mockResolvedValueOnce({ rows: [] });
 
     // multiMemberPlans (3A opt-in guard — wixMembers empty so loop is a no-op, but query still runs)
     db.query.mockResolvedValueOnce({ rows: [] });
@@ -303,23 +308,57 @@ describe('[P3] OB-74 bi-directional — Kisi orphan queues synthetic revoke', ()
 
     await reconciliation.runNightlySweep();
 
-    // Verify the member_access_sources check used access_id
-    const masCheckCall = db.query.mock.calls.find(c =>
-      typeof c[0] === 'string' && c[0].includes('member_access_sources') && c[0].includes('access_id')
+    // A11 contract: NO revoke event queued for orphan observations.
+    const revokeCall = eventQueue.add.mock.calls.find(c => c[0] === 'revoke');
+    expect(revokeCall).toBeUndefined();
+  });
+
+  test('Kisi assignment OUTSIDE AccessSync universe (group not in plan_mappings) is invisible — no log, no revoke', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] });
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        id: CLIENT_ID,
+        source_site_id: 'wix-site-001',
+        source_api_key: 'enc-wix',
+        hardware_api_key: 'enc-hw',
+        hardware_platform: 'kisi',
+        last_active_member_count: 10,
+      }],
+    });
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'run-001' }] });
+
+    wixPlansApi.listActiveOrders.mockResolvedValue([]);
+    wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
+
+    // Kisi returns an assignment for a group AccessSync doesn't provision to
+    hardwareAdapter.getManagedRoleAssignments.mockResolvedValue([
+      { userId: 'admin-user', groupId: 'kisi-group-staff-only', roleAssignmentId: 'ra-admin-999' },
+    ]);
+
+    db.query.mockResolvedValueOnce({ rows: [] }); // kisiUserIds identity lookup
+    db.query.mockResolvedValueOnce({ rows: [{ hardware_group_id: 'kisi-group-managed' }] }); // A12 universe — staff group NOT in set
+    db.query.mockResolvedValueOnce({ rows: [] }); // multiMemberPlans
+    db.query.mockResolvedValueOnce({ rowCount: 1 }); // update last_active_member_count
+    db.query.mockResolvedValueOnce({ rowCount: 1 }); // close reconciliation_run
+    db.query.mockResolvedValueOnce({ rowCount: 0 }); // stale in_flight
+    db.query.mockResolvedValueOnce({ rows: [] }); // _syncDoorLockdownStates
+    db.query.mockResolvedValueOnce({ rows: [] }); // _fetchActionableRecords
+    db.query.mockResolvedValueOnce({ rows: [] }); // digest configAlerts
+    db.query.mockResolvedValueOnce({ rows: [] }); // digest failedJobs
+    db.query.mockResolvedValueOnce({ rowCount: 1 }); // last_sync_at
+
+    eventQueue.add.mockResolvedValue();
+    await reconciliation.runNightlySweep();
+
+    // A12: staff-group assignment never even reaches the source-check query
+    const sourceCheckCall = db.query.mock.calls.find(c =>
+      typeof c[0] === 'string'
+        && c[0].includes('member_access_sources')
         && c[0].includes('hardware_user_id')
     );
-    expect(masCheckCall).toBeDefined();
-
-    // Verify revoke was queued
-    const revokeCall = eventQueue.add.mock.calls.find(c => c[0] === 'revoke');
-    expect(revokeCall).toBeDefined();
-    expect(revokeCall[1]).toMatchObject({
-      tenantId: CLIENT_ID,
-      standardEvent: expect.objectContaining({
-        eventType: 'plan.cancelled',
-        syntheticSource: 'reconciliation.kisi_orphan',
-      }),
-    });
+    expect(sourceCheckCall).toBeUndefined();
+    // And no revoke queued
+    expect(eventQueue.add.mock.calls.find(c => c[0] === 'revoke')).toBeUndefined();
   });
 
   test('Kisi assignment WITH matching member_access_sources row does NOT queue revoke', async () => {
