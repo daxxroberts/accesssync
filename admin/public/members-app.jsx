@@ -154,7 +154,15 @@ function App() {
           <div className="stat">
             <div className="stat-label">Plan holders</div>
             <div className="stat-value tabular">{counts.holder}</div>
-            <div className="stat-meta"><span>{pageContext.planTypeCount ? `across ${pageContext.planTypeCount} plan types` : "—"}</span></div>
+            <div className="stat-meta">
+              <span>
+                {pageContext.uniqueBillingCount
+                  ? `in ${pageContext.uniqueBillingCount} unique ${pageContext.uniqueBillingCount === 1 ? "billing" : "billings"}`
+                  : (pageContext.planTypeCount
+                      ? `across ${pageContext.planTypeCount} plan ${pageContext.planTypeCount === 1 ? "type" : "types"}`
+                      : "—")}
+              </span>
+            </div>
           </div>
           <div className="stat">
             <div className="stat-label">Door entries · today</div>
@@ -225,14 +233,13 @@ function App() {
         <table className="members-tbl">
           <thead>
             <tr>
-              <th style={{width:"40%"}}>
+              <th style={{width:"56%"}}>
                 <button className={`sort-btn ${sort.key==="name"?"sorted":""}`} onClick={() => handleSort("name")}>
                   Member <span className="sort-arrow">{sortIcon("name")}</span>
                 </button>
               </th>
-              <th style={{width:"22%"}}>Relationship</th>
-              <th style={{width:"14%",textAlign:"center"}}>Plans</th>
-              <th style={{width:"14%"}}>
+              <th style={{width:"18%",textAlign:"center"}}>Plans</th>
+              <th style={{width:"16%"}}>
                 <button className={`sort-btn ${sort.key==="since"?"sorted":""}`} onClick={() => handleSort("since")}>
                   Added <span className="sort-arrow">{sortIcon("since")}</span>
                 </button>
@@ -242,7 +249,7 @@ function App() {
           </thead>
           <tbody>
             {pageRows.length === 0 && (
-              <tr><td colSpan="5"><div className="empty">No members match your search.</div></td></tr>
+              <tr><td colSpan="4"><div className="empty">No members match your search.</div></td></tr>
             )}
             {pageRows.flatMap(m => {
               const plans         = m.plans || [];
@@ -275,14 +282,6 @@ function App() {
                         <div className="member-email">{m.email}</div>
                       </div>
                     </div>
-                  </td>
-                  <td style={{fontSize:12.5,color:"var(--text2)"}}>
-                    {isHolder
-                      ? <span style={{color:"var(--muted)"}}>Pays for own plans</span>
-                      : (linkedHolder
-                          ? <>Sub-member of <span style={{color:"var(--text)",fontWeight:500}}>{linkedHolder.name}</span></>
-                          : <span style={{color:"var(--muted)"}}>—</span>)
-                    }
                   </td>
                   <td style={{textAlign:"center"}}>
                     <button
@@ -335,7 +334,7 @@ function App() {
               if (isOpen) {
                 rows.push(
                   <tr key={`pd-${m.id}`} className="plan-detail-row-wrap">
-                    <td colSpan="5">
+                    <td colSpan="4">
                       <div className="plan-detail-card" style={{padding:"12px 16px"}}>
                         {plans.length === 0 ? (
                           <div className="empty" style={{padding:"16px"}}>No plan information available.</div>

@@ -207,54 +207,66 @@
       var firstRow = group.firstRow;
       var personRow = shapeMember(firstRow);
 
-      // Compose plans[] — one entry per access row this person holds.
-      // Each access row may map to a single plan_mapping; collect those into per-person plans.
+      // S-11/DR-046/OB-185 A13: one access row per person, with plan_names[] / plan_ids[] arrays
+      // containing every distinct plan the person holds (aggregated server-side from
+      // member_access_sources). Iterate the ARRAY, not group.rows — group.rows now has
+      // exactly 1 entry post-S-11 (per-person cardinality).
       var plans = [];
-      var billingForFallback = null; // first non-empty billing snapshot, used for subs without their own
+      var billingForFallback = null;
 
       group.rows.forEach(function (accessRow) {
         var billing = shapeBilling(accessRow.billing_snapshot);
         if (!billingForFallback && billing.raw) billingForFallback = billing;
 
-        // Resolve plan name: prefer single sub_plan_name (when set via plan_mapping_id JOIN),
-        // else first entry of plan_names[], else "Unknown Plan".
-        var planName = accessRow.sub_plan_name
-                    || (Array.isArray(accessRow.plan_names) && accessRow.plan_names[0])
-                    || accessRow.plan_name
-                    || "Unknown Plan";
+        // Pull the per-plan arrays. plan_names + plan_ids + plan_valid_untils are positionally aligned
+        // (ARRAY_AGG with the same ORDER BY in the SQL). plan_names is authoritative for "how many
+        // plans" — if it's empty, fall back to sub_plan_name (sub-member single-plan case) or
+        // a single "Unknown Plan" entry so the row still renders.
+        var planNames = Array.isArray(accessRow.plan_names) ? accessRow.plan_names.filter(Boolean) : [];
+        var planIds   = Array.isArray(accessRow.plan_ids)   ? accessRow.plan_ids   : [];
+        var validUntils = Array.isArray(accessRow.plan_valid_untils) ? accessRow.plan_valid_untils : [];
 
-        // Billing Member = whoever pays. If this access row is a sub_master_id !== null
-        // (sub-member access), billing is the holder's. Otherwise it's the person themselves.
+        if (planNames.length === 0) {
+          var fallback = accessRow.sub_plan_name || accessRow.plan_name || "Unknown Plan";
+          planNames = [fallback];
+          planIds = [accessRow.plan_ids && accessRow.plan_ids[0] || null];
+          validUntils = [null];
+        }
+
+        // Billing Member: holder if sub-access, else self
         var billingMemberName;
         if (accessRow.plan_holder_id) {
-          // sub-access — holder paid
           billingMemberName = accessRow.holder_name || accessRow.holder_email || "Holder";
         } else {
           billingMemberName = (personRow.first + " " + personRow.last).trim() || personRow.email || "—";
         }
 
-        plans.push({
-          accessId:          accessRow.id,
-          planName:          planName,
-          planSourceId:      Array.isArray(accessRow.plan_ids) ? accessRow.plan_ids[0] : null,
-          planMappingId:     accessRow.plan_mapping_id || null,
-          rate:              billing.rate,
-          coupon:            billing.coupon,
-          autoRenewCanceled: billing.autoRenewCanceled,
-          billing:           billing,
-          addedAt:           formatDate(accessRow.provisioned_at),
-          accessStatus:      mapAccessStatus(accessRow.effective_status, accessRow.role),
-          rawStatus:         accessRow.effective_status,
-          billingMemberName: billingMemberName,
-          isSubAccess:       !!accessRow.plan_holder_id,
+        // One plan entry per name in the array. Per-plan billing snapshot isn't surfaced
+        // per-plan in the API yet — every plan inherits the same person-level snapshot.
+        // OB-187 will populate billing per source row; until then, all plans share billing.
+        planNames.forEach(function (name, idx) {
+          plans.push({
+            accessId:          accessRow.id,
+            planName:          name,
+            planSourceId:      planIds[idx] || null,
+            planMappingId:     accessRow.plan_mapping_id || null,
+            rate:              billing.rate,
+            coupon:            billing.coupon,
+            autoRenewCanceled: billing.autoRenewCanceled,
+            billing:           billing,
+            addedAt:           formatDate(accessRow.provisioned_at),
+            validUntil:        validUntils[idx] || null,
+            accessStatus:      mapAccessStatus(accessRow.effective_status, accessRow.role),
+            rawStatus:         accessRow.effective_status,
+            billingMemberName: billingMemberName,
+            isSubAccess:       !!accessRow.plan_holder_id,
+          });
         });
       });
 
-      // Sort plans by addedAt date ascending (oldest plan first — common reading order)
+      // Sort plans alphabetically by plan name for stable, readable order
       plans.sort(function (a, b) {
-        var ta = new Date(a._sortKey || 0).getTime() || 0;
-        var tb = new Date(b._sortKey || 0).getTime() || 0;
-        return ta - tb;
+        return (a.planName || "").localeCompare(b.planName || "");
       });
 
       personRow.plans = plans;
@@ -377,12 +389,22 @@
       }
     } catch (e) { /* non-blocking */ }
 
-    // Plan type count — derive from unique plan names across all members + their subs
+    // Plan type count — derive from unique plan names across all members' plans[] arrays.
+    // S-11/OB-185: each person can now hold multiple plans; sum all distinct plan_names.
     var planSet = new Set();
+    var billingSet = new Set(); // distinct billing identities (subscriptionId or orderId)
     nested.forEach(function (m) {
-      if (m.plan && m.plan !== "Unknown Plan") planSet.add(m.plan);
+      (m.plans || []).forEach(function (p) {
+        if (p.planName && p.planName !== "Unknown Plan") planSet.add(p.planName);
+        var billKey = (p.billing && (p.billing.subscriptionId || p.billing.orderId)) || null;
+        if (billKey) billingSet.add(billKey);
+      });
       (m.additional || []).forEach(function (a) {
-        if (a.plan && a.plan !== "Unknown Plan" && a.plan !== "Linked to holder") planSet.add(a.plan);
+        (a.plans || []).forEach(function (p) {
+          if (p.planName && p.planName !== "Unknown Plan") planSet.add(p.planName);
+          var billKey = (p.billing && (p.billing.subscriptionId || p.billing.orderId)) || null;
+          if (billKey) billingSet.add(billKey);
+        });
       });
     });
 
@@ -391,6 +413,7 @@
       clientName: clientName,
       lastSyncedLabel: lastSyncedLabel,
       planTypeCount: planSet.size,
+      uniqueBillingCount: billingSet.size,
     };
     document.dispatchEvent(new CustomEvent("membersLoaded"));
   }
