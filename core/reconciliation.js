@@ -334,13 +334,17 @@ class NightlyReconciliation {
     for (const [memberId, wixData] of wixMembers) {
       if (!wixData.planId) continue;
       try {
+        // PG UPDATE-FROM caveat: the UPDATE target table can't be re-joined inside FROM
+        // via JOIN keywords. List additional tables comma-separated; all join conditions
+        // go in WHERE (including the self-join from the target table). plan_mappings is
+        // joined to via mas.mapping_id directly in WHERE for the same reason.
         const promotionResult = await db.query(
           `UPDATE member_access_sources mas
            SET status = 'active', updated_at = NOW()
-           FROM member_access ma
-           JOIN member_master mm ON mm.id = ma.member_master_id
-           JOIN plan_mappings pm ON pm.id = mas.mapping_id
+           FROM member_access ma, member_master mm, plan_mappings pm
            WHERE mas.access_id = ma.id
+             AND mm.id = ma.member_master_id
+             AND pm.id = mas.mapping_id
              AND ma.client_id = $1
              AND mm.platform_member_id = $2
              AND pm.source_plan_id = $3
