@@ -331,40 +331,48 @@ function App() {
               );
 
               // Expanded plans table — one row per plan-access this person holds.
+              // Compact layout: full-width across the screen, narrow column widths so no cell
+              // wraps, tighter row padding so multi-plan members don't push the whole table
+              // off the viewport. nowrap on tabular cells locks date / rate / access onto
+              // single lines; Plan badge cell stays minimal width with the badge sitting flush.
               if (isOpen) {
+                const compactCell = { padding: "6px 10px", fontSize: 12.5, whiteSpace: "nowrap", lineHeight: 1.4 };
                 rows.push(
                   <tr key={`pd-${m.id}`} className="plan-detail-row-wrap">
                     <td colSpan="4">
-                      <div className="plan-detail-card" style={{padding:"12px 16px"}}>
+                      <div className="plan-detail-card" style={{padding:"8px 12px"}}>
                         {plans.length === 0 ? (
-                          <div className="empty" style={{padding:"16px"}}>No plan information available.</div>
+                          <div className="empty" style={{padding:"12px"}}>No plan information available.</div>
                         ) : (
-                          <table className="members-tbl" style={{boxShadow:"none",margin:0}}>
+                          <table className="members-tbl" style={{boxShadow:"none",margin:0,width:"100%",tableLayout:"auto"}}>
                             <thead>
                               <tr>
-                                <th style={{width:"24%"}}>Plan</th>
-                                <th style={{width:"14%"}}>Rate</th>
-                                <th style={{width:"14%"}}>Added</th>
-                                <th style={{width:"14%"}}>Access</th>
-                                <th style={{width:"14%"}}>Auto-renew</th>
-                                <th style={{width:"20%"}}>Billing Member</th>
+                                <th style={{...compactCell, width:"22%"}}>Plan</th>
+                                <th style={{...compactCell, width:"12%"}}>Rate</th>
+                                <th style={{...compactCell, width:"14%"}}>Added</th>
+                                <th style={{...compactCell, width:"15%"}}>Access</th>
+                                <th style={{...compactCell, width:"15%"}}>Auto-renew</th>
+                                <th style={{...compactCell, width:"22%"}}>Billing Member</th>
                               </tr>
                             </thead>
                             <tbody>
                               {plans.map((plan, pIdx) => (
                                 <tr key={`plan-${m.id}-${pIdx}`}>
-                                  <td><PlanBadge plan={plan.planName} /></td>
-                                  <td className="tabular">{plan.rate}{plan.coupon && (<div style={{fontSize:11,color:"var(--muted)",marginTop:2}}>{plan.coupon}</div>)}</td>
-                                  <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{plan.addedAt}</td>
-                                  <td><StatusPill status={
+                                  <td style={compactCell}><PlanBadge plan={plan.planName} /></td>
+                                  <td style={{...compactCell}} className="tabular">
+                                    {plan.rate}
+                                    {plan.coupon && (<span style={{fontSize:11,color:"var(--muted)",marginLeft:6}}>{plan.coupon}</span>)}
+                                  </td>
+                                  <td style={{...compactCell, color:"var(--muted)"}} className="tabular">{plan.addedAt}</td>
+                                  <td style={compactCell}><StatusPill status={
                                     plan.rawStatus === "active" ? "active"
                                     : plan.rawStatus === "suspended" || plan.rawStatus === "failed" || plan.rawStatus === "revoked" ? "suspended"
                                     : "pending"
                                   } label={plan.accessStatus} /></td>
-                                  <td style={{fontSize:12.5,color: plan.autoRenewCanceled ? "var(--amber, #d97706)" : "var(--text2)"}}>
+                                  <td style={{...compactCell, color: plan.autoRenewCanceled ? "var(--amber, #d97706)" : "var(--text2)"}}>
                                     {plan.autoRenewCanceled ? "Cancels at end" : "On"}
                                   </td>
-                                  <td style={{fontSize:13}}>{plan.billingMemberName}</td>
+                                  <td style={compactCell}>{plan.billingMemberName}</td>
                                 </tr>
                               ))}
                             </tbody>

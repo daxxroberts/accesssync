@@ -63,7 +63,8 @@ const ActionsMenu = ({ open, onClose, onAction, member }) => {
   );
 };
 
-// Drawer for member detail
+// Drawer for member detail — post-S-11/OB-185 rewrite: iterates member.plans[]
+// so multi-plan members render every plan + active state, not just the first.
 const MemberDrawer = ({ member, open, onClose }) => {
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }
@@ -71,6 +72,9 @@ const MemberDrawer = ({ member, open, onClose }) => {
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
   if (!member) return null;
+
+  const plans = member.plans || [];
+  const planCount = plans.length;
 
   return (
     <>
@@ -97,9 +101,11 @@ const MemberDrawer = ({ member, open, onClose }) => {
         <div className="drawer-body">
 
           <div className="drawer-section">
-            <div style={{display:"flex",gap:8,marginBottom:14}}>
+            <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
               <StatusPill status={member.role === "Plan Holder" ? (member.status === "active" ? "holder" : member.status) : member.status} />
-              <PlanBadge plan={member.plan} />
+              <span style={{fontSize:12,color:"var(--muted)",alignSelf:"center"}}>
+                {planCount} {planCount === 1 ? "plan" : "plans"}
+              </span>
             </div>
             <p style={{margin:0,fontSize:13,color:"var(--text2)",lineHeight:1.55,fontWeight:400}}>
               Member since {member.since}.
@@ -107,47 +113,64 @@ const MemberDrawer = ({ member, open, onClose }) => {
           </div>
 
           <div className="drawer-section">
-            <h3>Plan & billing</h3>
-            <dl className="kv">
-              <dt>Plan</dt><dd>{member.plan} <span style={{color:"var(--muted)",fontWeight:400,marginLeft:4}}>· {member.planType}</span></dd>
-              <dt>Rate</dt>
-              <dd className="tabular">
-                {member.rate}
-                {member.coupon && (
-                  <span style={{display:"block",fontSize:11,color:"var(--muted)",fontWeight:400,marginTop:2}}>{member.coupon}</span>
-                )}
-              </dd>
-              <dt>Role</dt><dd>{member.role}</dd>
-              <dt>Member since</dt><dd>{member.since}</dd>
-              <dt>Renewal</dt>
-              <dd style={{color: member.autoRenewCanceled ? "var(--amber, #d97706)" : (member.status === "suspended" ? "var(--red)" : "var(--text)")}}>
-                {member.autoRenewCanceled ? "Cancels at period end" : member.expiresLabel}
-              </dd>
-              {member.lastPaymentStatus && member.lastPaymentStatus !== "PAID" && (
-                <>
-                  <dt>Payment</dt>
-                  <dd style={{color: member.lastPaymentStatus === "FAILED" ? "var(--red)" : "var(--muted)"}}>
-                    {member.lastPaymentStatus.toLowerCase().replace(/_/g, " ")}
-                  </dd>
-                </>
-              )}
-              {member.subscriptionId && (
-                <>
-                  <dt>Wix</dt>
-                  <dd>
-                    <a href={`https://manage.wix.com/dashboard/_/pricing-plans/orders/${member.orderId || member.subscriptionId}`}
-                       target="_blank" rel="noopener noreferrer"
-                       style={{color:"var(--brand)",fontSize:12,fontWeight:500}}>
-                      View order →
-                    </a>
-                  </dd>
-                </>
-              )}
-            </dl>
+            <h3>Plans &amp; billing</h3>
+            {plans.length === 0 ? (
+              <p style={{margin:0,fontSize:12.5,color:"var(--muted)"}}>No plans on record.</p>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {plans.map((plan, idx) => {
+                  const statusKind = plan.rawStatus === "active" ? "active"
+                                   : (plan.rawStatus === "suspended" || plan.rawStatus === "failed" || plan.rawStatus === "revoked") ? "suspended"
+                                   : "pending";
+                  const subId  = plan.billing && plan.billing.subscriptionId;
+                  const ordId  = plan.billing && plan.billing.orderId;
+                  return (
+                    <div key={idx} style={{
+                      border:"1px solid var(--border)",
+                      borderRadius:"var(--r-card,8px)",
+                      padding:"10px 12px",
+                      background:"var(--card,#fff)"
+                    }}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
+                        <PlanBadge plan={plan.planName} />
+                        <StatusPill status={statusKind} label={plan.accessStatus} />
+                      </div>
+                      <dl className="kv" style={{margin:0,fontSize:12.5,rowGap:4}}>
+                        <dt>Rate</dt>
+                        <dd className="tabular">
+                          {plan.rate}
+                          {plan.coupon && (
+                            <span style={{display:"block",fontSize:11,color:"var(--muted)",fontWeight:400,marginTop:2}}>{plan.coupon}</span>
+                          )}
+                        </dd>
+                        <dt>Added</dt><dd className="tabular">{plan.addedAt}</dd>
+                        <dt>Auto-renew</dt>
+                        <dd style={{color: plan.autoRenewCanceled ? "var(--amber, #d97706)" : "var(--text)"}}>
+                          {plan.autoRenewCanceled ? "Cancels at period end" : "On"}
+                        </dd>
+                        <dt>Billing</dt><dd>{plan.billingMemberName}</dd>
+                        {(subId || ordId) && (
+                          <>
+                            <dt>Wix</dt>
+                            <dd>
+                              <a href={`https://manage.wix.com/dashboard/_/pricing-plans/orders/${ordId || subId}`}
+                                 target="_blank" rel="noopener noreferrer"
+                                 style={{color:"var(--brand)",fontSize:12,fontWeight:500}}>
+                                View order →
+                              </a>
+                            </dd>
+                          </>
+                        )}
+                      </dl>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {(member.plans || []).filter(p => p.additional && p.additional.length > 0).map((plan, idx) => (
-            <div className="drawer-section" key={idx}>
+          {plans.filter(p => p.additional && p.additional.length > 0).map((plan, idx) => (
+            <div className="drawer-section" key={`sub-${idx}`}>
               <h3>
                 {plan.planName} · {plan.additional.length} additional {plan.additional.length === 1 ? "member" : "members"}
               </h3>
