@@ -218,17 +218,28 @@ class NightlyReconciliation {
       return { granted: 0, revoked: 0, skippedHolderOptin: 0, runId, aborted: true, reason: 'wix_api_unavailable' };
     }
 
-    // Map: wixMemberId → { planId, email, name }
-    // Orders take precedence; bookings fill in members not already seen
+    // Map: wixMemberId → { plans: [{ planId, sourceType }], email, name }
+    // A member may have MULTIPLE active orders (multiple plans simultaneously). Pre-OB-185-hotfix
+    // this Map was `{planId, ...}` and Map.set silently overwrote, dropping all but the last
+    // plan per member. Fixed 2026-05-18 after Builder reported 4 active plans surfacing as 1.
+    // Orders and bookings BOTH contribute plans (dedup on planId per member).
     const wixMembers = new Map();
-    for (const o of orders) {
-      if (o.memberId) wixMembers.set(o.memberId, { planId: o.planId, email: o.email, name: o.name });
-    }
-    for (const b of bookings) {
-      if (b.memberId && !wixMembers.has(b.memberId)) {
-        wixMembers.set(b.memberId, { planId: b.planId, email: b.email, name: b.name });
+    const _addPlan = (memberId, planId, sourceType, email, name) => {
+      if (!memberId) return;
+      let entry = wixMembers.get(memberId);
+      if (!entry) {
+        entry = { plans: [], email: email || null, name: name || null };
+        wixMembers.set(memberId, entry);
       }
-    }
+      if (planId && !entry.plans.some(p => p.planId === planId)) {
+        entry.plans.push({ planId, sourceType });
+      }
+      // Fill in email/name from later entries if earlier was null
+      if (!entry.email && email) entry.email = email;
+      if (!entry.name && name)   entry.name  = name;
+    };
+    for (const o of orders) _addPlan(o.memberId, o.planId, 'plan', o.email, o.name);
+    for (const b of bookings) _addPlan(b.memberId, b.planId, 'booking', b.email, b.name);
 
     // 2. Pull Kisi side — live role assignments, filtered to AccessSync-managed users via DB join
     const kisiAssignments = await hardwareAdapter.getManagedRoleAssignments(hardwarePlatform, hardwareApiKey);
@@ -331,59 +342,134 @@ class NightlyReconciliation {
     // back to active. Pass 2 (the Kisi backfill block below) then picks up the
     // role_assignment_id from live Kisi state.
     let promoted = 0;
+    let inserted = 0;
     for (const [memberId, wixData] of wixMembers) {
-      if (!wixData.planId) continue;
-      try {
-        // PG UPDATE-FROM caveat: the UPDATE target table can't be re-joined inside FROM
-        // via JOIN keywords. List additional tables comma-separated; all join conditions
-        // go in WHERE (including the self-join from the target table). plan_mappings is
-        // joined to via mas.mapping_id directly in WHERE for the same reason.
-        const promotionResult = await db.query(
-          `UPDATE member_access_sources mas
-           SET status = 'active', updated_at = NOW()
-           FROM member_access ma, member_master mm, plan_mappings pm
-           WHERE mas.access_id = ma.id
-             AND mm.id = ma.member_master_id
-             AND pm.id = mas.mapping_id
-             AND ma.client_id = $1
-             AND mm.platform_member_id = $2
-             AND pm.source_plan_id = $3
-             AND mas.status = 'cancelled'
-           RETURNING mas.id, mas.access_id`,
-          [client.id, memberId, wixData.planId]
-        );
-        if (promotionResult.rowCount > 0) {
-          promoted += promotionResult.rowCount;
-          // Roll up access status on the affected access rows (DR-046 contract).
-          const affectedAccessIds = [...new Set(promotionResult.rows.map(r => r.access_id))];
-          for (const accessId of affectedAccessIds) {
-            await db.query(
-              `UPDATE member_access
-               SET status = CASE
-                              WHEN EXISTS (
-                                SELECT 1 FROM member_access_sources mas
-                                WHERE mas.access_id = $1 AND mas.status = 'active'
-                              ) THEN 'active'
-                              ELSE 'inactive'
-                            END,
-                   updated_at = NOW()
-               WHERE id = $1`,
-              [accessId]
-            );
+      if (!wixData.plans || wixData.plans.length === 0) continue;
+
+      // Per OB-185 A13 (Builder pressure-test 2026-05-18): Wix is the source of truth.
+      // If Wix says member has N plans, DB must have N source rows. Two cases per plan:
+      //   (a) Source row exists in 'cancelled' → promote to 'active' (legacy migration case)
+      //   (b) Source row doesn't exist at all  → INSERT in 'active'   (true Wix→DB sync)
+      //
+      // Multi-group plans expand: one plan_mapping with 3 hardware_group_ids produces
+      // 3 source rows. Both promotion and INSERT iterate plan_mapping_groups.
+      for (const plan of wixData.plans) {
+        if (!plan.planId) continue;
+
+        // ── (a) Promotion: flip cancelled → active for any existing source row matching this plan
+        try {
+          const promotionResult = await db.query(
+            `UPDATE member_access_sources mas
+             SET status = 'active', updated_at = NOW()
+             FROM member_access ma, member_master mm, plan_mappings pm
+             WHERE mas.access_id = ma.id
+               AND mm.id = ma.member_master_id
+               AND pm.id = mas.mapping_id
+               AND ma.client_id = $1
+               AND mm.platform_member_id = $2
+               AND pm.source_plan_id = $3
+               AND mas.status = 'cancelled'
+             RETURNING mas.id, mas.access_id`,
+            [client.id, memberId, plan.planId]
+          );
+          if (promotionResult.rowCount > 0) {
+            promoted += promotionResult.rowCount;
+            log.info('reconciliation.source_promoted_from_cancelled', {
+              clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+              sourceCount: promotionResult.rowCount,
+              traceId: this._sweepTraceId, stage: 'reconcile', result: 'promoted',
+            });
           }
-          log.info('reconciliation.source_promoted_from_cancelled', {
-            clientId: client.id,
-            platformMemberId: memberId,
-            planId: wixData.planId,
-            sourceCount: promotionResult.rowCount,
-            accessRowsRolledUp: affectedAccessIds.length,
-            traceId: this._sweepTraceId,
-            stage: 'reconcile', result: 'promoted',
-          });
+        } catch (err) {
+          log.error('reconciliation.source_promotion_failed', {
+            clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+          }, err);
         }
+
+        // ── (b) Backfill INSERT: for every (mapping × hardware_group) this plan expects,
+        // INSERT a source row if none exists. Idempotent via ON CONFLICT on the A9 UNIQUE.
+        // Resolves multi-group plans by joining plan_mapping_groups (mirrors S-11 STEP 1).
+        // F-3: skip plans with no mapping (operator hasn't mapped this Wix plan yet).
+        try {
+          const targets = await db.query(
+            `SELECT pm.id AS mapping_id,
+                    COALESCE(pmg.hardware_group_id, pm.hardware_group_id) AS hardware_group_id
+             FROM plan_mappings pm
+             LEFT JOIN plan_mapping_groups pmg ON pmg.mapping_id = pm.id
+             WHERE pm.client_id = $1 AND pm.source_plan_id = $2 AND pm.status = 'active'`,
+            [client.id, plan.planId]
+          );
+          if (targets.rowCount === 0) {
+            log.warn('reconciliation.plan_not_mapped', {
+              clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+              traceId: this._sweepTraceId, stage: 'reconcile', result: 'skipped',
+            });
+            continue;
+          }
+
+          // Note on multi-member opt-in (DR-040): the grant-queue path below (3A) skips
+          // synthetic grants for would-be holders. The backfill INSERT here writes a source
+          // row for what Wix says they HAVE — it's not a new grant, it's a record sync.
+          // The hardware-side opt-in question (does the holder get a Kisi role assignment?)
+          // is answered by Pass 2: if Kisi has the assignment, backfill RA; if not, the
+          // grant-queue path handles it under opt-in rules. Backfill INSERT here is safe.
+
+          for (const target of targets.rows) {
+            if (!target.hardware_group_id) continue; // mapping exists but no group set yet
+
+            const insertResult = await db.query(
+              `INSERT INTO member_access_sources
+                 (client_id, access_id, source_type, source_plan_id,
+                  hardware_group_id, mapping_id, status)
+               SELECT $1, ma.id, $2, $3, $4, $5, 'active'
+               FROM member_access ma
+               JOIN member_master mm ON mm.id = ma.member_master_id
+               WHERE ma.client_id = $1 AND mm.platform_member_id = $6
+               ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id)
+                 DO NOTHING
+               RETURNING id, access_id`,
+              [client.id, plan.sourceType || 'plan', plan.planId,
+               target.hardware_group_id, target.mapping_id, memberId]
+            );
+            if (insertResult.rowCount > 0) {
+              inserted += insertResult.rowCount;
+              log.info('reconciliation.source_inserted_from_wix', {
+                clientId: client.id, platformMemberId: memberId,
+                planId: plan.planId, mappingId: target.mapping_id,
+                hardwareGroupId: target.hardware_group_id,
+                traceId: this._sweepTraceId, stage: 'reconcile', result: 'inserted',
+              });
+            }
+          }
+        } catch (err) {
+          log.error('reconciliation.source_insert_failed', {
+            clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+          }, err);
+        }
+      }
+
+      // ── Roll up access status from sources for every member we touched this iteration.
+      // Single rollup per member, after all per-plan promotion+insert work is done.
+      try {
+        await db.query(
+          `UPDATE member_access ma
+           SET status = CASE
+                          WHEN EXISTS (
+                            SELECT 1 FROM member_access_sources mas
+                            WHERE mas.access_id = ma.id AND mas.status = 'active'
+                          ) THEN 'active'
+                          ELSE 'inactive'
+                        END,
+               updated_at = NOW()
+           FROM member_master mm
+           WHERE ma.member_master_id = mm.id
+             AND ma.client_id = $1
+             AND mm.platform_member_id = $2`,
+          [client.id, memberId]
+        );
       } catch (err) {
-        log.error('reconciliation.source_promotion_failed', {
-          clientId: client.id, platformMemberId: memberId, planId: wixData.planId,
+        log.error('reconciliation.access_rollup_failed', {
+          clientId: client.id, platformMemberId: memberId,
         }, err);
       }
     }
@@ -451,49 +537,56 @@ class NightlyReconciliation {
     for (const [memberId, wixData] of wixMembers) {
       if (kisiMembers.has(memberId)) continue;
 
-      if (!wixData.planId) {
+      if (!wixData.plans || wixData.plans.length === 0) {
         log.warn('reconciliation.wix_order_no_plan_id', { clientId: client.id, memberId });
         continue;
       }
 
-      // Opt-in guard: skip grant for would-be holders on multi-member plans
-      if (multiMemberPlanIds.has(wixData.planId)) {
-        log.info('reconciliation.grant_skipped_optin', {
-          clientId: client.id, platformMemberId: memberId,
-          planId: wixData.planId, traceId: this._sweepTraceId,
-          reason: 'multi_member_plan_holder_must_claim',
-          sourceType: 'cron', stage: 'cron', result: 'skipped',
+      // Queue one grant per Wix plan the member holds. Multi-plan members produce
+      // multiple grant events (each with its own planId), so each plan's source row
+      // gets correctly provisioned to its mapped hardware group.
+      for (const plan of wixData.plans) {
+        if (!plan.planId) continue;
+
+        // Opt-in guard: skip grant for would-be holders on multi-member plans
+        if (multiMemberPlanIds.has(plan.planId)) {
+          log.info('reconciliation.grant_skipped_optin', {
+            clientId: client.id, platformMemberId: memberId,
+            planId: plan.planId, traceId: this._sweepTraceId,
+            reason: 'multi_member_plan_holder_must_claim',
+            sourceType: 'cron', stage: 'cron', result: 'skipped',
+          });
+          skippedHolderOptin++;
+          continue;
+        }
+
+        const recoEventId = `recon-${client.id}-${memberId}-${plan.planId}-${Date.now()}`;
+        const traceId = this._sweepTraceId || crypto.randomUUID();
+        const syntheticEvent = {
+          eventType:        'plan.purchased',
+          sourcePlatform:   'wix',
+          platformMemberId: memberId,
+          planId:           plan.planId,
+          email:            wixData.email,
+          name:             wixData.name,
+          wixSiteId:        siteId,
+          synthetic:        true,
+          syntheticSource:  'reconciliation.true_source_sync',
+          traceId,
+          eventId:          recoEventId,
+        };
+
+        const jobId = `grant-wix-sync-${client.id}-${memberId}-${plan.planId}-${Date.now()}`;
+        await eventQueue.add('grant', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
+        log.info('reconciliation.grant_queued', {
+          clientId: client.id,
+          platformMemberId: memberId,
+          planId: plan.planId, jobId, eventId: recoEventId,
+          traceId: this._sweepTraceId,
+          sourceType: 'cron', stage: 'cron', result: 'success',
         });
-        skippedHolderOptin++;
-        continue;
+        granted++;
       }
-
-      const recoEventId = `recon-${client.id}-${memberId}-${Date.now()}`;
-      const traceId = this._sweepTraceId || crypto.randomUUID();
-      const syntheticEvent = {
-        eventType:        'plan.purchased',
-        sourcePlatform:   'wix',
-        platformMemberId: memberId,
-        planId:           wixData.planId,
-        email:            wixData.email,
-        name:             wixData.name,
-        wixSiteId:        siteId,
-        synthetic:        true,
-        syntheticSource:  'reconciliation.true_source_sync',
-        traceId,
-        eventId:          recoEventId,
-      };
-
-      const jobId = `grant-wix-sync-${client.id}-${memberId}-${Date.now()}`;
-      await eventQueue.add('grant', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
-      log.info('reconciliation.grant_queued', {
-        clientId: client.id, memberId: wixData.memberId || null,
-        platformMemberId: memberId,
-        planId: wixData.planId, jobId, eventId: recoEventId,
-        traceId: this._sweepTraceId,
-        sourceType: 'cron', stage: 'cron', result: 'success',
-      });
-      granted++;
     }
 
     // 3B. In Kisi (AccessSync-managed, primary members only), not in Wix → cancelled/lapsed → queue revoke
