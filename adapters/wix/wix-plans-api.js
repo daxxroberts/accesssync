@@ -212,6 +212,11 @@ async function listActiveOrders(apiKey, siteId) {
           planId:   o.planId || null,
           email:    null,
           name:     null,
+          // OB-187: pass through the raw order shape so reconcile can build a
+          // billing snapshot for legacy members who never came in via a webhook.
+          // extractBillingSnapshot expects { data: { entity: <order> } } — we
+          // wrap here so the caller doesn't have to know the webhook envelope.
+          rawOrder: o,
         });
       }
       if (orders.length < limit) break;

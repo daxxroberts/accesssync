@@ -26,6 +26,7 @@ const hardwareAdapter = require('../adapters/hardware-adapter');
 const { eventQueue } = require('./webhook-processor');
 const { decryptApiKey } = require('./crypto-utils');
 const { listActiveOrders, listConfirmedBookings } = require('../adapters/wix/wix-plans-api');
+const { extractBillingSnapshot } = require('./billing-snapshot');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { log, withTrace } = require('./logger');
 const { runWith, mintTraceId, getTraceId, getActor } = require('./trace-context');
@@ -224,7 +225,7 @@ class NightlyReconciliation {
     // plan per member. Fixed 2026-05-18 after Builder reported 4 active plans surfacing as 1.
     // Orders and bookings BOTH contribute plans (dedup on planId per member).
     const wixMembers = new Map();
-    const _addPlan = (memberId, planId, sourceType, email, name) => {
+    const _addPlan = (memberId, planId, sourceType, email, name, rawOrder) => {
       if (!memberId) return;
       let entry = wixMembers.get(memberId);
       if (!entry) {
@@ -232,14 +233,14 @@ class NightlyReconciliation {
         wixMembers.set(memberId, entry);
       }
       if (planId && !entry.plans.some(p => p.planId === planId)) {
-        entry.plans.push({ planId, sourceType });
+        entry.plans.push({ planId, sourceType, rawOrder: rawOrder || null });
       }
       // Fill in email/name from later entries if earlier was null
       if (!entry.email && email) entry.email = email;
       if (!entry.name && name)   entry.name  = name;
     };
-    for (const o of orders) _addPlan(o.memberId, o.planId, 'plan', o.email, o.name);
-    for (const b of bookings) _addPlan(b.memberId, b.planId, 'booking', b.email, b.name);
+    for (const o of orders) _addPlan(o.memberId, o.planId, 'plan', o.email, o.name, o.rawOrder);
+    for (const b of bookings) _addPlan(b.memberId, b.planId, 'booking', b.email, b.name, null);
 
     // 2. Pull Kisi side — live role assignments, filtered to AccessSync-managed users via DB join
     const kisiAssignments = await hardwareAdapter.getManagedRoleAssignments(hardwarePlatform, hardwareApiKey);
@@ -414,14 +415,68 @@ class NightlyReconciliation {
           // is answered by Pass 2: if Kisi has the assignment, backfill RA; if not, the
           // grant-queue path handles it under opt-in rules. Backfill INSERT here is safe.
 
+          // OB-187 — backfill member_billing once per (member × plan) for legacy
+          // members who came in via reconcile, not webhook. Wrapped in the rawOrder
+          // shape extractBillingSnapshot expects ({ data: { entity: <order> } }).
+          // Idempotent on (client_id, wix_order_id, cycle_index). billingId is
+          // then linked into every source row we INSERT/UPDATE below so the
+          // Members UI Rate column populates without a real webhook ever firing.
+          let billingId = null;
+          if (plan.rawOrder && plan.rawOrder._id) {
+            const snapshot = extractBillingSnapshot({ data: { entity: plan.rawOrder } });
+            const memberMasterRes = await db.query(
+              `SELECT ma.member_master_id
+               FROM member_access ma
+               JOIN member_master mm ON mm.id = ma.member_master_id
+               WHERE ma.client_id = $1 AND mm.platform_member_id = $2
+               LIMIT 1`,
+              [client.id, memberId]
+            );
+            const memberMasterId = memberMasterRes.rows[0]?.member_master_id || null;
+            if (memberMasterId) {
+              try {
+                const billingResult = await db.query(
+                  `INSERT INTO member_billing
+                     (member_master_id, client_id, wix_order_id, wix_subscription_id, cycle_index,
+                      plan_id, plan_name, status, billing_snapshot)
+                   VALUES ($1, $2, $3, $4, 1, $5, $6, 'active', $7)
+                   ON CONFLICT (client_id, wix_order_id, cycle_index) DO NOTHING
+                   RETURNING id`,
+                  [
+                    memberMasterId, client.id, plan.rawOrder._id,
+                    snapshot?.subscriptionId || null,
+                    plan.planId,
+                    plan.rawOrder.planName || snapshot?.planPrice || null,
+                    snapshot ? JSON.stringify(snapshot) : null,
+                  ]
+                );
+                if (billingResult.rows.length > 0) {
+                  billingId = billingResult.rows[0].id;
+                } else {
+                  const existing = await db.query(
+                    `SELECT id FROM member_billing
+                     WHERE client_id = $1 AND wix_order_id = $2 AND cycle_index = 1`,
+                    [client.id, plan.rawOrder._id]
+                  );
+                  billingId = existing.rows[0]?.id || null;
+                }
+              } catch (err) {
+                log.warn('reconciliation.billing_backfill_failed', {
+                  clientId: client.id, platformMemberId: memberId,
+                  planId: plan.planId, wixOrderId: plan.rawOrder._id,
+                }, err);
+              }
+            }
+          }
+
           for (const target of targets.rows) {
             if (!target.hardware_group_id) continue; // mapping exists but no group set yet
 
             const insertResult = await db.query(
               `INSERT INTO member_access_sources
                  (client_id, access_id, source_type, source_plan_id,
-                  hardware_group_id, mapping_id, status)
-               SELECT $1, ma.id, $2, $3, $4, $5, 'active'
+                  hardware_group_id, mapping_id, billing_id, status)
+               SELECT $1, ma.id, $2, $3, $4, $5, $7, 'active'
                FROM member_access ma
                JOIN member_master mm ON mm.id = ma.member_master_id
                WHERE ma.client_id = $1 AND mm.platform_member_id = $6
@@ -429,7 +484,7 @@ class NightlyReconciliation {
                  DO NOTHING
                RETURNING id, access_id`,
               [client.id, plan.sourceType || 'plan', plan.planId,
-               target.hardware_group_id, target.mapping_id, memberId]
+               target.hardware_group_id, target.mapping_id, memberId, billingId]
             );
             if (insertResult.rowCount > 0) {
               inserted += insertResult.rowCount;
@@ -437,7 +492,35 @@ class NightlyReconciliation {
                 clientId: client.id, platformMemberId: memberId,
                 planId: plan.planId, mappingId: target.mapping_id,
                 hardwareGroupId: target.hardware_group_id,
+                billingId: billingId,
                 traceId: this._sweepTraceId, stage: 'reconcile', result: 'inserted',
+              });
+            }
+
+            // OB-187 — backfill billing_id on rows that already existed (created
+            // by an earlier OB-185 sweep before billing backfill landed). Only
+            // overwrites NULL → never clobbers a real billing row.
+            if (billingId) {
+              await db.query(
+                `UPDATE member_access_sources mas
+                 SET billing_id = $7, updated_at = NOW()
+                 FROM member_access ma, member_master mm
+                 WHERE mas.access_id = ma.id
+                   AND mm.id = ma.member_master_id
+                   AND mas.client_id = $1
+                   AND mas.source_type = $2
+                   AND mas.source_plan_id = $3
+                   AND mas.hardware_group_id = $4
+                   AND mas.mapping_id = $5
+                   AND mm.platform_member_id = $6
+                   AND mas.billing_id IS NULL`,
+                [client.id, plan.sourceType || 'plan', plan.planId,
+                 target.hardware_group_id, target.mapping_id, memberId, billingId]
+              ).catch(err => {
+                log.warn('reconciliation.billing_id_link_failed', {
+                  clientId: client.id, platformMemberId: memberId,
+                  planId: plan.planId, billingId,
+                }, err);
               });
             }
           }
