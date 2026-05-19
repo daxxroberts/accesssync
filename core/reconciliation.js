@@ -422,6 +422,19 @@ class NightlyReconciliation {
           // then linked into every source row we INSERT/UPDATE below so the
           // Members UI Rate column populates without a real webhook ever firing.
           let billingId = null;
+          // OB-187 observability — emit the shape of rawOrder once per (member × plan)
+          // so we can see why the guard below skips. Will remove once OB-187 lands.
+          log.info('reconciliation.ob187_rawOrder_probe', {
+            clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+            hasRawOrder: !!plan.rawOrder,
+            rawOrderKeys: plan.rawOrder ? Object.keys(plan.rawOrder).slice(0, 30) : null,
+            rawOrder_id: plan.rawOrder?._id || null,
+            rawOrder_idAlt: plan.rawOrder?.id || null,
+            rawOrder_orderId: plan.rawOrder?.orderId || null,
+            hasPricing: !!plan.rawOrder?.pricing,
+            hasEntity:  !!plan.rawOrder?.entity,
+            traceId: this._sweepTraceId, stage: 'reconcile', result: 'probe',
+          });
           if (plan.rawOrder && plan.rawOrder._id) {
             const snapshot = extractBillingSnapshot({ data: { entity: plan.rawOrder } });
             const memberMasterRes = await db.query(
