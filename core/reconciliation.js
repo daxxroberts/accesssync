@@ -424,7 +424,8 @@ class NightlyReconciliation {
           let billingId = null;
           // OB-187 observability — emit the shape of rawOrder once per (member × plan)
           // so we can see why the guard below skips. Will remove once OB-187 lands.
-          log.info('reconciliation.ob187_rawOrder_probe', {
+          // log.warn (not info) so it survives the logger-level gate and lands in diagnostic_log.
+          log.warn('reconciliation.ob187_rawOrder_probe', {
             clientId: client.id, platformMemberId: memberId, planId: plan.planId,
             hasRawOrder: !!plan.rawOrder,
             rawOrderKeys: plan.rawOrder ? Object.keys(plan.rawOrder).slice(0, 30) : null,
