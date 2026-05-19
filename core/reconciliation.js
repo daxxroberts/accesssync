@@ -422,22 +422,22 @@ class NightlyReconciliation {
           // then linked into every source row we INSERT/UPDATE below so the
           // Members UI Rate column populates without a real webhook ever firing.
           let billingId = null;
-          // OB-187 observability — emit the shape of rawOrder once per (member × plan)
-          // so we can see why the guard below skips. Will remove once OB-187 lands.
-          // log.warn (not info) so it survives the logger-level gate and lands in diagnostic_log.
-          log.warn('reconciliation.ob187_rawOrder_probe', {
-            clientId: client.id, platformMemberId: memberId, planId: plan.planId,
-            hasRawOrder: !!plan.rawOrder,
-            rawOrderKeys: plan.rawOrder ? Object.keys(plan.rawOrder).slice(0, 30) : null,
-            rawOrder_id: plan.rawOrder?._id || null,
-            rawOrder_idAlt: plan.rawOrder?.id || null,
-            rawOrder_orderId: plan.rawOrder?.orderId || null,
-            hasPricing: !!plan.rawOrder?.pricing,
-            hasEntity:  !!plan.rawOrder?.entity,
-            traceId: this._sweepTraceId, stage: 'reconcile', result: 'probe',
-          });
-          if (plan.rawOrder && plan.rawOrder._id) {
-            const snapshot = extractBillingSnapshot({ data: { entity: plan.rawOrder } });
+          // OB-187 — Wix Pricing Plans v2 /orders returns `id` (not `_id`). Probe
+          // 2026-05-19 confirmed: every active order has id populated, _id null.
+          // extractBillingSnapshot reads entity._id, so we normalize id → _id when
+          // we wrap the order for the snapshot extractor below.
+          const wixOrderId = plan.rawOrder?.id || plan.rawOrder?._id || null;
+          if (plan.rawOrder && wixOrderId) {
+            // Normalize id → _id so extractBillingSnapshot (which expects the
+            // webhook envelope's _id) picks up the order id correctly. Also pull
+            // subscriptionId off the rawOrder directly since the REST list shape
+            // surfaces it at top level (not nested under entity like the webhook).
+            const normalizedEntity = {
+              ...plan.rawOrder,
+              _id: wixOrderId,
+              subscriptionId: plan.rawOrder.subscriptionId || null,
+            };
+            const snapshot = extractBillingSnapshot({ data: { entity: normalizedEntity } });
             const memberMasterRes = await db.query(
               `SELECT ma.member_master_id
                FROM member_access ma
@@ -457,10 +457,10 @@ class NightlyReconciliation {
                    ON CONFLICT (client_id, wix_order_id, cycle_index) DO NOTHING
                    RETURNING id`,
                   [
-                    memberMasterId, client.id, plan.rawOrder._id,
-                    snapshot?.subscriptionId || null,
+                    memberMasterId, client.id, wixOrderId,
+                    plan.rawOrder.subscriptionId || snapshot?.subscriptionId || null,
                     plan.planId,
-                    plan.rawOrder.planName || snapshot?.planPrice || null,
+                    plan.rawOrder.planName || null,
                     snapshot ? JSON.stringify(snapshot) : null,
                   ]
                 );
@@ -470,14 +470,14 @@ class NightlyReconciliation {
                   const existing = await db.query(
                     `SELECT id FROM member_billing
                      WHERE client_id = $1 AND wix_order_id = $2 AND cycle_index = 1`,
-                    [client.id, plan.rawOrder._id]
+                    [client.id, wixOrderId]
                   );
                   billingId = existing.rows[0]?.id || null;
                 }
               } catch (err) {
                 log.warn('reconciliation.billing_backfill_failed', {
                   clientId: client.id, platformMemberId: memberId,
-                  planId: plan.planId, wixOrderId: plan.rawOrder._id,
+                  planId: plan.planId, wixOrderId,
                 }, err);
               }
             }

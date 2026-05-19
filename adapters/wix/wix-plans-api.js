@@ -206,29 +206,6 @@ async function listActiveOrders(apiKey, siteId) {
       const data = await wixFetch(path, apiKey, siteId);
       const orders = data.orders || [];
 
-      // OB-188 PROBE — dump the raw shape of the FIRST page only, before filtering.
-      // Wix UI shows 4 active subs for Daxx but reconcile only sees 1 — need to see
-      // what fields actually come back. Elevated to warn so it lands in diagnostic_log.
-      if (offset === 0) {
-        log.warn('wix.active_orders.probe', {
-          siteId,
-          pagingMetadata: data.pagingMetadata || null,
-          orderCount: orders.length,
-          sample: orders.slice(0, 8).map(o => ({
-            keys:        Object.keys(o).slice(0, 30),
-            status:      o.status,
-            planId:      o.planId,
-            buyer:       o.buyer ? Object.keys(o.buyer) : null,
-            memberId:    o.buyer?.memberId || null,
-            contactId:   o.buyer?.contactId || null,
-            _id:         o._id || null,
-            id:          o.id || null,
-            orderId:     o.orderId || null,
-            hasPricing:  !!o.pricing,
-          })),
-        });
-      }
-
       for (const o of orders) {
         if (o.status !== 'ACTIVE') continue;
         allOrders.push({
