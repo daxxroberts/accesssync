@@ -165,13 +165,19 @@ function humanize(event, registry) {
 }
 
 // ── DB query ───────────────────────────────────────────────────────
-// Fallback to Railway public proxy so `node scripts/trace.js <id>` works
-// locally without any env setup — no need for `railway variables` lookup.
-const RAILWAY_PUBLIC_URL = 'postgresql://postgres:uSfbDjUYlneLoTXwCEEmVuGlBtFVrgFW@gondola.proxy.rlwy.net:27298/railway';
+// Post DR-047 cutover (2026-05-20): live DB is Supabase. trace.js requires
+// SUPABASE_DB_PASSWORD env var (or full DATABASE_URL override).
+// Project ref hardcoded since it never changes. Session-mode pooler (5432).
+const SUPABASE_PROJECT_REF = 'gklgwyrnkedebyulrclv';
+function supabaseUrl() {
+  const pw = process.env.SUPABASE_DB_PASSWORD;
+  if (!pw) return null;
+  return `postgresql://postgres.${SUPABASE_PROJECT_REF}:${encodeURIComponent(pw)}@aws-1-us-west-1.pooler.supabase.com:5432/postgres`;
+}
 
 async function queryDb(traceId) {
-  const url = process.env.DATABASE_URL || RAILWAY_PUBLIC_URL;
-  if (!url) throw new Error('DATABASE_URL env var required');
+  const url = process.env.DATABASE_URL || supabaseUrl();
+  if (!url) throw new Error('DATABASE_URL or SUPABASE_DB_PASSWORD env var required');
   const pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
   try {
     const res = await pool.query(

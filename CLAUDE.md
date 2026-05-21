@@ -29,16 +29,21 @@ AccessSync is a SaaS product that automates physical space access control for fi
 |---|---|
 | Core Engine | `https://accesssync-production.up.railway.app` |
 | Admin Hub | `https://accesssync-admin.up.railway.app` |
-| Postgres | `postgresql://postgres:uSfbDjUYlneLoTXwCEEmVuGlBtFVrgFW@gondola.proxy.rlwy.net:27298/railway` |
+| Postgres (LIVE) | `postgresql://postgres.gklgwyrnkedebyulrclv:<password>@aws-1-us-west-1.pooler.supabase.com:5432/postgres` (Supabase session-mode pooler — port 5432, NOT 6543) |
+| Postgres (DEPRECATED — kept alive until Phase 7 decommission per DR-047) | `postgresql://postgres:uSfbDjUYlneLoTXwCEEmVuGlBtFVrgFW@gondola.proxy.rlwy.net:27298/railway` |
 
-The Railway CLI is not always linked. Use Node.js (`pg` package) to run SQL — `psql` may not be on PATH. Standard pattern for migrations and dry-runs:
+**Migration cutover: 2026-05-20 per DR-047 / OB-180.** Live DB is Supabase. Railway Postgres remains paused but unpausable for 1 month of clean Supabase operation before final delete (signal-based, see Phase 7).
+
+Use Node.js (`pg` package) to run SQL against the live Supabase DB. Password supplied via `SUPABASE_DB_PASSWORD` env var, not hardcoded:
 ```js
 const { Client } = require('pg');
+const PASSWORD = process.env.SUPABASE_DB_PASSWORD;
 const client = new Client({
-  connectionString: 'postgresql://postgres:uSfbDjUYlneLoTXwCEEmVuGlBtFVrgFW@gondola.proxy.rlwy.net:27298/railway',
+  connectionString: `postgresql://postgres.gklgwyrnkedebyulrclv:${encodeURIComponent(PASSWORD)}@aws-1-us-west-1.pooler.supabase.com:5432/postgres`,
   ssl: { rejectUnauthorized: false }
 });
 ```
+For most ad-hoc queries, **prefer the Supabase MCP tools** (`mcp__claude_ai_Supabase__execute_sql`, `apply_migration`, `list_tables`) — no password handling, no shell scripts. Project ID: `gklgwyrnkedebyulrclv`. See memory file `reference_supabase_project.md`.
 
 **Deploying to Railway:** `git commit` + `git push` — Railway auto-deploys from GitHub. Never use `railway up`, `railway redeploy`, or any Railway CLI deploy command. After pushing, poll the live endpoint — new deploys take ~30s. Always verify the deploy landed by hitting a live endpoint, not just checking git log.
 

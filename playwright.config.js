@@ -3,11 +3,14 @@ const { defineConfig, devices } = require('@playwright/test');
 const BASE_URL       = process.env.BASE_URL       || 'https://accesssync-production.up.railway.app';
 const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL  || 'https://accesssync-admin.up.railway.app';
 
-// E2E secrets — Railway test credentials (not sensitive in a private repo; tests run against Railway)
+// E2E secrets — Supabase test credentials post DR-047 cutover (2026-05-20).
+// DATABASE_URL must be set via env (SUPABASE_DB_PASSWORD bound through e2e/helpers/db.js).
+// No hardcoded DB URL fallback — tests fail loudly if env not configured rather than
+// silently hit a deprecated Railway instance.
 const E2E_ENV = {
   BASE_URL,
   ADMIN_BASE_URL,
-  DATABASE_URL:        process.env.DATABASE_URL        || 'postgresql://postgres:uSfbDjUYlneLoTXwCEEmVuGlBtFVrgFW@gondola.proxy.rlwy.net:27298/railway',
+  DATABASE_URL:        process.env.DATABASE_URL,
   WIX_WEBHOOK_SECRET:  process.env.WIX_WEBHOOK_SECRET  || 'ad6d52c6bd2c2b968c4d95d820cf1198d1e25c16f39a3fa3f389fa4c7f713b44',
   OWNER_PIN:           process.env.OWNER_PIN            || '2096',
 };
