@@ -95,7 +95,31 @@ app.use('/operator-portal', allowWixFrame, portalRoutes);
 app.use('/', multiMemberRoutes);
 
 // ── Health check (Railway requires a reachable HTTP endpoint) ──
-app.get('/health', (req, res) => res.json({ status: 'ok', service: 'admin-hub' }));
+// Extended 2026-05-23 (OB-196) to surface reconcile cron freshness. Any external
+// monitor (uptime ping, Daxx eyeball) gets the silent-cron alert immediately.
+app.get('/health', async (req, res) => {
+  const out = { status: 'ok', service: 'admin-hub' };
+  try {
+    const db = require('../db');
+    const r = await db.query(
+      `SELECT MAX(started_at) AS latest_reconcile_at FROM reconciliation_run`
+    );
+    const latest = r.rows[0]?.latest_reconcile_at || null;
+    out.latest_reconcile_at = latest;
+    if (latest) {
+      const ageHours = Math.floor((Date.now() - new Date(latest).getTime()) / 3_600_000);
+      out.reconcile_age_hours = ageHours;
+      out.reconcile_health = ageHours < 24 ? 'green' : (ageHours < 72 ? 'amber' : 'red');
+    } else {
+      out.reconcile_health = 'red';
+      out.reconcile_health_reason = 'no_reconciliation_run_rows';
+    }
+  } catch (err) {
+    out.reconcile_health = 'unknown';
+    out.reconcile_health_reason = 'db_unreachable';
+  }
+  res.json(out);
+});
 
 // ── Serve frontend ─────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
@@ -182,6 +206,45 @@ app.use((err, req, res, _next) => {
 app.listen(PORT, () => {
   log.info('admin.started', { port: PORT, env: process.env.NODE_ENV });
 });
+
+// ── In-process reconcile scheduler (OB-196 fallback for silent Railway cron) ──
+// Added 2026-05-23. Audit found Railway cron had not fired runNightlySweep since
+// 2026-05-19 (4 days of silence post-Supabase cutover). This in-process schedule
+// ensures reconcile runs every 6h even if Railway cron is paused/misconfigured.
+//
+// Behavior:
+//   - First run fires 5 minutes after Admin Hub boot (gives Railway deploy time to settle)
+//   - Subsequent runs every 6 hours
+//   - Each run is the same `runNightlySweep()` the Railway cron would have called
+//   - Idempotent at the DB level (reconciliation_run row written per client per sweep)
+//   - If Railway cron comes back online, set DISABLE_INPROCESS_RECONCILE=1 to silence this
+//
+// Gated by NODE_ENV !== 'test' so Jest suite doesn't accidentally fire reconcile.
+const RECONCILE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const RECONCILE_INITIAL_DELAY_MS = 5 * 60 * 1000;  // 5 minutes
+const SCHEDULER_ENABLED = process.env.NODE_ENV !== 'test'
+  && process.env.DISABLE_INPROCESS_RECONCILE !== '1';
+
+if (SCHEDULER_ENABLED) {
+  const fireSweep = async () => {
+    try {
+      log.info('admin.scheduler.reconcile_start', { trigger: 'inprocess_scheduler' });
+      const reconciliation = require('../core/reconciliation');
+      await reconciliation.runNightlySweep();
+      log.info('admin.scheduler.reconcile_complete', { trigger: 'inprocess_scheduler' });
+    } catch (err) {
+      log.error('admin.scheduler.reconcile_failed', { trigger: 'inprocess_scheduler' }, err);
+    }
+  };
+  setTimeout(() => {
+    fireSweep();
+    setInterval(fireSweep, RECONCILE_INTERVAL_MS);
+  }, RECONCILE_INITIAL_DELAY_MS);
+  log.info('admin.scheduler.armed', {
+    initial_delay_minutes: RECONCILE_INITIAL_DELAY_MS / 60000,
+    interval_hours: RECONCILE_INTERVAL_MS / 3_600_000,
+  });
+}
 
 // ── Prevent silent crashes ─────────────────────────────────────
 process.on('uncaughtException', (err) => {

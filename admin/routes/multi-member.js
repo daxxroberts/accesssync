@@ -57,6 +57,10 @@ function recordSyntheticOrigin(traceId, { clientId, actorType, actorId, action, 
 }
 
 // ── GET /member/:memberId/widget-data ──────────────────────────────
+// URL CONVENTION: :memberId is the platform's member ID (e.g. Wix Member ID),
+// NOT the AccessSync internal member_master.id UUID. See STANDARDS.md
+// "Member-facing endpoint URL convention" entry (2026-05-22, OB-191).
+//
 // Returns everything the multi-member editor needs:
 //   - Plan holder info (name, plan)
 //   - Plan config (allow_multiple, max_members)

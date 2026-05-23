@@ -275,8 +275,6 @@ async function loadMemberSnapshot(memberId) {
             ma.hardware_platform,
             ma.status,
             ma.provisioned_at,
-            ma.scheduled_start_date,
-            ma.pending_plan_id,
             ma.sub_master_id,
             ma.created_at    AS access_created_at,
             ma.updated_at    AS access_updated_at
@@ -323,8 +321,6 @@ async function loadMemberSnapshot(memberId) {
       hardware_platform:    r.hardware_platform,
       status:               r.status,
       provisioned_at:       r.provisioned_at,
-      scheduled_start_date: r.scheduled_start_date,
-      pending_plan_id:      r.pending_plan_id,
       sub_master_id:        r.sub_master_id,
       created_at:           r.access_created_at,
       updated_at:           r.access_updated_at,
