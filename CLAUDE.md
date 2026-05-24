@@ -1,7 +1,16 @@
 # CLAUDE.md — AccessSync (repo)
-**Version:** 5.7 (parity with vault) | **Updated:** 2026-05-21 | **Author:** Daxx Roberts / KEEPER
+**Version:** 5.9 (parity with vault) | **Updated:** 2026-05-23 | **Author:** Daxx Roberts / KEEPER / SAGE
 
-> **Synced with vault CLAUDE.md 2026-05-21.** This file lives in the repo (`accesssync/CLAUDE.md`) and is the build-time context Claude Code loads on every repo session. Mirror of vault `CLAUDE.md` Repository State + Schema + Locked Decisions + Env Vars sections. Full vault CLAUDE.md (with Phase 1/2 sequence banners, session protocols, BOT team) is the source of truth — read that file when in doubt. Never edit this repo file in isolation; KEEPER syncs both at session close.
+> **Synced with vault CLAUDE.md 2026-05-23.** This file lives in the repo (`accesssync/CLAUDE.md`) and is the build-time context Claude Code loads on every repo session. Mirror of vault `CLAUDE.md` Repository State + Schema + Locked Decisions + Env Vars sections. Full vault CLAUDE.md (with Phase 1/2 sequence banners, session protocols, BOT team, RULE-15 through RULE-19) is the source of truth — read that file when in doubt. Never edit this repo file in isolation; KEEPER syncs both at session close.
+>
+> **RULE-19 LOCKED 2026-05-23 — BOT loop discipline (autonomous hardening operating model).**
+> Hub-and-spoke: BOT team in main session = knowledge hub. Subagents execute (vault audits,
+> screen recon, query checks, mechanical fixes). Main session evaluates returns for scope creep
+> + correctness. 4-tier risk classification (1: observation, 2: mechanical fix with deploy gate,
+> 3: SAGE-gated architectural, 4: production mutation = hard stop). Hard stop conditions: deploy
+> red after 2 retries, >5 Tier 3 queued, any Tier 4 surface. Full rule text + tier definitions
+> live in vault CLAUDE.md banner. **This commit is the safety anchor before the first autonomous
+> loop run.** If the overnight loop drifts, `git reset --hard` to this commit recovers.
 
 > **Read this file before writing a single line of code. Then read `AccessSync/open_items.md`. Then read the spec for what you're building.**
 
@@ -433,6 +442,7 @@ This project is managed by the Business Operating Team (BOT). The vault is the s
 | v5.6 | 2026-05-15 | **DR-047 LOCKED PLAN** — Supabase migration after S-11. 6 amendments + 3 strengthenings. RULE-15 (design-rationale capture) locked. |
 | v5.7 | 2026-05-20 | **DR-047 EXECUTED** — AccessSync LIVE on Supabase. Path B used after libpq blocked canonical path. OB-180 closed. RULE-16 + RULE-17 proposed. |
 | **v5.7-parity (repo)** | **2026-05-21** | **Repo CLAUDE.md (this file) synced to v5.7 vault parity.** Was v4.17 (5 versions behind). Replaced 14-table schema with 23-table, added DR-043 through DR-047, added Supabase deployment, full file list rewrite. Vault file simultaneously bumped to v5.8 with Phase 1 marked COMPLETE + Phase 2 sequence + RULE-18 proposal. |
+| **v5.9-parity (repo)** | **2026-05-23** | **RULE-19 LOCKED (BOT loop discipline) — safety-anchor commit before first autonomous hardening loop run.** Vault CLAUDE.md bumped v5.8 → v5.9 with RULE-19 in the banner. Repo mirror updated to match. Operating model: hub-and-spoke; BOT main session = hub, subagents execute, main evaluates returns for scope creep + correctness. 4-tier risk model + hard-stop conditions. North star: Wix→DB→Kisi sub-member truth chain. Same session: production data cleanup — 53 duplicate `billing_subscriptions` rows DELETEd (root cause of 54x NO_API_KEY warning amplification per cron sweep). Spinoff OBs: OB-197/198/199/200. Tests: 441/441 DEPLOY SAFE. **This commit is the rollback anchor — if autonomous loop drifts, `git reset --hard` here.** |
 
 *Full vault version history: `AccessSync/CLAUDE.md` and `01_Project_Foundation/Claude_Versions/`*
 
