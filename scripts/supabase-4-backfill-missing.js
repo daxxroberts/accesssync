@@ -1,4 +1,14 @@
 /**
+ * ⚠️ ONE-TIME MIGRATION ARTIFACT — historical, executed 2026-05-20.
+ *
+ * This script references the Railway Postgres URL (gondola.proxy.rlwy.net:27298) which was
+ * DECOMMISSIONED on 2026-05-20 per DR-047 (Supabase migration). It ran ONCE during cutover
+ * to backfill rows that the statement-split brittleness (RULE-17 trigger) missed in the
+ * primary data dump. It is preserved as an audit-trail artifact only — DO NOT RE-RUN.
+ *
+ * Closed audit reference: OB-180 (migration executed), OB-182 grep sweep (2026-05-24).
+ * ─────────────────────────────────────────────────────────────────────────────────
+ *
  * supabase-4-backfill-missing.js
  * Phase 2B fix-up: find rows present in Railway but missing in Supabase,
  * generate targeted INSERTs, apply them.

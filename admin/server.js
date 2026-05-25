@@ -228,10 +228,12 @@ const SCHEDULER_ENABLED = process.env.NODE_ENV !== 'test'
 if (SCHEDULER_ENABLED) {
   const fireSweep = async () => {
     try {
-      log.info('admin.scheduler.reconcile_start', { trigger: 'inprocess_scheduler' });
+      // OB-197 fix 2026-05-24: bumped info → warn so scheduler liveness is
+      // observable in diagnostic_log (info currently suppressed pre-OB-176).
+      log.warn('admin.scheduler.reconcile_start', { trigger: 'inprocess_scheduler' });
       const reconciliation = require('../core/reconciliation');
       await reconciliation.runNightlySweep();
-      log.info('admin.scheduler.reconcile_complete', { trigger: 'inprocess_scheduler' });
+      log.warn('admin.scheduler.reconcile_complete', { trigger: 'inprocess_scheduler' });
     } catch (err) {
       log.error('admin.scheduler.reconcile_failed', { trigger: 'inprocess_scheduler' }, err);
     }
@@ -240,7 +242,8 @@ if (SCHEDULER_ENABLED) {
     fireSweep();
     setInterval(fireSweep, RECONCILE_INTERVAL_MS);
   }, RECONCILE_INITIAL_DELAY_MS);
-  log.info('admin.scheduler.armed', {
+  // OB-197 fix 2026-05-24: bumped info → warn so we can verify scheduler armed.
+  log.warn('admin.scheduler.armed', {
     initial_delay_minutes: RECONCILE_INITIAL_DELAY_MS / 60000,
     interval_hours: RECONCILE_INTERVAL_MS / 3_600_000,
   });

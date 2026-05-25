@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Supabase__execute_sql",
+      "mcp__claude_ai_Supabase__list_tables",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__supabase__execute_sql",
+      "mcp__Claude_in_Chrome__read_console_messages",
+      "mcp__Claude_in_Chrome__read_page",
+      "mcp__Claude_in_Chrome__read_network_requests",
+      "mcp__Claude_in_Chrome__get_page_text",
+      "Bash(curl -s *)",
+      "Bash(curl -sS *)",
+      "Bash(curl -I *)",
+      "Bash(until curl *)",
+      "Bash(railway variables*)",
+      "Bash(railway logs*)",
+      "Bash(git -C *)",
+      "Bash(netstat -ano*)",
+      "Bash(agent-browser open *)",
+      "Bash(agent-browser snapshot*)",
+      "Bash(agent-browser screenshot *)",
+      "Bash(agent-browser click *)",
+      "Bash(agent-browser wait *)",
+      "Bash(agent-browser fill *)",
+      "Bash(agent-browser close)",
+      "Bash(agent-browser --version)"
+    ]
+  }
+}
