@@ -472,6 +472,14 @@ body {
    TAB 2 — MANAGE MEMBERS
    ═══════════════════════════════════════════════════════ */
 
+/* ── Plan-group wrapper (one per allow_multiple plan) ── */
+.mm-plan-group {
+  margin-bottom: 24px;
+}
+.mm-plan-group:last-child {
+  margin-bottom: 0;
+}
+
 /* ── Hero card ────────────────────────────────────────── */
 .mm-hero {
   position: relative;
@@ -895,55 +903,15 @@ body {
       <!-- Content -->
       <div id="mm-content" class="hidden">
 
-        <!-- Hero card -->
-        <div class="mm-hero">
-          <div class="mm-hero-glow"></div>
-          <div class="mm-ring">
-            <svg width="64" height="64" viewBox="0 0 64 64">
-              <circle cx="32" cy="32" r="26" fill="none" stroke="var(--border2)" stroke-width="4"/>
-              <circle id="mm-ring-progress" cx="32" cy="32" r="26" fill="none"
-                stroke="var(--brand)" stroke-width="4"
-                stroke-dasharray="0 163.4" stroke-linecap="round"
-                style="transition:stroke-dasharray .5s cubic-bezier(.2,.7,.3,1);filter:drop-shadow(0 0 6px var(--brand-glow))"/>
-            </svg>
-            <div class="mm-ring-center">
-              <span class="mm-ring-num" id="mm-ring-used">0</span>
-              <span class="mm-ring-of" id="mm-ring-of">of 0</span>
-            </div>
-          </div>
-          <div class="mm-hero-info">
-            <div class="mm-eyebrow">Your plan</div>
-            <div class="mm-plan-name" id="mm-plan-name">—</div>
-            <div class="mm-meta" id="mm-meta"></div>
-            <div class="spot-pips" id="mm-spot-pips"></div>
-          </div>
+        <!-- One plan-group card per allow_multiple plan. Rendered by mmRender(). -->
+        <div id="mm-plan-groups"></div>
+
+        <!-- Empty state when MM.plans is empty -->
+        <div id="mm-no-plans" class="hidden" style="padding:32px;text-align:center;color:var(--text2);font-size:13px;">
+          You don't have any multi-member plans yet.
         </div>
 
-        <!-- Section header -->
-        <div class="mm-section-row">
-          <div>
-            <div class="mm-section-title">Additional members</div>
-            <div class="mm-section-sub" id="mm-section-sub"></div>
-          </div>
-          <span class="draft-chip hidden" id="mm-draft-chip"></span>
-        </div>
-
-        <!-- Member list -->
-        <div id="mm-member-list" class="member-list"></div>
-
-        <!-- Add trigger / limit notice -->
-        <div id="mm-add-trigger-wrap">
-          <button class="add-trigger hidden" id="mm-btn-add-trigger" onclick="mmOpenAddForm()">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
-            Add member
-          </button>
-          <div class="limit-notice hidden" id="mm-limit-notice">
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.5v4M8 4.7v.05" stroke-linecap="round"/></svg>
-            <span id="mm-limit-text"></span>
-          </div>
-        </div>
-
-        <!-- Inline add form -->
+        <!-- Inline add form — single instance, moved into the active plan group on open -->
         <div id="mm-add-form" class="add-form hidden">
           <div class="add-form-header">
             <div class="add-icon">
@@ -951,7 +919,7 @@ body {
             </div>
             <div>
               <div class="add-form-title">Add a member</div>
-              <div class="add-form-sub">They'll be saved as a draft until you grant access.</div>
+              <div class="add-form-sub" id="mm-add-form-sub">They'll be saved as a draft until you grant access.</div>
             </div>
           </div>
           <div class="form-grid">
@@ -982,7 +950,7 @@ body {
           </div>
         </div>
 
-        <!-- Submit CTA -->
+        <!-- Global Submit CTA — sums drafts across all plan groups -->
         <div class="submit-area hidden" id="mm-submit-area">
           <button class="btn-primary full" id="mm-btn-submit" onclick="mmSubmitAll()">
             Grant access to <span id="mm-submit-label">0 members</span>
@@ -1605,8 +1573,9 @@ const MM = {
   holder:      null,
   plans:       [],
   subMembers:  [],
-  maxMembers:  0,
-  planMappingId: null,  // active plan's mapping UUID (DR-040)
+  maxMembers:  0,                  // legacy; retained for compat in mmSaveAdd toast fallback
+  planMappingId: null,             // legacy default (first plan) — superseded by activeAddPlanId
+  activeAddPlanId: null,           // plan whose Add form is currently open
   editingId:   null,
   confirmingId: null,
 };
@@ -1626,19 +1595,24 @@ function mmTimeAgo(iso) {
 
 function mmStatusMeta(m) {
   if (m.status === 'draft') return { label: 'Draft', cls: 'badge-amber', pulse: false };
-  switch (m.accessStatus) {
-    case 'active':       return { label: 'Active',  cls: 'badge-green', pulse: false, ring: true };
+  // API contract: widget-data returns sub-member.status = source_status || access_status
+  // (multi-member.js:178). Single 'status' field — never `accessStatus`.
+  switch (m.status) {
+    case 'active':           return { label: 'Active',  cls: 'badge-green', pulse: false, ring: true };
     case 'in_flight':
-    case 'pending_sync': return { label: 'Pending', cls: 'badge-brand', pulse: true };
-    case 'failed':       return { label: 'Issue',   cls: 'badge-red',   pulse: false, alert: true };
-    default:             return { label: 'Pending', cls: 'badge-brand', pulse: true };
+    case 'pending_sync':
+    case 'pending_hardware':
+    case 'pending_start':
+    case 'pending_identity': return { label: 'Pending', cls: 'badge-brand', pulse: true };
+    case 'failed':           return { label: 'Issue',   cls: 'badge-red',   pulse: false, alert: true };
+    default:                 return { label: 'Pending', cls: 'badge-brand', pulse: true };
   }
 }
 
 function mmAvatarTone(m) {
-  if (m.status === 'draft') return 'amber';
-  if (m.accessStatus === 'active') return 'green';
-  if (m.accessStatus === 'failed') return 'red';
+  if (m.status === 'draft')  return 'amber';
+  if (m.status === 'active') return 'green';
+  if (m.status === 'failed') return 'red';
   return '';
 }
 
@@ -1736,10 +1710,10 @@ let _mmPollCount = 0;
 function mmIsSubMemberPending(m) {
   if (!m) return false;
   if (m.status === 'draft') return false;
-  if (m.accessStatus === 'active') return false;
-  if (m.accessStatus === 'failed' || m.accessStatus === 'error') return false;
-  if (m.accessStatus === 'suspended' || m.accessStatus === 'revoked') return false;
-  return true;  // submitted / pending_sync / in_flight / null / unknown → still pending
+  if (m.status === 'active') return false;
+  if (m.status === 'failed' || m.status === 'error') return false;
+  if (m.status === 'suspended' || m.status === 'revoked' || m.status === 'cancelled') return false;
+  return true;  // pending_hardware / pending_start / pending_sync / in_flight / null → still pending
 }
 
 function mmStopPoll() {
@@ -1763,68 +1737,53 @@ function mmStartPollIfPending() {
   }, MM_POLL_INTERVAL);
 }
 
+// ── Per-plan render ────────────────────────────────────────
+// One plan-group card per plan in MM.plans. Each group owns its own hero
+// ring, spot pips, member list (filtered by planMappingId), add trigger,
+// and per-plan limit. The single add form (#mm-add-form) is moved into the
+// active group when openAddForm fires. The single submit CTA sums drafts
+// across all plans.
 function mmRender() {
-  const plan  = MM.plans[0] || {};
-  const used  = MM.subMembers.length;
-  const max   = MM.maxMembers;
-  const atLimit = used >= max;
-  const drafts  = MM.subMembers.filter(m => m.status === 'draft');
+  const groups = document.getElementById('mm-plan-groups');
+  const noPlans = document.getElementById('mm-no-plans');
 
-  // Hero ring
-  const C   = 2 * Math.PI * 26;
-  const pct = max > 0 ? Math.min(1, used / max) : 0;
-  document.getElementById('mm-ring-progress').setAttribute('stroke-dasharray', (pct * C).toFixed(1) + ' ' + C.toFixed(1));
-  document.getElementById('mm-ring-used').textContent = used;
-  document.getElementById('mm-ring-of').textContent   = 'of ' + max;
-  document.getElementById('mm-plan-name').textContent = plan.planName || 'Your Plan';
-  document.getElementById('mm-meta').textContent = (plan.doorName ? plan.doorName + ' · ' : '') +
-    (max - used > 0 ? (max - used) + ' spot' + (max - used === 1 ? '' : 's') + ' left' : 'Full');
+  if (!MM.plans || MM.plans.length === 0) {
+    groups.innerHTML = '';
+    noPlans.classList.remove('hidden');
+    document.getElementById('mm-submit-area').classList.add('hidden');
+    document.getElementById('mm-sticky-cta').classList.add('hidden');
+    notifyHeight();
+    return;
+  }
+  noPlans.classList.add('hidden');
 
-  // Spot pips
-  const pips = document.getElementById('mm-spot-pips');
-  const pipW = max <= 5 ? 28 : 18;
-  pips.innerHTML = Array.from({ length: max }, (_, i) =>
-    '<span class="spot-pip ' + (i < used ? 'filled' : 'empty') + '" style="width:' + pipW + 'px"></span>'
-  ).join('');
+  // Build markup for each plan group.
+  groups.innerHTML = MM.plans.map(plan => mmPlanGroupHtml(plan)).join('');
 
-  // Section sub
-  document.getElementById('mm-section-sub').textContent =
-    used === 0 ? 'No members yet — add up to ' + max
-               : used + ' of ' + max + ' spot' + (max === 1 ? '' : 's') + ' used';
+  // Wire per-plan add buttons and render each plan's member list.
+  MM.plans.forEach(plan => {
+    const subsForPlan = MM.subMembers.filter(m => m.planMappingId === plan.id);
+    mmRenderListForPlan(plan, subsForPlan);
+  });
 
-  // Draft chip
-  const draftChip = document.getElementById('mm-draft-chip');
-  if (drafts.length > 0) {
-    draftChip.textContent = drafts.length + ' draft' + (drafts.length === 1 ? '' : 's');
-    draftChip.classList.remove('hidden');
-  } else {
-    draftChip.classList.add('hidden');
+  // Reattach add form to the active plan group (if open) so the inputs
+  // stay mounted under the right card. Default to first plan if none active.
+  const addForm = document.getElementById('mm-add-form');
+  const isOpen  = !addForm.classList.contains('hidden');
+  if (isOpen) {
+    const targetPlanId = MM.activeAddPlanId || MM.plans[0].id;
+    const slot = document.getElementById('mm-plan-' + targetPlanId + '-addform-slot');
+    if (slot && addForm.parentNode !== slot) slot.appendChild(addForm);
   }
 
-  mmRenderList();
-
-  // Add trigger
-  const addTrigger  = document.getElementById('mm-btn-add-trigger');
-  const limitNotice = document.getElementById('mm-limit-notice');
-  const addForm     = document.getElementById('mm-add-form');
-  if (addForm.classList.contains('hidden')) {
-    if (atLimit) {
-      addTrigger.classList.add('hidden');
-      limitNotice.classList.remove('hidden');
-      document.getElementById('mm-limit-text').textContent = 'All ' + max + ' spots are used. Remove a member to add a new one.';
-    } else {
-      addTrigger.classList.remove('hidden');
-      limitNotice.classList.add('hidden');
-    }
-  }
-
-  // Submit CTA
+  // Global submit CTA — sum drafts across all plans.
+  const allDrafts = MM.subMembers.filter(m => m.status === 'draft');
   const submitArea  = document.getElementById('mm-submit-area');
   const submitLabel = document.getElementById('mm-submit-label');
   const stickyLabel = document.getElementById('mm-sticky-label');
-  if (drafts.length > 0) {
+  if (allDrafts.length > 0) {
     submitArea.classList.remove('hidden');
-    const t = drafts.length + ' member' + (drafts.length === 1 ? '' : 's');
+    const t = allDrafts.length + ' member' + (allDrafts.length === 1 ? '' : 's');
     submitLabel.textContent = t;
     stickyLabel.textContent = t;
   } else {
@@ -1835,25 +1794,111 @@ function mmRender() {
   notifyHeight();
 }
 
-function mmRenderList() {
-  const el = document.getElementById('mm-member-list');
-  if (MM.subMembers.length === 0) {
-    el.innerHTML = mmEmptyHtml();
+function mmPlanGroupHtml(plan) {
+  const subsForPlan = MM.subMembers.filter(m => m.planMappingId === plan.id);
+  const used  = subsForPlan.length;
+  const max   = plan.maxMembers || 0;
+  const atLimit = used >= max;
+  const drafts  = subsForPlan.filter(m => m.status === 'draft');
+  const C       = 2 * Math.PI * 26;
+  const pct     = max > 0 ? Math.min(1, used / max) : 0;
+  const dash    = (pct * C).toFixed(1) + ' ' + C.toFixed(1);
+  const pipW    = max <= 5 ? 28 : 18;
+  const pipsHtml = Array.from({ length: max }, (_, i) =>
+    '<span class="spot-pip ' + (i < used ? 'filled' : 'empty') + '" style="width:' + pipW + 'px"></span>'
+  ).join('');
+  const metaText = (plan.doorName ? esc(plan.doorName) + ' &middot; ' : '') +
+    (max - used > 0 ? (max - used) + ' spot' + (max - used === 1 ? '' : 's') + ' left' : 'Full');
+  const sectionSub = used === 0
+    ? 'No members yet &mdash; add up to ' + max
+    : used + ' of ' + max + ' spot' + (max === 1 ? '' : 's') + ' used';
+  const draftChipHtml = drafts.length > 0
+    ? '<span class="draft-chip">' + drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + '</span>'
+    : '';
+  const pid = esc(plan.id);
+
+  return '<div class="mm-plan-group" data-plan-id="' + pid + '" id="mm-plan-' + pid + '">' +
+    // Hero card
+    '<div class="mm-hero">' +
+      '<div class="mm-hero-glow"></div>' +
+      '<div class="mm-ring">' +
+        '<svg width="64" height="64" viewBox="0 0 64 64">' +
+          '<circle cx="32" cy="32" r="26" fill="none" stroke="var(--border2)" stroke-width="4"/>' +
+          '<circle cx="32" cy="32" r="26" fill="none" stroke="var(--brand)" stroke-width="4" ' +
+            'stroke-dasharray="' + dash + '" stroke-linecap="round" ' +
+            'style="transition:stroke-dasharray .5s cubic-bezier(.2,.7,.3,1);filter:drop-shadow(0 0 6px var(--brand-glow))"/>' +
+        '</svg>' +
+        '<div class="mm-ring-center">' +
+          '<span class="mm-ring-num">' + used + '</span>' +
+          '<span class="mm-ring-of">of ' + max + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="mm-hero-info">' +
+        '<div class="mm-eyebrow">Your plan</div>' +
+        '<div class="mm-plan-name">' + esc(plan.planName || 'Your Plan') + '</div>' +
+        '<div class="mm-meta">' + metaText + '</div>' +
+        '<div class="spot-pips">' + pipsHtml + '</div>' +
+      '</div>' +
+    '</div>' +
+    // Section header
+    '<div class="mm-section-row">' +
+      '<div>' +
+        '<div class="mm-section-title">Additional members</div>' +
+        '<div class="mm-section-sub">' + sectionSub + '</div>' +
+      '</div>' +
+      draftChipHtml +
+    '</div>' +
+    // Per-plan member list slot (populated by mmRenderListForPlan)
+    '<div id="mm-plan-' + pid + '-list" class="member-list"></div>' +
+    // Per-plan add trigger / limit notice
+    '<div>' +
+      (atLimit
+        ? '<div class="limit-notice">' +
+            '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.5v4M8 4.7v.05" stroke-linecap="round"/></svg>' +
+            '<span>All ' + max + ' spots are used. Remove a member to add a new one.</span>' +
+          '</div>'
+        : '<button class="add-trigger" onclick="mmOpenAddForm(\'' + pid + '\')">' +
+            '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>' +
+            'Add member' +
+          '</button>') +
+    '</div>' +
+    // Slot the shared add form lives in when this plan is the active one.
+    '<div id="mm-plan-' + pid + '-addform-slot"></div>' +
+  '</div>';
+}
+
+function mmRenderListForPlan(plan, subsForPlan) {
+  const el = document.getElementById('mm-plan-' + plan.id + '-list');
+  if (!el) return;
+  if (subsForPlan.length === 0) {
+    el.innerHTML = mmEmptyHtml(plan);
     return;
   }
-  el.innerHTML = MM.subMembers.map(m => {
+  el.innerHTML = subsForPlan.map(m => {
     if (m.id === MM.confirmingId) return mmConfirmRowHtml(m);
     if (m.id === MM.editingId)    return mmEditRowHtml(m);
     return mmMemberRowHtml(m);
   }).join('');
 }
 
-function mmEmptyHtml() {
+// Compat shim — kept because mmBeginEdit/mmBeginConfirm/mmCancelEdit/mmCancelConfirm
+// call mmRenderList() to refresh the list view. Now re-renders every plan group.
+function mmRenderList() {
+  if (!MM.plans || MM.plans.length === 0) return;
+  MM.plans.forEach(plan => {
+    const subsForPlan = MM.subMembers.filter(m => m.planMappingId === plan.id);
+    mmRenderListForPlan(plan, subsForPlan);
+  });
+}
+
+function mmEmptyHtml(plan) {
+  const planLabel = (plan && plan.planName) ? esc(plan.planName) : 'this plan';
+  const pid = plan ? esc(plan.id) : '';
   return '<div class="mm-empty-state">' +
     '<div class="mm-empty-icon"><svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg></div>' +
-    '<div class="mm-empty-title">Bring your crew along</div>' +
+    '<div class="mm-empty-title">No members yet on ' + planLabel + '</div>' +
     '<div class="mm-empty-sub">Your plan covers additional members.<br>Add them and we\'ll get them set up at the door.</div>' +
-    '<button class="btn-primary" onclick="mmOpenAddForm()">' +
+    '<button class="btn-primary" onclick="mmOpenAddForm(\'' + pid + '\')">' +
       '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>' +
       'Add your first member' +
     '</button>' +
@@ -1946,22 +1991,57 @@ function mmUpdateStickyVisibility() {
 window.addEventListener('scroll', mmUpdateStickyVisibility, { passive: true });
 
 // ── Add form ─────────────────────────────────────────────────────────
-function mmOpenAddForm() {
-  document.getElementById('mm-add-form').classList.remove('hidden');
-  document.getElementById('mm-btn-add-trigger').classList.add('hidden');
-  document.getElementById('mm-limit-notice').classList.add('hidden');
+// Per-plan: caller passes the plan.id the form should write against.
+// Reuses a single shared form element; we move it into the right plan's slot.
+function mmOpenAddForm(planId) {
+  // Default to first plan when no id passed (defensive — eg. dev console call).
+  if (!planId && MM.plans.length > 0) planId = MM.plans[0].id;
+  MM.activeAddPlanId = planId || null;
+
+  const addForm = document.getElementById('mm-add-form');
+  addForm.classList.remove('hidden');
+
+  // Move the form into the active plan group's slot so it renders under the
+  // right card. mmRender() rebuilds plan groups so the slot is fresh.
+  if (planId) {
+    const slot = document.getElementById('mm-plan-' + planId + '-addform-slot');
+    if (slot) slot.appendChild(addForm);
+  }
+
+  // Personalise the form subtitle with the plan name.
+  const plan = MM.plans.find(p => p.id === planId);
+  const subEl = document.getElementById('mm-add-form-sub');
+  if (subEl) {
+    subEl.textContent = plan && plan.planName
+      ? 'Adding to ' + plan.planName + ' — saved as a draft until you grant access.'
+      : "They'll be saved as a draft until you grant access.";
+  }
+
   // mmSaveAdd disables the button on submit but only re-enables on failure.
   // On the success path closeAddForm() hides the form but the button stays
   // disabled in memory; reopening shows the form with a dead button. Reset here.
   const saveBtn = document.getElementById('mm-btn-add-save');
   if (saveBtn) saveBtn.disabled = false;
   mmClearAddForm();
-  document.getElementById('f-first').focus();
+
+  // Hide the add trigger on the active plan card to avoid double-button.
+  mmRender();
+  // After re-render the trigger button is recreated; hide just the one for
+  // the active plan.
+  const activeGroup = document.getElementById('mm-plan-' + planId);
+  if (activeGroup) {
+    const trigger = activeGroup.querySelector('.add-trigger');
+    if (trigger) trigger.classList.add('hidden');
+  }
+
+  const firstInput = document.getElementById('f-first');
+  if (firstInput) firstInput.focus();
   notifyHeight();
 }
 
 function mmCloseAddForm() {
   document.getElementById('mm-add-form').classList.add('hidden');
+  MM.activeAddPlanId = null;
   mmClearAddForm();
   mmRender();
 }
@@ -2030,7 +2110,19 @@ function mmValidateEditForm() {
 // ── API: Add ─────────────────────────────────────────────────────────
 async function mmSaveAdd() {
   if (!mmValidateAddForm()) return;
-  if (!MM.planMappingId) { showToast('Plan not loaded. Refresh and try again.', 'error'); return; }
+  const activePlanId = MM.activeAddPlanId || (MM.plans[0] && MM.plans[0].id);
+  if (!activePlanId) { showToast('Plan not loaded. Refresh and try again.', 'error'); return; }
+
+  // Per-plan client-side limit check (server still enforces).
+  const activePlan = MM.plans.find(p => p.id === activePlanId);
+  if (activePlan) {
+    const usedOnPlan = MM.subMembers.filter(m => m.planMappingId === activePlanId).length;
+    if (usedOnPlan >= activePlan.maxMembers) {
+      showToast(activePlan.planName + ' is full — limit is ' + activePlan.maxMembers + ' additional members.', 'error');
+      return;
+    }
+  }
+
   const btn = document.getElementById('mm-btn-add-save');
   btn.disabled = true;
   try {
@@ -2044,12 +2136,13 @@ async function mmSaveAdd() {
         lastName:     document.getElementById('f-last').value.trim(),
         email:        document.getElementById('f-email').value.trim(),
         phone:        document.getElementById('f-phone').value.trim(),
-        planMappingId: MM.planMappingId,  // DR-040
+        planMappingId: activePlanId,  // DR-040 — per-plan via activeAddPlanId
       }),
     });
     const data = await res.json();
     if (!res.ok) {
-      showToast(res.status === 409 ? 'Member limit reached — this plan allows up to ' + MM.maxMembers + ' additional members.' : (data.error || 'Failed to add member.'), 'error');
+      const planMax = activePlan ? activePlan.maxMembers : MM.maxMembers;
+      showToast(res.status === 409 ? 'Member limit reached — this plan allows up to ' + planMax + ' additional members.' : (data.error || 'Failed to add member.'), 'error');
       btn.disabled = false;
       return;
     }

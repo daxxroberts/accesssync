@@ -811,19 +811,24 @@ function statusMeta(m) {
   if (m.status === 'draft') return { label: 'Draft', cls: 'badge-amber', dot: 'dot-amber', pulse: false };
   // DR-044: row is in 'removing' state — Kisi revoke queued or in-flight, finalize pending
   if (m.status === 'removing') return { label: 'Will be removed', cls: 'badge-amber', dot: 'dot-amber', pulse: true };
-  switch (m.accessStatus) {
-    case 'active':       return { label: 'Active',  cls: 'badge-green', dot: 'dot-green', pulse: false, ring: true };
+  // API contract: widget-data returns sub-member.status = source_status || access_status
+  // (multi-member.js:178). Single 'status' field — never `accessStatus`.
+  switch (m.status) {
+    case 'active':           return { label: 'Active',  cls: 'badge-green', dot: 'dot-green', pulse: false, ring: true };
     case 'in_flight':
-    case 'pending_sync': return { label: 'Pending', cls: 'badge-brand', dot: 'dot-brand', pulse: true };
-    case 'failed':       return { label: 'Issue',   cls: 'badge-red',   dot: null,        pulse: false, alert: true };
-    default:             return { label: 'Pending', cls: 'badge-brand', dot: 'dot-brand', pulse: true };
+    case 'pending_sync':
+    case 'pending_hardware':
+    case 'pending_start':
+    case 'pending_identity': return { label: 'Pending', cls: 'badge-brand', dot: 'dot-brand', pulse: true };
+    case 'failed':           return { label: 'Issue',   cls: 'badge-red',   dot: null,        pulse: false, alert: true };
+    default:                 return { label: 'Pending', cls: 'badge-brand', dot: 'dot-brand', pulse: true };
   }
 }
 
 function avatarTone(m) {
-  if (m.status === 'draft') return 'amber';
-  if (m.accessStatus === 'active') return 'green';
-  if (m.accessStatus === 'failed') return 'red';
+  if (m.status === 'draft')  return 'amber';
+  if (m.status === 'active') return 'green';
+  if (m.status === 'failed') return 'red';
   return '';
 }
 
@@ -1478,9 +1483,9 @@ const POLL_MAX         = 75; // 5 minutes max
 
 function isNonTerminal(m) {
   if (m.status === 'draft') return false;
-  if (m.accessStatus === 'active') return false;
-  if (m.accessStatus === 'failed' || m.accessStatus === 'error') return false;
-  if (m.accessStatus === 'suspended' || m.accessStatus === 'revoked') return false;
+  if (m.status === 'active') return false;
+  if (m.status === 'failed' || m.status === 'error') return false;
+  if (m.status === 'suspended' || m.status === 'revoked' || m.status === 'cancelled') return false;
   return true;
 }
 
@@ -1502,7 +1507,7 @@ function maybeStartPoll(prevMembers) {
     const prevById = new Map(prevMembers.map(m => [m.id, m]));
     const newlyActive = S.subMembers.filter(m => {
       const wasPending = prevById.has(m.id) && isNonTerminal(prevById.get(m.id));
-      return wasPending && m.accessStatus === 'active';
+      return wasPending && m.status === 'active';
     });
     newlyActive.forEach(m => completePipeline(m.id));
     if (newlyActive.length > 0) {

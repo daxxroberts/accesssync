@@ -123,7 +123,21 @@ body { background: var(--bg); }
   font-size: 10px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.8px;
   color: var(--muted);
-  margin-bottom: 10px;
+  margin-bottom: 4px;
+}
+.section-caption {
+  font-size: 10.5px; color: var(--muted); opacity: .72;
+  margin-bottom: 10px; line-height: 1.4;
+}
+/* Door row: contributing plans listed under the door name in tiny font */
+.door-plans {
+  font-size: 9.5px; color: var(--muted); opacity: .78;
+  margin-top: 2px; letter-spacing: .2px;
+  display: flex; flex-wrap: wrap; gap: 4px 8px;
+}
+.door-plan-chip { white-space: nowrap; }
+.door-plan-chip + .door-plan-chip::before {
+  content: "·"; margin-right: 6px; opacity: .5;
 }
 
 /* ── Card ────────────────────────────────────── */
@@ -351,6 +365,7 @@ body { background: var(--bg); }
     <!-- Plans section -->
     <div class="section">
       <div class="section-label">Your Plans</div>
+      <div class="section-caption">Active memberships on your account.</div>
       <div class="card" id="plans-card">
         <!-- skeleton -->
         <div class="skeleton-row" id="plans-skeleton">
@@ -366,6 +381,7 @@ body { background: var(--bg); }
     <!-- Door access section -->
     <div class="section">
       <div class="section-label">Door Access</div>
+      <div class="section-caption">Doors you can unlock — one row per door, plans below show what grants access.</div>
       <div class="card" id="doors-card">
         <!-- skeleton -->
         <div class="skeleton-row" id="doors-skeleton">
@@ -437,7 +453,7 @@ function showBanner(state, errorMsg) {
 // ── Plans ─────────────────────────────────────────────────────────
 function renderPlans(plans) {
   const card = document.getElementById('plans-card');
-  document.getElementById('plans-skeleton').remove();
+  const sk = document.getElementById('plans-skeleton'); if (sk) sk.remove();
 
   if (!plans || !plans.length) {
     card.innerHTML = '<div class="card-empty">No active plans found.</div>';
@@ -464,29 +480,70 @@ function renderPlans(plans) {
 }
 
 // ── Doors ─────────────────────────────────────────────────────────
+// Dedupe access rows by door (doorName + locationName). One row per unique door,
+// with all contributing plan names listed underneath in tiny font.
+// DR-046: a member can have multiple source rows for the same door if multiple
+// plans grant that door — e.g. Daxx's Couples + Family + Student all granting
+// Entrance Door. Without dedup, the list would show one row per source, which
+// confuses members ("I bought one plan, why are there 6 doors listed?").
 function renderDoors(access) {
   const card = document.getElementById('doors-card');
-  document.getElementById('doors-skeleton').remove();
+  const sk = document.getElementById('doors-skeleton'); if (sk) sk.remove();
 
   if (!access || !access.length) {
     card.innerHTML = '<div class="card-empty">No door access found.</div>';
     return;
   }
 
-  card.innerHTML = access.map(a => `
+  // Group by door key. Preserve first-seen order so the list is stable.
+  const byDoor = new Map();
+  for (const a of access) {
+    const key = (a.doorName || 'Door Access') + '' + (a.locationName || '');
+    if (!byDoor.has(key)) {
+      byDoor.set(key, {
+        doorName:     a.doorName || 'Door Access',
+        locationName: a.locationName || '',
+        plans:        new Set(),
+      });
+    }
+    if (a.planName) byDoor.get(key).plans.add(a.planName);
+  }
+
+  card.innerHTML = Array.from(byDoor.values()).map(d => {
+    const planChips = Array.from(d.plans).map(p =>
+      '<span class="door-plan-chip">' + esc(p) + '</span>'
+    ).join('');
+    return `
     <div class="door-row">
       <div class="door-icon">
         <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
           <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2zm-6 7c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-7H8.9V6c0-1.71 1.39-3.1 3.1-3.1h.02c1.71 0 3.1 1.39 3.1 3.1v2z" fill="#22C55E"/>
         </svg>
       </div>
-      <div>
-        <div class="door-name">${esc(a.doorName || 'Door Access')}</div>
-        <div class="door-meta">${esc(a.planName || '')}${a.locationName ? ' &middot; ' + esc(a.locationName) : ''}</div>
+      <div style="min-width:0;flex:1">
+        <div class="door-name">${esc(d.doorName)}</div>
+        ${d.locationName ? `<div class="door-meta">${esc(d.locationName)}</div>` : ''}
+        ${planChips ? `<div class="door-plans">${planChips}</div>` : ''}
       </div>
       <div class="door-status"></div>
-    </div>`
-  ).join('');
+    </div>`;
+  }).join('');
+}
+
+// Derive Plans list from the access[] response when Wix iframe didn't post
+// plans via postMessage. The API already returns planName on every access row.
+// Dedupe by planName, mark all as Active (presence of an access row implies active).
+function derivePlansFromAccess(access) {
+  if (!access || !access.length) return [];
+  const seen = new Set();
+  const out = [];
+  for (const a of access) {
+    if (a.planName && !seen.has(a.planName)) {
+      seen.add(a.planName);
+      out.push({ planName: a.planName, status: 'ACTIVE' });
+    }
+  }
+  return out;
 }
 
 // ── Timestamp ─────────────────────────────────────────────────────
@@ -519,6 +576,13 @@ async function fetchAccessStatus() {
 // ── Render access data ────────────────────────────────────────────
 function renderAccess(data) {
   renderDoors(data.access || []);
+  // Hydrate Your Plans from the access response when the Wix iframe hasn't
+  // posted plans via postMessage (direct loads, admin testing, non-Wix host).
+  // boot() seeds the card from window._wixPlans first; this fills the gap
+  // once the API response lands.
+  if (!window._wixPlans || !window._wixPlans.length) {
+    renderPlans(derivePlansFromAccess(data.access || []));
+  }
   setTimestamp(data.provisionedAt, false);
 
   switch (data.status) {
