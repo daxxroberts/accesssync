@@ -147,6 +147,7 @@ async function requireWixInstance(req, res, next) {
         siteId:     byInstance.rows[0].source_site_id,
         uid:        payload.uid,
       };
+      recordWixAdminSeen(byInstance.rows[0].id, payload.uid, payload.permissions);
       return next();
     }
 
@@ -170,6 +171,7 @@ async function requireWixInstance(req, res, next) {
         );
         log.info('admin.wix_instance_wired', { clientId });
         req.wixOperator = { clientId, instanceId, siteId, uid: payload.uid };
+        recordWixAdminSeen(clientId, payload.uid, payload.permissions);
         return next();
       }
     } else {
@@ -187,6 +189,32 @@ async function requireWixInstance(req, res, next) {
     log.warn('admin.wix_instance_verify_failed', {}, err);
     res.status(401).send(`Access denied: ${err.message}`);
   }
+}
+
+/**
+ * UPSERT Wix admin presence into wix_admin_seen.
+ * Called from requireWixInstance after successful auth (both Path A and Path B).
+ * Fire-and-forget — never blocks the request, never throws. DB failures
+ * logged via log.error but don't break auth (observability doctrine, DR-037).
+ *
+ * @param {string} clientId      UUID — resolved client
+ * @param {string} wixUid        Wix User ID from signed-instance payload.uid
+ * @param {string} [permissions] Wix permissions value (e.g. 'OWNER')
+ */
+function recordWixAdminSeen(clientId, wixUid, permissions) {
+  if (!clientId || !wixUid) return;
+  db.query(
+    `INSERT INTO wix_admin_seen (client_id, wix_uid, permissions, first_seen_at, last_seen_at, seen_count)
+     VALUES ($1, $2, $3, NOW(), NOW(), 1)
+     ON CONFLICT (client_id, wix_uid) DO UPDATE
+       SET last_seen_at = NOW(),
+           permissions  = COALESCE(EXCLUDED.permissions, wix_admin_seen.permissions),
+           seen_count   = wix_admin_seen.seen_count + 1,
+           updated_at   = NOW()`,
+    [clientId, wixUid, permissions || null]
+  ).catch(err => {
+    log.error('wix_admin_seen.upsert_failed', { clientId, wixUid }, err);
+  });
 }
 
 module.exports = { requireWixInstance, verifySignedInstance };

@@ -4,7 +4,7 @@
   @route /admin-panel
   @role admin-management
   @tab Admin
-  @status mock-data (Wix-synced administrators not yet live)
+  @status live (Wix admin tracking via /admin/wix-admins)
 %>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
@@ -14,27 +14,29 @@
     .dash-content { max-width: 720px; }
 
     /* ── Admin table ── */
-    .admin-list { list-style: none; }
+    .admin-list { list-style: none; padding: 0; margin: 0; }
     .admin-item {
-      display: flex; align-items: center; gap: 12px;
-      padding: 14px 0; border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border, #e2e8f0);
+      gap: 12px;
     }
     .admin-item:last-child { border-bottom: none; }
-    .admin-avatar {
-      width: 38px; height: 38px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0;
+    .admin-item-main { flex: 1; min-width: 0; }
+    .admin-item-name { font-weight: 600; font-size: 14px; color: var(--text); }
+    .admin-item-meta { font-size: 12px; color: var(--muted, #64748b); margin-top: 2px; word-break: break-all; }
+    .admin-item-seen { text-align: right; font-size: 12px; flex-shrink: 0; }
+    .admin-item-last-seen { color: var(--muted, #64748b); }
+    .admin-item-count { color: var(--muted, #64748b); margin-top: 2px; font-size: 11px; }
+    .admin-loading, .admin-empty, .admin-error {
+      padding: 12px 0;
+      font-size: 13px;
+      color: var(--muted, #64748b);
+      font-style: italic;
     }
-    .admin-avatar.owner { background: linear-gradient(135deg, var(--brand), #3D5BD4); }
-    .admin-avatar.admin { background: var(--muted); }
-    .admin-info { flex: 1; min-width: 0; }
-    .admin-name  { font-size: 14px; font-weight: 600; color: var(--text); }
-    .admin-email { font-size: 12px; color: var(--muted); word-break: break-all; }
-    .admin-role-badge {
-      font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 5px; white-space: nowrap;
-    }
-    .admin-role-badge.owner { background: var(--brand-dim); color: var(--brand); }
-    .admin-role-badge.admin { background: var(--surface); color: var(--text2); }
+    .admin-error { color: #991b1b; }
 
     /* ── Logged-in-as strip ── */
     .logged-in-strip {
@@ -168,12 +170,6 @@
   <script>
     var currentUser = { name: 'Daxx Roberts', email: 'daxxroberts@gmail.com', role: 'owner' };
 
-    var admins = [
-      { id: 'a001', name: 'Daxx Roberts',  email: 'daxxroberts@gmail.com', wixRole: 'Owner', lastAccess: 'Today, 10:42 AM' },
-      { id: 'a002', name: 'Maria Chen',    email: 'maria@example.com',     wixRole: 'Admin', lastAccess: 'Mar 28, 2026' },
-      { id: 'a003', name: 'Chad Roberts',  email: 'chad@example.com',      wixRole: 'Admin', lastAccess: 'Mar 25, 2026' },
-    ];
-
     function renderLoggedIn() {
       var el = document.getElementById('loggedInStrip');
       var initials = currentUser.name.split(' ').map(function(n) { return n[0]; }).join('');
@@ -188,23 +184,65 @@
 
     function renderAdmins() {
       var el = document.getElementById('adminList');
-      document.getElementById('adminCount').textContent =
-        'Synced from Wix site roles · ' + admins.length + ' administrator' + (admins.length !== 1 ? 's' : '');
+      var countEl = document.getElementById('adminCount');
+      el.innerHTML = '<li class="admin-loading">Loading&hellip;</li>';
+      countEl.textContent = '';
 
-      el.innerHTML = admins.map(function(a) {
-        var initials = a.name.split(' ').map(function(n) { return n[0]; }).join('');
-        var isOwner = a.wixRole === 'Owner';
-        var isCurrentUser = a.email === currentUser.email;
-        var youTag = isCurrentUser ? ' <span style="font-size:11px;color:var(--muted);">(You)</span>' : '';
-        return '<li class="admin-item">' +
-          '<div class="admin-avatar ' + (isOwner ? 'owner' : 'admin') + '">' + initials + '</div>' +
-          '<div class="admin-info">' +
-            '<div class="admin-name">' + a.name + youTag + '</div>' +
-            '<div class="admin-email">' + a.email + ' · Last access: ' + a.lastAccess + '</div>' +
-          '</div>' +
-          '<span class="admin-role-badge ' + (isOwner ? 'owner' : 'admin') + '">Wix ' + a.wixRole + '</span>' +
-        '</li>';
-      }).join('');
+      fetch('/admin/wix-admins', { credentials: 'include' })
+        .then(function(res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function(data) {
+          var admins = data.admins || [];
+          if (admins.length === 0) {
+            el.innerHTML = '<li class="admin-empty">No Wix admins have logged into AccessSync yet. Anyone who opens the AccessSync dashboard from inside Wix will be listed here.</li>';
+            countEl.textContent = 'No admins on record yet';
+            return;
+          }
+          countEl.textContent = admins.length + ' Wix admin' + (admins.length === 1 ? '' : 's') + ' on record';
+          el.innerHTML = admins.map(renderAdminRow).join('');
+        })
+        .catch(function(err) {
+          el.innerHTML = '<li class="admin-error">Failed to load Wix admin list (' + escapeHtml(err.message) + ')</li>';
+          countEl.textContent = '';
+        });
+    }
+
+    function renderAdminRow(a) {
+      var displayName = a.notification_email || ('Wix uid ' + (a.wix_uid || '').slice(0, 8) + '…');
+      var clientLine  = a.client_name || '—';
+      var perms       = a.permissions ? ' · ' + a.permissions : '';
+      var lastSeen    = a.last_seen_at ? formatRelativeTime(a.last_seen_at) : 'never';
+      var seenCount   = a.seen_count != null ? a.seen_count + ' session' + (a.seen_count === 1 ? '' : 's') : '';
+      return '<li class="admin-item">' +
+        '<div class="admin-item-main">' +
+          '<div class="admin-item-name">' + escapeHtml(displayName) + '</div>' +
+          '<div class="admin-item-meta">' + escapeHtml(clientLine) + escapeHtml(perms) + '</div>' +
+        '</div>' +
+        '<div class="admin-item-seen">' +
+          '<div class="admin-item-last-seen">Last seen ' + escapeHtml(lastSeen) + '</div>' +
+          '<div class="admin-item-count">' + escapeHtml(seenCount) + '</div>' +
+        '</div>' +
+      '</li>';
+    }
+
+    function formatRelativeTime(iso) {
+      var then = new Date(iso).getTime();
+      if (isNaN(then)) return 'unknown';
+      var diff = Date.now() - then;
+      var s = Math.floor(diff / 1000);
+      if (s < 60) return s + 's ago';
+      var m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ago';
+      var h = Math.floor(m / 60);
+      if (h < 24) return h + 'h ago';
+      var d = Math.floor(h / 24);
+      if (d < 30) return d + 'd ago';
+      var months = Math.floor(d / 30);
+      if (months < 12) return months + 'mo ago';
+      var y = Math.floor(d / 365);
+      return y + 'y ago';
     }
 
     function renderInfoSection() {
@@ -336,7 +374,7 @@
     renderAdmins();
     renderInfoSection();
     document.getElementById('pageSubtitle').textContent =
-      admins.length + ' administrator' + (admins.length !== 1 ? 's' : '') + ' with access, validated through Wix site roles.';
+      'Wix users who have actually logged into AccessSync.';
     loadSystemHealth();
   </script>
 </body>
