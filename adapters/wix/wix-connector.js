@@ -95,11 +95,19 @@ class WixConnector {
          req.body?.metadata?.instanceId)      ? 'body'   : null;
 
       if (!wixSiteId) {
-        log.warn('wix.site_id.unresolved', {
-          traceId,
-          clientIdHint: (req.headers['x-accesssync-client-id'] || null),
-          wixHeaders: Object.keys(req.headers).filter(k => k.startsWith('x-wix')),
-        });
+        // Velo events.js posts legitimately lack x-wix-site-id and are tenant-routed
+        // via the x-accesssync-client-id header instead. That's the expected HOG flow,
+        // so don't pollute diagnostic_log when we know we can recover. Only warn when
+        // we have neither a site_id nor a clientIdHint — that case is unrecoverable
+        // and worth surfacing.
+        const recoverableHint = req.headers['x-accesssync-client-id'] || null;
+        if (!recoverableHint) {
+          log.warn('wix.site_id.unresolved', {
+            traceId,
+            clientIdHint: null,
+            wixHeaders: Object.keys(req.headers).filter(k => k.startsWith('x-wix')),
+          });
+        }
       }
 
       // Self-registration: if events.js includes X-AccessSync-Client-Id, wire source_site_id on

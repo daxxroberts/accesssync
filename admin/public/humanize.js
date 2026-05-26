@@ -95,7 +95,7 @@
     if (e === 'member.deleted')    return who + ' was deleted from Wix' + at + '.';
 
     // Member-access events
-    if (e === 'provisioned' || e === 'granted')   return 'Set up access for ' + who + door + '.';
+    if (e === 'provisioned' || e === 'granted')   return '✓ Access granted to ' + who + door + '.';
     if (e === 'disabled')                         return 'Suspended access for ' + who + door + ' (payment failed or paused).';
     if (e === 'revoked')                          return 'Removed access for ' + who + door + '.';
     if (e === 'deleted')                          return "Deleted " + who + "'s hardware user.";
@@ -105,6 +105,20 @@
     // Diagnostic events
     if (e === 'IN_FLIGHT_LOCK')                   return 'Concurrent change rejected — already processing ' + who + '.';
     if (e === 'ADAPTER_IDENTITY_GATE2_RECOVERY_TRIGGERED') return 'Webhook arrived without an email — recovering from Wix.';
+    if (e === 'wix.site_id.unresolved' || e === 'WIX_SITE_ID_UNRESOLVED')
+      return 'Wix webhook arrived without a site ID — falling back to client-ID header for tenant routing (expected for Velo events.js posts; investigate if it appears on a native REST webhook).';
+
+    // Lifecycle breadcrumbs — gray (info), not yellow. These fire on every successful grant.
+    if (e === 'adapter.resolve_and_lock.committed' || e === 'ADAPTER_RESOLVE_AND_LOCK_COMMITTED')
+      return 'Identity resolved and locked for ' + who + '.';
+    if (e === 'adapter.resolve_and_lock.post_commit_verify' || e === 'ADAPTER_RESOLVE_AND_LOCK_POST_COMMIT_VERIFY')
+      return 'Lock verified for ' + who + '.';
+    if (e === 'adapter.complete_grant.entry' || e === 'ADAPTER_COMPLETE_GRANT_ENTRY')
+      return 'Starting grant for ' + who + ' (handoff to hardware).';
+    if (e === 'adapter.complete_grant.lookup' || e === 'ADAPTER_COMPLETE_GRANT_LOOKUP')
+      return 'Member record loaded for grant — ' + who + '.';
+    if (e === 'wix.parse.unpaid_order_dropped' || e === 'WIX_PARSE_UNPAID_ORDER_DROPPED')
+      return 'Unpaid Wix order dropped — no access granted (expected; will retry when payment lands).';
     if (e === 'DB_SLOW_QUERY')                    return 'A database query took longer than the threshold.';
     if (e === 'ADAPTER_NO_IDENTITY')              return 'Revoke skipped — no identity record for this member.';
     if (e === 'QUEUE_REVOKE_NO_IDENTITY')         return 'Cancel arrived for a member we never provisioned.';
@@ -179,10 +193,38 @@
     return e + ' — (plain English not yet defined)';
   }
 
+  // Event names that fire on every successful grant — informational breadcrumbs,
+  // not actionable warnings. Render gray, not yellow. See standard-adapter.js
+  // log.warn() calls that intentionally land in diagnostic_log for trace continuity.
+  var LIFECYCLE_INFO_EVENTS = {
+    'adapter.resolve_and_lock.committed':         true,
+    'adapter.resolve_and_lock.post_commit_verify': true,
+    'adapter.complete_grant.entry':               true,
+    'adapter.complete_grant.lookup':              true,
+    'ADAPTER_RESOLVE_AND_LOCK_COMMITTED':         true,
+    'ADAPTER_RESOLVE_AND_LOCK_POST_COMMIT_VERIFY': true,
+    'ADAPTER_COMPLETE_GRANT_ENTRY':               true,
+    'ADAPTER_COMPLETE_GRANT_LOOKUP':              true,
+  };
+
+  // Events that signal a happy end-state — render green. Currently the
+  // member_access_log "provisioned"/"granted" rows, which only INSERT when a
+  // real hardware call landed (DR-034 / OB-48).
+  var SUCCESS_EVENTS = {
+    'provisioned': true,
+    'granted':     true,
+    'reactivated': true,
+  };
+
   /** Map a v_trace_timeline result column to a normalized severity bucket. */
   function severityOf(ev) {
+    var e = (ev && ev.event) || '';
+    if (SUCCESS_EVENTS[e]) return 'success';
     var r = (ev && ev.result || '').toLowerCase();
     if (r === 'error' || r === 'failed' || r === 'rejected' || r === 'critical') return 'error';
+    // Lifecycle breadcrumbs were logged at warn-level for DB persistence, but
+    // they are not actionable warnings. Demote to info so the UI shows them gray.
+    if (LIFECYCLE_INFO_EVENTS[e]) return 'info';
     if (r === 'warn'  || r === 'warning' || r === 'open')                          return 'warn';
     return 'info';
   }

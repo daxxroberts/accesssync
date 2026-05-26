@@ -75,6 +75,7 @@
 #panel-logs .stat .l { font-size: 10.5px; color: var(--muted); margin-left: 4px; }
 #panel-logs .stat.err .v { color: var(--red); }
 #panel-logs .stat.warn .v { color: var(--amber); }
+#panel-logs .stat.success .v { color: var(--sage-dark); }
 
 #panel-logs .body { display: flex; gap: 12px; align-items: flex-start; padding: 6px 0 0; }
 #panel-logs .feed { flex: 1; min-width: 0; }
@@ -93,9 +94,10 @@
 #panel-logs .stream-row { grid-template-columns: 90px 120px 20px minmax(180px, 1fr) 120px 64px; }
 #panel-logs .pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 4px; font-size: 9.5px; font-weight: 500; letter-spacing: .01em; border: 1px solid currentColor; background: transparent; }
 #panel-logs .sev-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
-#panel-logs .sev-error { background: var(--red); }
-#panel-logs .sev-warn  { background: var(--amber); }
-#panel-logs .sev-info  { background: var(--border2); width: 5px; height: 5px; }
+#panel-logs .sev-error   { background: var(--red); }
+#panel-logs .sev-warn    { background: var(--amber); }
+#panel-logs .sev-success { background: var(--sage-dark); }
+#panel-logs .sev-info    { background: var(--border2); width: 5px; height: 5px; }
 
 #panel-logs .typeahead { position: absolute; top: calc(100% + 5px); left: 0; right: 0; background: var(--card); border: 1px solid var(--border); border-radius: 9px; box-shadow: 0 12px 32px rgba(20,30,60,0.14); z-index: 50; max-height: 360px; overflow: auto; }
 #panel-logs .ta-group-label { padding: 9px 12px 3px; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }

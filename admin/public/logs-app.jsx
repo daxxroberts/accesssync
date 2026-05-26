@@ -80,8 +80,9 @@ function SourcePill({ source, plain, on, onClick }) {
 }
 
 function SeverityDot({ sev }) {
-  if (sev === 'error') return <span className="sev-dot sev-error" title="error"></span>;
-  if (sev === 'warn')  return <span className="sev-dot sev-warn"  title="warn"></span>;
+  if (sev === 'error')   return <span className="sev-dot sev-error"   title="error"></span>;
+  if (sev === 'warn')    return <span className="sev-dot sev-warn"    title="warn"></span>;
+  if (sev === 'success') return <span className="sev-dot sev-success" title="success"></span>;
   return <span className="sev-dot sev-info" title="info"></span>;
 }
 
@@ -191,13 +192,20 @@ function App() {
     return Object.entries(map).map(([id, evs]) => {
       const sorted = [...evs].sort((a,b) => new Date(a.ts) - new Date(b.ts));
       const sevs = sorted.map(severityOf);
-      const sev = sevs.includes('error') ? 'error' : sevs.includes('warn') ? 'warn' : 'info';
+      // Severity precedence: error > warn > success > info. A grant that
+      // ultimately succeeded is "success" overall even if the lifecycle had
+      // informational breadcrumbs in it.
+      const sev = sevs.includes('error') ? 'error'
+                : sevs.includes('warn')  ? 'warn'
+                : sevs.includes('success') ? 'success'
+                : 'info';
       return { id, events: sorted, sev, last: sorted[sorted.length-1].ts, first: sorted[0].ts, top: sorted[0] };
     }).sort((a,b) => new Date(b.last) - new Date(a.last));
   }, [filtered]);
 
-  const errCount  = filtered.filter(e => severityOf(e) === 'error').length;
-  const warnCount = filtered.filter(e => severityOf(e) === 'warn').length;
+  const errCount     = filtered.filter(e => severityOf(e) === 'error').length;
+  const warnCount    = filtered.filter(e => severityOf(e) === 'warn').length;
+  const successCount = filtered.filter(e => severityOf(e) === 'success').length;
   const traceCount = new Set(filtered.map(e => e.trace_id)).size;
 
   const pickResult = (kind, payload) => {
@@ -341,7 +349,7 @@ function App() {
         </div>
 
         <div className="seg">
-          {[['all','All'],['error',plain?'Failures':'Errors'],['warn','Warnings'],['info','Info']].map(([k,l]) =>
+          {[['all','All'],['success',plain?'Successes':'Success'],['error',plain?'Failures':'Errors'],['warn','Warnings'],['info','Info']].map(([k,l]) =>
             <button key={k} className={severity === k ? 'on' : ''} onClick={() => setSeverity(k)}>{l}</button>
           )}
         </div>
@@ -372,6 +380,7 @@ function App() {
         <span style={{color:'var(--muted)',fontSize:10.5,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.05em'}}>Last 24h</span>
         <span className="stat"><span className="v">{filtered.length}</span><span className="l">{plain ? 'things happened' : 'events'}</span></span>
         <span className="stat"><span className="v">{traceCount}</span><span className="l">{plain ? 'requests' : 'traces'}</span></span>
+        <span className="stat success"><span className="v">{successCount}</span><span className="l">{plain ? 'successes' : 'granted'}</span></span>
         <span className="stat err"><span className="v">{errCount}</span><span className="l">{plain ? 'failures' : 'errors'}</span></span>
         <span className="stat warn"><span className="v">{warnCount}</span><span className="l">warnings</span></span>
       </div>
@@ -395,7 +404,11 @@ function App() {
             <div key={g.id} className="group">
               <div className={'group-head ' + (expandedTraces.has(g.id) ? '' : 'collapsed')} onClick={() => toggleTraceExpand(g.id)}>
                 <span style={{color:'var(--muted)'}}>{expandedTraces.has(g.id) ? '▾' : '▸'}</span>
-                <span style={{width:8,height:8,borderRadius:'50%',background: g.sev === 'error' ? 'var(--red)' : g.sev === 'warn' ? 'var(--amber)' : 'var(--sage-dark)'}}/>
+                <span style={{width:8,height:8,borderRadius:'50%',background:
+                  g.sev === 'error'   ? 'var(--red)'
+                  : g.sev === 'warn'    ? 'var(--amber)'
+                  : g.sev === 'success' ? 'var(--sage-dark)'
+                  : 'var(--border2)'}}/>
                 {plain ? (
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:11.5, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
@@ -606,8 +619,16 @@ function Drawer({ ev, traceDetail, role, onClose, onSelectEvent }) {
             {s.short || ev.source}
           </span>
           <span style={{padding:'1px 6px',borderRadius:4,fontSize:9.5,fontWeight:500,
-            color: severityOf(ev) === 'error' ? 'var(--red)' : severityOf(ev) === 'warn' ? 'var(--amber)' : 'var(--text2)',
-            background: severityOf(ev) === 'error' ? 'var(--red-dim)' : severityOf(ev) === 'warn' ? 'var(--amber-dim)' : 'var(--surface)'}}>
+            color:
+              severityOf(ev) === 'error'   ? 'var(--red)'
+              : severityOf(ev) === 'warn'    ? 'var(--amber)'
+              : severityOf(ev) === 'success' ? 'var(--sage-dark)'
+              : 'var(--text2)',
+            background:
+              severityOf(ev) === 'error'   ? 'var(--red-dim)'
+              : severityOf(ev) === 'warn'    ? 'var(--amber-dim)'
+              : severityOf(ev) === 'success' ? 'var(--sage-dim)'
+              : 'var(--surface)'}}>
             {ev.result || severityOf(ev)}
           </span>
           <div style={{flex:1}}/>
