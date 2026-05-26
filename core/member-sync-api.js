@@ -163,14 +163,21 @@ class MemberSyncApi {
       const lastEvent = logResult.rows[0] || null;
 
       // 4. Fetch active role assignments across all access rows (OB-06, OB-160)
-      //    member_role_assignments retired — access list now from member_access_sources
+      //    member_role_assignments retired — access list now from member_access_sources.
+      //    Resolve door_name per (mapping, hardware_group_id) via plan_mapping_groups
+      //    so multi-door plans show each door distinctly. plan_mappings.door_name is
+      //    the legacy single-column fallback used only when no group row exists.
       const rolesResult = await db.query(
         `SELECT mas.role_assignment_id, mas.hardware_group_id,
-                pm.plan_name, pm.door_name,
+                pm.plan_name,
+                COALESCE(pmg.door_name, pm.door_name) AS door_name,
                 l.name AS location_name
          FROM member_access_sources mas
          JOIN member_access ma ON ma.id = mas.access_id
          JOIN plan_mappings pm ON pm.id = mas.mapping_id
+         LEFT JOIN plan_mapping_groups pmg
+                ON pmg.mapping_id = mas.mapping_id
+               AND pmg.hardware_group_id = mas.hardware_group_id
          LEFT JOIN locations l ON pm.location_id = l.id
          WHERE ma.id = ANY($1)
            AND mas.billing_id IN (
