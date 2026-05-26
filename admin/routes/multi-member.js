@@ -145,6 +145,40 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
     );
     const holderMappingIds = new Set(holderSlotResult.rows.map(r => r.mapping_id));
 
+    // Collapse rows by (access_id, plan_mapping_id). A sub-member whose plan
+    // provisions to multiple doors (e.g. Couples = Entrance + TestGroup1) yields
+    // multiple member_access_sources rows under the same mapping_id. They are
+    // the same person on the same plan — UI must show one row, not one per door.
+    // Status aggregation: if ANY source-row is non-active, surface the "worst"
+    // state (pending > failed > revoked > active) so the badge reflects reality.
+    const SUB_STATUS_RANK = { active: 0, pending_start: 1, pending_hardware: 2, pending_sync: 3, in_flight: 4, pending_identity: 5, failed: 6, suspended: 7, revoked: 8, cancelled: 9, draft: 10 };
+    const subByKey = new Map();
+    for (const m of subMembersResult.rows) {
+      // Drafts may have no plan_mapping_id yet — preserve them as separate rows.
+      const key = m.access_id + '|' + (m.plan_mapping_id || 'draft');
+      const status = m.source_status || m.access_status;
+      const existing = subByKey.get(key);
+      if (!existing) {
+        subByKey.set(key, {
+          id:               m.access_id,
+          memberMasterId:   m.member_master_id,
+          platformMemberId: m.platform_member_id,
+          firstName:        m.first_name,
+          lastName:         m.last_name,
+          email:            m.email,
+          phone:            m.phone,
+          status,
+          planMappingId:    m.plan_mapping_id,
+          provisionedAt:    m.provisioned_at,
+        });
+      } else {
+        // Keep the worst status across this person's source rows for this plan.
+        const existingRank = SUB_STATUS_RANK[existing.status] ?? 99;
+        const newRank      = SUB_STATUS_RANK[status] ?? 99;
+        if (newRank > existingRank) existing.status = status;
+      }
+    }
+
     res.json({
       holder: {
         id:               holder.member_master_id,
@@ -165,20 +199,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
         doorName:      p.door_name,
         holderHasSlot: holderMappingIds.has(p.id),
       })),
-      subMembers: subMembersResult.rows.map(m => ({
-        id:               m.access_id,
-        memberMasterId:   m.member_master_id,
-        platformMemberId: m.platform_member_id,
-        firstName:        m.first_name,
-        lastName:         m.last_name,
-        email:            m.email,
-        phone:            m.phone,
-        // status: prefer source-row status (per-plan state). Fall back to access status when
-        // the sub-member has no source row yet (e.g. mid-add, before provisioning).
-        status:           m.source_status || m.access_status,
-        planMappingId:    m.plan_mapping_id,
-        provisionedAt:    m.provisioned_at,
-      })),
+      subMembers: Array.from(subByKey.values()),
     });
   } catch (err) {
     log.error('admin.multi_member_widget_error', {}, err);
