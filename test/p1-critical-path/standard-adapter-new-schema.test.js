@@ -257,9 +257,12 @@ describe('[P1] completeGrant — INSERTs to member_access_sources (access_id FK)
     expect(calls[0][0]).toContain('member_master_id');
     expect(calls[0][1]).toEqual([MEMBER_ACCESS_ID]);
 
-    // Step 2: INSERT member_billing — S-11/A10: UNIQUE includes client_id
+    // Step 2: INSERT member_billing — S-11/A10: UNIQUE includes client_id.
+    // Uses DO UPDATE with COALESCE so retries fill in fields that were null on
+    // first write (snapshot backfill via second webhook arrival or reconcile).
     expect(calls[1][0]).toContain('INSERT INTO member_billing');
-    expect(calls[1][0]).toContain('ON CONFLICT (client_id, wix_order_id, cycle_index) DO NOTHING');
+    expect(calls[1][0]).toContain('ON CONFLICT (client_id, wix_order_id, cycle_index) DO UPDATE');
+    expect(calls[1][0]).toContain('COALESCE(EXCLUDED.billing_snapshot');
     expect(calls[1][1]).toContain(MEMBER_MASTER_ID);
 
     // Step 3: INSERT member_access_sources — S-11/A9: client_id NOT NULL, status='active'
@@ -344,6 +347,73 @@ describe('[P1] completeGrant RI-03 — valid_until written to member_access_sour
     const masParams = db.query.mock.calls[2][1];
     const validUntilValue = masParams[masParams.length - 1]; // $8 is last
     expect(validUntilValue).toBeNull();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Test 5b — completeGrant: sharedBillingSnapshot (4th arg) is written to
+//           member_billing.billing_snapshot when assignment doesn't carry one.
+// Regression for "snapshot silently dropped" bug — caller extracted the snapshot
+// from webhook payload but it never reached the DB because completeGrant
+// originally only accepted 3 params.
+// ════════════════════════════════════════════════════════════════════════════
+describe('[P1] completeGrant — sharedBillingSnapshot reaches member_billing.billing_snapshot', () => {
+  it('writes the 4th-arg snapshot to billing_snapshot when assignment.billingSnapshot is null', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ member_master_id: MEMBER_MASTER_ID }] })
+      .mockResolvedValueOnce({ rows: [{ id: BILLING_ID }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValue({ rows: [] });
+
+    const sharedSnapshot = {
+      planPrice: '30', cycleUnit: 'MONTH', cycleCount: 1,
+      currency: 'USD', total: '0.00', subtotal: '30.00', discount: '30.00',
+      coupon: { code: 'DAXXADMIN', amount: '30.00' },
+      autoRenewCanceled: false, lastPaymentStatus: 'PAID',
+      subscriptionId: 'sub-shared', orderMethod: 'UNKNOWN',
+      orderId: 'wix-order-shared', capturedAt: '2026-05-26T15:00:00.000Z',
+    };
+
+    await adapter.completeGrant(MEMBER_ACCESS_ID, TENANT_ID, [{
+      mappingId: PLAN_MAPPING_ID, roleAssignmentId: 'ra-shared',
+      hardwareGroupId: 'hg-001', sourcePlanId: 'plan-shared', sourceType: 'plan',
+      planEndDate: null,
+      wixOrderId: 'wix-order-shared', wixSubscriptionId: 'sub-shared',
+      cycleIndex: 1, planId: null, planName: 'First Responder',
+      effectiveStart: null, effectiveEnd: null, billingSnapshot: null,
+    }], sharedSnapshot);
+
+    const billingParams = db.query.mock.calls[1][1];
+    const snapshotParam = billingParams[billingParams.length - 1];
+    expect(snapshotParam).not.toBeNull();
+    expect(JSON.parse(snapshotParam)).toMatchObject({ coupon: { code: 'DAXXADMIN' }, planPrice: '30' });
+  });
+
+  it('per-assignment billingSnapshot wins over sharedBillingSnapshot when both present', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ member_master_id: MEMBER_MASTER_ID }] })
+      .mockResolvedValueOnce({ rows: [{ id: BILLING_ID }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValue({ rows: [] });
+
+    const sharedSnapshot     = { planPrice: '30', orderId: 'shared',  capturedAt: 'shared-ts'  };
+    const perAssignSnapshot  = { planPrice: '99', orderId: 'per-row', capturedAt: 'per-row-ts' };
+
+    await adapter.completeGrant(MEMBER_ACCESS_ID, TENANT_ID, [{
+      mappingId: PLAN_MAPPING_ID, roleAssignmentId: 'ra-mix',
+      hardwareGroupId: 'hg-001', sourcePlanId: 'plan-x', sourceType: 'plan',
+      planEndDate: null,
+      wixOrderId: 'wix-order-mix', wixSubscriptionId: null,
+      cycleIndex: 1, planId: null, planName: null,
+      effectiveStart: null, effectiveEnd: null,
+      billingSnapshot: perAssignSnapshot,
+    }], sharedSnapshot);
+
+    const billingParams = db.query.mock.calls[1][1];
+    const snapshotParam = billingParams[billingParams.length - 1];
+    expect(JSON.parse(snapshotParam).orderId).toBe('per-row');
   });
 });
 

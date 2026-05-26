@@ -52,16 +52,14 @@ beforeEach(() => {
 
 describe('[P3] member_billing renewal idempotency — same (wix_order_id, cycle_index) must not duplicate', () => {
 
-  it('completeGrant handles DO NOTHING on duplicate (wix_order_id, cycle_index) by fetching existing id', async () => {
+  it('completeGrant handles DO UPDATE on duplicate (wix_order_id, cycle_index) — backfills nulls via COALESCE', async () => {
     const memberId = MEMBER_INTERNAL_ID;
     const tenantId = HOG_CLIENT_ID;
 
     db.query
       // SELECT member_master_id FROM member_access
       .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm-uuid-001' }] })
-      // INSERT INTO member_billing — ON CONFLICT DO NOTHING fires (no RETURNING row)
-      .mockResolvedValueOnce({ rows: [] })
-      // SELECT id FROM member_billing WHERE wix_order_id AND cycle_index (fetch existing)
+      // INSERT INTO member_billing — ON CONFLICT DO UPDATE returns the existing/updated id
       .mockResolvedValueOnce({ rows: [{ id: 'billing-uuid-existing' }] })
       // INSERT INTO member_access_sources
       .mockResolvedValueOnce({ rows: [] })
@@ -85,12 +83,14 @@ describe('[P3] member_billing renewal idempotency — same (wix_order_id, cycle_
       standardAdapter.completeGrant(memberId, tenantId, assignments)
     ).resolves.not.toThrow();
 
-    // The billing INSERT must include ON CONFLICT (wix_order_id, cycle_index) DO NOTHING
+    // The billing INSERT must DO UPDATE on conflict so retries fill in fields that
+    // were null on first write (e.g. snapshot arrives via second webhook arrival).
     const billingInsert = db.query.mock.calls.find(
       c => c[0] && c[0].includes('member_billing') && c[0].includes('INSERT')
     );
     expect(billingInsert).toBeDefined();
-    expect(billingInsert[0]).toMatch(/ON CONFLICT.*DO NOTHING/s);
+    expect(billingInsert[0]).toMatch(/ON CONFLICT.*DO UPDATE/s);
+    expect(billingInsert[0]).toContain('COALESCE(EXCLUDED.billing_snapshot');
   });
 
 });

@@ -322,7 +322,11 @@ class StandardAdapter {
         priorHardwareUserId,
         newHardwareUserId,
       });
-      await db.query(`DELETE FROM member_access_sources WHERE access_id = $1`, [memberId]);
+      // OB-201: defense-in-depth client_id filter (A9 hardening — client_id NOT NULL FK CASCADE).
+      await db.query(
+        `DELETE FROM member_access_sources WHERE access_id = $1 AND client_id = $2`,
+        [memberId, tenantId]
+      );
     }
 
     // Cache hardware user ID to member_access
@@ -351,7 +355,12 @@ class StandardAdapter {
    *   effectiveStart, effectiveEnd, billingSnapshot
    * }]
    */
-  async completeGrant(memberId, tenantId, assignments) {
+  // billingSnapshot is shared across all assignments in a single grant (one webhook = one
+  // Wix order, even if it maps to multiple hardware groups). Callers extract it once via
+  // extractBillingSnapshot(standardEvent.rawPayload) and pass it here. Per-assignment
+  // override via assignment.billingSnapshot is still respected for reconcile-side calls
+  // that pass a different snapshot per row.
+  async completeGrant(memberId, tenantId, assignments, sharedBillingSnapshot = null) {
     // Write hardware_platform from first assignment so the revoke path can read it back.
     const resolvedHardwarePlatform = assignments[0]?.hardwarePlatform || null;
 
@@ -430,6 +439,18 @@ class StandardAdapter {
     } of assignments) {
       // INSERT member_billing — S-11/A10: UNIQUE is (client_id, wix_order_id, cycle_index)
       // (multi-tenancy hardening — no longer relies on Wix UUID global uniqueness).
+      //
+      // Snapshot resolution: per-assignment billingSnapshot wins (used by reconcile, which
+      // builds one per row from the REST list). Falls back to sharedBillingSnapshot extracted
+      // once from the webhook payload by the caller (queue-worker). Without this fallback,
+      // every webhook-created billing row landed with snapshot=null because grant-revoke.js
+      // never populated assignment.billingSnapshot — the snapshot was silently dropped at the
+      // function boundary.
+      const snapshotToWrite = billingSnapshot || sharedBillingSnapshot;
+      // Likewise plan_id (Wix plan UUID) — snapshot carries it; use as fallback so the
+      // member_billing row records which plan this billing event belonged to.
+      const planIdToWrite = planId || (snapshotToWrite && snapshotToWrite.orderId === wixOrderId
+        ? (sourcePlanId || null) : sourcePlanId) || null;
       let billingId = null;
       if (wixOrderId) {
         const billingResult = await db.query(
@@ -437,13 +458,20 @@ class StandardAdapter {
              (member_master_id, client_id, wix_order_id, wix_subscription_id, cycle_index,
               plan_id, plan_name, effective_start, effective_end, status, billing_snapshot)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10)
-           ON CONFLICT (client_id, wix_order_id, cycle_index) DO NOTHING
+           ON CONFLICT (client_id, wix_order_id, cycle_index) DO UPDATE
+             SET billing_snapshot   = COALESCE(EXCLUDED.billing_snapshot,   member_billing.billing_snapshot),
+                 plan_id            = COALESCE(EXCLUDED.plan_id,            member_billing.plan_id),
+                 plan_name          = COALESCE(EXCLUDED.plan_name,          member_billing.plan_name),
+                 wix_subscription_id= COALESCE(EXCLUDED.wix_subscription_id, member_billing.wix_subscription_id),
+                 effective_start    = COALESCE(EXCLUDED.effective_start,    member_billing.effective_start),
+                 effective_end      = COALESCE(EXCLUDED.effective_end,      member_billing.effective_end),
+                 updated_at         = NOW()
            RETURNING id`,
           [
             memberMasterId, tenantId, wixOrderId, wixSubscriptionId || null,
-            cycleIndex || 1, planId || null, planName || null,
+            cycleIndex || 1, planIdToWrite, planName || null,
             effectiveStart || null, effectiveEnd || null,
-            billingSnapshot ? JSON.stringify(billingSnapshot) : null,
+            snapshotToWrite ? JSON.stringify(snapshotToWrite) : null,
           ]
         );
         // If DO NOTHING fired, fetch the existing row's id
@@ -594,18 +622,21 @@ class StandardAdapter {
 
       if (clearSources) {
         if (options.sourcePlanId && options.hardwareGroupId) {
+          // OB-201: defense-in-depth client_id filter (A9 hardening — client_id NOT NULL FK CASCADE).
           await dbClient.query(
             `DELETE FROM member_access_sources
              WHERE access_id = $1
                AND hardware_group_id = $2
                AND source_type = $3
-               AND COALESCE(source_plan_id, '') = COALESCE($4, '')`,
-            [memberId, options.hardwareGroupId, options.sourceType || 'plan', options.sourcePlanId]
+               AND COALESCE(source_plan_id, '') = COALESCE($4, '')
+               AND client_id = $5`,
+            [memberId, options.hardwareGroupId, options.sourceType || 'plan', options.sourcePlanId, tenantId]
           );
         } else {
+          // OB-201: defense-in-depth client_id filter (A9 hardening — client_id NOT NULL FK CASCADE).
           await dbClient.query(
-            `DELETE FROM member_access_sources WHERE access_id = $1`,
-            [memberId]
+            `DELETE FROM member_access_sources WHERE access_id = $1 AND client_id = $2`,
+            [memberId, tenantId]
           );
         }
       } else if (isSuspend) {
@@ -716,6 +747,29 @@ class StandardAdapter {
     this._incrementActivity(tenantId, 'errors_count').catch(err =>
       log.warn('adapter.activity_update_failed', { field: 'errors_count' }, err)
     );
+  }
+
+  /**
+   * DR-023 / OB-204: L3 owns all member_access writes. This primitive is the
+   * entry point for stale-lock recovery — only reconciliation calls it.
+   *
+   * OB-202: stale in_flight locks older than `staleThresholdMinutes` are
+   * flipped to 'recovery_pending' (transient retry state). The next
+   * reconcile sweep picks up recovery_pending rows via _fetchActionableRecords
+   * and re-attempts the grant. If recovery succeeds, the rollup CASE in
+   * completeGrant/completeRevoke flips status to 'active'.
+   *
+   * @param {number} staleThresholdMinutes  How old an in_flight row must be to be considered stale.
+   * @returns {Promise<number>}  Number of rows flipped to recovery_pending.
+   */
+  async releaseStaleLocks(staleThresholdMinutes) {
+    const result = await db.query(
+      `UPDATE member_access
+       SET status = 'recovery_pending', updated_at = NOW()
+       WHERE status = 'in_flight'
+         AND updated_at < NOW() - INTERVAL '${staleThresholdMinutes} minutes'`
+    );
+    return result.rowCount || 0;
   }
 
   /**
