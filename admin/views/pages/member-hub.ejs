@@ -188,8 +188,8 @@ body {
   box-shadow: 0 1px 4px var(--shadow);
 }
 .data-card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 12px;
+  display: flex; flex-direction: column; align-items: flex-start;
+  margin-bottom: 12px; gap: 2px;
 }
 .data-card-title {
   font-size: 12px; font-weight: 600; color: var(--text2);
@@ -231,6 +231,22 @@ body {
 }
 .door-name { font-size: 13px; font-weight: 600; color: var(--text); }
 .door-plan { font-size: 11.5px; color: var(--text2); margin-top: 1px; }
+/* Caption under section title, parallel with /my-access section-caption */
+.data-card-caption {
+  font-size: 10.5px; color: var(--text2); opacity: .72;
+  font-weight: 400; letter-spacing: 0; text-transform: none;
+  line-height: 1.4;
+}
+/* Tiny chip-row listing contributing plans under each unique door */
+.door-plans {
+  font-size: 9.5px; color: var(--text2); opacity: .78;
+  margin-top: 3px; letter-spacing: .2px;
+  display: flex; flex-wrap: wrap; gap: 4px 8px;
+}
+.door-plan-chip { white-space: nowrap; }
+.door-plan-chip + .door-plan-chip::before {
+  content: "·"; margin-right: 6px; opacity: .5;
+}
 
 /* ── Timestamp ────────────────────────────────────────── */
 .timestamp-row {
@@ -895,6 +911,7 @@ body {
         <div class="data-card" id="plans-card">
           <div class="data-card-header">
             <span class="data-card-title">Your Plans</span>
+            <span class="data-card-caption">Active memberships on your account.</span>
           </div>
           <div id="plans-list"></div>
         </div>
@@ -903,6 +920,7 @@ body {
         <div class="data-card" id="doors-card">
           <div class="data-card-header">
             <span class="data-card-title">Door Access</span>
+            <span class="data-card-caption">Doors you can unlock — one row per door, plans below show what grants access.</span>
           </div>
           <div id="doors-list"></div>
         </div>
@@ -1460,25 +1478,48 @@ function renderPlans(plans) {
   `).join('');
 }
 
+// Dedupe access rows by door (doorName + locationName). One row per unique door,
+// with all contributing plan names listed underneath in tiny font. Parity with
+// /my-access — a member with 5 plans all granting the entrance door should see
+// ONE entrance-door row, not 5. See my-access.ejs renderDoors for the canonical
+// implementation this mirrors.
 function renderDoors(access) {
   const el = document.getElementById('doors-list');
   if (!access || !access.length) {
     el.innerHTML = '<div class="empty-access">No doors provisioned yet.</div>';
     return;
   }
-  el.innerHTML = access.map(a => `
+
+  const byDoor = new Map();
+  for (const a of access) {
+    const key = (a.doorName || 'Door Access') + '' + (a.locationName || '');
+    if (!byDoor.has(key)) {
+      byDoor.set(key, {
+        doorName:     a.doorName || a.locationName || 'Door Access',
+        locationName: a.locationName || '',
+        plans:        new Set(),
+      });
+    }
+    if (a.planName) byDoor.get(key).plans.add(a.planName);
+  }
+
+  el.innerHTML = Array.from(byDoor.values()).map(d => {
+    const chips = Array.from(d.plans).map(p =>
+      '<span class="door-plan-chip">' + esc(p) + '</span>'
+    ).join('');
+    return `
     <div class="door-row">
       <div class="door-icon">
         <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
           <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1h.02c1.71 0 3.1 1.39 3.1 3.1v2z" fill="currentColor"/>
         </svg>
       </div>
-      <div>
-        <div class="door-name">${esc(a.doorName || a.locationName || 'Door Access')}</div>
-        <div class="door-plan">${esc(a.planName || '')}</div>
+      <div style="min-width:0;flex:1">
+        <div class="door-name">${esc(d.doorName)}</div>
+        ${chips ? `<div class="door-plans">${chips}</div>` : ''}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function setTimestamp(provisionedAt, stale) {
