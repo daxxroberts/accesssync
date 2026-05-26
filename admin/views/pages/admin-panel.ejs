@@ -74,6 +74,37 @@
     .info-item:last-child { border-bottom: none; }
     .info-item-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
 
+    /* ── System Health section ── */
+    .system-health-aggregate { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+    .system-health-aggregate::before { content: ''; width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .system-health-aggregate.health-state-green::before { background: var(--sage, #4ADE80); }
+    .system-health-aggregate.health-state-amber::before { background: #f59e0b; }
+    .system-health-aggregate.health-state-red::before { background: #ef4444; }
+    .system-health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 12px 0; }
+    .health-card { border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 12px; background: var(--card-bg, #fff); border-left-width: 4px; }
+    .health-card.health-state-green { border-left-color: var(--sage, #4ADE80); }
+    .health-card.health-state-amber { border-left-color: #f59e0b; }
+    .health-card.health-state-red { border-left-color: #ef4444; }
+    .health-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .health-card-title { font-weight: 600; font-size: 14px; }
+    .health-card-state-pill { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.04em; }
+    .health-card.health-state-green .health-card-state-pill { background: #d1fae5; color: #065f46; }
+    .health-card.health-state-amber .health-card-state-pill { background: #fef3c7; color: #92400e; }
+    .health-card.health-state-red .health-card-state-pill { background: #fee2e2; color: #991b1b; }
+    .health-checks { display: grid; grid-template-columns: 1fr; gap: 4px; font-size: 12px; }
+    .health-check { display: flex; justify-content: space-between; }
+    .health-check-label { color: var(--muted, #64748b); }
+    .health-check-state.health-state-green { color: #047857; }
+    .health-check-state.health-state-amber { color: #92400e; }
+    .health-check-state.health-state-red { color: #991b1b; font-weight: 600; }
+    .health-db-row { display: flex; justify-content: space-between; padding: 10px 12px; border-radius: 6px; background: var(--card-bg, #f8fafc); border-left: 4px solid; font-size: 13px; }
+    .health-db-row.health-state-green { border-left-color: var(--sage, #4ADE80); }
+    .health-db-row.health-state-amber { border-left-color: #f59e0b; }
+    .health-db-row.health-state-red { border-left-color: #ef4444; }
+    .health-db-label { font-weight: 600; }
+    .health-db-detail { color: var(--muted, #64748b); }
+    .health-empty { color: var(--muted, #64748b); font-size: 13px; padding: 8px 0; }
+
     @media (max-width: 640px) {
       .page-title { font-size: 20px; }
       .page-header { flex-direction: column; }
@@ -103,6 +134,22 @@
         </div>
       </div>
       <ul class="admin-list" id="adminList"></ul>
+    </div>
+
+    <div class="section-card">
+      <div class="section-header">
+        <div>
+          <div class="section-title">System Health</div>
+          <div class="section-subtitle" id="systemHealthSubtitle">Loading&hellip;</div>
+        </div>
+        <div class="system-health-aggregate" id="systemHealthAggregate"></div>
+      </div>
+      <div class="system-health-grid" id="systemHealthGrid">
+        <!-- per-client cards inject here -->
+      </div>
+      <div class="system-health-db" id="systemHealthDb">
+        <!-- DB health row injects here -->
+      </div>
     </div>
 
     <div class="section-card">
@@ -176,11 +223,121 @@
       document.getElementById('infoBody').classList.toggle('open');
     }
 
+    // ── System Health (OB-195) ──
+    async function loadSystemHealth() {
+      try {
+        var res = await fetch('/admin/system-health', { credentials: 'include' });
+        if (!res.ok) {
+          document.getElementById('systemHealthSubtitle').textContent = 'Health check failed (HTTP ' + res.status + ')';
+          return;
+        }
+        var data = await res.json();
+        renderSystemHealth(data);
+      } catch (err) {
+        document.getElementById('systemHealthSubtitle').textContent = 'Health check failed (' + err.message + ')';
+      }
+    }
+
+    function renderSystemHealth(data) {
+      var stateOrder = { red: 0, amber: 1, green: 2 };
+      var clients = (data.clients || []).slice().sort(function(a, b) {
+        var av = stateOrder[a.worst_state]; if (av == null) av = 99;
+        var bv = stateOrder[b.worst_state]; if (bv == null) bv = 99;
+        return av - bv;
+      });
+      // Aggregate pill
+      var agg = document.getElementById('systemHealthAggregate');
+      var aggState = (data.aggregate && data.aggregate.worst_state) || 'green';
+      agg.className = 'system-health-aggregate health-state-' + aggState;
+      var issueCount = clients.filter(function(c) { return c.worst_state !== 'green'; }).length;
+      var aggText;
+      if (aggState === 'green') aggText = 'All systems green';
+      else if (aggState === 'amber') aggText = 'Degraded · ' + issueCount + ' client(s) need attention';
+      else aggText = 'Issues detected · ' + issueCount + ' client(s) need review';
+      agg.textContent = aggText;
+      // Subtitle
+      var subtitle = document.getElementById('systemHealthSubtitle');
+      var ageH = data.aggregate ? data.aggregate.latest_reconcile_age_hours : null;
+      subtitle.textContent = ageH != null
+        ? 'Latest reconcile ' + ageH + 'h ago across all clients'
+        : 'No reconcile runs on record';
+      // Per-client cards
+      var grid = document.getElementById('systemHealthGrid');
+      grid.innerHTML = clients.length
+        ? clients.map(function(c) { return renderHealthCard(c); }).join('')
+        : '<div class="health-empty">No active clients.</div>';
+      // DB health
+      var db = document.getElementById('systemHealthDb');
+      var dbState = (data.db_health && data.db_health.state) || 'green';
+      var dbProbe = (data.db_health && data.db_health.probe_latency_ms != null)
+        ? data.db_health.probe_latency_ms + 'ms'
+        : 'unreachable';
+      var dbSlow = (data.db_health && data.db_health.slow_query_24h != null) ? data.db_health.slow_query_24h : 0;
+      db.innerHTML = '<div class="health-db-row health-state-' + dbState + '">' +
+        '<span class="health-db-label">Supabase DB</span>' +
+        '<span class="health-db-detail">Probe ' + dbProbe + ' · ' + dbSlow + ' slow queries / 24h</span>' +
+        '</div>';
+    }
+
+    function renderHealthCard(c) {
+      var checks = c.checks || {};
+      return '<div class="health-card health-state-' + c.worst_state + '">' +
+        '<div class="health-card-header">' +
+          '<span class="health-card-title">' + escapeHtml(c.client_name) + '</span>' +
+          '<span class="health-card-state-pill">' + String(c.worst_state || '').toUpperCase() + '</span>' +
+        '</div>' +
+        '<div class="health-checks">' +
+          renderCheck('Reconcile', checks.reconcile_freshness, formatReconcile) +
+          renderCheck('Webhooks', checks.webhook_ingestion, formatWebhook) +
+          renderCheck('Errors', checks.error_queue, formatErrors) +
+          renderCheck('Diagnostics', checks.diagnostic_log, formatDiagnostics) +
+        '</div>' +
+      '</div>';
+    }
+
+    function renderCheck(label, check, formatFn) {
+      if (!check) return '';
+      return '<div class="health-check">' +
+        '<span class="health-check-label">' + label + '</span>' +
+        '<span class="health-check-state health-state-' + check.state + '">' + formatFn(check) + '</span>' +
+      '</div>';
+    }
+
+    function formatReconcile(c) {
+      if (c.age_hours == null) return 'Never run';
+      if (c.state === 'green') return 'Fresh (' + c.age_hours + 'h ago)';
+      if (c.state === 'amber') return 'Stale (' + c.age_hours + 'h ago)';
+      return '>' + c.age_hours + 'h ago';
+    }
+    function formatWebhook(c) {
+      if (c.state === 'green') return 'Active (' + (c.count_24h || 0) + ' today)';
+      if (c.state === 'amber') return 'Slow (' + (c.count_24h || 0) + ' today)';
+      return 'Silent';
+    }
+    function formatErrors(c) {
+      if (c.state === 'green') return 'Clean';
+      if (c.state === 'amber') return c.open_count + ' open';
+      return c.open_count + ' open (review)';
+    }
+    function formatDiagnostics(c) {
+      if (c.state === 'green') return 'Clean';
+      if (c.state === 'amber') return (c.warn_count_24h || 0) + ' warn/24h';
+      return (c.error_count_1h || 0) + ' errors in 1h';
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s).replace(/[&<>"']/g, function(ch) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+      });
+    }
+
     renderLoggedIn();
     renderAdmins();
     renderInfoSection();
     document.getElementById('pageSubtitle').textContent =
       admins.length + ' administrator' + (admins.length !== 1 ? 's' : '') + ' with access, validated through Wix site roles.';
+    loadSystemHealth();
   </script>
 </body>
 </html>

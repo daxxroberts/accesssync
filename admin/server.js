@@ -24,6 +24,7 @@ const operatorRoutes    = require('./routes/operator');
 const multiMemberRoutes = require('./routes/multi-member');
 const portalRoutes      = require('./routes/portal');
 const logsRoutes        = require('./routes/logs');
+const systemHealthRoutes = require('./routes/system-health');
 const { requireAuth, requireAuthOrOperator, requireAuthPage, requireAuthPageOrOperator } = require('./middleware/auth');
 const { traceContextMiddleware } = require('./middleware/trace-context');
 const { log } = require('../core/logger');
@@ -79,6 +80,10 @@ app.use('/admin/members',  requireAuth, membersRoutes);
 app.use('/admin/webhooks', requireAuth, webhooksRoutes);
 app.use('/admin/queue',    requireAuth, queueRoutes);
 app.use('/admin/clients',  requireAuth, clientsRoutes);
+// OB-195: Owner-only System Health surface. Aggregates infrastructure observability
+// across all clients (reconcile freshness, webhook ingestion, error queue, diagnostic log)
+// plus a global DB health probe. Gated by requireAuth — never exposed to operator sessions.
+app.use('/admin/system-health', requireAuth, systemHealthRoutes);
 // Trace Timeline API — accepts admin (Daxx, cross-client) or operator (Chad,
 // scoped to their own client by the route handler). Tenant scope is enforced
 // inside admin/routes/logs.js via scopedClientId(req).
