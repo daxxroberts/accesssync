@@ -27,6 +27,7 @@ const planMappingResolver = require('./plan-mapping-resolver');
 const { decryptApiKey } = require('./crypto-utils');
 const { log } = require('./logger');
 const { getTraceId, getActor } = require('./trace-context');
+const { logMemberAccessEvent } = require('./member-access-log');
 
 class GrantRevokeLogic {
 
@@ -246,15 +247,14 @@ class GrantRevokeLogic {
     // not produce a new provisioned entry — they are duplicates from Wix multi-firing
     // the same purchase event (orderCreated / orderPurchased / orderStarted).
     if (newHardwareCallMade) {
-      const _actor = getActor() || {};
       const _first = assignments[0] || {};
-      await db.query(
-        `INSERT INTO member_access_log
-           (member_id, client_id, event_type, mapping_id, hardware_group_id, trace_id, actor_type, actor_id)
-         VALUES ($1, $2, 'provisioned', $3, $4, $5, $6, $7)`,
-        [memberId, tenantId, _first.mappingId || null, _first.hardwareGroupId || null,
-         getTraceId() || null, _actor.type || null, _actor.id || null]
-      );
+      await logMemberAccessEvent({
+        memberId,
+        clientId: tenantId,
+        eventType: 'provisioned',
+        mappingId: _first.mappingId || null,
+        hardwareGroupId: _first.hardwareGroupId || null,
+      });
     } else {
       log.info('grant.log.skipped_duplicate', {
         clientId: tenantId, memberId,
@@ -298,13 +298,11 @@ class GrantRevokeLogic {
           `Payment failed on ${new Date().toISOString()}`,
           { clientId: tenantId }
         );
-        {
-          const _actor = getActor() || {};
-          await db.query(
-            `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id) VALUES ($1, $2, 'disabled', $3, $4, $5)`,
-            [memberId, tenantId, getTraceId() || null, _actor.type || null, _actor.id || null]
-          );
-        }
+        await logMemberAccessEvent({
+          memberId,
+          clientId: tenantId,
+          eventType: 'disabled',
+        });
         return 'disabled';
       }
 
@@ -338,22 +336,24 @@ class GrantRevokeLogic {
             eventType, rawEventType: raw, cancelledEventType, planId,
             stage: 'revoke', result: 'skipped',
           });
-          const _actor = getActor() || {};
-          await db.query(
-            `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id) VALUES ($1, $2, $3, $4, $5, $6)`,
-            [memberId, tenantId, cancelledEventType, getTraceId() || null, _actor.type || null, _actor.id || null]
-          );
+          await logMemberAccessEvent({
+            memberId,
+            clientId: tenantId,
+            eventType: cancelledEventType,
+          });
           return 'inactive';
         }
 
         for (const { role_assignment_id: raId, hardware_group_id: groupId } of raWithGroups.rows) {
+          // OB-201: defense-in-depth client_id filter (A9 hardening — client_id NOT NULL FK CASCADE).
           await db.query(
             `DELETE FROM member_access_sources
              WHERE access_id = $1
                AND hardware_group_id = $2
                AND source_type = $3
-               AND COALESCE(source_plan_id, '') = COALESCE($4, '')`,
-            [memberId, groupId, sourceType, planId]
+               AND COALESCE(source_plan_id, '') = COALESCE($4, '')
+               AND client_id = $5`,
+            [memberId, groupId, sourceType, planId, tenantId]
           );
 
           const remaining = await db.query(
@@ -389,15 +389,14 @@ class GrantRevokeLogic {
         }
 
         {
-          const _actor  = getActor() || {};
           const _firstRa = raWithGroups.rows[0] || {};
-          await db.query(
-            `INSERT INTO member_access_log
-               (member_id, client_id, event_type, mapping_id, hardware_group_id, trace_id, actor_type, actor_id)
-             VALUES ($1, $2, 'revoked', $3, $4, $5, $6, $7)`,
-            [memberId, tenantId, _firstRa.mapping_id || null, _firstRa.hardware_group_id || null,
-             getTraceId() || null, _actor.type || null, _actor.id || null]
-          );
+          await logMemberAccessEvent({
+            memberId,
+            clientId: tenantId,
+            eventType: 'revoked',
+            mappingId: _firstRa.mapping_id || null,
+            hardwareGroupId: _firstRa.hardware_group_id || null,
+          });
         }
 
         return 'inactive';
@@ -432,12 +431,13 @@ class GrantRevokeLogic {
           }
         }
         {
+          await logMemberAccessEvent({
+            memberId,
+            clientId: tenantId,
+            eventType: 'deleted',
+          });
           const _actor = getActor() || {};
           const _tid   = getTraceId() || null;
-          await db.query(
-            `INSERT INTO member_access_log (member_id, client_id, event_type, trace_id, actor_type, actor_id) VALUES ($1, $2, 'deleted', $3, $4, $5)`,
-            [memberId, tenantId, _tid, _actor.type || null, _actor.id || null]
-          );
           await db.query(
             `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
              VALUES ($1, 'member_deleted_review', $2, $3, $4, $5)`,

@@ -73,14 +73,19 @@ async function activateLocationMembersAdmin(clientId, locationId) {
         for (const groupId of groupIds) {
           try {
             const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, mem.hardware_user_id, groupId);
+            // OB-203: source_plan_id added to column list — required by canonical UNIQUE
+            // (client_id, access_id, source_type, source_plan_id, hardware_group_id) for ON CONFLICT to match correctly.
             // S-11/A9: client_id required + status='active' + provisioned_at NOW().
             await db.query(
               `INSERT INTO member_access_sources
-                 (client_id, access_id, source_type, mapping_id, role_assignment_id,
+                 (client_id, access_id, source_type, source_plan_id, mapping_id, role_assignment_id,
                   hardware_group_id, status, provisioned_at)
-               VALUES ($1, $2, 'plan', $3, $4, $5, 'active', NOW())
-               ON CONFLICT DO NOTHING`,
-              [clientId, mem.member_id, m.id, String(roleId), groupId]
+               VALUES ($1, $2, 'plan', $3, $4, $5, $6, 'active', NOW())
+               ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
+                 SET role_assignment_id = EXCLUDED.role_assignment_id,
+                     status = 'active',
+                     updated_at = NOW()`,
+              [clientId, mem.member_id, source_plan_id, m.id, String(roleId), groupId]
             );
           } catch (err) {
             log.warn('admin.activate_member_failed', { memberId: mem.member_id, groupId }, err);

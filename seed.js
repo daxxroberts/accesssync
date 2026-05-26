@@ -279,6 +279,8 @@ async function seed() {
         errCode = evType === 'provisioning_failed' ? errorCodes[Math.floor(Math.random() * errorCodes.length)] : null;
       }
 
+      // OB-205 intentional bypass — seed.js is dev-only per F-22. Uses backdated
+      // created_at intervals which the centralized helper does not support.
       await db.query(`
         INSERT INTO member_access_log (member_id, client_id, event_type, credential_type, error_code, created_at)
         VALUES ($1, $2, $3, $4, $5, NOW() - INTERVAL '${daysAgo} days' - INTERVAL '${hoursAgo} hours')

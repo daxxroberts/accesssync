@@ -33,6 +33,7 @@ const hardwareAdapter = require('../adapters/hardware-adapter');
 const { decryptApiKey } = require('./crypto-utils');
 const { log } = require('./logger');
 const { getTraceId, getActor } = require('./trace-context');
+const { logMemberAccessEvent } = require('./member-access-log');
 
 /**
  * Suspend all active member access at a location.
@@ -125,12 +126,13 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
         [row.member_id]
       );
 
-      const _actor = getActor() || {};
-      await db.query(
-        `INSERT INTO member_access_log (member_id, client_id, event_type, credential_type, created_at, trace_id, actor_type, actor_id)
-         VALUES ($1, $2, 'location_suspended', 'location_lapse', NOW(), $3, $4, $5)`,
-        [row.member_id, clientId, getTraceId() || null, _actor.type || null, _actor.id || null]
-      );
+      // created_at uses the DB column default (CURRENT_TIMESTAMP) — equivalent to NOW().
+      await logMemberAccessEvent({
+        memberId: row.member_id,
+        clientId,
+        eventType: 'location_suspended',
+        credentialType: 'location_lapse',
+      });
 
       suspended++;
     } catch (err) {

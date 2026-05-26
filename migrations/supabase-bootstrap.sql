@@ -416,7 +416,7 @@ ALTER TABLE "plan_mapping_groups" ADD CONSTRAINT "plan_mapping_groups_mapping_id
 -- --- Check constraints ---
 ALTER TABLE "connector_subscriptions" ADD CONSTRAINT "connector_subscriptions_kisi_user_pattern_check" CHECK (kisi_user_pattern::text = ANY (ARRAY['invited'::character varying, 'managed'::character varying]::text[]));
 ALTER TABLE "diagnostic_log" ADD CONSTRAINT "diagnostic_log_level_check" CHECK (level::text = ANY (ARRAY['warn'::character varying, 'error'::character varying, 'critical'::character varying]::text[]));
-ALTER TABLE "member_access" ADD CONSTRAINT "member_access_status_check" CHECK (status::text = ANY (ARRAY['active'::character varying, 'inactive'::character varying, 'in_flight'::character varying, 'pending_identity'::character varying]::text[]));
+ALTER TABLE "member_access" ADD CONSTRAINT "member_access_status_check" CHECK (status::text = ANY (ARRAY['active'::character varying, 'inactive'::character varying, 'in_flight'::character varying, 'pending_identity'::character varying, 'recovery_pending'::character varying]::text[]));
 ALTER TABLE "member_access_sources" ADD CONSTRAINT "member_access_sources_status_check" CHECK (status::text = ANY (ARRAY['draft'::character varying, 'active'::character varying, 'pending_hardware'::character varying, 'pending_start'::character varying, 'failed'::character varying, 'cancelled'::character varying, 'revoked'::character varying]::text[]));
 
 -- --- Indexes ---

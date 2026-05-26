@@ -23,6 +23,7 @@
 const crypto = require('crypto');
 const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
+const standardAdapter = require('../adapters/standard-adapter');
 const { eventQueue } = require('./webhook-processor');
 const { decryptApiKey } = require('./crypto-utils');
 const { listActiveOrders, listConfirmedBookings } = require('../adapters/wix/wix-plans-api');
@@ -73,16 +74,17 @@ class NightlyReconciliation {
       await this._syncTrueSources();
 
       // Step 1: Clean up stale in_flight records (crash protection).
-      // S-11/DR-046: status enum collapsed; 'failed' on access row is gone.
-      // Stale lock → 'inactive' (the rollup default for "no active sources").
-      // Reconcile picks these up on the next sweep and re-attempts via synthetic events.
-      await db.query(
-        `UPDATE member_access
-         SET status = 'inactive', updated_at = NOW()
-         WHERE status = 'in_flight'
-           AND updated_at < NOW() - INTERVAL '${this.staleThresholdMinutes} minutes'`
-      );
-      sweepLogger.info('reconciliation.stale_reset', { stage: 'cron', result: 'success' });
+      // OB-202: Stale lock → 'recovery_pending' (transient retry state).
+      // Reconcile picks these up via _fetchActionableRecords on the next sweep
+      // and re-attempts the grant via synthetic event re-queue. If the recovery
+      // grant succeeds, the rollup CASE in completeGrant/completeRevoke flips
+      // status to 'active'. If it fails again, the row stays in recovery_pending
+      // for further retry attempts. 'recovery_pending' is a 5th valid value in
+      // the member_access.status CHECK constraint (added 2026-05-26 via ob-202.sql).
+      // OB-204: DR-023 boundary preserved — L3 owns the member_access write.
+      // This call delegates to adapters/standard-adapter.js releaseStaleLocks.
+      const releasedCount = await standardAdapter.releaseStaleLocks(this.staleThresholdMinutes);
+      sweepLogger.warn('reconciliation.stale_reset', { stage: 'cron', result: 'success', newStatus: 'recovery_pending', releasedCount });
 
       // Step 2: Sync Door Lockdown States
       await this._syncDoorLockdownStates();
@@ -1205,12 +1207,18 @@ class NightlyReconciliation {
   }
 
   async _fetchActionableRecords() {
+    // OB-202: recovery_pending rows are stale in_flight cleanup targets ready
+    // for re-attempt. pending_identity rows are members still waiting for
+    // identity resolution. Both should be re-queued via _processRecordTargeted.
+    // Pre-S-11 values 'failed' and 'skipped_lockdown' were dropped from the
+    // member_access.status enum during S-10/S-11 cutover (2026-05-12 / 2026-05-15)
+    // — this query silently returned 0 rows from then until 2026-05-26.
     const result = await db.query(
       `SELECT ma.id, ma.status, ma.id AS member_id, ma.client_id,
               mm.platform_member_id, ma.hardware_platform, mm.source_platform
        FROM member_access ma
        JOIN member_master mm ON mm.id = ma.member_master_id
-       WHERE ma.status IN ('failed', 'skipped_lockdown')
+       WHERE ma.status IN ('recovery_pending', 'pending_identity')
          AND mm.source_tag = 'accesssync'`
     );
     return result.rows;

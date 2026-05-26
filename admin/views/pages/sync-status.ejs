@@ -753,6 +753,22 @@ function updateTimestamp(provisionedAt, stale) {
   }
 }
 
+// OI-05 (post-OB-213 spec correction 2026-05-26):
+// The freshness check runs at ~30s intervals after page load. During the
+// re-fetch window (typically sub-second on healthy members), updateTimestamp
+// briefly renders an amber state — but for a healthy member whose poll
+// returns 'active' immediately, the amber pill is structurally invisible
+// (rendered for one frame then immediately replaced).
+//
+// This is INTENDED behavior. The amber pill only persists when the
+// freshness check repeatedly fails OR returns a non-active status.
+// For a happy-path member, you will never see the amber pill in normal
+// session use — that's correct.
+//
+// If the operator dashboard later needs a persistent "stale data >30s"
+// signal as part of OB-195 (owner health screen), implement it there
+// against the diagnostic_log freshness check rather than on the
+// member-facing sync-status surface.
 function startFreshnessCheck() {
   if (freshnessInterval) return;
   freshnessInterval = setInterval(() => {
@@ -846,6 +862,15 @@ async function poll() {
       document.getElementById('error-sub').textContent =
         'Your access has been suspended. Contact your gym directly for more information.';
       showState('error');
+      return;
+    }
+
+    if (data.status === 'recovery_pending') {
+      // OB-202: stale-lock retry in progress — show as pending state with retry copy
+      clearStepTimers();
+      document.getElementById('error-sub').textContent =
+        "Almost there — we're reattempting to activate your access.";
+      showState('pending');
       return;
     }
 

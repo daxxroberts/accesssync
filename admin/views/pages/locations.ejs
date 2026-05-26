@@ -705,9 +705,24 @@
       var billingStatus    = loc.billing && loc.billing.status ? loc.billing.status : 'inactive';
       var connectorPlatform = loc.connector && loc.connector.platform ? loc.connector.platform : null;
       var hasKey           = !!(loc.connector && loc.connector.has_key);
-      var keyStatusLabel = hasKey
-        ? '<span class="config-row-status set">✓ Key set</span>'
-        : '<span class="config-row-status warn">✗ Not set</span>';
+      var keyLastVerified  = loc.connector && loc.connector.key_last_verified ? loc.connector.key_last_verified : null;
+      var keyLastError     = loc.connector && loc.connector.key_last_error ? loc.connector.key_last_error : null;
+      var keyStatusLabel;
+      if (!hasKey) {
+        keyStatusLabel = '<span class="config-row-status warn">✗ Not set</span>';
+      } else if (keyLastError) {
+        keyStatusLabel =
+          '<span class="config-row-status set">✓ Key configured</span>' +
+          '<span style="display:block;font-size:10px;color:var(--red);margin-top:2px;">Verification failed: ' + esc(keyLastError) + '</span>';
+      } else if (keyLastVerified) {
+        keyStatusLabel =
+          '<span class="config-row-status set">✓ Key configured</span>' +
+          '<span style="display:block;font-size:10px;color:var(--muted);margin-top:2px;">Last verified ' + esc(formatRelativeTime(keyLastVerified)) + '</span>';
+      } else {
+        keyStatusLabel =
+          '<span class="config-row-status set">✓ Key configured</span>' +
+          '<span style="display:block;font-size:10px;color:var(--amber);margin-top:2px;">● Never verified</span>';
+      }
       var locEmail = loc.notification_email;
       var emailStatusLabel = locEmail
         ? '<span class="config-row-status set">' + esc(locEmail) + '</span>'
@@ -1113,6 +1128,26 @@
           }
         })
         .catch(function() { toast('Reactivate failed — network error', 'error'); });
+    }
+
+    function formatRelativeTime(iso) {
+      if (!iso) return '';
+      var t = new Date(iso).getTime();
+      if (isNaN(t)) return '';
+      var diff = Date.now() - t;
+      if (diff < 0) diff = 0;
+      var sec = Math.floor(diff / 1000);
+      if (sec < 60)      return sec + ' second'  + (sec === 1 ? '' : 's') + ' ago';
+      var min = Math.floor(sec / 60);
+      if (min < 60)      return min + ' minute'  + (min === 1 ? '' : 's') + ' ago';
+      var hr  = Math.floor(min / 60);
+      if (hr < 24)       return hr  + ' hour'    + (hr  === 1 ? '' : 's') + ' ago';
+      var day = Math.floor(hr / 24);
+      if (day < 30)      return day + ' day'     + (day === 1 ? '' : 's') + ' ago';
+      var mo = Math.floor(day / 30);
+      if (mo < 12)       return mo  + ' month'   + (mo  === 1 ? '' : 's') + ' ago';
+      var yr = Math.floor(day / 365);
+      return yr + ' year' + (yr === 1 ? '' : 's') + ' ago';
     }
 
     function toast(msg, type, duration) {

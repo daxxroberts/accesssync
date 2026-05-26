@@ -124,7 +124,7 @@ npm test
 
 Target: 32/32 green. Do not ship with failing tests.
 
-Test infrastructure is in `test/`. Playwright smoke tests in `test-screens.js`. Integration tests mock nothing — they hit real test DB patterns.
+Test infrastructure is in `test/` (Jest unit + integration). End-to-end Playwright specs live in `e2e/` (~39 spec files). Integration tests mock nothing — they hit real test DB patterns.
 
 ---
 

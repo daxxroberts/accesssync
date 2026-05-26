@@ -592,6 +592,7 @@ function renderAccess(data) {
     case 'pending_sync':
     case 'pending_hardware':
     case 'pending_identity':
+    case 'recovery_pending':  // OB-202: stale-lock retry in progress
       showBanner('syncing'); break;
     case 'revoked':
     case null:

@@ -73,7 +73,7 @@ beforeEach(() => {
 
 describe('[P3] Stale lock cleanup — UPDATE member_access (new schema)', () => {
 
-  test('stale in_flight reset targets member_access, not member_access_state', async () => {
+  test('stale in_flight reset to recovery_pending targets member_access, not member_access_state', async () => {
     // Recurrence gate: last_sync_at is old enough to proceed
     db.query
       .mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] })  // gate
@@ -94,10 +94,11 @@ describe('[P3] Stale lock cleanup — UPDATE member_access (new schema)', () => 
 
     await reconciliation.runNightlySweep();
 
-    // S-11/DR-046: stale-lock cleanup now writes 'inactive' (was 'failed' pre-S-11).
-    // Status enum collapsed to 4 values; per-plan failure lives on member_access_sources.
+    // OB-202: stale-lock cleanup now writes 'recovery_pending' (was 'inactive' post-S-11,
+    // 'failed' pre-S-11). recovery_pending is the 5th value in the member_access.status
+    // CHECK constraint and gets picked up by _fetchActionableRecords on the next sweep.
     const staleCall = db.query.mock.calls.find(c =>
-      typeof c[0] === 'string' && c[0].includes('UPDATE') && c[0].includes("status = 'inactive'")
+      typeof c[0] === 'string' && c[0].includes('UPDATE') && c[0].includes("status = 'recovery_pending'")
         && c[0].includes('member_access') && c[0].includes("status = 'in_flight'")
     );
     expect(staleCall).toBeDefined();
@@ -118,7 +119,7 @@ describe('[P3] _fetchActionableRecords — member_access JOIN member_master (new
       .mockResolvedValueOnce({ rowCount: 0 }) // stale update
       .mockResolvedValueOnce({ rows: [] })   // _syncDoorLockdownStates
       // _fetchActionableRecords
-      .mockResolvedValueOnce({ rows: [{ id: MEMBER_ID, status: 'failed', member_id: MEMBER_ID, client_id: CLIENT_ID, platform_member_id: PLATFORM_MEMBER_ID }] })
+      .mockResolvedValueOnce({ rows: [{ id: MEMBER_ID, status: 'recovery_pending', member_id: MEMBER_ID, client_id: CLIENT_ID, platform_member_id: PLATFORM_MEMBER_ID }] })
       // _processRecordTargeted error_queue lookup
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })   // digest config_alert
@@ -129,7 +130,7 @@ describe('[P3] _fetchActionableRecords — member_access JOIN member_master (new
 
     const fetchCall = db.query.mock.calls.find(c =>
       typeof c[0] === 'string' && c[0].includes('member_access') && c[0].includes('member_master')
-        && c[0].includes("status IN ('failed'")
+        && c[0].includes("status IN ('recovery_pending'")
     );
     expect(fetchCall).toBeDefined();
     expect(fetchCall[0]).toMatch(/FROM member_access/);
@@ -415,5 +416,40 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
       c => c[0] === 'revoke' && c[1]?.standardEvent?.syntheticSource === 'reconciliation.kisi_orphan'
     );
     expect(revokeCall).toBeUndefined();
+  });
+});
+
+// ─── OB-202 — recovery_pending status as transient retry state ──────────────
+
+describe('[P3] OB-202 — recovery_pending status', () => {
+
+  // OB-202 Test A (assert recovery_pending in WHERE clause) is covered by the existing
+  // 'actionable records query uses member_access JOIN member_master' test at line ~115
+  // which already asserts `status IN ('recovery_pending'` post-Ship-B. The dedicated direct
+  // invocation of `_fetchActionableRecords()` was redundant and brittle to mock-queue state
+  // across the full-file run. Coverage retained; assertion lives upstream.
+
+  it('OB-202/OB-204: stale lock cleanup writes status=recovery_pending via standardAdapter.releaseStaleLocks', async () => {
+    // Drive runNightlySweep with no work so the stale UPDATE is the only mutation of interest.
+    db.query
+      .mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] }) // gate
+      .mockResolvedValueOnce({ rows: [] })   // _syncTrueSources clients
+      .mockResolvedValueOnce({ rowCount: 0 }) // stale in_flight UPDATE
+      .mockResolvedValueOnce({ rows: [] })   // _syncDoorLockdownStates
+      .mockResolvedValueOnce({ rows: [] })   // _fetchActionableRecords
+      .mockResolvedValueOnce({ rows: [] })   // digest config_alert
+      .mockResolvedValueOnce({ rows: [] })   // digest error_queue
+      .mockResolvedValueOnce({ rowCount: 1 }); // last_sync_at UPDATE
+
+    await reconciliation.runNightlySweep();
+
+    const updateCall = db.query.mock.calls.find(call =>
+      typeof call[0] === 'string' && call[0].includes("SET status = 'recovery_pending'")
+    );
+    expect(updateCall).toBeDefined();
+    const sqlText = updateCall[0];
+    expect(sqlText).toMatch(/SET status = 'recovery_pending'/);
+    expect(sqlText).toMatch(/WHERE status = 'in_flight'/);
+    expect(sqlText).not.toMatch(/SET status = 'inactive'/);
   });
 });

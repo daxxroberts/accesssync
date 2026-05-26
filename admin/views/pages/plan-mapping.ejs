@@ -109,6 +109,14 @@
       display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
     }
     .plan-summary-stale { font-size: 14px; color: var(--amber, #F59E0B); }
+    /* OB-209 Finding A: shared-group collision warning pill (Sprint 5.4) */
+    .plan-summary-shared {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.04em; padding: 3px 8px; border-radius: 6px;
+      background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;
+      display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+    }
+    .plan-summary-shared::before { content: '\26A0'; font-size: 11px; }
     .plan-summary-chips {
       display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
     }
@@ -379,6 +387,22 @@
       .plan-card-summary { flex-wrap: wrap; gap: 10px; }
       .members-table { font-size: 12px; }
     }
+
+    /* ── OB-209 Finding B: page-scoped toast reposition ──
+       Move the operator-styles.css bottom-center toast to top-right so it can't
+       overlay plan-mapping rows (notably Free Service Access). Page-scoped so
+       other pages keep the global behavior. */
+    body .toast {
+      position: fixed;
+      top: 20px; right: 20px;
+      bottom: auto; left: auto;
+      transform: translateX(120%);
+      max-width: 360px;
+      transition: transform 0.3s ease;
+    }
+    body .toast.visible {
+      transform: translateX(0);
+    }
   </style>
 </head>
 <body data-session-role="<%= sessionRole %>"<% if (loginUrl) { %> data-login-url="<%= loginUrl %>"<% } %>>
@@ -416,8 +440,8 @@
     </div>
 
     <!-- Unmapped alert (shown when plans have no group) -->
+    <!-- Icon is injected with the text in render() so the hidden state contains no orphan glyph. -->
     <div id="unmappedAlert" class="unmapped-alert" style="display:none;">
-      <span class="unmapped-alert-icon">&#9888;</span>
       <div class="unmapped-alert-text" id="unmappedAlertText"></div>
     </div>
 
@@ -540,6 +564,32 @@
       });
     }
 
+    // OB-209 Finding A — Sprint 5.4 shared-group collision detection.
+    // For each plan, count the number of OTHER plans (in the same client/location set)
+    // that share at least one hardware_group_id. Sets plan._sharedGroupCount.
+    // HOG live state (2026-05-26): Couples-{66e57a, 8323a3} both → TestGroup1;
+    // Family-{95b490, e083e1} both → Entrance Door Access Group.
+    function computeSharedGroupCounts(allPlans) {
+      // Build gid → [planId, ...] index
+      var gidToPlanIds = {};
+      allPlans.forEach(function(p) {
+        if (!p.groupIds) return;
+        p.groupIds.forEach(function(gid) {
+          if (!gidToPlanIds[gid]) gidToPlanIds[gid] = [];
+          if (gidToPlanIds[gid].indexOf(p.id) === -1) gidToPlanIds[gid].push(p.id);
+        });
+      });
+      allPlans.forEach(function(p) {
+        var sharedPeers = {};
+        (p.groupIds || []).forEach(function(gid) {
+          (gidToPlanIds[gid] || []).forEach(function(peerId) {
+            if (peerId !== p.id) sharedPeers[peerId] = true;
+          });
+        });
+        p._sharedGroupCount = Object.keys(sharedPeers).length;
+      });
+    }
+
     // ═══════════════════════════════════════
     // Data
     // ═══════════════════════════════════════
@@ -570,10 +620,15 @@
 
       // Unmapped alert
       var alertEl = document.getElementById('unmappedAlert');
+      var alertTextEl = document.getElementById('unmappedAlertText');
       if (unmapped.length > 0) {
         alertEl.style.display = 'flex';
-        document.getElementById('unmappedAlertText').innerHTML = '<strong>' + unmapped.length + ' plan' + (unmapped.length !== 1 ? 's' : '') + ' need mapping</strong> — members won\'t get access until groups are assigned.';
-      } else { alertEl.style.display = 'none'; }
+        alertTextEl.innerHTML = '<span class="unmapped-alert-icon" aria-hidden="true">&#9888;</span> ' +
+          '<strong>' + unmapped.length + ' plan' + (unmapped.length !== 1 ? 's' : '') + ' need mapping</strong> — members won\'t get access until groups are assigned.';
+      } else {
+        alertEl.style.display = 'none';
+        alertTextEl.innerHTML = '';  // OB-209 Finding C: clear so hidden state has no orphan glyph
+      }
 
       // Render sections
       renderSection('unmapped', unmapped, document.getElementById('unmappedGrid'));
@@ -610,6 +665,11 @@
 
       var archivedBadge = plan.sourceStatus === 'archived' ? '<span class="plan-badge-archived">Archived</span>' : '';
       var staleWarning = getStaleGroupIds(plan).length > 0 ? '<span class="plan-summary-stale" title="Stale group detected">&#9888;</span>' : '';
+      // OB-209 Finding A — Sprint 5.4 amber shared-group badge.
+      var sharedCount = plan._sharedGroupCount || 0;
+      var sharedBadge = sharedCount > 0
+        ? '<span class="plan-summary-shared" title="This plan shares at least one ' + groupLabel().toLowerCase() + ' with ' + sharedCount + ' other plan' + (sharedCount === 1 ? '' : 's') + '">Shared with ' + sharedCount + ' other plan' + (sharedCount === 1 ? '' : 's') + '</span>'
+        : '';
 
       // Summary stat pills
       var groupCount = plan.groupIds ? plan.groupIds.length : 0;
@@ -646,7 +706,7 @@
           '<div class="plan-summary-left">' +
             '<div class="plan-icon ' + iconClass + '" style="width:36px;height:36px;font-size:17px;">' + icon + '</div>' +
             '<div class="plan-summary-text">' +
-              '<div class="plan-name">' + esc(plan.name) + archivedBadge + staleWarning + '</div>' +
+              '<div class="plan-name">' + esc(plan.name) + archivedBadge + staleWarning + sharedBadge + '</div>' +
               '<div class="plan-summary-chips">' +
                 (isUnmapped ? '<span class="plan-type-badge unlinked">Not Mapped</span>' : '') +
                 statusChip +
@@ -1427,6 +1487,9 @@
                   p._familySuggestion = true;
                 }
               });
+              // OB-209 Finding A: shared-group collision detection (Sprint 5.4)
+              // For each plan, count how many OTHER plans share at least one hardware_group_id.
+              computeSharedGroupCounts(plans);
 
               // Fetch occupant data for multi-member plans before first render.
               // The endpoint returns one row per role assignment (holder OR sub).
@@ -1458,6 +1521,12 @@
                 var suggestions = plans.filter(function(p) { return p._familySuggestion; });
                 if (suggestions.length > 0) {
                   showToast('info', suggestions.length + ' plan' + (suggestions.length > 1 ? 's look' : ' looks') + ' like a family/group plan. Consider enabling multi-member access.');
+                  // OB-209 Finding B: defensive double-dismiss in case the global timer fires while a
+                  // re-render restarts the toast. Force-clear after 10s no matter what.
+                  setTimeout(function() {
+                    var t = document.getElementById('toast');
+                    if (t) t.classList.remove('visible');
+                  }, 10000);
                 }
               });
             });

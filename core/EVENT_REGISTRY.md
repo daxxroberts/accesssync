@@ -188,6 +188,7 @@ Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='rev
 | `reconcile.member.complete` | info | Per-member reconcile complete — summary returned |
 | `reconcile.member.no_identity` | info | No identity record — reconcile skipped |
 | `reconcile.integrity.alert` | warn | Integrity issue detected — alert written to config_alert_log |
+| `reconciliation.stale_reset` | warn | Stale `in_flight` member_access lock (>10 min) reset to `status='recovery_pending'`. Next reconcile sweep picks it up via `_fetchActionableRecords` and re-attempts the grant. Context: `{ stage, result, newStatus: 'recovery_pending' }`. (OB-202) |
 
 ---
 
