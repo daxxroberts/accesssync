@@ -1824,6 +1824,19 @@ function mmRender() {
     }
   }
 
+  // CRITICAL: rescue the add form before wiping groups.innerHTML — if the form
+  // was previously moved INTO a plan slot, the about-to-fire innerHTML reset
+  // will destroy it (descendants of #mm-plan-groups go with the wipe). Move
+  // back to its sibling parent so it survives and we can re-attach below.
+  // Without this guard, polling-driven re-renders silently delete the open
+  // form and the Save button stops responding. Bug history: "Add Member"
+  // appeared to do nothing on second open.
+  const addFormPre = document.getElementById('mm-add-form');
+  const addFormParkingSpot = document.getElementById('mm-content');
+  if (addFormPre && addFormParkingSpot && addFormPre.parentNode !== addFormParkingSpot) {
+    addFormParkingSpot.appendChild(addFormPre);
+  }
+
   // Build markup for each plan group.
   groups.innerHTML = MM.plans.map(plan => mmPlanGroupHtml(plan)).join('');
 
@@ -1836,11 +1849,17 @@ function mmRender() {
   // Reattach add form to the active plan group (if open) so the inputs
   // stay mounted under the right card. Default to first plan if none active.
   const addForm = document.getElementById('mm-add-form');
-  const isOpen  = !addForm.classList.contains('hidden');
+  const isOpen  = addForm && !addForm.classList.contains('hidden');
   if (isOpen) {
     const targetPlanId = MM.activeAddPlanId || MM.plans[0].id;
     const slot = document.getElementById('mm-plan-' + targetPlanId + '-addform-slot');
     if (slot && addForm.parentNode !== slot) slot.appendChild(addForm);
+    // Hide the active plan's add-trigger so we don't show form + button together.
+    const activeGroup = document.getElementById('mm-plan-' + targetPlanId);
+    if (activeGroup) {
+      const trigger = activeGroup.querySelector('.add-trigger');
+      if (trigger) trigger.classList.add('hidden');
+    }
   }
 
   // Global submit CTA — sum drafts across all plans.
@@ -2079,14 +2098,18 @@ function mmOpenAddForm(planId) {
   MM.activeAddPlanId = planId || null;
 
   const addForm = document.getElementById('mm-add-form');
+  if (!addForm) {
+    console.warn('mm-add-form element missing — cannot open');
+    return;
+  }
   addForm.classList.remove('hidden');
 
-  // Move the form into the active plan group's slot so it renders under the
-  // right card. mmRender() rebuilds plan groups so the slot is fresh.
-  if (planId) {
-    const slot = document.getElementById('mm-plan-' + planId + '-addform-slot');
-    if (slot) slot.appendChild(addForm);
-  }
+  // mmSaveAdd disables the button on submit but only re-enables on failure.
+  // On the success path closeAddForm() hides the form but the button stays
+  // disabled in memory; reopening shows the form with a dead button. Reset here.
+  const saveBtn = document.getElementById('mm-btn-add-save');
+  if (saveBtn) saveBtn.disabled = false;
+  mmClearAddForm();
 
   // Personalise the form subtitle with the plan name.
   const plan = MM.plans.find(p => p.id === planId);
@@ -2097,22 +2120,10 @@ function mmOpenAddForm(planId) {
       : "They'll be saved as a draft until you grant access.";
   }
 
-  // mmSaveAdd disables the button on submit but only re-enables on failure.
-  // On the success path closeAddForm() hides the form but the button stays
-  // disabled in memory; reopening shows the form with a dead button. Reset here.
-  const saveBtn = document.getElementById('mm-btn-add-save');
-  if (saveBtn) saveBtn.disabled = false;
-  mmClearAddForm();
-
-  // Hide the add trigger on the active plan card to avoid double-button.
+  // mmRender does the heavy lifting: rebuilds groups, then re-attaches the
+  // (now-visible) form into the active plan's slot and hides that plan's
+  // add-trigger. Single source of truth for DOM state.
   mmRender();
-  // After re-render the trigger button is recreated; hide just the one for
-  // the active plan.
-  const activeGroup = document.getElementById('mm-plan-' + planId);
-  if (activeGroup) {
-    const trigger = activeGroup.querySelector('.add-trigger');
-    if (trigger) trigger.classList.add('hidden');
-  }
 
   const firstInput = document.getElementById('f-first');
   if (firstInput) firstInput.focus();

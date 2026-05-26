@@ -208,17 +208,19 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
       for (const m of activeMembersForGrant.rows) {
         try {
           const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, m.hardware_user_id, groupId);
+          // OB-203: source_plan_id added to column list — required by canonical UNIQUE
+          // (client_id, access_id, source_type, source_plan_id, hardware_group_id) for ON CONFLICT to match correctly.
           // S-11/A9: client_id required on every member_access_sources INSERT.
           await db.query(
             `INSERT INTO member_access_sources
-               (client_id, access_id, source_type, mapping_id, hardware_group_id,
+               (client_id, access_id, source_type, source_plan_id, mapping_id, hardware_group_id,
                 role_assignment_id, status, provisioned_at)
-             VALUES ($1, $2, 'plan', $3, $4, $5, 'active', NOW())
+             VALUES ($1, $2, 'plan', $3, $4, $5, $6, 'active', NOW())
              ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
                SET role_assignment_id = EXCLUDED.role_assignment_id,
                    status = 'active',
                    updated_at = NOW()`,
-            [clientId, m.member_id, mappingId, groupId, String(roleId)]
+            [clientId, m.member_id, source_plan_id, mappingId, groupId, String(roleId)]
           );
           log.info('operator.sync.granted', { memberId: m.member_id, hardwareGroupId: groupId, reason: 'group_added' });
         } catch (err) {
@@ -1243,6 +1245,8 @@ router.get('/:clientId/locations', async (req, res) => {
                 bs.subscribed_at     AS billing_subscribed_at,
                 cs.hardware_platform AS connector_platform,
                 (cs.hardware_api_key IS NOT NULL) AS connector_has_key,
+                cs.key_last_verified AS connector_key_last_verified,
+                cs.key_last_error    AS connector_key_last_error,
                 l.notification_email
          FROM locations l
          LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
@@ -1289,8 +1293,10 @@ router.get('/:clientId/locations', async (req, res) => {
           subscribed_at: loc.billing_subscribed_at,
         },
         connector: loc.connector_platform === null ? null : {
-          platform: loc.connector_platform,
-          has_key:  loc.connector_has_key,
+          platform:          loc.connector_platform,
+          has_key:           loc.connector_has_key,
+          key_last_verified: loc.connector_key_last_verified,
+          key_last_error:    loc.connector_key_last_error,
         },
         error_count: errMap[loc.id] || 0,
         door_count:  doorMap[loc.id] || 0,
@@ -1777,13 +1783,14 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
   }
 
   try {
-    // Verify mapping belongs to client + get location_id
+    // Verify mapping belongs to client + get location_id (and source_plan_id for OB-203)
     const mappingRow = await db.query(
-      'SELECT id, location_id FROM plan_mappings WHERE id = $1 AND client_id = $2',
+      'SELECT id, location_id, source_plan_id FROM plan_mappings WHERE id = $1 AND client_id = $2',
       [mappingId, clientId]
     );
     if (!mappingRow.rows.length) return res.status(404).json({ error: 'Mapping not found' });
     const locationId = mappingRow.rows[0].location_id;
+    const sourcePlanId = mappingRow.rows[0].source_plan_id;
 
     // Resolve hardware API key and platform
     const keyRow = await db.query(
@@ -1842,17 +1849,22 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
         await db.query('DELETE FROM member_access_sources WHERE id = ANY($1::uuid[])', [oldMraIds]);
 
         if (newAssignments.length > 0) {
+          // OB-203: source_plan_id added to column list — required by canonical UNIQUE
+          // (client_id, access_id, source_type, source_plan_id, hardware_group_id) for ON CONFLICT to match correctly.
           // S-11/A9: client_id required + status='active' since these are post-Kisi-call.
           const values = [];
           const placeholders = newAssignments.map((a, i) => {
-            values.push(clientId, memberId, mappingId, a.roleAssignmentId, a.groupId);
-            return `($${i * 5 + 1}, $${i * 5 + 2}, 'plan', $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5}, 'active', NOW())`;
+            values.push(clientId, memberId, sourcePlanId, mappingId, a.roleAssignmentId, a.groupId);
+            return `($${i * 6 + 1}, $${i * 6 + 2}, 'plan', $${i * 6 + 3}, $${i * 6 + 4}, $${i * 6 + 5}, $${i * 6 + 6}, 'active', NOW())`;
           });
           await db.query(
             `INSERT INTO member_access_sources
-               (client_id, access_id, source_type, mapping_id, role_assignment_id, hardware_group_id, status, provisioned_at)
+               (client_id, access_id, source_type, source_plan_id, mapping_id, role_assignment_id, hardware_group_id, status, provisioned_at)
              VALUES ${placeholders.join(', ')}
-             ON CONFLICT DO NOTHING`,
+             ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
+               SET role_assignment_id = EXCLUDED.role_assignment_id,
+                   status = 'active',
+                   updated_at = NOW()`,
             values
           );
         }
@@ -1995,6 +2007,7 @@ router.get('/:clientId/members', async (req, res) => {
                 )                                AS plan_name,
                 -- A1 fix: billing snapshot lives on member_billing, joined via mas.billing_id.
                 -- The most-recent active source's billing row carries the rate / coupon / autoRenew.
+                -- Returned for back-compat — single representative snapshot for legacy callers.
                 (
                   SELECT mb.billing_snapshot
                   FROM member_access_sources mas
@@ -2005,6 +2018,42 @@ router.get('/:clientId/members', async (req, res) => {
                   ORDER BY mas.created_at DESC
                   LIMIT 1
                 )                                AS billing_snapshot,
+                -- Per-plan billing snapshots aligned with plan_names[] array (same ORDER BY pm.plan_name).
+                -- A holder with 5 plans needs 5 distinct snapshots — Couples is $600/YEAR, First Responder
+                -- is $30/MONTH, etc. Without this the UI fans the LIMIT-1 snapshot out to every plan row.
+                COALESCE(
+                  (
+                    SELECT ARRAY_AGG(plan_snap.snap ORDER BY plan_snap.plan_name)
+                    FROM (
+                      SELECT DISTINCT ON (pm.plan_name)
+                             pm.plan_name,
+                             mb.billing_snapshot AS snap
+                      FROM member_access_sources mas
+                      JOIN plan_mappings pm ON pm.id = mas.mapping_id
+                      LEFT JOIN member_billing mb ON mb.id = mas.billing_id
+                      WHERE mas.access_id = ma.id
+                        AND mas.status NOT IN ('cancelled','revoked')
+                        AND pm.plan_name IS NOT NULL
+                      ORDER BY pm.plan_name, mas.created_at DESC
+                    ) plan_snap
+                  ),
+                  (
+                    SELECT ARRAY_AGG(plan_snap.snap ORDER BY plan_snap.plan_name)
+                    FROM (
+                      SELECT DISTINCT ON (pm.plan_name)
+                             pm.plan_name,
+                             mb.billing_snapshot AS snap
+                      FROM member_access sub_ma
+                      JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
+                      JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
+                      LEFT JOIN member_billing mb ON mb.id = sub_mas.billing_id
+                      WHERE sub_ma.sub_master_id = ma.member_master_id
+                        AND sub_mas.status NOT IN ('cancelled','revoked')
+                        AND pm.plan_name IS NOT NULL
+                      ORDER BY pm.plan_name, sub_mas.created_at DESC
+                    ) plan_snap
+                  )
+                )                                AS billing_snapshots,
                 -- Count of source rows that are active or in-progress (not cancelled/revoked).
                 (
                   SELECT COUNT(*)::int
@@ -2089,6 +2138,8 @@ router.get('/:clientId/members', async (req, res) => {
     //   inactive + assignment_count > 0  → 'partial' (sources exist but none active —
     //                                       e.g. all in pending_hardware, or some failed)
     //   active   + active_source_count = 0 (holder) → 'holder_only' (billing identity, no door)
+    //   recovery_pending                → 'recovery_pending' (passthrough — operator
+    //                                       attention required, OB-202 transient state)
     //   else                              → access_status as-is
     const members = rows.rows.map(m => {
       let effectiveStatus = m.access_status;
@@ -2611,8 +2662,13 @@ router.get('/clients/:clientId/wix-api-key/test', async (req, res) => {
 });
 
 // ── POST /operator/:clientId/members/:memberId/unlock ──────────────
-// Clears a stuck in_flight lock. Sets status back to 'pending' so the
-// next webhook retry can proceed. Scoped to clientId for safety.
+// OB-216: Clears a stuck in_flight lock by writing 'recovery_pending'.
+// The next reconcile sweep (or any subsequent webhook) picks up
+// recovery_pending rows via _fetchActionableRecords and re-attempts the
+// grant — exactly the semantic this endpoint always meant. Pre-OB-216
+// this wrote 'pending' which was never a valid member_access.status
+// enum value (would CHECK-constraint fail on Supabase). Scoped to
+// clientId for safety. See OB-202 for recovery_pending lifecycle.
 router.post('/:clientId/members/:memberId/unlock', async (req, res) => {
   const { clientId, memberId } = req.params;
   try {
@@ -2626,11 +2682,11 @@ router.post('/:clientId/members/:memberId/unlock', async (req, res) => {
       return res.status(400).json({ error: `Member is not in_flight (current status: ${scope.rows[0].status})` });
     }
     await db.query(
-      `UPDATE member_access SET status = 'pending', updated_at = NOW() WHERE id = $1`,
+      `UPDATE member_access SET status = 'recovery_pending', updated_at = NOW() WHERE id = $1`,
       [memberId]
     );
-    log.info('operator.member.unlock', { clientId, memberId, previousStatus: 'in_flight' });
-    res.json({ ok: true, status: 'pending' });
+    log.info('operator.member.unlock', { clientId, memberId, previousStatus: 'in_flight', newStatus: 'recovery_pending' });
+    res.json({ ok: true, status: 'recovery_pending' });
   } catch (err) {
     log.error('operator.member.unlock_failed', { clientId, memberId }, err);
     res.status(500).json({ error: 'Internal server error' });

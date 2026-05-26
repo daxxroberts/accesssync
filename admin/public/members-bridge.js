@@ -23,6 +23,7 @@
   //   partial       — access row status='inactive' AND has source rows (e.g. pending_hardware)
   //   pending_identity — never resolved; kept as "pending"
   //   in_flight     — actively being processed (lock state)
+  //   recovery_pending — stale in_flight lock cleared, awaiting retry (OB-202)
   function mapStatus(effectiveStatus) {
     var map = {
       active:            "active",
@@ -31,6 +32,7 @@
       inactive:          "suspended",
       pending_identity:  "pending",
       in_flight:         "pending",
+      recovery_pending:  "pending",
     };
     return map[effectiveStatus] || "pending";
   }
@@ -39,6 +41,7 @@
     if (effectiveStatus === "holder_only") return "Holder";
     if (effectiveStatus === "active" && role === "holder") return "Holder";
     if (effectiveStatus === "active") return "Active";
+    if (effectiveStatus === "recovery_pending") return "Recovery Pending";
     if (effectiveStatus === "partial" || effectiveStatus === "pending_identity" || effectiveStatus === "in_flight") return "Pending Setup";
     if (effectiveStatus === "inactive") return "Inactive";
     if (role === "sub") return "Active";
@@ -241,19 +244,24 @@
           billingMemberName = (personRow.first + " " + personRow.last).trim() || personRow.email || "—";
         }
 
-        // One plan entry per name in the array. Per-plan billing snapshot isn't surfaced
-        // per-plan in the API yet — every plan inherits the same person-level snapshot.
-        // OB-187 will populate billing per source row; until then, all plans share billing.
+        // One plan entry per name in the array. API now returns billing_snapshots[] aligned
+        // with plan_names[] (same ORDER BY pm.plan_name) — use the per-plan snapshot when
+        // available, fall back to the person-level snapshot for legacy/sub rows that don't
+        // surface the array yet. Fixes the "all plans show First Responder $30" bug where
+        // a single LIMIT-1 snapshot was fanned out to every plan row.
+        var perPlanSnaps = Array.isArray(accessRow.billing_snapshots) ? accessRow.billing_snapshots : null;
         planNames.forEach(function (name, idx) {
+          var snapForThisPlan = (perPlanSnaps && perPlanSnaps[idx]) || accessRow.billing_snapshot || null;
+          var planBilling = shapeBilling(snapForThisPlan);
           plans.push({
             accessId:          accessRow.id,
             planName:          name,
             planSourceId:      planIds[idx] || null,
             planMappingId:     accessRow.plan_mapping_id || null,
-            rate:              billing.rate,
-            coupon:            billing.coupon,
-            autoRenewCanceled: billing.autoRenewCanceled,
-            billing:           billing,
+            rate:              planBilling.rate,
+            coupon:            planBilling.coupon,
+            autoRenewCanceled: planBilling.autoRenewCanceled,
+            billing:           planBilling,
             addedAt:           formatDate(accessRow.provisioned_at),
             validUntil:        validUntils[idx] || null,
             accessStatus:      mapAccessStatus(accessRow.effective_status, accessRow.role),
