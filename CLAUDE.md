@@ -1,5 +1,5 @@
 # CLAUDE.md — AccessSync (repo)
-**Version:** 6.0 (parity with vault) | **Updated:** 2026-05-26 | **Author:** Daxx Roberts / KEEPER / SAGE
+**Version:** 6.1-parity (parity with vault) | **Updated:** 2026-05-26 | **Author:** Daxx Roberts / KEEPER / SAGE
 
 > **Synced with vault CLAUDE.md 2026-05-23.** This file lives in the repo (`accesssync/CLAUDE.md`) and is the build-time context Claude Code loads on every repo session. Mirror of vault `CLAUDE.md` Repository State + Schema + Locked Decisions + Env Vars sections. Full vault CLAUDE.md (with Phase 1/2 sequence banners, session protocols, BOT team, RULE-15 through RULE-19) is the source of truth — read that file when in doubt. Never edit this repo file in isolation; KEEPER syncs both at session close.
 >
@@ -234,8 +234,8 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 
 | Table | Purpose |
 |---|---|
-| `clients` | One row per operator account. `hardware_api_key` (encrypted, DR-028), `notification_email`, `first_grant_sent`, `last_webhook_at`, `wix_api_key` (encrypted), `source_site_name`, `kisi_user_pattern` ('invited' default, DR-043). |
-| `locations` | One row per physical location. `hardware_api_key` (per-location override, encrypted). Hardware key freshness columns (`hardware_key_last_verified` / `hardware_key_last_error`) **dropped in S-10/S-11 cutover 2026-05-12** — canonical home is now `connector_subscriptions.key_last_verified` / `key_last_error` (DR-036). |
+| `clients` | One row per operator account. `hardware_api_key` (encrypted, DR-028 — org default), `source_api_key` (encrypted Wix API key, DR-028), `notification_email`, `last_webhook_at`, `source_site_name`, `source_site_url`, `platform` (source platform string), `platform_instance_id` (Wix App install instance ID — populated via signed-instance middleware), `reconciliation_interval` (per-client cron cadence — see OB-77), `last_active_member_count` (cached aggregate for dashboard), `first_grant_sent` (per-client flag for welcome-email idempotency), `archived_at` (soft-delete timestamp), `kisi_user_pattern` ('invited' default, DR-043), `last_sync_at`, `status`. |
+| `locations` | One row per physical location. Columns post-S-11: `id`, `client_id`, `name`, `city`, `state`, `notification_email`, `created_at`. **Per-location `hardware_api_key` override column was dropped in S-10/S-11 cutover 2026-05-12** — canonical home is `connector_subscriptions.hardware_api_key`. Hardware-key verification freshness (`key_last_verified` / `key_last_error`) also lives on `connector_subscriptions` (DR-036). |
 | `plan_mappings` | Maps `source_plan_id` to location. `access_type`, `plan_name`, `door_name`, `status`. Multi-group via `plan_mapping_groups` junction. |
 | `plan_mapping_groups` | Junction table for multi-door plan mappings — one row per (mapping_id, hardware_group_id). |
 
@@ -267,6 +267,8 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 | View | Purpose |
 |---|---|
 | `v_trace_timeline` | UNION-ALL across 7 log tables, LEFT JOINed to `trace_context` for human-readable display fields. |
+| `v_access_sources` | Per-source-row operator view. JOINs `member_access_sources` → `member_access` → `member_master` → `clients`, LEFT JOIN `plan_mappings` + `plan_mapping_groups` + `connector_subscriptions`. Derives a `health` column (`Provisioned` / `Pending` / `Cancelled` / `Broken`). Filters to active sources only. |
+| `v_active_members` | Per-active-access operator view. JOINs `member_access` → `member_master` → `clients` + `member_billing` (active). Derives monthly rate, begin/end dates, coupon, auto-renew, holder-vs-sub from `billing_snapshot`. Used by per-plan rate display surfaces. |
 
 ---
 
@@ -436,6 +438,7 @@ This project is managed by the Business Operating Team (BOT). The vault is the s
 
 | Version | Date | Summary |
 |---|---|---|
+| **v6.1-parity (repo)** | **2026-05-26** | **Mirror of vault v6.1 — OB-220 + OB-214 doc-hygiene ship.** Views table expanded (3 views, not 1); `locations` row corrected (`hardware_api_key` was dropped S-10/S-11, canonical column list shown); `clients` row expanded with previously-omitted live columns (`source_api_key`, `platform_instance_id`, `reconciliation_interval`, `last_active_member_count`, `first_grant_sent`, `archived_at`, `source_site_url`, `platform`, `last_sync_at`, `status`). OB-214 closed FALSE_ALARM — OB-91 always existed in open_items.md ledger. Pure docs pass; no code touched. |
 | v1.0–v3.9 | 2026-03-07 to 2026-04-01 | Initial setup through Phase 2+3 + Sprint 5 complete. |
 | v4.0–v4.6 | 2026-04-02 to 2026-04-10 | AI-forward KB, DR-035, OB-46/47/48 cycle, Operator Portal, all migrations applied. |
 | v4.7–v4.10 | 2026-04-13 to 2026-04-26 | DR-036 client_subscriptions, OB-78 close, OB-85/86/87 Wix endpoint fixes, OB-88/89 PR shipping, Per-member reconcile (OB-49 partial). |

@@ -188,6 +188,39 @@ function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ── DR-025 amendment: plan-name disambiguation ─────────────────────
+// When a client has duplicate plan_names (e.g. two "Couples" plans mapped to
+// different doors), the operator UI must distinguish them. This helper takes
+// a list of plan-mapping rows and returns a Map of { mapping_id → displayName }
+// where duplicate names get a last-6-of-source_plan_id suffix appended.
+//
+// Usage:
+//   var nameMap = disambiguatePlanNames(mappings);
+//   var label = nameMap.get(m.id) || m.plan_name;
+//
+// Each input mapping is expected to have { id, plan_name, source_plan_id }.
+function disambiguatePlanNames(mappings) {
+  if (!Array.isArray(mappings)) return new Map();
+  var baseNameFor = function(m) {
+    return m.plan_name || ('Plan ' + (m.source_plan_id ? String(m.source_plan_id).slice(-6) : ''));
+  };
+  var nameCount = {};
+  mappings.forEach(function(m) {
+    var n = baseNameFor(m);
+    nameCount[n] = (nameCount[n] || 0) + 1;
+  });
+  var out = new Map();
+  mappings.forEach(function(m) {
+    var n = baseNameFor(m);
+    if (nameCount[n] > 1 && m.source_plan_id) {
+      out.set(m.id, n + ' (…' + String(m.source_plan_id).slice(-6) + ')');
+    } else {
+      out.set(m.id, n);
+    }
+  });
+  return out;
+}
+
 // ── Jump-to-fix: navigate to destination page with a highlight target ──
 function jumpToFix(url) {
   window.location.href = url;

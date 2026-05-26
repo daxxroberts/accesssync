@@ -644,18 +644,16 @@
           '</div>';
           html += '<div class="loc-sub-body" id="sub-mapping-' + locId + '">';
           if (mappings.length) {
-            // Count occurrences of each plan name to detect duplicates
-            var nameCount = {};
-            mappings.forEach(function(pm) { var n = pm.plan_name || pm.source_plan_id; nameCount[n] = (nameCount[n] || 0) + 1; });
+            // DR-025 amendment: disambiguate duplicate plan_names via helper
+            // (operator-nav.js — appends " (…XXXXXX)" suffix when name collides).
+            var nameMap = (typeof disambiguatePlanNames === 'function')
+              ? disambiguatePlanNames(mappings)
+              : new Map();
             html += mappings.map(function(pm) {
               var isExcluded = pm.status === 'excluded';
-              var planLabel = pm.plan_name || pm.source_plan_id;
-              // Show last 6 chars of source_plan_id as disambiguator when name is duplicated
-              var isDuplicate = nameCount[planLabel] > 1;
-              var detail = isDuplicate && pm.source_plan_id ? '…' + pm.source_plan_id.slice(-6) : '';
+              var planLabel = nameMap.get(pm.id) || pm.plan_name || pm.source_plan_id;
               return '<div class="map-row"' + (isExcluded ? ' style="opacity:0.5;"' : '') + '>' +
                 '<div><div class="map-plan">' + esc(planLabel) + '</div>' +
-                (detail ? '<div class="map-detail" style="font-family:monospace;">' + esc(detail) + '</div>' : '') +
                 '</div>' +
                 '<div class="map-right">' +
                   (isExcluded

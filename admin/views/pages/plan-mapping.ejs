@@ -1445,6 +1445,12 @@
               var groupMap = {};
               groupResults.forEach(function(gr) { groupMap[gr.mappingId] = gr.groups; });
 
+              // DR-025 amendment: disambiguate duplicate plan_names with last-6
+              // of source_plan_id suffix. Helper lives in operator-nav.js.
+              var nameMap = (typeof disambiguatePlanNames === 'function')
+                ? disambiguatePlanNames(d.mappings)
+                : new Map();
+
               plans = d.mappings.map(function(m) {
                 var mGroups = groupMap[m.id] || [];
                 var groupIds = mGroups.length > 0
@@ -1463,7 +1469,7 @@
 
                 return {
                   id: m.id,
-                  name: m.plan_name || 'Plan ' + m.source_plan_id,
+                  name: nameMap.get(m.id) || m.plan_name || 'Plan ' + m.source_plan_id,
                   wixPlanId: m.source_plan_id,
                   planType: planType,
                   isMultiMember: !!m.allow_multiple,
