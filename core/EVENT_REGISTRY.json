@@ -1,0 +1,16 @@
+{
+  "$schema": "internal",
+  "_meta": {
+    "version": "1.0",
+    "description": "Event persistence overrides (OB-176). Events not listed fall back to level-based default (warn+ persist, info suppressed). See EVENT_REGISTRY.md for the canonical event vocabulary.",
+    "locked_at": "2026-05-26",
+    "ruled_by": "Builder Q7-Q10 ruling 2026-05-25"
+  },
+  "overrides": {
+    "admin.scheduler.armed":              { "persist": true },
+    "admin.scheduler.reconcile_start":    { "persist": true },
+    "admin.scheduler.reconcile_complete": { "persist": true },
+    "admin.scheduler.reconcile_failed":   { "persist": true },
+    "reconciliation.stale_reset":         { "persist": true }
+  }
+}

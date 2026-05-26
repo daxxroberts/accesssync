@@ -6,6 +6,8 @@
 Every log event emitted by `log.*()` in production code is listed here.
 New events require an entry before shipping. Events without entries are flagged by the no-raw-console P3 test.
 
+**Persistence behavior:** see `core/EVENT_REGISTRY.json` for per-event overrides (OB-176, locked 2026-05-26). Default is level-based — `warn`/`error`/`critical` persist to `diagnostic_log`, `info`/`debug` do not. JSON entries flip individual events either direction.
+
 ---
 
 ## Namespaces
@@ -213,6 +215,10 @@ Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='rev
 | `admin.unhandled_error` | error | Unhandled Express error caught by global handler |
 | `admin.uncaught_exception` | critical | Uncaught exception in admin process |
 | `admin.unhandled_rejection` | critical | Unhandled promise rejection in admin process |
+| `admin.scheduler.armed` | warn | In-process nightly reconcile scheduler armed at admin boot (OB-197). Persist override locked in `EVENT_REGISTRY.json`. |
+| `admin.scheduler.reconcile_start` | warn | In-process scheduler kicked off the nightly reconcile sweep (OB-197). |
+| `admin.scheduler.reconcile_complete` | warn | In-process scheduler nightly reconcile sweep finished cleanly (OB-197). |
+| `admin.scheduler.reconcile_failed` | error | In-process scheduler nightly reconcile sweep threw (OB-197). Persist override is redundant-but-explicit. |
 
 ---
 

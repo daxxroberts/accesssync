@@ -1173,8 +1173,13 @@ class NightlyReconciliation {
 
   async _syncDoorLockdownStates() {
     // Per-location iteration: each active location has its own platform + key
+    // OB-200: defense-in-depth DISTINCT to prevent duplicate billing_subscriptions
+    // rows from amplifying the inner loop. OB-198 will eventually enforce the
+    // invariant at the schema layer (per RULE-15: schema enforces invariants).
+    // Until then, DISTINCT is the cheap belt-and-suspenders defense against the
+    // next class of dupes that may not fit OB-198's chosen constraint shape.
     const locationsResult = await db.query(
-      `SELECT l.id AS location_id, l.client_id,
+      `SELECT DISTINCT l.id AS location_id, l.client_id,
               cs.hardware_platform,
               cs.hardware_api_key
        FROM locations l

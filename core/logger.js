@@ -48,6 +48,38 @@ const { redact }               = require('./log-redaction');
 
 const PRODUCTION = process.env.NODE_ENV === 'production';
 
+// ── Event registry (OB-176) ──────────────────────────────────────
+// Loaded once at module init. Maps event-name → { persist: bool }.
+// Events not in the registry fall back to level-based default
+// (warn+ persist, info/debug suppressed). Explicit entries override
+// in either direction: `persist: false` suppresses noisy warns;
+// `persist: true` promotes load-bearing info events.
+//
+// Builder ruling Q7-Q10 (2026-05-25): only `persist` field today.
+// Additive fields (retention_days, pii_safe, etc.) deferred until needed.
+const REGISTRY_OVERRIDES = (() => {
+  try {
+    const registry = require('./EVENT_REGISTRY.json');
+    const map = new Map();
+    const overrides = (registry && registry.overrides) || {};
+    for (const eventName of Object.keys(overrides)) {
+      const entry = overrides[eventName];
+      if (entry && typeof entry.persist === 'boolean') {
+        map.set(eventName, { persist: entry.persist });
+      }
+    }
+    return map;
+  } catch (_e) {
+    // Registry JSON missing or unreadable → fall back to pure level-based
+    // behavior. Logger remains functional.
+    return new Map();
+  }
+})();
+
+// Track info-level event names we've already warned about as "unregistered".
+// One warn per process per event name (Builder ruling Q7-Q10 b).
+const _warnedUnregisteredEvents = new Set();
+
 // KEDB — Known Error Database.
 // Maps error codes to documentation links and resolution summaries.
 // Add a new entry whenever a new error code is introduced in a connector or adapter.
@@ -240,7 +272,30 @@ function emit(level, event, ctx = {}, err = null, traceId = null) {
 
   process.stdout.write(JSON.stringify(safeEntry) + '\n');
 
-  if (level === 'warn' || level === 'error' || level === 'critical') {
+  // OB-176: EVENT_REGISTRY.json overrides level-based default.
+  //   Registered entry → persist = override.persist
+  //   No entry         → persist = (level is warn/error/critical)
+  // For unregistered info-level events, emit one-time dev warn so authors
+  // know to add an entry if they want it persisted (Builder ruling b).
+  const levelDefaultPersist = (level === 'warn' || level === 'error' || level === 'critical');
+  const override = REGISTRY_OVERRIDES.get(event);
+  const shouldPersist = override ? override.persist : levelDefaultPersist;
+
+  if (!override && level === 'info' && !_warnedUnregisteredEvents.has(event)) {
+    _warnedUnregisteredEvents.add(event);
+    // Write to stderr directly — using log.warn() here would recursively re-enter
+    // emit() and risk an infinite loop if the warn event itself is unregistered.
+    // The no-raw-console P3 test bans console.* even in logger.js; stderr.write
+    // is the established escape hatch (same pattern as the stdout-write fallback
+    // in persistToDiagnosticLog for DB write failures).
+    try {
+      process.stderr.write(
+        `[logger] unregistered event: ${event} — add to core/EVENT_REGISTRY.json or accept default suppression\n`
+      );
+    } catch (_) { /* stderr closed — nothing to do */ }
+  }
+
+  if (shouldPersist) {
     persistToDiagnosticLog(level, event, safeEntry, err, effectiveTraceId, actor);
   }
 }
