@@ -1,5 +1,5 @@
 # CLAUDE.md — AccessSync (repo)
-**Version:** 5.9 (parity with vault) | **Updated:** 2026-05-23 | **Author:** Daxx Roberts / KEEPER / SAGE
+**Version:** 6.0 (parity with vault) | **Updated:** 2026-05-26 | **Author:** Daxx Roberts / KEEPER / SAGE
 
 > **Synced with vault CLAUDE.md 2026-05-23.** This file lives in the repo (`accesssync/CLAUDE.md`) and is the build-time context Claude Code loads on every repo session. Mirror of vault `CLAUDE.md` Repository State + Schema + Locked Decisions + Env Vars sections. Full vault CLAUDE.md (with Phase 1/2 sequence banners, session protocols, BOT team, RULE-15 through RULE-19) is the source of truth — read that file when in doubt. Never edit this repo file in isolation; KEEPER syncs both at session close.
 >
@@ -9,8 +9,20 @@
 > + correctness. 4-tier risk classification (1: observation, 2: mechanical fix with deploy gate,
 > 3: SAGE-gated architectural, 4: production mutation = hard stop). Hard stop conditions: deploy
 > red after 2 retries, >5 Tier 3 queued, any Tier 4 surface. Full rule text + tier definitions
-> live in vault CLAUDE.md banner. **This commit is the safety anchor before the first autonomous
-> loop run.** If the overnight loop drifts, `git reset --hard` to this commit recovers.
+> live in vault CLAUDE.md banner.
+>
+> **RULE-19 amendment #1 locked 2026-05-24:** ">5 Tier 3 queued" counts only items needing
+> genuine Builder rulings (business judgment, product strategy). Vault hygiene items SAGE
+> can rule on under standing authority don't count against the cap.
+>
+> **RULE-19 amendment #2 locked 2026-05-26:** Every loop run MUST begin with
+> `git fetch origin && git log <safety-anchor>..origin/main --oneline` BEFORE any subagent
+> dispatch. If origin/main is ahead of the safety anchor, STOP and surface to Builder;
+> reconcile or re-anchor before proceeding. Safety anchor commits must be re-stated per-run,
+> not carried across multiple runs in a single day. Trigger: runs #1-#3 on 2026-05-26
+> operated from stale anchor `88548e0` while parallel session shipped 6 commits same day;
+> ~30 min reconciliation wasted but the operating model itself was validated (two sessions
+> independently produced word-for-word identical fix text).
 
 > **Read this file before writing a single line of code. Then read `AccessSync/open_items.md`. Then read the spec for what you're building.**
 
@@ -214,7 +226,7 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 |---|---|
 | `member_master` | One row per human per client. UNIQUE `(client_id, source_platform, platform_member_id)`. Email + name + `source_tag` for Layer A delete guard (DR-045). |
 | `member_billing` | One row per (client_id, wix_order_id, cycle_index) — A10 strengthened UNIQUE. `billing_snapshot` jsonb captures Wix order pricing at grant time (DR-042). |
-| `member_access` | **One row per person per client (DR-046).** UNIQUE `(member_master_id, client_id)`. Status enum: `active` / `inactive` / `in_flight` / `pending_identity`. `active` if ≥1 source active. |
+| `member_access` | **One row per person per client (DR-046).** UNIQUE `(member_master_id, client_id)`. Status enum (5 values post-OB-202 2026-05-26): `active` / `inactive` / `in_flight` / `pending_identity` / `recovery_pending` (transient retry state). `active` if ≥1 source active. |
 | `member_access_sources` | One row per Kisi role assignment + reason. UNIQUE `(client_id, access_id, source_type, source_plan_id, hardware_group_id)` — A9. `client_id NOT NULL` FK CASCADE. Status enum: `draft` / `active` / `pending_hardware` / `pending_start` / `failed` / `cancelled` / `revoked`. |
 | `member_access_log` | Lifecycle audit log. Trace-enriched (DR-037). |
 
@@ -223,7 +235,7 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 | Table | Purpose |
 |---|---|
 | `clients` | One row per operator account. `hardware_api_key` (encrypted, DR-028), `notification_email`, `first_grant_sent`, `last_webhook_at`, `wix_api_key` (encrypted), `source_site_name`, `kisi_user_pattern` ('invited' default, DR-043). |
-| `locations` | One row per physical location. `hardware_api_key` (per-location override, encrypted), `hardware_key_last_verified`, `hardware_key_last_error`. |
+| `locations` | One row per physical location. `hardware_api_key` (per-location override, encrypted). Hardware key freshness columns (`hardware_key_last_verified` / `hardware_key_last_error`) **dropped in S-10/S-11 cutover 2026-05-12** — canonical home is now `connector_subscriptions.key_last_verified` / `key_last_error` (DR-036). |
 | `plan_mappings` | Maps `source_plan_id` to location. `access_type`, `plan_name`, `door_name`, `status`. Multi-group via `plan_mapping_groups` junction. |
 | `plan_mapping_groups` | Junction table for multi-door plan mappings — one row per (mapping_id, hardware_group_id). |
 
