@@ -2005,9 +2005,36 @@ router.get('/:clientId/members', async (req, res) => {
                     LIMIT 1
                   )
                 )                                AS plan_name,
-                -- A1 fix: billing snapshot lives on member_billing, joined via mas.billing_id.
-                -- The most-recent active source's billing row carries the rate / coupon / autoRenew.
-                -- Returned for back-compat — single representative snapshot for legacy callers.
+                -- Per-plan billing pulled from v_active_members (canonical DB view that
+                -- extracts plan_price/cycle_unit/monthly_rate/coupon/auto_renew/payment from
+                -- member_billing.billing_snapshot JSON). One row per (member × plan) — we
+                -- aggregate into a JSONB array aligned with plan_names[] order.
+                --
+                -- Why a view: keeps JSON parsing in the DB, gives us monthly_rate normalization
+                -- (YEAR plans /12) for free, and any other surface needing billing rows can
+                -- read the same view instead of re-rolling the JSON.
+                (
+                  SELECT JSONB_AGG(
+                    JSONB_BUILD_OBJECT(
+                      'planName',          vam.plan_name,
+                      'planPrice',         vam.plan_price,
+                      'cycleUnit',         vam.cycle_unit,
+                      'monthlyRate',       vam.monthly_rate,
+                      'currency',          vam.currency,
+                      'couponCode',        vam.coupon_code,
+                      'couponAmount',      vam.coupon_amount,
+                      'autoRenew',         vam.auto_renew,
+                      'lastPaymentStatus', vam.last_payment_status,
+                      'beginDate',         vam.begin_date,
+                      'endDate',           vam.end_date
+                    )
+                    ORDER BY vam.plan_name
+                  )
+                  FROM v_active_members vam
+                  WHERE vam.email = mm.email
+                )                                AS plan_billings,
+                -- Back-compat: legacy callers expect a single billing_snapshot field. Return
+                -- the first plan's raw snapshot as a representative row.
                 (
                   SELECT mb.billing_snapshot
                   FROM member_access_sources mas
@@ -2018,42 +2045,6 @@ router.get('/:clientId/members', async (req, res) => {
                   ORDER BY mas.created_at DESC
                   LIMIT 1
                 )                                AS billing_snapshot,
-                -- Per-plan billing snapshots aligned with plan_names[] array (same ORDER BY pm.plan_name).
-                -- A holder with 5 plans needs 5 distinct snapshots — Couples is $600/YEAR, First Responder
-                -- is $30/MONTH, etc. Without this the UI fans the LIMIT-1 snapshot out to every plan row.
-                COALESCE(
-                  (
-                    SELECT ARRAY_AGG(plan_snap.snap ORDER BY plan_snap.plan_name)
-                    FROM (
-                      SELECT DISTINCT ON (pm.plan_name)
-                             pm.plan_name,
-                             mb.billing_snapshot AS snap
-                      FROM member_access_sources mas
-                      JOIN plan_mappings pm ON pm.id = mas.mapping_id
-                      LEFT JOIN member_billing mb ON mb.id = mas.billing_id
-                      WHERE mas.access_id = ma.id
-                        AND mas.status NOT IN ('cancelled','revoked')
-                        AND pm.plan_name IS NOT NULL
-                      ORDER BY pm.plan_name, mas.created_at DESC
-                    ) plan_snap
-                  ),
-                  (
-                    SELECT ARRAY_AGG(plan_snap.snap ORDER BY plan_snap.plan_name)
-                    FROM (
-                      SELECT DISTINCT ON (pm.plan_name)
-                             pm.plan_name,
-                             mb.billing_snapshot AS snap
-                      FROM member_access sub_ma
-                      JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
-                      JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
-                      LEFT JOIN member_billing mb ON mb.id = sub_mas.billing_id
-                      WHERE sub_ma.sub_master_id = ma.member_master_id
-                        AND sub_mas.status NOT IN ('cancelled','revoked')
-                        AND pm.plan_name IS NOT NULL
-                      ORDER BY pm.plan_name, sub_mas.created_at DESC
-                    ) plan_snap
-                  )
-                )                                AS billing_snapshots,
                 -- Count of source rows that are active or in-progress (not cancelled/revoked).
                 (
                   SELECT COUNT(*)::int

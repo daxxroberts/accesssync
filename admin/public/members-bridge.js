@@ -99,6 +99,34 @@
     };
   }
 
+  // Build the same display shape from a v_active_members row (already-extracted columns,
+  // no JSON parsing). The view returns numeric strings for plan_price/monthly_rate/coupon_amount.
+  function shapeBillingFromView(pb) {
+    if (!pb) return shapeBilling(null);
+    // Reuse formatRate by reconstructing the snapshot shape it expects.
+    var pseudoSnap = {
+      planPrice:         pb.planPrice,
+      cycleUnit:         pb.cycleUnit,
+      cycleCount:        1,
+      currency:          pb.currency,
+      autoRenewCanceled: pb.autoRenew === false,  // view returns auto_renew=true means NOT cancelled
+      lastPaymentStatus: pb.lastPaymentStatus,
+      coupon:            pb.couponCode ? { code: pb.couponCode, amount: pb.couponAmount } : null,
+    };
+    return {
+      raw:               pseudoSnap,
+      rate:              formatRate(pseudoSnap),
+      coupon:            formatCouponLine(pseudoSnap),
+      autoRenewCanceled: pseudoSnap.autoRenewCanceled,
+      lastPaymentStatus: pb.lastPaymentStatus,
+      subscriptionId:    null,  // view doesn't expose; subscription tracking lives elsewhere
+      orderId:           null,
+      monthlyRate:       pb.monthlyRate,  // NEW: normalized cross-cycle comparison value
+      beginDate:         pb.beginDate,
+      endDate:           pb.endDate,
+    };
+  }
+
   function formatDate(ts) {
     if (!ts) return "—";
     try {
@@ -244,15 +272,26 @@
           billingMemberName = (personRow.first + " " + personRow.last).trim() || personRow.email || "—";
         }
 
-        // One plan entry per name in the array. API now returns billing_snapshots[] aligned
-        // with plan_names[] (same ORDER BY pm.plan_name) — use the per-plan snapshot when
-        // available, fall back to the person-level snapshot for legacy/sub rows that don't
-        // surface the array yet. Fixes the "all plans show First Responder $30" bug where
-        // a single LIMIT-1 snapshot was fanned out to every plan row.
-        var perPlanSnaps = Array.isArray(accessRow.billing_snapshots) ? accessRow.billing_snapshots : null;
+        // One plan entry per name in the array. Per-plan billing comes from
+        // accessRow.plan_billings[] — an array of structured billing objects from
+        // v_active_members (DB view, no client-side JSON parsing). Indexed by plan name
+        // (both arrays ORDER BY plan_name). Falls back to legacy person-level snapshot
+        // for sub-member rows where the view filter excludes them.
+        var planBillingsByName = {};
+        if (Array.isArray(accessRow.plan_billings)) {
+          accessRow.plan_billings.forEach(function (pb) {
+            if (pb && pb.planName) planBillingsByName[pb.planName] = pb;
+          });
+        }
         planNames.forEach(function (name, idx) {
-          var snapForThisPlan = (perPlanSnaps && perPlanSnaps[idx]) || accessRow.billing_snapshot || null;
-          var planBilling = shapeBilling(snapForThisPlan);
+          var pb = planBillingsByName[name] || null;
+          var planBilling;
+          if (pb) {
+            planBilling = shapeBillingFromView(pb);
+          } else {
+            // Legacy fallback — sub-member rows, inactive members not in v_active_members.
+            planBilling = shapeBilling(accessRow.billing_snapshot || null);
+          }
           plans.push({
             accessId:          accessRow.id,
             planName:          name,
