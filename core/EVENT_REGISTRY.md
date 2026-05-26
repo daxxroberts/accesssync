@@ -58,6 +58,7 @@ New events require an entry before shipping. Events without entries are flagged 
 |---|---|---|
 | `queue.job.start` | info | Job dequeued from BullMQ and processing started |
 | `queue.job.complete` | info | Job completed successfully |
+| `queue.grant.complete` | info | **PERSISTED via EVENT_REGISTRY.json override.** Final success line for a grant — fires after member_access status flip in_flight→active. Closes the trace timeline. |
 | `queue.job.failed` | error | Job failed — includes lastStep and error details |
 | `queue.job.missing_trace_id` | error | Job payload has no traceId — rejected before processing (enforcement gate) |
 | `queue.grant.plan_unknown` | warn | No active plan mappings found for this planId |
@@ -147,7 +148,7 @@ New events require an entry before shipping. Events without entries are flagged 
 |---|---|---|
 | `kisi.request` | debug | Outbound Kisi API request — every call logged with method + endpoint + retry attempt |
 | `kisi.response.success` | debug | Successful 2xx response from Kisi |
-| `kisi.response.error` | error | Non-2xx response from Kisi — full structured context (status, Kisi body code/message, mapped error code) before throw |
+| `kisi.response.error` | error / **warn** | Non-2xx response from Kisi — full structured context (status, Kisi body code/message, mapped error code) before throw. **Demoted to `warn` when the adapter layer is known to recover idempotently:** HTTP 409 on POST `/role_assignments` (assignRole) + HTTP 404 on DELETE `/role_assignments` (removeRole, OB-147). `recoverable: true` flag included on these warns. |
 | `kisi.rate_limit.backoff` | warn | 429 response — sleeping before retry |
 | `kisi.rate_limit.exhausted` | error | 429 retry budget exhausted (3 attempts) |
 | `kisi.user.created` | info | New Kisi user created via createUser |
@@ -157,6 +158,7 @@ New events require an entry before shipping. Events without entries are flagged 
 | `kisi.user.delete_skipped_foreign` | warn | OB-125: deleteUser skipped because `member_identity.source_tag` is not `'accesssync'` — Kisi user identity may be shared with admin/staff or non-AccessSync grants and must not be deleted. AccessSync-side cleanup still proceeds (audit log + config_alert_log written). |
 | `kisi.role.assigning` / `kisi.role.assigned` / `kisi.role.assign_failed` | info / info / error | assignRole lifecycle (grant flow) |
 | `kisi.role.already_exists` | info | 409 on assignRole — idempotent success, existing assignment fetched |
+| `kisi.role.recovery_succeeded` | info | **PERSISTED via EVENT_REGISTRY.json override.** Pairs with `already_exists` — fires once the existing role assignment ID is in hand. Closes the recovery story in the trace timeline. |
 | `kisi.role.conflict_unresolvable` | warn | 409 on assignRole but existing record could not be retrieved |
 | `kisi.role.removing` / `kisi.role.removed` / `kisi.role.remove_failed` | info / info / error | removeRole lifecycle (revoke flow) |
 | `kisi.role.remove_skipped_already_gone` | info | OB-147: 404 on removeRole — role already gone, treated as idempotent success |

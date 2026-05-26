@@ -125,13 +125,27 @@ class KisiConnector {
       // OB-153: log full error context with structured Kisi body before throwing.
       // Preserves status code + Kisi body + mapped code for downstream debugging
       // even when error propagation flattens to a string at some boundary.
-      log.error('kisi.response.error', {
-        method: options.method || 'GET',
+      //
+      // Level selection: status codes that the adapter layer is known to recover
+      // from idempotently are logged at WARN instead of ERROR. The connector has
+      // no upper-layer context, but these are well-defined idempotent-success
+      // shapes that should not pollute error counts or trip alert paths.
+      //   - 409 on POST /role_assignments → kisi-adapter.js:158 reuses existing
+      //   - 404 on DELETE /role_assignments → kisi-adapter.js OB-147 treats as success
+      // All other 4xx/5xx stay at ERROR (real failures the operator must see).
+      const method = options.method || 'GET';
+      const isLikelyRecoverable =
+        (response.status === 409 && method === 'POST'   && endpoint.startsWith('/role_assignments')) ||
+        (response.status === 404 && method === 'DELETE' && endpoint.startsWith('/role_assignments'));
+      const logFn = isLikelyRecoverable ? log.warn : log.error;
+      logFn('kisi.response.error', {
+        method,
         endpoint,
         statusCode: response.status,
         kisiCode: errorBody?.code || null,
         kisiMessage: errorBody?.message || response.statusText,
         mappedCode: mapped.code,
+        recoverable: isLikelyRecoverable,
       });
 
       const error = new Error(`Kisi ${response.status}: ${errorBody?.message || response.statusText}`);

@@ -163,7 +163,12 @@ class KisiAdapter {
           apiKey
         );
         const match = Array.isArray(existing) ? existing[0] : null;
-        if (match?.id) return match.id;
+        if (match?.id) {
+          // Pair with kisi.role.already_exists so the trace shows the recovery
+          // landed cleanly. EVENT_REGISTRY override persists this info event.
+          log.info('kisi.role.recovery_succeeded', { userId, groupId, roleAssignmentId: match.id });
+          return match.id;
+        }
         // Kisi confirmed 409 but we can't retrieve the ID — surface as unknown
         log.warn('kisi.role.conflict_unresolvable', { userId, groupId });
         throw err;

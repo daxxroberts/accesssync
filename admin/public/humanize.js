@@ -119,6 +119,28 @@
       return 'Member record loaded for grant — ' + who + '.';
     if (e === 'wix.parse.unpaid_order_dropped' || e === 'WIX_PARSE_UNPAID_ORDER_DROPPED')
       return 'Unpaid Wix order dropped — no access granted (expected; will retry when payment lands).';
+
+    // Kisi connector + adapter events. 409 on POST /role_assignments is an
+    // idempotent-success path (DR-045 recovery) — render the warn line so it
+    // reads as expected behavior, not a failure.
+    if (e === 'kisi.response.error' || e === 'KISI_RESPONSE_ERROR') {
+      var ks = ev.payload && ev.payload.statusCode;
+      var kc = ev.payload && ev.payload.kisiCode;
+      var km = ev.payload && ev.payload.kisiMessage;
+      if (ks === 409 && kc === '000409')
+        return 'Kisi reported the role assignment already exists — recovered by reusing it.';
+      return 'Kisi API call failed (HTTP ' + (ks || '?') + (kc ? ', code ' + kc : '') + (km ? ': ' + km : '') + ').';
+    }
+    if (e === 'kisi.role.already_exists' || e === 'KISI_ROLE_ALREADY_EXISTS')
+      return 'Kisi already has this role assignment — checking for the existing record.';
+    if (e === 'kisi.role.recovery_succeeded' || e === 'KISI_ROLE_RECOVERY_SUCCEEDED')
+      return '✓ Kisi role recovery succeeded — reusing existing assignment.';
+    if (e === 'kisi.role.conflict_unresolvable' || e === 'KISI_ROLE_CONFLICT_UNRESOLVABLE')
+      return "Kisi said the assignment exists but we can't find it — manual investigation needed.";
+    if (e === 'kisi.role.assign_failed' || e === 'KISI_ROLE_ASSIGN_FAILED')
+      return 'Kisi rejected the role assignment — ' + who + ' did not receive door access.';
+    if (e === 'queue.grant.complete' || e === 'QUEUE_GRANT_COMPLETE')
+      return '✓ Grant complete for ' + who + ' — access is now active.';
     if (e === 'DB_SLOW_QUERY')                    return 'A database query took longer than the threshold.';
     if (e === 'ADAPTER_NO_IDENTITY')              return 'Revoke skipped — no identity record for this member.';
     if (e === 'QUEUE_REVOKE_NO_IDENTITY')         return 'Cancel arrived for a member we never provisioned.';
@@ -209,11 +231,17 @@
 
   // Events that signal a happy end-state — render green. Currently the
   // member_access_log "provisioned"/"granted" rows, which only INSERT when a
-  // real hardware call landed (DR-034 / OB-48).
+  // real hardware call landed (DR-034 / OB-48), plus the closing
+  // queue.grant.complete event that lands after status flips to active, and
+  // the Kisi recovery-succeeded event that closes the idempotent 409 path.
   var SUCCESS_EVENTS = {
-    'provisioned': true,
-    'granted':     true,
-    'reactivated': true,
+    'provisioned':                  true,
+    'granted':                      true,
+    'reactivated':                  true,
+    'queue.grant.complete':         true,
+    'QUEUE_GRANT_COMPLETE':         true,
+    'kisi.role.recovery_succeeded': true,
+    'KISI_ROLE_RECOVERY_SUCCEEDED': true,
   };
 
   /** Map a v_trace_timeline result column to a normalized severity bucket. */

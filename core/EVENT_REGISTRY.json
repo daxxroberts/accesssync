@@ -11,6 +11,8 @@
     "admin.scheduler.reconcile_start":    { "persist": true },
     "admin.scheduler.reconcile_complete": { "persist": true },
     "admin.scheduler.reconcile_failed":   { "persist": true },
-    "reconciliation.stale_reset":         { "persist": true }
+    "reconciliation.stale_reset":         { "persist": true },
+    "queue.grant.complete":               { "persist": true },
+    "kisi.role.recovery_succeeded":       { "persist": true }
   }
 }
