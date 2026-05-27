@@ -109,14 +109,6 @@
       display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
     }
     .plan-summary-stale { font-size: 14px; color: var(--amber, #F59E0B); }
-    /* OB-209 Finding A: shared-group collision warning pill (Sprint 5.4) */
-    .plan-summary-shared {
-      font-size: 10px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.04em; padding: 3px 8px; border-radius: 6px;
-      background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;
-      display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
-    }
-    .plan-summary-shared::before { content: '\26A0'; font-size: 11px; }
     .plan-summary-chips {
       display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
     }
@@ -564,32 +556,6 @@
       });
     }
 
-    // OB-209 Finding A — Sprint 5.4 shared-group collision detection.
-    // For each plan, count the number of OTHER plans (in the same client/location set)
-    // that share at least one hardware_group_id. Sets plan._sharedGroupCount.
-    // HOG live state (2026-05-26): Couples-{66e57a, 8323a3} both → TestGroup1;
-    // Family-{95b490, e083e1} both → Entrance Door Access Group.
-    function computeSharedGroupCounts(allPlans) {
-      // Build gid → [planId, ...] index
-      var gidToPlanIds = {};
-      allPlans.forEach(function(p) {
-        if (!p.groupIds) return;
-        p.groupIds.forEach(function(gid) {
-          if (!gidToPlanIds[gid]) gidToPlanIds[gid] = [];
-          if (gidToPlanIds[gid].indexOf(p.id) === -1) gidToPlanIds[gid].push(p.id);
-        });
-      });
-      allPlans.forEach(function(p) {
-        var sharedPeers = {};
-        (p.groupIds || []).forEach(function(gid) {
-          (gidToPlanIds[gid] || []).forEach(function(peerId) {
-            if (peerId !== p.id) sharedPeers[peerId] = true;
-          });
-        });
-        p._sharedGroupCount = Object.keys(sharedPeers).length;
-      });
-    }
-
     // ═══════════════════════════════════════
     // Data
     // ═══════════════════════════════════════
@@ -665,11 +631,6 @@
 
       var archivedBadge = plan.sourceStatus === 'archived' ? '<span class="plan-badge-archived">Archived</span>' : '';
       var staleWarning = getStaleGroupIds(plan).length > 0 ? '<span class="plan-summary-stale" title="Stale group detected">&#9888;</span>' : '';
-      // OB-209 Finding A — Sprint 5.4 amber shared-group badge.
-      var sharedCount = plan._sharedGroupCount || 0;
-      var sharedBadge = sharedCount > 0
-        ? '<span class="plan-summary-shared" title="This plan shares at least one ' + groupLabel().toLowerCase() + ' with ' + sharedCount + ' other plan' + (sharedCount === 1 ? '' : 's') + '">Shared with ' + sharedCount + ' other plan' + (sharedCount === 1 ? '' : 's') + '</span>'
-        : '';
 
       // Summary stat pills
       var groupCount = plan.groupIds ? plan.groupIds.length : 0;
@@ -706,7 +667,7 @@
           '<div class="plan-summary-left">' +
             '<div class="plan-icon ' + iconClass + '" style="width:36px;height:36px;font-size:17px;">' + icon + '</div>' +
             '<div class="plan-summary-text">' +
-              '<div class="plan-name">' + esc(plan.name) + archivedBadge + staleWarning + sharedBadge + '</div>' +
+              '<div class="plan-name">' + esc(plan.name) + archivedBadge + staleWarning + '</div>' +
               '<div class="plan-summary-chips">' +
                 (isUnmapped ? '<span class="plan-type-badge unlinked">Not Mapped</span>' : '') +
                 statusChip +
@@ -1297,10 +1258,41 @@
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    // Builder feedback 2026-05-27: refresh was showing stale data because
+    // window.location.reload() doesn't bust browser GET cache on the data
+    // endpoints. In-place reload via refreshLegacyMappings() forces fresh
+    // GETs (cache: 'no-store' added below to mapping fetches) and gives the
+    // operator immediate visible feedback (toast + button state).
     function refreshPlans() {
       var btn = document.getElementById('refreshPlansBtn');
-      btn.disabled = true; btn.textContent = 'Refreshing…';
-      window.location.reload();
+      if (!btn) return;
+      btn.disabled = true;
+      var prevLabel = btn.textContent;
+      btn.textContent = 'Refreshing…';
+      console.log('[plan-mapping] refresh: reloading mappings + groups (cache-busting)');
+      var done = function(ok) {
+        btn.disabled = false;
+        btn.textContent = prevLabel || '↻ Refresh Plans';
+        if (ok) {
+          showToast('success', 'Plans refreshed');
+        } else {
+          showToast('error', 'Refresh failed — check console');
+        }
+      };
+      if (typeof window.refreshLegacyMappings === 'function') {
+        try {
+          window.refreshLegacyMappings();
+          // refreshLegacyMappings is fire-and-forget; give the chained promises
+          // a tick to settle before re-enabling the button.
+          setTimeout(function() { done(true); }, 600);
+        } catch (e) {
+          console.error('[plan-mapping] refresh failed', e);
+          done(false);
+        }
+      } else {
+        // Fallback: hard reload if the in-place reloader isn't wired yet.
+        window.location.reload();
+      }
     }
 
     // ═══════════════════════════════════════
@@ -1316,7 +1308,8 @@
       document.getElementById('refreshPlansBtn').style.display = '';
 
       // 1. Load hardware groups — handles missing key, invalid key, permission errors, and no groups
-      apiFetch('/operator/clients/' + clientId + '/kisi-groups')
+      // cache: 'no-store' added 2026-05-27 (Builder feedback) so refresh shows fresh hardware-platform data.
+      apiFetch('/operator/clients/' + clientId + '/kisi-groups', { cache: 'no-store' })
         .then(function(r) { return r.json().catch(function() { return { groups: [], keyStatus: 'error' }; }); })
         .then(function(d) {
           var keyStatus = d.keyStatus || (d.noKey ? 'missing' : 'ok');
@@ -1382,13 +1375,14 @@
       // 2 + 3. Load Wix plans and mappings in parallel, then merge price/type data.
       // Previously sequential with a 500ms delay — caused a race where prices arrived null.
       var wixPlansUrl = '/operator/' + clientId + '/wix-plans' + (locationId ? '?locationId=' + locationId : '');
-      var wixPlansFetch = apiFetch(wixPlansUrl)
+      // cache: 'no-store' on all data GETs so the Refresh button shows fresh data (2026-05-27).
+      var wixPlansFetch = apiFetch(wixPlansUrl, { cache: 'no-store' })
         .then(function(r) { return r.json(); })
         .catch(function(e) { console.error('Wix plans load error:', e); return { plans: [] }; });
 
       var locationFetch = locationId
         ? Promise.resolve(locationId)
-        : apiFetch('/operator/' + clientId + '/locations')
+        : apiFetch('/operator/' + clientId + '/locations', { cache: 'no-store' })
             .then(function(r) { return r.json(); })
             .then(function(d) {
               var locs = d.locations || d.data || [];
@@ -1414,11 +1408,12 @@
       });
 
       // Expose for toggle refresh — called when switching back to Classic View
+      // AND by the Refresh Plans button (2026-05-27 Builder fix).
       window.refreshLegacyMappings = function() {
         if (locationId) {
           loadMappingsForLocation(clientId, locationId);
         } else {
-          apiFetch('/operator/' + clientId + '/locations')
+          apiFetch('/operator/' + clientId + '/locations', { cache: 'no-store' })
             .then(function(r) { return r.json(); })
             .then(function(d) {
               var locs = d.locations || d.data || [];
@@ -1428,14 +1423,15 @@
       };
 
       function loadMappingsForLocation(cid, lid) {
-        apiFetch('/operator/' + cid + '/locations/' + lid + '/mappings')
+        // cache: 'no-store' so Refresh shows fresh mappings + groups (2026-05-27).
+        apiFetch('/operator/' + cid + '/locations/' + lid + '/mappings', { cache: 'no-store' })
           .then(function(r) { return r.json(); })
           .then(function(d) {
             if (!d.mappings) return;
 
             // Load groups for each mapping in parallel
             var groupPromises = d.mappings.map(function(m) {
-              return apiFetch('/operator/' + cid + '/plan-mappings/' + m.id + '/groups')
+              return apiFetch('/operator/' + cid + '/plan-mappings/' + m.id + '/groups', { cache: 'no-store' })
                 .then(function(r) { return r.json(); })
                 .then(function(gd) { return { mappingId: m.id, groups: gd.groups || [] }; })
                 .catch(function() { return { mappingId: m.id, groups: [] }; });
@@ -1493,10 +1489,6 @@
                   p._familySuggestion = true;
                 }
               });
-              // OB-209 Finding A: shared-group collision detection (Sprint 5.4)
-              // For each plan, count how many OTHER plans share at least one hardware_group_id.
-              computeSharedGroupCounts(plans);
-
               // Fetch occupant data for multi-member plans before first render.
               // The endpoint returns one row per role assignment (holder OR sub).
               // We display counts as "N members" — the union of buyer-as-slot + sub-members.
@@ -1539,8 +1531,13 @@
           }).catch(function(e) { console.error('Mappings load error:', e); });
       }
 
-      // Override saveChanges to POST to API
+      // Override saveChanges to POST to API.
+      // Builder feedback 2026-05-27: previous override gave no visible feedback
+      // on click — no Saving... state, no console trace, silent partial-failure
+      // window. Hardened with explicit button state, console.log breadcrumbs,
+      // and a guaranteed toast on every code path so silent failure is impossible.
       saveChanges = function() {
+        var saveBtn = document.querySelector('.save-bar .save-btn.primary');
         var original = JSON.parse(originalState);
         var changed = plans.filter(function(plan) {
           var orig = original.find(function(o) { return o.id === plan.id; });
@@ -1550,10 +1547,14 @@
               || plan.maxMembers !== orig.maxMembers
               || plan.status !== orig.status;
         });
+        console.log('[plan-mapping] saveChanges clicked — changed plans:', changed.length, changed.map(function(p) { return p.id; }));
         if (!changed.length) {
           showToast('info', 'No changes to save');
           return;
         }
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+        var failures = [];
         var promises = changed.map(function(plan) {
           var groups = plan.groupIds.map(function(gid) {
             var g = PLATFORM_GROUPS.find(function(x) { return x.id === gid; });
@@ -1569,20 +1570,34 @@
               status: plan.status,
             })
           }).then(function(r) {
-            if (!r.ok) throw new Error('Failed to save ' + (plan.name || 'plan'));
+            if (!r.ok) {
+              failures.push((plan.name || plan.id) + ' (HTTP ' + r.status + ')');
+              console.error('[plan-mapping] PATCH failed', plan.id, r.status);
+              return null;
+            }
             return r;
+          }).catch(function(err) {
+            failures.push((plan.name || plan.id) + ' (' + (err && err.message || 'network error') + ')');
+            console.error('[plan-mapping] PATCH error', plan.id, err);
+            return null;
           });
         });
-        Promise.all(promises)
-          .then(function() {
+        // Use Promise.all (not race) so all PATCHes complete before UI settles.
+        // Per-promise catches above prevent short-circuiting.
+        Promise.all(promises).then(function() {
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Changes'; }
+          if (failures.length === 0) {
             originalState = JSON.stringify(plans);
             dirty = false;
             document.getElementById('saveBar').classList.remove('visible');
-            showToast('success', 'Mappings saved to AccessSync');
-          })
-          .catch(function(e) {
-            showToast('error', 'Save failed: ' + e.message);
-          });
+            try { sessionStorage.removeItem(_draftKey); } catch (e) {}
+            console.log('[plan-mapping] save complete — ' + changed.length + ' plan(s) saved');
+            showToast('success', changed.length + ' plan' + (changed.length !== 1 ? 's' : '') + ' saved');
+          } else {
+            console.error('[plan-mapping] save partial failure:', failures);
+            showToast('error', 'Save failed for ' + failures.length + ' of ' + changed.length + ': ' + failures.join('; '));
+          }
+        });
       };
     })();
   </script>

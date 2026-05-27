@@ -221,6 +221,66 @@ Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='rev
 | `admin.scheduler.reconcile_start` | warn | In-process scheduler kicked off the nightly reconcile sweep (OB-197). |
 | `admin.scheduler.reconcile_complete` | warn | In-process scheduler nightly reconcile sweep finished cleanly (OB-197). |
 | `admin.scheduler.reconcile_failed` | error | In-process scheduler nightly reconcile sweep threw (OB-197). Persist override is redundant-but-explicit. |
+| `admin.wix_instance_wired` | info | **PERSISTED via EVENT_REGISTRY.json override (2026-05-27).** Wix App signed-instance verified and `clients.platform_instance_id` wired to the operator's client row. |
+
+### Admin client/location mutation events (PERSISTED via EVENT_REGISTRY.json override, 2026-05-27)
+
+These admin-panel (owner) mutations were previously suppressed-by-default after OB-176 dropped info-level events. Restored to persist so Builder can see lifecycle changes in the trace timeline.
+
+| Event | Level | Description |
+|---|---|---|
+| `admin.client_created` | info | Owner created a new client account from Admin Panel |
+| `admin.client_archived` | info | Owner archived a client (soft-delete via `archived_at`) |
+| `admin.client_restored` | info | Owner restored a previously archived client |
+| `admin.client_deleted` | info | Owner hard-deleted a client record |
+| `admin.api_key_set` | info | Owner saved a client-level hardware API key (org default) |
+| `admin.location_created` | info | Owner created a new location for a client |
+| `admin.location_reactivated` | info | Owner reactivated a previously suspended location |
+| `admin.location_activated` | info | Owner activated a location (lifecycle gate) |
+| `admin.location_api_key_set` | info | Owner saved a per-location hardware API key override |
+| `admin.activate_location_done` | info | Activate-location workflow completed successfully |
+| `admin.lapse_trigger` | info | Owner triggered location-lapse suspend/activate path |
+
+### Admin sub-member mutation events (PERSISTED via EVENT_REGISTRY.json override, 2026-05-27)
+
+Member Hub family-plan workflow events (DR-040 + DR-044). Restored to persist so sub-member draft/submit/revoke history shows in the trace timeline.
+
+| Event | Level | Description |
+|---|---|---|
+| `admin.sub_member_added` | info | Sub-member draft row inserted under a holder |
+| `admin.sub_member_updated` | info | Sub-member draft fields updated |
+| `admin.sub_member_deleted` | info | Sub-member draft hard-deleted (status='draft' path per DR-044) |
+| `admin.sub_member_revoke_queued` | info | Submitted/active sub-member revoke job enqueued (entering 'removing' state per DR-044) |
+| `admin.sub_member_removed` | info | Sub-member removal pathway summary line |
+| `admin.sub_member_grant_queued` | info | Submitted sub-member draft promoted — grant job enqueued |
+| `admin.sub_members_submitted` | info | Holder submitted N sub-member drafts (batch) |
+| `admin.holder_claim_slot_queued` | info | Holder claimed an open sub-member slot for themselves — grant enqueued |
+| `admin.holder_release_slot_queued` | info | Holder released their claimed slot — revoke enqueued |
+
+---
+
+## Operator Routes Events (PERSISTED via EVENT_REGISTRY.json override, 2026-05-27)
+
+Operator-portal (per-client operator scope) mutation events. All persisted-by-override so the operator sees plan-mapping/save/sync activity in the trace timeline.
+
+| Event | Level | Description |
+|---|---|---|
+| `operator.sync.granted` | info | Per-mapping reconcile granted a hardware role for a member (mapping_activated or group_added context) |
+| `operator.sync.revoked` | info | Per-mapping reconcile revoked a hardware role for a member (mapping_deactivated or group_removed context) |
+| `operator.sync.revoke_skipped` | info | Revoke skipped because other-mapping grants still hold access for the same group |
+| `operator.sync.manual_run` | info | Operator triggered an ad-hoc per-client sync run |
+| `operator.location.reactivated` | info | Operator reactivated a location and mapping fan-out completed |
+| `operator.location.apikey_set` | info | Operator saved a per-location hardware API key from the operator portal |
+| `operator.retry.pending_hardware` | info | Operator triggered retry of pending_hardware members for a client |
+| `operator.setup.bypass_accepted` | info | Operator bypass during onboarding accepted (owner PIN flow) |
+| `operator.setup.client_upserted` | info | Onboarding upserted (created or updated) the operator's client row |
+| `operator.setup.location_created` | info | Onboarding step created the operator's first location |
+| `operator.setup.apikey_set` | info | Onboarding step set the operator's hardware API key |
+| `operator.setup.location_activated` | info | Onboarding step activated the location (optional `created_bs` flag when a billing_subscriptions row was created in the same call) |
+| `operator.apikey.rotated` | info | Operator rotated the client-level hardware API key |
+| `operator.notification.updated` | info | Operator updated `notification_email` |
+| `operator.member.unlock` | info | Operator unlocked a stuck `in_flight` member back to `recovery_pending` (OB-202 path) |
+| `operator.member_sync.run` | info | Operator triggered per-member reconcile |
 
 ---
 

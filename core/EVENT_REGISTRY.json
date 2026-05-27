@@ -1,10 +1,13 @@
 {
   "$schema": "internal",
   "_meta": {
-    "version": "1.0",
+    "version": "1.1",
     "description": "Event persistence overrides (OB-176). Events not listed fall back to level-based default (warn+ persist, info suppressed). See EVENT_REGISTRY.md for the canonical event vocabulary.",
     "locked_at": "2026-05-26",
-    "ruled_by": "Builder Q7-Q10 ruling 2026-05-25"
+    "ruled_by": "Builder Q7-Q10 ruling 2026-05-25",
+    "amendments": [
+      "2026-05-27: Operator-action visibility pass. Added all admin.* + operator.* mutation events to overrides so Builder can see plan-mapping saves, API-key rotations, location/client lifecycle, and sub-member workflow in the trace timeline. Closes the OB-176 default-suppress operator-visibility gap surfaced in Builder feedback 2026-05-27."
+    ]
   },
   "overrides": {
     "admin.scheduler.armed":              { "persist": true },
@@ -13,6 +16,46 @@
     "admin.scheduler.reconcile_failed":   { "persist": true },
     "reconciliation.stale_reset":         { "persist": true },
     "queue.grant.complete":               { "persist": true },
-    "kisi.role.recovery_succeeded":       { "persist": true }
+    "kisi.role.recovery_succeeded":       { "persist": true },
+
+    "operator.sync.revoke_skipped":       { "persist": true },
+    "operator.sync.revoked":              { "persist": true },
+    "operator.sync.granted":              { "persist": true },
+    "operator.location.reactivated":      { "persist": true },
+    "operator.retry.pending_hardware":    { "persist": true },
+    "operator.setup.bypass_accepted":     { "persist": true },
+    "operator.setup.client_upserted":     { "persist": true },
+    "operator.setup.location_created":    { "persist": true },
+    "operator.setup.apikey_set":          { "persist": true },
+    "operator.setup.location_activated":  { "persist": true },
+    "operator.apikey.rotated":            { "persist": true },
+    "operator.notification.updated":      { "persist": true },
+    "operator.location.apikey_set":       { "persist": true },
+    "operator.member.unlock":             { "persist": true },
+    "operator.member_sync.run":           { "persist": true },
+    "operator.sync.manual_run":           { "persist": true },
+
+    "admin.activate_location_done":       { "persist": true },
+    "admin.client_created":               { "persist": true },
+    "admin.api_key_set":                  { "persist": true },
+    "admin.location_created":             { "persist": true },
+    "admin.location_reactivated":         { "persist": true },
+    "admin.location_api_key_set":         { "persist": true },
+    "admin.lapse_trigger":                { "persist": true },
+    "admin.location_activated":           { "persist": true },
+    "admin.client_archived":              { "persist": true },
+    "admin.client_restored":              { "persist": true },
+    "admin.client_deleted":               { "persist": true },
+    "admin.wix_instance_wired":           { "persist": true },
+
+    "admin.sub_member_added":             { "persist": true },
+    "admin.sub_member_updated":           { "persist": true },
+    "admin.sub_member_deleted":           { "persist": true },
+    "admin.sub_member_revoke_queued":     { "persist": true },
+    "admin.sub_member_removed":           { "persist": true },
+    "admin.sub_member_grant_queued":      { "persist": true },
+    "admin.sub_members_submitted":        { "persist": true },
+    "admin.holder_claim_slot_queued":     { "persist": true },
+    "admin.holder_release_slot_queued":   { "persist": true }
   }
 }
