@@ -253,7 +253,16 @@
         // (ARRAY_AGG with the same ORDER BY in the SQL). plan_names is authoritative for "how many
         // plans" — if it's empty, fall back to sub_plan_name (sub-member single-plan case) or
         // a single "Unknown Plan" entry so the row still renders.
-        var planNames = Array.isArray(accessRow.plan_names) ? accessRow.plan_names.filter(Boolean) : [];
+        // OB-223: prefer accessRow.plan_names_disambiguated[] when present — it's aggregated over
+        // distinct plan_mapping_ids (not collapsed by plan_name) so duplicate-named mappings each
+        // get their own entry, with " (…xxxxxx)" suffix applied server-side. Falls back to
+        // plan_names for older payloads or no-collision cases where shape is identical.
+        var planNamesDisambig = Array.isArray(accessRow.plan_names_disambiguated)
+          ? accessRow.plan_names_disambiguated.filter(Boolean)
+          : null;
+        var planNames = (planNamesDisambig && planNamesDisambig.length > 0)
+          ? planNamesDisambig
+          : (Array.isArray(accessRow.plan_names) ? accessRow.plan_names.filter(Boolean) : []);
         var planIds   = Array.isArray(accessRow.plan_ids)   ? accessRow.plan_ids   : [];
         var validUntils = Array.isArray(accessRow.plan_valid_untils) ? accessRow.plan_valid_untils : [];
 
@@ -284,7 +293,10 @@
           });
         }
         planNames.forEach(function (name, idx) {
-          var pb = planBillingsByName[name] || null;
+          // OB-223: when disambiguated, name is "Base Name (…xxxxxx)". plan_billings is keyed
+          // by raw plan_name from v_active_members, so strip the suffix for lookup.
+          var lookupName = name.replace(/\s*\(…[a-f0-9]{6}\)\s*$/i, '');
+          var pb = planBillingsByName[name] || planBillingsByName[lookupName] || null;
           var planBilling;
           if (pb) {
             planBilling = shapeBillingFromView(pb);

@@ -1920,7 +1920,7 @@ router.get('/:clientId/members', async (req, res) => {
     params.push(parseInt(limit));
     params.push(offset);
 
-    const [rows, countRow] = await Promise.all([
+    const [rows, countRow, mappingsRow] = await Promise.all([
       db.query(
         // S-11/DR-046: per-plan info comes via member_access_sources joined to plan_mappings.
         // billing_snapshot lives on member_billing, joined through mas.billing_id (A1 spec fix).
@@ -1974,6 +1974,29 @@ router.get('/:clientId/members', async (req, res) => {
                       AND pm.source_plan_id IS NOT NULL
                   )
                 )                                AS plan_ids,
+                -- OB-223 disambiguation support. Aggregate DISTINCT plan_mapping.id values
+                -- (NOT plan_name, so duplicate-name mappings stay separate entries) so the
+                -- JS layer can map each entry through a client-wide name-collision Map and
+                -- emit plan_names_disambiguated. Holder-fallback mirrors plan_names.
+                COALESCE(
+                  (
+                    SELECT ARRAY_AGG(DISTINCT pm.id ORDER BY pm.id)
+                    FROM member_access_sources mas
+                    JOIN plan_mappings pm ON pm.id = mas.mapping_id
+                    WHERE mas.access_id = ma.id
+                      AND mas.status NOT IN ('cancelled','revoked')
+                      AND pm.plan_name IS NOT NULL
+                  ),
+                  (
+                    SELECT ARRAY_AGG(DISTINCT pm.id ORDER BY pm.id)
+                    FROM member_access sub_ma
+                    JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
+                    JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
+                    WHERE sub_ma.sub_master_id = ma.member_master_id
+                      AND sub_mas.status NOT IN ('cancelled','revoked')
+                      AND pm.plan_name IS NOT NULL
+                  )
+                )                                AS plan_mapping_ids,
                 (
                   SELECT ARRAY_AGG(mas.valid_until ORDER BY pm.plan_name)
                   FROM member_access_sources mas
@@ -2123,7 +2146,41 @@ router.get('/:clientId/members', async (req, res) => {
          WHERE  ${conditions.join(' AND ')}`,
         params.slice(0, params.length - 2)
       ),
+      // OB-223: fetch client-wide plan_mappings for name-collision disambiguation. We need
+      // every mapping (across all locations) so a member who happens to be plumbed across
+      // them still gets unique labels. SQL is intentionally simple — JS handles the suffix
+      // logic so it mirrors disambiguatePlanNames() in operator-nav.js exactly.
+      db.query(
+        `SELECT id, plan_name, source_plan_id
+         FROM   plan_mappings
+         WHERE  client_id = $1`,
+        [clientId]
+      ),
     ]);
+
+    // OB-223: build collision-detection Map (mirrors disambiguatePlanNames in operator-nav.js).
+    // For each plan_name that appears > 1× in the client's plan_mappings, all members
+    // holding any of those mappings get their entry suffixed with " (…xxxxxx)" where xxxxxx
+    // is the last 6 chars of source_plan_id. Names without collisions are passed through.
+    const allMappings = (mappingsRow && mappingsRow.rows) || [];
+    const baseNameFor = (m) =>
+      m.plan_name || ('Plan ' + (m.source_plan_id ? String(m.source_plan_id).slice(-6) : ''));
+    const nameCount = {};
+    allMappings.forEach((m) => {
+      const n = baseNameFor(m);
+      nameCount[n] = (nameCount[n] || 0) + 1;
+    });
+    const disambigByMappingId = new Map();
+    const sourceIdByMappingId = new Map();
+    allMappings.forEach((m) => {
+      const n = baseNameFor(m);
+      if (nameCount[n] > 1 && m.source_plan_id) {
+        disambigByMappingId.set(m.id, n + ' (…' + String(m.source_plan_id).slice(-6) + ')');
+      } else {
+        disambigByMappingId.set(m.id, n);
+      }
+      sourceIdByMappingId.set(m.id, m.source_plan_id || null);
+    });
 
     // S-11/DR-046: derive effective_status from access_status + source-row counts.
     //   inactive + assignment_count > 0  → 'partial' (sources exist but none active —
@@ -2143,7 +2200,14 @@ router.get('/:clientId/members', async (req, res) => {
       if (m.role === 'holder' && m.access_status === 'active' && m.active_source_count === 0) {
         effectiveStatus = 'holder_only';
       }
-      return { ...m, effective_status: effectiveStatus };
+      // OB-223: parallel disambiguated names array. Aggregated over plan_mapping_ids[] (NOT
+      // collapsed by name) so members holding two same-named mappings get both entries with
+      // suffixes. members-bridge.js prefers this field over `plan_names` when present.
+      const planMappingIds = Array.isArray(m.plan_mapping_ids) ? m.plan_mapping_ids : [];
+      const planNamesDisambiguated = planMappingIds
+        .map((id) => disambigByMappingId.get(id))
+        .filter((n) => !!n);
+      return { ...m, effective_status: effectiveStatus, plan_names_disambiguated: planNamesDisambiguated };
     });
 
     res.json({
