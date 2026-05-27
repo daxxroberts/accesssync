@@ -306,15 +306,18 @@ class NightlyReconciliation {
         continue; // Outside AccessSync's universe — invisible to reconcile
       }
 
+      // OB-225 — Kisi returns userId/groupId as JS numbers; DB columns are varchar.
+      // Coerce both sides to text in JS AND cast columns to text in SQL so the
+      // pg driver can never infer an int OID that breaks the varchar comparison.
       const sourceCheck = await db.query(
         `SELECT mas.id, mas.status
          FROM member_access_sources mas
          JOIN member_access ma ON ma.id = mas.access_id
          WHERE ma.client_id = $1
-           AND ma.hardware_user_id = $2
-           AND mas.hardware_group_id = $3
+           AND ma.hardware_user_id::text = $2
+           AND mas.hardware_group_id::text = $3
          LIMIT 1`,
-        [client.id, assignment.userId, assignment.groupId]
+        [client.id, String(assignment.userId), String(assignment.groupId)]
       );
 
       if (sourceCheck.rows.length === 0) {
@@ -582,18 +585,19 @@ class NightlyReconciliation {
       if (!assignment.userId || !assignment.roleAssignmentId) continue;
       if (!assignment.groupId || !accessSyncGroupIds.has(String(assignment.groupId))) continue;
       try {
+        // OB-225 — same JS-int vs varchar coercion as Pass 2 source-check (lines 309-321).
         const backfillResult = await db.query(
           `UPDATE member_access_sources mas
            SET role_assignment_id = $4, updated_at = NOW()
            FROM member_access ma
            WHERE mas.access_id = ma.id
              AND ma.client_id = $1
-             AND ma.hardware_user_id = $2
-             AND mas.hardware_group_id = $3
+             AND ma.hardware_user_id::text = $2
+             AND mas.hardware_group_id::text = $3
              AND mas.role_assignment_id IS NULL
              AND mas.status IN ('active', 'pending_hardware', 'pending_start')
            RETURNING mas.id`,
-          [client.id, assignment.userId, assignment.groupId, String(assignment.roleAssignmentId)]
+          [client.id, String(assignment.userId), String(assignment.groupId), String(assignment.roleAssignmentId)]
         );
         if (backfillResult.rowCount > 0) {
           backfilled += backfillResult.rowCount;
