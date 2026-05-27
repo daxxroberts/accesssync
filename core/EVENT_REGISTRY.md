@@ -194,6 +194,29 @@ Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='rev
 | `reconcile.integrity.alert` | warn | Integrity issue detected — alert written to config_alert_log |
 | `reconciliation.stale_reset` | warn | Stale `in_flight` member_access lock (>10 min) reset to `status='recovery_pending'`. Next reconcile sweep picks it up via `_fetchActionableRecords` and re-attempts the grant. Context: `{ stage, result, newStatus: 'recovery_pending' }`. (OB-202) |
 
+### Reconciliation actor format (OB-227, 2026-05-27)
+
+All reconciliation sweep logs and `reconciliation_run.triggered_by_actor_id` rows carry an
+actor id of the form `reconciliation-<triggerSource>` where `<triggerSource>` is one of:
+
+| Value | Source |
+|---|---|
+| `inprocess` | Admin Hub in-process scheduler (`admin/server.js`, 6h interval — OB-196 fallback) |
+| `cli` | Local CLI invocation: `node core/reconciliation.js` (developer laptop, ad-hoc) |
+| `railway-cron` | Railway Cron service invocation (sniffed via `process.env.RAILWAY_ENVIRONMENT`) |
+| `operator-triggered` | Reserved for direct full-sweep invocations from an operator action (rare; per-member operator sync uses `reconcileMember` instead and emits actor `reconcileMember`) |
+| `unknown` | Fallback when a caller forgot to pass `triggerSource`. Treat as a bug — every caller must pass a known value. |
+
+Legacy actor `reconciliation-cron` is RETIRED — it masked the trigger source and
+was the root cause of OB-227. Greps for the `reconciliation-` prefix continue to
+match all of the above.
+
+Per-client `_syncClient` runs inside the sweep inherit the sweep's actor via
+`opts.triggeredByActor`, so each `reconciliation_run` row stamps the same
+discriminating actor. Operator-triggered `_syncClient` from the manual `/sync/run`
+endpoint passes its own `{ type: 'operator', id: <email|id> }` actor and is
+unaffected.
+
 ---
 
 ## Hardware Adapter Events

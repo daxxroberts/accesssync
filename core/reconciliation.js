@@ -39,21 +39,37 @@ class NightlyReconciliation {
   }
 
   /**
-   * Main entry point for the Railway Cron Job
+   * Main entry point for the Railway Cron Job and in-process scheduler.
+   *
+   * @param {Object} [opts]
+   * @param {string} [opts.triggerSource]  - Discriminates the caller for observability.
+   *   Accepted values: 'inprocess' (admin/server.js scheduler), 'cli' (Railway cron or
+   *   `node core/reconciliation.js`), 'railway-cron' (if a Railway env signal is wired),
+   *   'operator-triggered' (manual sync run reusing the entry — rare; per-member uses
+   *   reconcileMember instead), 'unknown' (default — fallback if a caller forgot to pass).
+   *
+   *   The literal string `'reconciliation-cron'` is RESERVED — older default that masked
+   *   trigger source. Do NOT pass that as a triggerSource. OB-227.
+   *
+   *   Emitted as actor.id `reconciliation-<triggerSource>` so existing
+   *   v_trace_timeline / diagnostic_log greps for `reconciliation-` still hit.
    */
-  async runNightlySweep() {
+  async runNightlySweep(opts = {}) {
+    const triggerSource = opts.triggerSource || 'unknown';
+    const actorId       = `reconciliation-${triggerSource}`;
     const sweepTraceId = mintTraceId();
     return runWith(
-      { traceId: sweepTraceId, actor: { type: 'system', id: 'reconciliation-cron' } },
-      () => this._runNightlySweepBody(sweepTraceId)
+      { traceId: sweepTraceId, actor: { type: 'system', id: actorId } },
+      () => this._runNightlySweepBody(sweepTraceId, triggerSource)
     );
   }
 
-  async _runNightlySweepBody(sweepTraceId) {
+  async _runNightlySweepBody(sweepTraceId, triggerSource = 'unknown') {
     const sweepLogger = withTrace(sweepTraceId);
     this._sweepTraceId = sweepTraceId;
     this._sweepLogger = sweepLogger;
-    sweepLogger.info('reconciliation.sweep_start', { stage: 'cron', result: 'start' });
+    this._sweepTriggerSource = triggerSource;
+    sweepLogger.info('reconciliation.sweep_start', { stage: 'cron', result: 'start', triggerSource });
 
     try {
       // Recurrence gate: skip if not enough time has elapsed since last sweep (DR-018)
@@ -133,9 +149,13 @@ class NightlyReconciliation {
          AND c.source_site_id IS NOT NULL`
     );
 
+    const triggerSource = this._sweepTriggerSource || 'unknown';
     for (const client of clientsResult.rows) {
       try {
-        await this._syncClient(client, { triggeredBy: 'cron' });
+        await this._syncClient(client, {
+          triggeredBy: 'cron',
+          triggeredByActor: { type: 'system', id: `reconciliation-${triggerSource}` },
+        });
       } catch (err) {
         log.error('reconciliation.client_sync_failed', { clientId: client.id }, err);
         // One client failure must not abort the full sweep
@@ -166,7 +186,10 @@ class NightlyReconciliation {
    */
   async _syncClient(client, opts = {}) {
     const triggeredBy        = opts.triggeredBy || 'cron';
-    const triggeredByActor   = opts.triggeredByActor || { type: 'system', id: 'reconciliation-cron' };
+    // OB-227: literal 'reconciliation-cron' default was the bug — masked which trigger
+    // path invoked the sweep. Callers must pass an explicit triggeredByActor; if absent,
+    // fall back to 'reconciliation-unknown' so the omission is greppable.
+    const triggeredByActor   = opts.triggeredByActor || { type: 'system', id: 'reconciliation-unknown' };
     const wixApiKey      = decryptApiKey(client.source_api_key);
     const hardwareApiKey = decryptApiKey(client.hardware_api_key);
     const hardwarePlatform = client.hardware_platform || 'kisi';
@@ -1345,8 +1368,15 @@ const instance = new NightlyReconciliation();
 module.exports = instance;
 
 // If run directly via `node core/reconciliation.js`
+//
+// OB-227: distinguish Railway cron invocation from local CLI invocation by sniffing
+// `RAILWAY_ENVIRONMENT` (Railway-injected on every deployment). In production the
+// Railway cron service spawns this process with RAILWAY_ENVIRONMENT='production'
+// (or similar); on a developer laptop the var is unset. If the env signal is missing
+// the actor falls back to 'cli'.
 if (require.main === module) {
-  instance.runNightlySweep().then(() => {
+  const triggerSource = process.env.RAILWAY_ENVIRONMENT ? 'railway-cron' : 'cli';
+  instance.runNightlySweep({ triggerSource }).then(() => {
     process.exit(0);
   }).catch(err => {
     log.critical('reconciliation.fatal', {}, err);

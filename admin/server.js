@@ -241,7 +241,10 @@ if (SCHEDULER_ENABLED) {
       // observable in diagnostic_log (info currently suppressed pre-OB-176).
       log.warn('admin.scheduler.reconcile_start', { trigger: 'inprocess_scheduler' });
       const reconciliation = require('../core/reconciliation');
-      await reconciliation.runNightlySweep();
+      // OB-227: pass triggerSource so the sweep's triggered_by_actor_id can
+      // distinguish in-process scheduler from Railway cron. Actor becomes
+      // 'reconciliation-inprocess' instead of the legacy 'reconciliation-cron'.
+      await reconciliation.runNightlySweep({ triggerSource: 'inprocess' });
       log.warn('admin.scheduler.reconcile_complete', { trigger: 'inprocess_scheduler' });
     } catch (err) {
       log.error('admin.scheduler.reconcile_failed', { trigger: 'inprocess_scheduler' }, err);
