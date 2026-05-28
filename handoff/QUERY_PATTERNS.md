@@ -362,6 +362,64 @@ LIMIT 1
 
 ---
 
+## Pattern 19 — Detecting Actual Duplicate `member_access_sources` Rows
+
+**Use:** Diagnostic sweeps that hunt for true duplicate source rows (post-OB-198 schema enforcement, the live DB should always return 0 rows from this query — any non-empty result is a real bug).
+**Why this pattern exists:** OB-226 was filed FALSE_ALARM on 2026-05-27 because an ad-hoc subagent sweep used a coarse `GROUP BY (access_id, hardware_group_id, role_assignment_id)` — which flagged Daxx's 5 legitimately distinct DR-046 multi-plan rows (5 different `source_plan_id` values, same person + group + role assignment) as 4 "duplicates." Root cause: the sweep's grouping was narrower than the DR-046 canonical UNIQUE tuple. OB-229 filed to document this pattern.
+
+### Correct query (GROUP BY full DR-046 UNIQUE tuple)
+
+```sql
+-- DR-046 canonical UNIQUE: (client_id, access_id, source_type, source_plan_id, hardware_group_id)
+-- Any row returned is a real duplicate — the UNIQUE constraint should have blocked it.
+SELECT client_id, access_id, source_type, source_plan_id, hardware_group_id, COUNT(*) AS dup_count
+FROM   member_access_sources
+WHERE  status = 'active'           -- scope to active rows; widen if auditing all statuses
+GROUP  BY client_id, access_id, source_type, source_plan_id, hardware_group_id
+HAVING COUNT(*) > 1;
+```
+
+**Expected result on live DB:** 0 rows. The UNIQUE constraint enforced post-OB-198 makes a duplicate row physically impossible — if this returns anything, the constraint has been dropped or violated. Treat any non-empty result as Tier 3 surface to SAGE.
+
+### Wrong query shapes — DO NOT USE for duplicate detection
+
+```sql
+-- WRONG #1: GROUP BY (access_id, hardware_group_id, role_assignment_id) only.
+-- This is what OB-226 used. Flags Daxx's 5 legitimate multi-plan rows on group 838622
+-- (one role_assignment_id covers all 5 plans — that is the point of DR-046's per-plan tracking).
+SELECT access_id, hardware_group_id, role_assignment_id, COUNT(*)
+FROM   member_access_sources
+WHERE  status = 'active'
+GROUP  BY access_id, hardware_group_id, role_assignment_id
+HAVING COUNT(*) > 1;
+-- ^^ DO NOT USE. Returns false positives for any DR-046 multi-plan-same-group member.
+
+-- WRONG #2: GROUP BY (member_access.member_master_id, hardware_group_id).
+-- Same class of error. One person CAN legitimately have N source rows for the same group
+-- when N distinct plans grant that group (the canonical sub-member + holder family case).
+```
+
+### Why DR-046 multi-plan-same-group is intentional (not duplication)
+
+DR-046 schema-spec'd the per-source-row tuple so that **each (member × client × source_type × source_plan_id × hardware_group_id)** combination is a separate row by design:
+
+- Family plans: a holder + 4 sub-members on Couples plan → 5 source rows, all for the same hardware_group_id, each with a distinct `source_plan_id` (per the DR-029 sub-member ID format).
+- Operator-side: one person can hold multiple distinct plans that all grant the same door — each plan is independently revocable (DR-034 pre-grant source check + remaining-count check on revoke).
+- The single Kisi `role_assignment_id` is shared across these rows because Kisi physically only allows one role assignment per user per group (per Kisi API docs verified 2026-05-02). The DB tracks 1:N grant reasons; Kisi tracks the 1:1 hardware fact.
+
+**Counter-example test (verified live 2026-05-27):**
+`daxxroberts@gmail.com` has 5 active rows on `hardware_group_id='838622'`, all sharing `role_assignment_id='98601860'`, with 5 distinct `source_plan_id` values:
+`0d478601-...`, `2c126a17-...`, `2dcaf897-...`, `7861f180-...`, `87e831a4-...`.
+The correct query returns 0 (no dupes); the wrong query returns 1 row with `misflag_count=5`.
+
+### Diagnostic checklist when a sweep flags "duplicates"
+
+1. Is the `GROUP BY` the full DR-046 UNIQUE tuple `(client_id, access_id, source_type, source_plan_id, hardware_group_id)`? If not, the result is suspect.
+2. Re-run with the canonical tuple. If 0 → false alarm (close the OB as FALSE_ALARM, cite OB-226).
+3. If > 0 → real bug. UNIQUE constraint failed or was dropped. Tier 3 surface to SAGE.
+
+---
+
 ## Query Anti-Patterns (Do Not Do)
 
 | Anti-Pattern | Why | Correct Pattern |
