@@ -1,5 +1,5 @@
 # CLAUDE.md — AccessSync (repo)
-**Version:** 6.1-parity (parity with vault) | **Updated:** 2026-05-26 | **Author:** Daxx Roberts / KEEPER / SAGE
+**Version:** 6.2-parity (parity with vault) | **Updated:** 2026-05-27 | **Author:** Daxx Roberts / KEEPER / SAGE
 
 > **Synced with vault CLAUDE.md 2026-05-23.** This file lives in the repo (`accesssync/CLAUDE.md`) and is the build-time context Claude Code loads on every repo session. Mirror of vault `CLAUDE.md` Repository State + Schema + Locked Decisions + Env Vars sections. Full vault CLAUDE.md (with Phase 1/2 sequence banners, session protocols, BOT team, RULE-15 through RULE-19) is the source of truth — read that file when in doubt. Never edit this repo file in isolation; KEEPER syncs both at session close.
 >
@@ -23,6 +23,15 @@
 > operated from stale anchor `88548e0` while parallel session shipped 6 commits same day;
 > ~30 min reconciliation wasted but the operating model itself was validated (two sessions
 > independently produced word-for-word identical fix text).
+>
+> **RULE-19 amendment #3 locked 2026-05-27 (subagent working-tree isolation):** Subagents
+> in the same loop run MUST NOT touch another subagent's in-flight working-tree changes
+> (no `git stash` of another agent's work, no rewriting another agent's staged files, no
+> editing files another agent is modifying). On conflict that blocks the deploy gate,
+> STOP-AND-SURFACE to main; main is the sole coordinator for cross-subagent merges and
+> the sole committer (companion finding: subagent harness reliably DENIES `git commit`
+> regardless of form — 4 instances Run #11-#12). Trigger: Run #11 G2 stashed G4's
+> in-flight reconciliation.js; conflict-free pop only by luck (independent convergence).
 
 > **Read this file before writing a single line of code. Then read `AccessSync/open_items.md`. Then read the spec for what you're building.**
 
