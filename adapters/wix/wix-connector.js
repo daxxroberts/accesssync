@@ -18,6 +18,7 @@ const wixAdapter = require('./wix-adapter');
 const webhookProcessor = require('../../core/webhook-processor');
 const tenantResolver = require('../../core/tenant-resolver');
 const hmacMonitor = require('../../core/hmac-monitor'); // Sprint 5.1
+const setupTelemetry = require('../../core/setup-telemetry'); // OB-237 Phase C
 const { log } = require('../../core/logger');
 
 class WixConnector {
@@ -117,6 +118,15 @@ class WixConnector {
       const clientIdHint = req.headers['x-accesssync-client-id'] || null;
       if (clientIdHint && wixSiteId) {
         tenantResolver.registerSiteId(clientIdHint, wixSiteId).catch(() => {});
+      }
+
+      // OB-237 Phase C — snippet version telemetry. The events.js Velo template
+      // embeds its version in x-accesssync-snippet-version. Capture it so the
+      // Setup Hub knows what's actually installed on the Wix side.
+      const snippetVersion = req.headers['x-accesssync-snippet-version'] || null;
+      if (clientIdHint && snippetVersion) {
+        setupTelemetry.recordSnippetTelemetry(clientIdHint, 'velo_events_backend', snippetVersion)
+          .catch(() => {});
       }
 
       const standardEvent = wixAdapter.parseEvent(eventType, wixSiteId, req.body);

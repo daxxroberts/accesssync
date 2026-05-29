@@ -587,7 +587,14 @@ html, body {
 const params           = new URLSearchParams(window.location.search);
 const platformMemberId = params.get('memberId');
 const clientId         = params.get('clientId');
+const snippetVersion   = params.get('v') || null;
 const CORE_URL         = params.get('coreUrl') || '<%- coreUrl %>';
+
+// OB-237 Phase C — heartbeat to Setup Hub on mount (non-blocking).
+if (clientId && snippetVersion) {
+  fetch('/sync-status/heartbeat?clientId=' + encodeURIComponent(clientId) +
+        '&v=' + encodeURIComponent(snippetVersion)).catch(() => {});
+}
 
 let pollCount = 0;
 const MAX_POLLS       = 60;

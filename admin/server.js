@@ -197,6 +197,28 @@ app.get('/member/access-status', async (req, res) => {
 app.get('/multi-member', allowMemberFrame, (req, res) => res.render('pages/multi-member'));
 app.get('/member-hub',   allowMemberFrame, (req, res) => res.render('pages/member-hub'));
 
+// ── OB-237 Phase C — Setup Hub iframe heartbeat endpoints ────────
+// Called from Wix Velo iframes (sync_status_page + my_access_page snippets)
+// on mount. Records snippet version telemetry so the Setup Hub knows the
+// snippet is actively rendering. Non-blocking; never throws to caller.
+const setupTelemetry = require('../core/setup-telemetry');
+app.get('/sync-status/heartbeat', allowMemberFrame, async (req, res) => {
+  const clientId = req.query.clientId;
+  const version  = req.query.v || null;
+  if (clientId && version) {
+    setupTelemetry.recordSnippetTelemetry(clientId, 'sync_status_page', version).catch(() => {});
+  }
+  res.status(204).end();
+});
+app.get('/member-hub/heartbeat', allowMemberFrame, async (req, res) => {
+  const clientId = req.query.clientId;
+  const version  = req.query.v || null;
+  if (clientId && version) {
+    setupTelemetry.recordSnippetTelemetry(clientId, 'my_access_page', version).catch(() => {});
+  }
+  res.status(204).end();
+});
+
 // ── Admin Hub ──────────────────────────────────────────────────
 // Serve index.html at both / and /OwnerDashboard — no redirect.
 // Google GIS requires the JS origin to match exactly; a redirect to /OwnerDashboard

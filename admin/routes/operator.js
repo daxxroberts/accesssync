@@ -494,6 +494,73 @@ router.get('/:clientId/setup-state', async (req, res) => {
   }
 });
 
+// ── POST /operator/:clientId/setup-state/test ─────────────────────
+// OB-237 Phase C — Test Connection. Confirms round-trip works without
+// firing any real grants/revokes. For velo_events_backend, checks last
+// telemetry age (was the webhook receiver hit recently?). For sync_status
+// and my_access pages, checks last heartbeat. For thank_you_redirect, N/A.
+const setupTelemetryRoute = require('../../core/setup-telemetry');
+
+router.post('/:clientId/setup-state/test', async (req, res) => {
+  const { clientId } = req.params;
+  const { snippet_id } = req.body || {};
+  if (!snippet_id) return res.status(400).json({ error: 'snippet_id required' });
+
+  const snippet = snippetRegistry.getSnippet(snippet_id);
+  if (!snippet) return res.status(404).json({ error: 'snippet_not_found' });
+
+  try {
+    const client = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    // Look up last telemetry for this snippet
+    const stateRow = await db.query(
+      `SELECT last_telemetry_at, last_telemetry_version
+       FROM operator_setup_state
+       WHERE client_id = $1 AND snippet_id = $2`,
+      [clientId, snippet_id]
+    );
+
+    let result, message, ok;
+    if (snippet.verify_via === 'none') {
+      result = 'ok';
+      ok = true;
+      message = 'This snippet has no automatic verification — no telemetry expected.';
+    } else if (!stateRow.rows.length || !stateRow.rows[0].last_telemetry_at) {
+      result = 'no_telemetry';
+      ok = false;
+      message = 'No telemetry from this snippet has been received. Confirm the snippet is pasted into the right Wix page and your site is published.';
+    } else {
+      const lastSeen = new Date(stateRow.rows[0].last_telemetry_at);
+      const ageHours = (Date.now() - lastSeen.getTime()) / 3_600_000;
+      const staleAfterHours = (snippet.stale_after_days || 30) * 24;
+      if (ageHours > staleAfterHours) {
+        result = 'stale_telemetry';
+        ok = false;
+        message = `Last telemetry was ${Math.floor(ageHours / 24)} day(s) ago — older than the ${snippet.stale_after_days}-day window. Snippet may be removed or the Wix site may not be receiving traffic.`;
+      } else {
+        const installedVersion = stateRow.rows[0].last_telemetry_version;
+        if (installedVersion !== snippet.current_version) {
+          result = 'version_mismatch';
+          ok = false;
+          message = `Snippet installed is v${installedVersion}, but current version is v${snippet.current_version}. Copy the latest snippet below and replace your installed version.`;
+        } else {
+          result = 'ok';
+          ok = true;
+          message = `Verified — last telemetry ${Math.floor(ageHours * 60)} min ago, version v${installedVersion}.`;
+        }
+      }
+    }
+
+    await setupTelemetryRoute.recordTestResult(clientId, snippet_id, result);
+    recordActivity(req, 'admin.setup_hub.test_connection', { snippet_id, result });
+    res.json({ ok, result, message });
+  } catch (err) {
+    log.error('operator.setup_state.test.error', { clientId, snippet_id }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /operator/:clientId/setup-state/copied ───────────────────
 // OB-237 Phase B — operator clicked Copy on a snippet. Records install
 // intent in operator_setup_state. Verification (Phase C) flips state

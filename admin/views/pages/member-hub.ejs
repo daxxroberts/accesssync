@@ -1142,8 +1142,15 @@ body {
 const params = new URLSearchParams(window.location.search);
 let platformMemberId = params.get('memberId');
 let clientId         = params.get('clientId');
+const snippetVersion = params.get('v') || null;
 const BASE           = '';  // same-server proxy (see server.js)
 const tabParam       = params.get('tab'); // 'status' triggers overlay immediately
+
+// OB-237 Phase C — heartbeat to Setup Hub on mount (non-blocking).
+if (clientId && snippetVersion) {
+  fetch('/member-hub/heartbeat?clientId=' + encodeURIComponent(clientId) +
+        '&v=' + encodeURIComponent(snippetVersion)).catch(() => {});
+}
 
 // ── XSS-safe escaping ───────────────────────────────────────────────
 function esc(s) {
