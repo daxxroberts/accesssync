@@ -208,7 +208,7 @@ describe('GET /operator/:clientId/setup-state — hmacSource field (OB-238)', ()
     process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
   });
 
-  test('hmacSource = per_client when clients.wix_webhook_secret is set', async () => {
+  test('hmacSource = per_client when clients.wix_webhook_secret is set (no auto-gen)', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[my-per-client-secret]' }] })
       .mockResolvedValueOnce({ rows: [] });
@@ -223,10 +223,11 @@ describe('GET /operator/:clientId/setup-state — hmacSource field (OB-238)', ()
     expect(res.body.hmacSecret).toBe('my-per-client-secret');
   });
 
-  test('hmacSource = platform_env_fallback when no per-client secret', async () => {
+  test('auto-generates per-client secret on first visit when NULL (followup)', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: null }] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: null }] })  // SELECT client
+      .mockResolvedValueOnce({ rows: [] })                                              // SELECT state
+      .mockResolvedValueOnce({ rows: [{ wix_webhook_secret: 'ENC[autogen-newvalue]' }], rowCount: 1 });  // UPDATE auto-gen
 
     const router = require('../../admin/routes/operator');
     const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
@@ -234,15 +235,19 @@ describe('GET /operator/:clientId/setup-state — hmacSource field (OB-238)', ()
     const res = mockRes();
     await handler(req, res);
 
-    expect(res.body.hmacSource).toBe('platform_env_fallback');
-    expect(res.body.hmacSecret).toBe('platform-secret');
+    expect(res.body.hmacSource).toBe('per_client');
+    expect(res.body.hmacSecret).toBe('autogen-newvalue');
+    // Confirm the auto-gen UPDATE was guarded by WHERE ... IS NULL
+    const updateCall = db.query.mock.calls[2];
+    expect(updateCall[0]).toContain('wix_webhook_secret IS NULL');
   });
 
-  test('hmacSource = none when neither per-client nor env present', async () => {
-    delete process.env.WIX_WEBHOOK_SECRET;
+  test('auto-gen race: re-reads existing value when UPDATE returns 0 rows', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: null }] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: null }] })  // SELECT client
+      .mockResolvedValueOnce({ rows: [] })                                              // SELECT state
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })                                 // UPDATE lost race
+      .mockResolvedValueOnce({ rows: [{ wix_webhook_secret: 'ENC[winner-value]' }] }); // re-read
 
     const router = require('../../admin/routes/operator');
     const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
@@ -250,8 +255,88 @@ describe('GET /operator/:clientId/setup-state — hmacSource field (OB-238)', ()
     const res = mockRes();
     await handler(req, res);
 
-    expect(res.body.hmacSource).toBe('none');
-    expect(res.body.hmacSecret).toBeNull();
+    expect(res.body.hmacSource).toBe('per_client');
+    expect(res.body.hmacSecret).toBe('winner-value');
+  });
+});
+
+describe('POST /operator/:clientId/wix-webhook-secret/set (OB-238 followup)', () => {
+  beforeEach(() => { jest.clearAllMocks(); });
+
+  test('accepts a 32+ char secret and stores it encrypted', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })  // client exists
+      .mockResolvedValueOnce({ rowCount: 1 });                // UPDATE
+
+    const router = require('../../admin/routes/operator');
+    const handler = findRouteHandler(router, 'post', '/:clientId/wix-webhook-secret/set');
+    const validSecret = 'a'.repeat(40);  // 40 chars, well above min 32
+    const req = { params: { clientId: 'client-1' }, body: { secret: validSecret } };
+    const res = mockRes();
+    await handler(req, res);
+
+    expect(res.body.ok).toBe(true);
+    expect(res.body.secret).toBeUndefined();  // server does not echo back
+    const updateCall = db.query.mock.calls[1];
+    expect(updateCall[0]).toContain('UPDATE clients SET wix_webhook_secret');
+    expect(updateCall[1][0]).toContain('ENC[');  // encrypted form stored, not plaintext
+  });
+
+  test('rejects short secrets (< 32 chars)', async () => {
+    const router = require('../../admin/routes/operator');
+    const handler = findRouteHandler(router, 'post', '/:clientId/wix-webhook-secret/set');
+    const req = { params: { clientId: 'client-1' }, body: { secret: 'too-short' } };
+    const res = mockRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toContain('32');
+  });
+
+  test('rejects missing secret', async () => {
+    const router = require('../../admin/routes/operator');
+    const handler = findRouteHandler(router, 'post', '/:clientId/wix-webhook-secret/set');
+    const req = { params: { clientId: 'client-1' }, body: {} };
+    const res = mockRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('rejects non-string secret', async () => {
+    const router = require('../../admin/routes/operator');
+    const handler = findRouteHandler(router, 'post', '/:clientId/wix-webhook-secret/set');
+    const req = { params: { clientId: 'client-1' }, body: { secret: 12345 } };
+    const res = mockRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('trims whitespace before length check', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    const router = require('../../admin/routes/operator');
+    const handler = findRouteHandler(router, 'post', '/:clientId/wix-webhook-secret/set');
+    const req = { params: { clientId: 'client-1' }, body: { secret: '  ' + 'x'.repeat(40) + '  ' } };
+    const res = mockRes();
+    await handler(req, res);
+
+    expect(res.body.ok).toBe(true);
+  });
+
+  test('404 when client not found', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    const router = require('../../admin/routes/operator');
+    const handler = findRouteHandler(router, 'post', '/:clientId/wix-webhook-secret/set');
+    const req = { params: { clientId: 'unknown' }, body: { secret: 'a'.repeat(40) } };
+    const res = mockRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(404);
   });
 });
 

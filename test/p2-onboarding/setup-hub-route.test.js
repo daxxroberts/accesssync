@@ -19,6 +19,13 @@ jest.mock('../../admin/middleware/auth', () => ({
 jest.mock('../../admin/middleware/activity', () => ({
   recordActivity: jest.fn(),
 }));
+// OB-238 followup auto-gen — mock crypto so decryption is deterministic.
+// All tests set wix_webhook_secret to 'ENC[mock]' on the client mock so
+// the auto-gen path doesn't trigger (it only fires when value is NULL).
+jest.mock('../../core/crypto-utils', () => ({
+  encryptApiKey: (plaintext) => 'ENC[' + plaintext + ']',
+  decryptApiKey: (stored)    => stored.replace(/^ENC\[(.+)\]$/, '$1'),
+}));
 
 const db = require('../../db');
 
@@ -39,7 +46,7 @@ describe('GET /operator/:clientId/setup-state', () => {
   test('returns aggregate red when CORE_ENGINE_URL is missing', async () => {
     delete process.env.CORE_ENGINE_URL;
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
       .mockResolvedValueOnce({ rows: [] });
 
     const router = require('../../admin/routes/operator');
@@ -56,7 +63,7 @@ describe('GET /operator/:clientId/setup-state', () => {
   test('returns aggregate red when ADMIN_HUB_URL is missing', async () => {
     delete process.env.ADMIN_HUB_URL;
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
       .mockResolvedValueOnce({ rows: [] });
 
     const router = require('../../admin/routes/operator');
@@ -83,7 +90,7 @@ describe('GET /operator/:clientId/setup-state', () => {
 
   test('returns snippet body for velo_events_backend with substitutions applied', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
       .mockResolvedValueOnce({ rows: [] });
 
     const router = require('../../admin/routes/operator');
@@ -101,7 +108,7 @@ describe('GET /operator/:clientId/setup-state', () => {
 
   test('snippet install_state defaults to not_installed when no row in operator_setup_state', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
       .mockResolvedValueOnce({ rows: [] });
 
     const router = require('../../admin/routes/operator');
@@ -116,7 +123,7 @@ describe('GET /operator/:clientId/setup-state', () => {
 
   test('aggregate red when a required snippet has no install row', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
       .mockResolvedValueOnce({ rows: [] });
 
     const router = require('../../admin/routes/operator');
@@ -130,7 +137,7 @@ describe('GET /operator/:clientId/setup-state', () => {
 
   test('aggregate amber when required snippet is installed but version is stale', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
       .mockResolvedValueOnce({ rows: [
         { snippet_id: 'velo_events_backend', install_state: 'verified', version_installed: 'v1.0.0' },
         { snippet_id: 'sync_status_page',    install_state: 'verified', version_installed: 'v2.1.0' },
@@ -158,7 +165,7 @@ describe('POST /operator/:clientId/setup-state/copied', () => {
 
   test('records copy action as installed_unverified', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
       .mockResolvedValueOnce({ rowCount: 1 });
 
     const router = require('../../admin/routes/operator');

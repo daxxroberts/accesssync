@@ -425,12 +425,37 @@ router.get('/:clientId/setup-state', async (req, res) => {
     const adminHubUrl   = (process.env.ADMIN_HUB_URL   || '').replace(/\/$/, '');
     const webhookUrl    = coreEngineUrl ? `${coreEngineUrl}/webhooks/wix` : null;
 
+    // OB-238 followup — auto-generate per-client secret if NULL.
+    // Default state = per-client always exists. Race-safe via WHERE
+    // wix_webhook_secret IS NULL clause + RETURNING to detect winner.
+    let storedEncryptedSecret = client.rows[0].wix_webhook_secret;
+    if (!storedEncryptedSecret) {
+      const plaintext = crypto.randomBytes(32).toString('base64');
+      const encrypted = encryptApiKey(plaintext);
+      const upd = await db.query(
+        `UPDATE clients SET wix_webhook_secret = $1, updated_at = NOW()
+         WHERE id = $2 AND wix_webhook_secret IS NULL
+         RETURNING wix_webhook_secret`,
+        [encrypted, clientId]
+      );
+      if (upd.rowCount > 0) {
+        storedEncryptedSecret = upd.rows[0].wix_webhook_secret;
+        log.warn('clients.wix_webhook_secret.auto_generated', { clientId, stage: 'setup_hub_first_visit' });
+      } else {
+        // Lost the race — re-read what won
+        const reread = await db.query(
+          'SELECT wix_webhook_secret FROM clients WHERE id = $1', [clientId]
+        );
+        storedEncryptedSecret = reread.rows[0]?.wix_webhook_secret || null;
+      }
+    }
+
     // OB-238 — per-client secret takes precedence over env fallback
     let hmacSecret = null;
     let hmacSource = 'none';
-    if (client.rows[0].wix_webhook_secret) {
+    if (storedEncryptedSecret) {
       try {
-        hmacSecret = decryptKey(client.rows[0].wix_webhook_secret);
+        hmacSecret = decryptKey(storedEncryptedSecret);
         hmacSource = 'per_client';
       } catch (e) {
         log.error('operator.setup_state.per_client_secret_decrypt_failed', { clientId }, e);
@@ -670,6 +695,43 @@ router.post('/:clientId/wix-webhook-secret/rotate', async (req, res) => {
     res.json({ ok: true, secret: plaintext });
   } catch (err) {
     log.error('operator.wix_webhook_secret.rotate.error', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /operator/:clientId/wix-webhook-secret/set ───────────────
+// OB-238 followup — accept a custom secret value from operator (e.g.,
+// Wix-generated). Validates min length 32 chars (security floor), encrypts
+// via DR-028, stores. Returns ok (does not echo back the value — they sent
+// it, they have it).
+router.post('/:clientId/wix-webhook-secret/set', async (req, res) => {
+  const { clientId } = req.params;
+  const { secret } = req.body || {};
+
+  if (!secret || typeof secret !== 'string') {
+    return res.status(400).json({ error: 'secret required (string)' });
+  }
+  const trimmed = secret.trim();
+  if (trimmed.length < 32) {
+    return res.status(400).json({ error: 'secret must be at least 32 characters' });
+  }
+
+  try {
+    const client = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    const encrypted = encryptApiKey(trimmed);
+    await db.query(
+      'UPDATE clients SET wix_webhook_secret = $1, updated_at = NOW() WHERE id = $2',
+      [encrypted, clientId]
+    );
+
+    recordActivity(req, 'admin.wix_webhook_secret.set_custom', { clientId, length: trimmed.length });
+    log.warn('clients.wix_webhook_secret.set_custom', { clientId, length: trimmed.length, stage: 'admin_action' });
+
+    res.json({ ok: true });
+  } catch (err) {
+    log.error('operator.wix_webhook_secret.set.error', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
