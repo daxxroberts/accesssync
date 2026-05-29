@@ -31,6 +31,7 @@ function listSnippets() {
   return getRegistry().snippets.map(s => ({
     id: s.id,
     name: s.name,
+    display_group: s.display_group || s.id, // OB-238 followup — group adjacent cards
     category: s.category,
     criticality: s.criticality,
     description: s.description,

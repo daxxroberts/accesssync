@@ -5,6 +5,7 @@
     {
       "id": "velo_events_backend",
       "name": "events.js — Velo Backend Webhook Forwarder",
+      "display_group": "webhook",
       "category": "required",
       "criticality": "critical",
       "description": "The Velo backend file that forwards Wix Pricing Plan, Bookings, and Member events to AccessSync. Without this installed, NO door access provisioning happens. Most critical snippet in the system.",
@@ -28,6 +29,7 @@
     {
       "id": "sync_status_page",
       "name": "Sync Status Page",
+      "display_group": "post_purchase_flow",
       "category": "required",
       "criticality": "high",
       "description": "Member-facing page that shows door access provisioning status after a plan purchase. Embed in your Wix site as a members-only page so members see whether their access is ready.",
@@ -48,6 +50,7 @@
     {
       "id": "my_access_page",
       "name": "My Access Page (Member Hub)",
+      "display_group": "member_access",
       "category": "required",
       "criticality": "high",
       "description": "Member-facing self-service page showing active door access, plan details, and family-plan management. Embed as a members-only page.",
@@ -68,6 +71,7 @@
     {
       "id": "thank_you_redirect",
       "name": "Post-Purchase Thank-You Redirect",
+      "display_group": "post_purchase_flow",
       "category": "optional",
       "criticality": "low",
       "description": "Redirects a member to the Sync Status page automatically after they complete a plan purchase. Optional — without this, members can still reach Sync Status manually, but UX is smoother with the redirect.",

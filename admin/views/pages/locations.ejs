@@ -1361,16 +1361,153 @@
 
     function renderSnippetCards(snippets) {
       var el = document.getElementById('setup-snippets-list');
-      var html = snippets.map(buildSnippetCardHtml).join('');
+
+      // OB-238 followup — group snippets by display_group so paired snippets
+      // (e.g. Sync Status + Thank-You Redirect, which depend on each other)
+      // render inside one card.
+      var groupTitles = {
+        webhook: 'Webhook Forwarder',
+        post_purchase_flow: 'Post-Purchase Flow (Sync Status + Redirect)',
+        member_access: 'Member Access Page',
+      };
+      var groups = {};
+      var groupOrder = [];
+      snippets.forEach(function(s) {
+        var g = s.display_group || s.id;
+        if (!groups[g]) { groups[g] = []; groupOrder.push(g); }
+        groups[g].push(s);
+      });
+
+      var html = groupOrder.map(function(gid) {
+        var items = groups[gid];
+        if (items.length === 1) {
+          // Single-snippet group: render as before (one card per snippet)
+          return buildSnippetCardHtml(items[0]);
+        }
+        // Multi-snippet group: group title + stacked snippet sections
+        var title = groupTitles[gid] || items.map(function(i) { return i.name; }).join(' + ');
+        return buildGroupedCardHtml(title, items);
+      }).join('');
+
       el.innerHTML = html;
-      // Wire up each card's Copy button
-      el.querySelectorAll('.snippet-card[data-snippet-id]').forEach(function(card) {
-        var snippetId = card.getAttribute('data-snippet-id');
-        var copyBtn = card.querySelector('.snippet-copy-btn');
+
+      // Wire up Copy + Test buttons across all groups
+      el.querySelectorAll('[data-snippet-id]').forEach(function(node) {
+        var snippetId = node.getAttribute('data-snippet-id');
+        var copyBtn = node.querySelector('.snippet-copy-btn');
         if (copyBtn) copyBtn.addEventListener('click', function() { copySnippet(snippetId, copyBtn); });
-        var testBtn = card.querySelector('[data-test-connection]');
+        var testBtn = node.querySelector('[data-test-connection]');
         if (testBtn) testBtn.addEventListener('click', function() { testConnection(snippetId, testBtn); });
       });
+    }
+
+    function buildGroupedCardHtml(groupTitle, items) {
+      // Worst-state badge for the group (broken > stale > installed_unverified > not_installed > verified)
+      var stateRank = { broken: 4, stale: 3, installed_unverified: 2, not_installed: 1, verified: 0 };
+      var worstState = items.reduce(function(acc, i) {
+        return (stateRank[i.install_state] || 0) > (stateRank[acc] || 0) ? i.install_state : acc;
+      }, 'verified');
+      var stateLabels = {
+        verified: 'Verified',
+        installed_unverified: 'Installed — awaiting verification',
+        stale: 'Out of date',
+        broken: 'Broken',
+        not_installed: 'Not detected yet'
+      };
+
+      var subSections = items.map(function(s) {
+        return buildSubSnippetHtml(s);
+      }).join('<hr class="snippet-divider" style="margin:24px 0;">');
+
+      return '<div class="snippet-card ' + (worstState === 'broken' ? 'broken' : '') + '" data-display-group="' + esc(groupTitle) + '">' +
+        '<div class="snippet-card-header">' +
+        '<div style="flex:1;">' +
+        '<div class="snippet-badge-row">' +
+        '<div class="snippet-card-title">' + esc(groupTitle) + '</div>' +
+        '<span class="snippet-status-badge ' + worstState + '">' +
+        '<span class="snippet-status-dot"></span>' + esc(stateLabels[worstState] || worstState) + '</span>' +
+        '</div>' +
+        '<div class="snippet-instructions" style="margin-top:8px;margin-bottom:0;">' +
+        'These snippets work together — install both for the post-purchase member experience.' +
+        '</div>' +
+        '</div>' +
+        '<span class="snippet-card-badge">REQUIRED</span>' +
+        '</div>' +
+        '<hr class="snippet-divider">' +
+        subSections +
+        '</div>';
+    }
+
+    function buildSubSnippetHtml(s) {
+      // Same content as buildSnippetCardHtml but without the outer card wrapper
+      var stateLabels = {
+        verified: 'Verified',
+        installed_unverified: 'Installed — awaiting verification',
+        stale: 'Out of date',
+        broken: 'Broken',
+        not_installed: 'Not detected yet'
+      };
+      var stateClass = s.install_state || 'not_installed';
+      var stateLabel = stateLabels[stateClass] || stateClass;
+
+      var instructionsHtml = (s.instructions || []).map(function(step) {
+        return '<li>' + esc(step) + '</li>';
+      }).join('');
+
+      var renderErrorHtml = '';
+      if (s.render_error === 'missing_env_vars') {
+        renderErrorHtml = '<div class="snippet-render-error">' +
+          '⚠ This snippet cannot be generated — missing server configuration: <strong>' +
+          (s.render_missing_env || []).map(esc).join(', ') + '</strong>. Contact AccessSync support.' +
+          '</div>';
+      } else if (s.render_error) {
+        renderErrorHtml = '<div class="snippet-render-error">⚠ Snippet render error: ' + esc(s.render_error) + '</div>';
+      }
+
+      var metaHtml = '<div class="snippet-meta">' +
+        '<span class="snippet-meta-item"><strong>Version:</strong> ' + esc(s.current_version) + '</span>' +
+        '<span class="snippet-meta-item"><strong>Install in:</strong> ' + esc(s.wix_install_path) + '</span>' +
+        (s.version_installed ? '<span class="snippet-meta-item"><strong>You have:</strong> ' + esc(s.version_installed) + '</span>' : '') +
+        (s.last_telemetry_at ? '<span class="snippet-meta-item"><strong>Last seen:</strong> ' + esc(fmtRelative(s.last_telemetry_at)) + '</span>' : '') +
+        '</div>';
+
+      var testBtnHtml = s.verify_via && s.verify_via !== 'none'
+        ? '<button class="snippet-reveal-btn" data-test-connection="1">Test Connection</button>'
+        : '';
+
+      var lastTestHtml = s.last_test_result
+        ? '<div class="snippet-test-result" data-result="' + esc(s.last_test_result) + '">' +
+          (s.last_test_result === 'ok' ? '✓ Last test: verified' : '⚠ Last test: ' + esc(s.last_test_result)) +
+          '</div>'
+        : '';
+
+      var bodyHtml = s.body
+        ? '<div class="snippet-code-block"><pre>' + esc(s.body) + '</pre></div>' +
+          lastTestHtml +
+          '<div class="snippet-copy-row">' +
+          testBtnHtml +
+          '<button class="snippet-copy-btn">' +
+          '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+          ' Copy snippet</button></div>'
+        : '';
+
+      var optionalBadge = s.category === 'optional'
+        ? ' <span class="snippet-card-badge" style="background:var(--bg);color:var(--muted);font-size:9px;">OPTIONAL</span>'
+        : '';
+
+      return '<div data-snippet-id="' + esc(s.id) + '">' +
+        '<div class="snippet-badge-row" style="margin-bottom:6px;">' +
+        '<div class="snippet-card-title" style="font-size:12px;">' + esc(s.name) + '</div>' +
+        '<span class="snippet-status-badge ' + stateClass + '">' +
+        '<span class="snippet-status-dot"></span>' + esc(stateLabel) + '</span>' +
+        optionalBadge +
+        '</div>' +
+        '<div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">' +
+        esc(s.description) +
+        (instructionsHtml ? '<ol>' + instructionsHtml + '</ol>' : '') +
+        '</div>' +
+        renderErrorHtml + metaHtml + bodyHtml +
+        '</div>';
     }
 
     function buildSnippetCardHtml(s) {
@@ -1380,7 +1517,7 @@
         installed_unverified: 'Installed — awaiting verification',
         stale: 'Out of date',
         broken: 'Broken',
-        not_installed: 'Not installed'
+        not_installed: 'Not detected yet'
       };
       var stateLabel = stateLabels[stateClass] || stateClass;
       var categoryBadge = s.category === 'required'

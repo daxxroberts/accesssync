@@ -471,6 +471,24 @@ router.get('/:clientId/setup-state', async (req, res) => {
     if (!adminHubUrl)   envIssues.push('ADMIN_HUB_URL');
     if (!hmacSecret)    envIssues.push('WIX_WEBHOOK_SECRET');
 
+    // OB-238 followup — for clients onboarded before OB-237 telemetry shipped,
+    // operator_setup_state is empty. Detect evidence-based install for
+    // velo_events_backend via recent accepted webhooks. This stops showing
+    // "Not installed" on a snippet we know is installed.
+    let webhookEvidence = false;
+    try {
+      const evidence = await db.query(
+        `SELECT 1 FROM webhook_log
+         WHERE client_id = $1 AND hmac_status = 'accepted'
+           AND received_at > NOW() - INTERVAL '14 days'
+         LIMIT 1`,
+        [clientId]
+      );
+      webhookEvidence = evidence.rows.length > 0;
+    } catch (e) {
+      log.warn('operator.setup_state.webhook_evidence_check_failed', { clientId });
+    }
+
     const snippets = snippetRegistry.listSnippets().map(meta => {
       const rendered = snippetRegistry.renderSnippet(meta.id, { clientId });
       const state = stateBySnippet[meta.id] || {
@@ -484,11 +502,16 @@ router.get('/:clientId/setup-state', async (req, res) => {
         effectiveState = 'broken';
       } else if (state.version_installed && state.version_installed !== meta.current_version) {
         effectiveState = 'stale';
+      } else if (effectiveState === 'not_installed' && meta.id === 'velo_events_backend' && webhookEvidence) {
+        // Evidence-based detection — webhooks are landing, so events.js IS
+        // installed even though we haven't received a version header yet.
+        effectiveState = 'installed_unverified';
       }
 
       return {
         id: meta.id,
         name: meta.name,
+        display_group: meta.display_group, // OB-238 followup
         category: meta.category,
         criticality: meta.criticality,
         description: meta.description,
@@ -557,6 +580,19 @@ router.get('/:clientId/setup-aggregate', async (req, res) => {
     const stateBySnippet = {};
     for (const row of stateRows.rows) stateBySnippet[row.snippet_id] = row;
 
+    // OB-238 followup — evidence-based events.js detection (mirror of setup-state)
+    let webhookEvidence = false;
+    try {
+      const evidence = await db.query(
+        `SELECT 1 FROM webhook_log
+         WHERE client_id = $1 AND hmac_status = 'accepted'
+           AND received_at > NOW() - INTERVAL '14 days'
+         LIMIT 1`,
+        [clientId]
+      );
+      webhookEvidence = evidence.rows.length > 0;
+    } catch (e) { /* silent — evidence is optional */ }
+
     const envIssues = [];
     if (!process.env.CORE_ENGINE_URL)    envIssues.push('CORE_ENGINE_URL');
     if (!process.env.ADMIN_HUB_URL)      envIssues.push('ADMIN_HUB_URL');
@@ -568,9 +604,14 @@ router.get('/:clientId/setup-aggregate', async (req, res) => {
 
     for (const meta of snippetRegistry.listSnippets()) {
       const state = stateBySnippet[meta.id];
-      const installState = state ? state.install_state : 'not_installed';
+      let installState = state ? state.install_state : 'not_installed';
       const versionInstalled = state ? state.version_installed : null;
       const isStale = versionInstalled && versionInstalled !== meta.current_version;
+
+      // Evidence override (same rule as setup-state)
+      if (installState === 'not_installed' && meta.id === 'velo_events_backend' && webhookEvidence) {
+        installState = 'installed_unverified';
+      }
 
       if (meta.category === 'required') {
         if (installState === 'not_installed' || installState === 'broken') {
