@@ -96,7 +96,10 @@ const MemberDrawer = ({ member, open, onClose }) => {
     setExpandedKey(prev => prev === key ? null : key);
     if (!mappingId) return;
     if (rosterByMapping[mappingId]) return; // already fetched
-    const clientId = window.__CLIENT_ID;
+    const clientId = (window.__CLIENT_ID && window.__CLIENT_ID.length ? window.__CLIENT_ID : null)
+                  || (document.querySelector("meta[name='client-id']") || {}).content
+                  || (document.body && document.body.getAttribute("data-client-id"))
+                  || new URLSearchParams(window.location.search).get("clientId");
     if (!clientId) return;
     setRosterByMapping(prev => ({ ...prev, [mappingId]: { loading: true } }));
     fetch(`/operator/${encodeURIComponent(clientId)}/plan-mappings/${encodeURIComponent(mappingId)}/holders`,
