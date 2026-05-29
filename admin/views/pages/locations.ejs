@@ -1197,23 +1197,30 @@
 
       // OB-238 — surface the secret-source state so operator knows whether
       // they're on per-client (isolated) or platform-shared (legacy).
+      // Rotate button always renders — the rotate endpoint generates from
+      // scratch and does NOT depend on existing env vars, so it must be
+      // available even when CORE_ENGINE_URL / ADMIN_HUB_URL / WIX_WEBHOOK_SECRET
+      // are not configured.
       var secretSourceBadge = '';
       var rotateButtonHtml = '';
+      var rotateButtonLabel = 'Generate per-client secret (recommended)';
       if (hmacSource === 'per_client') {
         secretSourceBadge =
           '<span class="snippet-status-badge verified" style="margin-left:8px;">' +
           '<span class="snippet-status-dot"></span>Per-client (isolated)</span>';
-        rotateButtonHtml =
-          '<button class="snippet-reveal-btn" id="rotate-webhook-secret-btn" style="margin-top:8px;">' +
-          'Rotate secret</button>';
+        rotateButtonLabel = 'Rotate secret';
       } else if (hmacSource === 'platform_env_fallback') {
         secretSourceBadge =
           '<span class="snippet-status-badge stale" style="margin-left:8px;">' +
           '<span class="snippet-status-dot"></span>Platform-shared (legacy)</span>';
-        rotateButtonHtml =
-          '<button class="snippet-reveal-btn" id="rotate-webhook-secret-btn" style="margin-top:8px;">' +
-          'Generate per-client secret (recommended)</button>';
+      } else {
+        secretSourceBadge =
+          '<span class="snippet-status-badge broken" style="margin-left:8px;">' +
+          '<span class="snippet-status-dot"></span>Not configured</span>';
       }
+      rotateButtonHtml =
+        '<button class="snippet-reveal-btn" id="rotate-webhook-secret-btn" style="margin-top:8px;">' +
+        rotateButtonLabel + '</button>';
 
       var html = '<div class="snippet-card"><div class="snippet-card-header"><div>' +
                  '<div class="snippet-badge-row">' +
