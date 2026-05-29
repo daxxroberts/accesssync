@@ -1193,11 +1193,40 @@
       var el = document.getElementById('setup-webhook-card');
       var webhookUrl = d.webhookUrl;
       var hmacSecret = d.hmacSecret;
+      var hmacSource = d.hmacSource || 'none';
+
+      // OB-238 — surface the secret-source state so operator knows whether
+      // they're on per-client (isolated) or platform-shared (legacy).
+      var secretSourceBadge = '';
+      var rotateButtonHtml = '';
+      if (hmacSource === 'per_client') {
+        secretSourceBadge =
+          '<span class="snippet-status-badge verified" style="margin-left:8px;">' +
+          '<span class="snippet-status-dot"></span>Per-client (isolated)</span>';
+        rotateButtonHtml =
+          '<button class="snippet-reveal-btn" id="rotate-webhook-secret-btn" style="margin-top:8px;">' +
+          'Rotate secret</button>';
+      } else if (hmacSource === 'platform_env_fallback') {
+        secretSourceBadge =
+          '<span class="snippet-status-badge stale" style="margin-left:8px;">' +
+          '<span class="snippet-status-dot"></span>Platform-shared (legacy)</span>';
+        rotateButtonHtml =
+          '<button class="snippet-reveal-btn" id="rotate-webhook-secret-btn" style="margin-top:8px;">' +
+          'Generate per-client secret (recommended)</button>';
+      }
+
       var html = '<div class="snippet-card"><div class="snippet-card-header"><div>' +
+                 '<div class="snippet-badge-row">' +
                  '<div class="snippet-card-title">Webhook URL + HMAC Secret</div>' +
+                 secretSourceBadge +
+                 '</div>' +
                  '<div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">' +
                  'Used by the Velo backend snippet below to verify webhook authenticity. ' +
                  'Paste these into your Wix Secrets Manager (see events.js install instructions).' +
+                 (hmacSource === 'platform_env_fallback'
+                   ? ' <strong>Your account currently uses a shared platform secret.</strong> ' +
+                     'Generating a per-client secret isolates your webhooks from other AccessSync operators.'
+                   : '') +
                  '</div></div>' +
                  '<span class="snippet-card-badge">CONFIG</span></div>' +
                  '<hr class="snippet-divider">' +
@@ -1217,7 +1246,7 @@
       } else {
         html += '<span class="snippet-value" style="color:var(--red)">(WIX_WEBHOOK_SECRET not configured)</span>';
       }
-      html += '</div></div>';
+      html += '</div>' + rotateButtonHtml + '</div>';
       el.innerHTML = html;
 
       // Wire up reveal + copy
@@ -1246,6 +1275,44 @@
           }).catch(function() { toast('Copy failed — try manually selecting', 'error'); });
         });
       });
+
+      // OB-238 — rotate button
+      var rotateBtn = document.getElementById('rotate-webhook-secret-btn');
+      if (rotateBtn) rotateBtn.addEventListener('click', rotateWebhookSecret);
+    }
+
+    function rotateWebhookSecret() {
+      var confirmed = confirm(
+        'Generate a new per-client webhook secret?\n\n' +
+        'AccessSync will create a unique secret for this account. You MUST paste the new value into your Wix Secrets Manager under the key "accesssync_webhook_secret" — your webhooks will stop working until you do.\n\n' +
+        'Continue?'
+      );
+      if (!confirmed) return;
+
+      apiFetch('/operator/' + clientId + '/wix-webhook-secret/rotate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (!data.ok) {
+            toast(data.error || 'Rotate failed', 'error');
+            return;
+          }
+          // Show the new secret ONCE via a modal-like confirm prompt the operator
+          // must explicitly close, so they can paste before navigating away.
+          window.prompt(
+            'NEW per-client webhook secret — copy this NOW and paste into Wix Secrets Manager under the key "accesssync_webhook_secret".\n\n' +
+            'This value will not be shown again — but you can re-reveal it from this page later.',
+            data.secret
+          );
+          toast('Per-client secret saved — update Wix Secrets Manager now', 'success');
+          _snippetsLoaded = false;
+          loadSetupSnippets();
+        })
+        .catch(function() {
+          toast('Rotate request failed — check your connection', 'error');
+        });
     }
 
     function renderSnippetCards(snippets) {

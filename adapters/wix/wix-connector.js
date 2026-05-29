@@ -19,6 +19,8 @@ const webhookProcessor = require('../../core/webhook-processor');
 const tenantResolver = require('../../core/tenant-resolver');
 const hmacMonitor = require('../../core/hmac-monitor'); // Sprint 5.1
 const setupTelemetry = require('../../core/setup-telemetry'); // OB-237 Phase C
+const { decryptApiKey } = require('../../core/crypto-utils'); // OB-238
+const db = require('../../db'); // OB-238
 const { log } = require('../../core/logger');
 
 class WixConnector {
@@ -41,13 +43,14 @@ class WixConnector {
       // Re-serializing req.body risks field ordering differences that break signature checks.
       const rawBody = req.rawBody || (typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
       const signature = req.headers['x-wix-signature'];
+      const verifyClientIdHint = req.headers['x-accesssync-client-id'] || null;
 
       // Generate traceId at ingress — threaded through all downstream log events and DB writes.
       // traceId is hoisted above the try block so the catch block can log it on any failure.
 
-      // 1. Verify Signature (DR-009)
-      if (!this._verifySignature(rawBody, signature)) {
-        const clientHint = req.headers['x-accesssync-client-id'] || 'unknown';
+      // 1. Verify Signature (DR-009 + OB-238 per-client)
+      if (!(await this._verifySignature(rawBody, signature, verifyClientIdHint))) {
+        const clientHint = verifyClientIdHint || 'unknown';
         const rejectedEventId = req.headers['x-wix-event-id'] || null;
         log.warn('wix.hmac.rejected', { traceId, clientId: null, eventId: rejectedEventId, stage: 'ingress', result: 'failed', clientHint });
         hmacMonitor.recordFailure(clientHint).catch(() => {}); // Sprint 5.1 — non-blocking
@@ -160,15 +163,59 @@ class WixConnector {
   /**
    * Verifies the Wix HMAC-SHA256 signature.
    *
+   * OB-238: tries per-client secret first (clients.wix_webhook_secret), falls
+   * back to platform-wide env var for legacy clients without per-client secret.
+   * One operator's leaked secret no longer forges webhooks for other operators.
+   *
    * @param {string} rawBody
    * @param {string} signature
-   * @returns {boolean}
+   * @param {string|null} clientIdHint  from x-accesssync-client-id header
+   * @returns {Promise<boolean>}
    */
-  _verifySignature(rawBody, signature) {
-    if (!this.webhookSecret || !signature) return false;
+  async _verifySignature(rawBody, signature, clientIdHint) {
+    if (!signature) return false;
 
+    // Try per-client secret first if hint present
+    if (clientIdHint) {
+      const perClientSecret = await this._resolvePerClientSecret(clientIdHint);
+      if (perClientSecret) {
+        return this._checkHmac(rawBody, signature, perClientSecret);
+      }
+    }
+
+    // Fall back to platform-wide env var (legacy clients during transition)
+    if (this.webhookSecret) {
+      return this._checkHmac(rawBody, signature, this.webhookSecret);
+    }
+
+    return false;
+  }
+
+  /**
+   * Look up + decrypt clients.wix_webhook_secret.
+   * Returns null if no row, no secret, or decryption fails.
+   * Never throws — observability doctrine, DR-037.
+   */
+  async _resolvePerClientSecret(clientId) {
     try {
-      const hmac = crypto.createHmac('sha256', this.webhookSecret);
+      const result = await db.query(
+        'SELECT wix_webhook_secret FROM clients WHERE id = $1 LIMIT 1',
+        [clientId]
+      );
+      if (!result.rows.length || !result.rows[0].wix_webhook_secret) return null;
+      return decryptApiKey(result.rows[0].wix_webhook_secret);
+    } catch (e) {
+      log.error('wix.hmac.per_client_secret_lookup_failed', { clientId }, e);
+      return null;
+    }
+  }
+
+  /**
+   * Timing-safe HMAC-SHA256 comparison.
+   */
+  _checkHmac(rawBody, signature, secret) {
+    try {
+      const hmac = crypto.createHmac('sha256', secret);
       hmac.update(rawBody, 'utf8');
       const expectedSignature = hmac.digest('base64');
 

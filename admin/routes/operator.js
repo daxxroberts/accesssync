@@ -405,7 +405,10 @@ const snippetRegistry = require('../../core/snippet-registry');
 router.get('/:clientId/setup-state', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const client = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    const client = await db.query(
+      'SELECT id, wix_webhook_secret FROM clients WHERE id = $1',
+      [clientId]
+    );
     if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
 
     const stateRows = await db.query(
@@ -421,7 +424,22 @@ router.get('/:clientId/setup-state', async (req, res) => {
     const coreEngineUrl = (process.env.CORE_ENGINE_URL || '').replace(/\/$/, '');
     const adminHubUrl   = (process.env.ADMIN_HUB_URL   || '').replace(/\/$/, '');
     const webhookUrl    = coreEngineUrl ? `${coreEngineUrl}/webhooks/wix` : null;
-    const hmacSecret    = process.env.WIX_WEBHOOK_SECRET || null;
+
+    // OB-238 — per-client secret takes precedence over env fallback
+    let hmacSecret = null;
+    let hmacSource = 'none';
+    if (client.rows[0].wix_webhook_secret) {
+      try {
+        hmacSecret = decryptKey(client.rows[0].wix_webhook_secret);
+        hmacSource = 'per_client';
+      } catch (e) {
+        log.error('operator.setup_state.per_client_secret_decrypt_failed', { clientId }, e);
+      }
+    }
+    if (!hmacSecret && process.env.WIX_WEBHOOK_SECRET) {
+      hmacSecret = process.env.WIX_WEBHOOK_SECRET;
+      hmacSource = 'platform_env_fallback';
+    }
 
     const envIssues = [];
     if (!coreEngineUrl) envIssues.push('CORE_ENGINE_URL');
@@ -482,6 +500,7 @@ router.get('/:clientId/setup-state', async (req, res) => {
       clientId,
       webhookUrl,
       hmacSecret,
+      hmacSource,  // OB-238 — 'per_client' / 'platform_env_fallback' / 'none'
       coreEngineUrl,
       adminHubUrl,
       envIssues,
@@ -620,6 +639,37 @@ router.post('/:clientId/setup-state/test', async (req, res) => {
     res.json({ ok, result, message });
   } catch (err) {
     log.error('operator.setup_state.test.error', { clientId, snippet_id }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /operator/:clientId/wix-webhook-secret/rotate ────────────
+// OB-238 — generate a new per-client wix_webhook_secret, encrypt via DR-028,
+// store in clients.wix_webhook_secret. Returns plaintext ONCE so operator
+// can paste into their Wix Secrets Manager. Encrypted at rest; future GETs
+// must decrypt. Replaces the platform-wide WIX_WEBHOOK_SECRET fallback for
+// this client. Logged to activity_event.
+router.post('/:clientId/wix-webhook-secret/rotate', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const client = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    // 32-byte cryptographic random, base64-encoded — same shape as Wix's recommendation
+    const plaintext = crypto.randomBytes(32).toString('base64');
+    const encrypted = encryptApiKey(plaintext);
+
+    await db.query(
+      'UPDATE clients SET wix_webhook_secret = $1, updated_at = NOW() WHERE id = $2',
+      [encrypted, clientId]
+    );
+
+    recordActivity(req, 'admin.wix_webhook_secret.rotated', { clientId });
+    log.warn('clients.wix_webhook_secret.rotated', { clientId, stage: 'admin_action' });
+
+    res.json({ ok: true, secret: plaintext });
+  } catch (err) {
+    log.error('operator.wix_webhook_secret.rotate.error', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
