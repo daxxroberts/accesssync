@@ -63,14 +63,49 @@ const ActionsMenu = ({ open, onClose, onAction, member }) => {
   );
 };
 
+// Map member_access_sources.status enum → StatusPill kind.
+function mapSourceStatusToPill(s) {
+  if (s === "active") return "active";
+  if (s === "failed" || s === "cancelled" || s === "revoked") return "suspended";
+  return "pending"; // draft, pending_hardware, pending_start
+}
+
+function sourceStatusLabel(s) {
+  if (!s) return "Active";
+  return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // Drawer for member detail — post-S-11/OB-185 rewrite: iterates member.plans[]
 // so multi-plan members render every plan + active state, not just the first.
 const MemberDrawer = ({ member, open, onClose }) => {
+  const [expandedKey, setExpandedKey] = useState(null);
+  const [rosterByMapping, setRosterByMapping] = useState({}); // mappingId → { loading, error, members }
+
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }
     if (open) document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // Reset expand state when drawer member changes
+  useEffect(() => {
+    setExpandedKey(null);
+  }, [member && member.id]);
+
+  const togglePlanExpand = useCallback((key, mappingId) => {
+    setExpandedKey(prev => prev === key ? null : key);
+    if (!mappingId) return;
+    if (rosterByMapping[mappingId]) return; // already fetched
+    const clientId = window.__CLIENT_ID;
+    if (!clientId) return;
+    setRosterByMapping(prev => ({ ...prev, [mappingId]: { loading: true } }));
+    fetch(`/operator/${encodeURIComponent(clientId)}/plan-mappings/${encodeURIComponent(mappingId)}/holders`,
+      { credentials: "same-origin" })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(j => setRosterByMapping(prev => ({ ...prev, [mappingId]: { loading: false, members: j.holders || [] } })))
+      .catch(e => setRosterByMapping(prev => ({ ...prev, [mappingId]: { loading: false, error: String(e) } })));
+  }, [rosterByMapping]);
+
   if (!member) return null;
 
   const plans = member.plans || [];
@@ -124,44 +159,123 @@ const MemberDrawer = ({ member, open, onClose }) => {
                                    : "pending";
                   const subId  = plan.billing && plan.billing.subscriptionId;
                   const ordId  = plan.billing && plan.billing.orderId;
+                  const key = plan.accessId ? `${plan.accessId}-${idx}` : `idx-${idx}`;
+                  const isExpanded = expandedKey === key;
+                  const mappingId = plan.planMappingId;
+                  const roster = mappingId ? rosterByMapping[mappingId] : null;
+                  const canExpand = !!mappingId;
                   return (
-                    <div key={idx} style={{
+                    <div key={key} style={{
                       border:"1px solid var(--border)",
                       borderRadius:"var(--r-card,8px)",
-                      padding:"10px 12px",
-                      background:"var(--card,#fff)"
+                      background:"var(--card,#fff)",
+                      overflow:"hidden"
                     }}>
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
-                        <PlanBadge plan={plan.planName} />
-                        <StatusPill status={statusKind} label={plan.accessStatus} />
-                      </div>
-                      <dl className="kv" style={{margin:0,fontSize:12.5,rowGap:4}}>
-                        <dt>Rate</dt>
-                        <dd className="tabular">
-                          {plan.rate}
-                          {plan.coupon && (
-                            <span style={{display:"block",fontSize:11,color:"var(--muted)",fontWeight:400,marginTop:2}}>{plan.coupon}</span>
+                      <button
+                        type="button"
+                        onClick={() => canExpand && togglePlanExpand(key, mappingId)}
+                        aria-expanded={isExpanded}
+                        disabled={!canExpand}
+                        style={{
+                          width:"100%", textAlign:"left", border:0, background:"transparent",
+                          padding:"10px 12px",
+                          cursor: canExpand ? "pointer" : "default",
+                          color:"inherit", font:"inherit"
+                        }}
+                      >
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
+                          <PlanBadge plan={plan.planName} />
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <StatusPill status={statusKind} label={plan.accessStatus} />
+                            {canExpand && (
+                              <span aria-hidden style={{
+                                fontSize:10, color:"var(--muted)",
+                                transform: isExpanded ? "rotate(180deg)" : "none",
+                                transition:"transform .15s"
+                              }}>▾</span>
+                            )}
+                          </div>
+                        </div>
+                        <dl className="kv" style={{margin:0,fontSize:12.5,rowGap:4}}>
+                          <dt>Rate</dt>
+                          <dd className="tabular">
+                            {plan.rate}
+                            {plan.coupon && (
+                              <span style={{display:"block",fontSize:11,color:"var(--muted)",fontWeight:400,marginTop:2}}>{plan.coupon}</span>
+                            )}
+                          </dd>
+                          <dt>Added</dt><dd className="tabular">{plan.addedAt}</dd>
+                          <dt>Auto-renew</dt>
+                          <dd style={{color: plan.autoRenewCanceled ? "var(--amber, #d97706)" : "var(--text)"}}>
+                            {plan.autoRenewCanceled ? "Cancels at period end" : "On"}
+                          </dd>
+                          <dt>Billing</dt><dd>{plan.billingMemberName}</dd>
+                          {(subId || ordId) && (
+                            <>
+                              <dt>Wix</dt>
+                              <dd>
+                                <a href={`https://manage.wix.com/dashboard/_/pricing-plans/orders/${ordId || subId}`}
+                                   target="_blank" rel="noopener noreferrer"
+                                   onClick={e => e.stopPropagation()}
+                                   style={{color:"var(--brand)",fontSize:12,fontWeight:500}}>
+                                  View order →
+                                </a>
+                              </dd>
+                            </>
                           )}
-                        </dd>
-                        <dt>Added</dt><dd className="tabular">{plan.addedAt}</dd>
-                        <dt>Auto-renew</dt>
-                        <dd style={{color: plan.autoRenewCanceled ? "var(--amber, #d97706)" : "var(--text)"}}>
-                          {plan.autoRenewCanceled ? "Cancels at period end" : "On"}
-                        </dd>
-                        <dt>Billing</dt><dd>{plan.billingMemberName}</dd>
-                        {(subId || ordId) && (
-                          <>
-                            <dt>Wix</dt>
-                            <dd>
-                              <a href={`https://manage.wix.com/dashboard/_/pricing-plans/orders/${ordId || subId}`}
-                                 target="_blank" rel="noopener noreferrer"
-                                 style={{color:"var(--brand)",fontSize:12,fontWeight:500}}>
-                                View order →
-                              </a>
-                            </dd>
-                          </>
-                        )}
-                      </dl>
+                        </dl>
+                      </button>
+                      {isExpanded && (
+                        <div style={{
+                          borderTop:"1px solid var(--border)",
+                          background:"var(--surface, rgba(0,0,0,.02))",
+                          padding:"10px 12px"
+                        }}>
+                          <div style={{
+                            fontSize:11, fontWeight:600, textTransform:"uppercase",
+                            letterSpacing:".06em", color:"var(--muted)", marginBottom:8
+                          }}>
+                            Members on this plan
+                          </div>
+                          {roster && roster.loading && (
+                            <div style={{fontSize:12, color:"var(--muted)"}}>Loading…</div>
+                          )}
+                          {roster && roster.error && (
+                            <div style={{fontSize:12, color:"var(--red, #dc2626)"}}>
+                              Couldn't load members.
+                            </div>
+                          )}
+                          {roster && !roster.loading && !roster.error && (
+                            roster.members.length === 0 ? (
+                              <div style={{fontSize:12, color:"var(--muted)"}}>No members on this plan.</div>
+                            ) : (
+                              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                                {roster.members.map(h => {
+                                  const display = ((h.firstName || "") + " " + (h.lastName || "")).trim()
+                                               || h.email || h.platformMemberId || "Unknown";
+                                  const pillKind = mapSourceStatusToPill(h.sourceStatus);
+                                  const pillLabel = h.role === "holder" && pillKind === "active"
+                                                   ? "Holder"
+                                                   : sourceStatusLabel(h.sourceStatus);
+                                  return (
+                                    <div key={h.id} className="submember-row" style={{maxWidth:"none"}}>
+                                      <Avatar
+                                        member={{ first: h.firstName, last: h.lastName, email: h.email }}
+                                        kind={pillKind} size="sm"
+                                      />
+                                      <div style={{flex:1,minWidth:0}}>
+                                        <div className="name">{display}</div>
+                                        {h.email && <div className="email">{h.email}</div>}
+                                      </div>
+                                      <StatusPill status={pillKind} label={pillLabel} />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

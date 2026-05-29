@@ -640,7 +640,7 @@
       var groupStatLabel = groupCount === 1
         ? '1 ' + pName + ' ' + gLabel
         : groupCount + ' ' + pName + ' ' + gLabel + 's';
-      var memberStatLabel = memberCount === 1 ? '1 member' : memberCount + ' members';
+      var memberStatLabel = memberCount === 1 ? '1 active plan' : memberCount + ' active plans';
       var priceChip = plan.wixPrice
         ? '<span class="plan-summary-stat price">' + esc(plan.wixPrice) + '</span>'
         : '';
@@ -771,47 +771,6 @@
             '<div class="config-helper">' + getMaxMembersHelper(plan) + '</div>' +
           '</div>' +
         '</div>';
-      }
-
-      // ── Active members table (collapsible) ──
-      // Counts every occupant with a role assignment — buyer-as-slot + sub-members.
-      if (plan.isMultiMember) {
-        var occupants = plan.activeMembers || [];
-        var holderCount = occupants.filter(function(o) { return o.role === 'holder'; }).length;
-        var subCount    = occupants.filter(function(o) { return o.role === 'sub'; }).length;
-        var primaryLabel = occupants.length + ' active member' + (occupants.length !== 1 ? 's' : '');
-        var detailLabel  = holderCount + ' holder' + (holderCount !== 1 ? 's' : '') +
-                           ' · ' + subCount + ' additional';
-
-        bodyHTML +=
-          '<div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">' +
-            '<button class="collapse-toggle" onclick="toggleCollapse(\'holders-' + plan.id + '\')">' +
-              '<span><span class="collapse-label">' + primaryLabel + '</span><span class="collapse-count">' + detailLabel + '</span></span>' +
-              '<span class="collapse-chevron" id="chevron-holders-' + plan.id + '">&#9660;</span>' +
-            '</button>' +
-            '<div class="collapse-body" id="holders-' + plan.id + '">';
-
-        if (occupants.length > 0) {
-          var rows = '';
-          occupants.forEach(function(o) {
-            var roleLabel = o.role === 'holder' ? 'Plan holder' : 'Additional';
-            var status = o.status || 'active';
-            rows +=
-              '<tr>' +
-                '<td><strong>' + esc(o.name) + '</strong></td>' +
-                '<td>' + roleLabel + '</td>' +
-                '<td><span class="member-status-dot ' + status + '"></span>' + status.charAt(0).toUpperCase() + status.slice(1) + '</td>' +
-              '</tr>';
-          });
-          bodyHTML +=
-            '<table class="members-table">' +
-              '<thead><tr><th>Member</th><th>Role</th><th>Status</th></tr></thead>' +
-              '<tbody>' + rows + '</tbody>' +
-            '</table>';
-        } else {
-          bodyHTML += '<div class="empty-state"><div class="empty-state-icon">&#128101;</div><div>No members on this plan yet.</div></div>';
-        }
-        bodyHTML += '</div></div>'; // close collapse-body + wrapper
       }
 
       bodyHTML += '</div>'; // close plan-card-body
@@ -1505,7 +1464,7 @@
                         id:        h.id,
                         name:      name,
                         role:      h.role,
-                        status:    h.status,
+                        status:    h.sourceStatus,
                         platformMemberId: h.platformMemberId,
                       };
                     });
