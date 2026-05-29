@@ -265,11 +265,20 @@
           : (Array.isArray(accessRow.plan_names) ? accessRow.plan_names.filter(Boolean) : []);
         var planIds   = Array.isArray(accessRow.plan_ids)   ? accessRow.plan_ids   : [];
         var validUntils = Array.isArray(accessRow.plan_valid_untils) ? accessRow.plan_valid_untils : [];
+        // OB-223 alignment: plan_mapping_ids[] is ORDER BY pm.id, same as the array that
+        // produced plan_names_disambiguated. When we used the disambig array above, this
+        // array is positionally aligned. When we fell back to plan_names (ORDER BY plan_name)
+        // alignment is not guaranteed, so we leave per-plan mappingId null.
+        var planMappingIds = (planNamesDisambig && planNamesDisambig.length > 0
+                              && Array.isArray(accessRow.plan_mapping_ids))
+          ? accessRow.plan_mapping_ids
+          : [];
 
         if (planNames.length === 0) {
           var fallback = accessRow.sub_plan_name || accessRow.plan_name || "Unknown Plan";
           planNames = [fallback];
           planIds = [accessRow.plan_ids && accessRow.plan_ids[0] || null];
+          planMappingIds = [accessRow.plan_mapping_id || null];
           validUntils = [null];
         }
 
@@ -308,7 +317,7 @@
             accessId:          accessRow.id,
             planName:          name,
             planSourceId:      planIds[idx] || null,
-            planMappingId:     accessRow.plan_mapping_id || null,
+            planMappingId:     planMappingIds[idx] || accessRow.plan_mapping_id || null,
             rate:              planBilling.rate,
             coupon:            planBilling.coupon,
             autoRenewCanceled: planBilling.autoRenewCanceled,
