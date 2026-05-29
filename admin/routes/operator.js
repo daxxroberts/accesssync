@@ -494,6 +494,69 @@ router.get('/:clientId/setup-state', async (req, res) => {
   }
 });
 
+// ── GET /operator/:clientId/setup-aggregate ──────────────────────
+// OB-237 Phase D — lightweight pill state for Dashboard. Returns
+// aggregate (green/amber/red) + a short summary message + count of
+// snippets needing attention. Cheaper than full /setup-state — no
+// snippet bodies returned, no rendering.
+router.get('/:clientId/setup-aggregate', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const client = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    const stateRows = await db.query(
+      `SELECT snippet_id, install_state, version_installed
+       FROM operator_setup_state WHERE client_id = $1`,
+      [clientId]
+    );
+    const stateBySnippet = {};
+    for (const row of stateRows.rows) stateBySnippet[row.snippet_id] = row;
+
+    const envIssues = [];
+    if (!process.env.CORE_ENGINE_URL)    envIssues.push('CORE_ENGINE_URL');
+    if (!process.env.ADMIN_HUB_URL)      envIssues.push('ADMIN_HUB_URL');
+    if (!process.env.WIX_WEBHOOK_SECRET) envIssues.push('WIX_WEBHOOK_SECRET');
+
+    let aggregate = 'green';
+    let attentionCount = 0;
+    let criticalReason = null;
+
+    for (const meta of snippetRegistry.listSnippets()) {
+      const state = stateBySnippet[meta.id];
+      const installState = state ? state.install_state : 'not_installed';
+      const versionInstalled = state ? state.version_installed : null;
+      const isStale = versionInstalled && versionInstalled !== meta.current_version;
+
+      if (meta.category === 'required') {
+        if (installState === 'not_installed' || installState === 'broken') {
+          aggregate = 'red';
+          if (!criticalReason) criticalReason = meta.name + ' not installed';
+          attentionCount++;
+        } else if (isStale || installState === 'stale' || installState === 'installed_unverified') {
+          if (aggregate !== 'red') aggregate = 'amber';
+          attentionCount++;
+        }
+      }
+    }
+    // Env issues take precedence in the message — they're the root cause
+    // when snippets can't be rendered correctly.
+    if (envIssues.length) {
+      aggregate = 'red';
+      criticalReason = 'Server configuration missing: ' + envIssues.join(', ');
+    }
+
+    let message = 'All required snippets installed and verified';
+    if (aggregate === 'red')   message = criticalReason || 'Critical setup issue';
+    if (aggregate === 'amber') message = attentionCount + ' snippet(s) need attention';
+
+    res.json({ aggregate, attentionCount, message });
+  } catch (err) {
+    log.error('operator.setup_aggregate.error', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /operator/:clientId/setup-state/test ─────────────────────
 // OB-237 Phase C — Test Connection. Confirms round-trip works without
 // firing any real grants/revokes. For velo_events_backend, checks last

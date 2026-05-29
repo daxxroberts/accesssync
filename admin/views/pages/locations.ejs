@@ -445,6 +445,10 @@
       loadWixKeyStatus();
       loadNotifEmail();
       loadLocations();
+      // OB-237 Phase D — deep link from Dashboard pill: #setup auto-opens the Setup Hub tab
+      if (window.location.hash === '#setup') {
+        switchTab('setup');
+      }
     });
 
     // ── API helpers ────────────────────────────────────────────────────
