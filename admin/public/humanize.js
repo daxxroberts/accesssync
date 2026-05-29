@@ -183,6 +183,32 @@
     if (e === 'member.sub_member.soft_delete_idempotent_skip')
       return 'Soft-delete already done — no-op (race or replay).';
 
+    // OB-237 + OB-238 — Setup Hub activity events.
+    if (e === 'admin.setup_hub.snippet_copied') {
+      var copiedId = ev.detail?.snippet_id || c.snippet_id || 'a snippet';
+      return (who || 'An operator') + ' copied ' + copiedId + ' from the Setup Hub' + at + '.';
+    }
+    if (e === 'admin.setup_hub.test_connection') {
+      var testedId = ev.detail?.snippet_id || c.snippet_id || 'a snippet';
+      var testResult = ev.detail?.result || c.result || 'unknown';
+      var verdict = testResult === 'ok' ? 'verified live' :
+                    testResult === 'no_telemetry' ? 'no telemetry yet (snippet may not be installed)' :
+                    testResult === 'version_mismatch' ? 'installed version is out of date' :
+                    testResult === 'stale_telemetry' ? 'last telemetry is older than the staleness window' :
+                    testResult;
+      return (who || 'An operator') + ' tested the ' + testedId + ' Wix snippet' + at + ' — ' + verdict + '.';
+    }
+    if (e === 'admin.wix_webhook_secret.rotated')
+      return (who || 'An operator') + ' rotated the per-client Wix webhook HMAC secret' + at + '. Wix Secrets Manager must be updated to match.';
+    if (e === 'admin.wix_webhook_secret.set_custom')
+      return (who || 'An operator') + ' set a custom per-client Wix webhook HMAC secret' + at + '. Wix Secrets Manager must contain the same value.';
+    if (e === 'clients.wix_webhook_secret.auto_generated')
+      return 'AccessSync auto-generated the per-client Wix webhook HMAC secret on first Setup Hub visit (no manual click required).';
+    if (e === 'clients.wix_webhook_secret.rotated')
+      return 'Per-client Wix webhook HMAC secret rotated — operator-triggered.';
+    if (e === 'clients.wix_webhook_secret.set_custom')
+      return 'Per-client Wix webhook HMAC secret set to operator-provided custom value.';
+
     // Internal infrastructure failures (route handlers + logger fault paths).
     // These bubble up when the system itself can't talk to Postgres or is
     // logging its own crash — important to surface in plain English so the

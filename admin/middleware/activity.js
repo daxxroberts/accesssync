@@ -27,6 +27,7 @@
 'use strict';
 
 const { getTraceId, getActor } = require('../../core/trace-context');
+const { resolveActor } = require('./trace-context');
 
 let _db = null;
 function getDb() {
@@ -38,13 +39,20 @@ function getDb() {
  * Record an activity event.
  * Resolves actor + trace_id from ALS — no explicit passing required.
  *
+ * Bug fix 2026-05-29: actor was reading from ALS which captured at
+ * trace-context middleware time (BEFORE per-router auth populates
+ * req.admin). Result: every operator endpoint logged actor=system/
+ * anonymous instead of the real admin email. Now re-resolves actor
+ * from req if available — fresh post-auth state wins over stale ALS.
+ *
  * @param {import('express').Request} req  - used for IP + user-agent (stored as context)
  * @param {string}  event  - e.g. 'plan_mapping.created'
  * @param {Object}  ctx    - { clientId, ...any other relevant fields }
  */
 function recordActivity(req, event, ctx = {}) {
   const traceId  = getTraceId();
-  const actor    = getActor();
+  // Prefer fresh actor from req (post-auth) over stale ALS actor (pre-auth)
+  const actor    = req ? resolveActor(req) : getActor();
   const clientId = ctx.clientId || null;
 
   // diff — everything except clientId, stored in the activity_event.diff column
