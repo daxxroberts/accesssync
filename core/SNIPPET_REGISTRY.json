@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "_doc": "OB-237 Phase A — canonical registry of all Wix-side snippets AccessSync expects operators to install. Source of truth for Setup Hub UI rendering, version detection, and Test Connection round-trips. Adding a new member-facing surface = add an entry here. Bumping current_version triggers stale-install detection on next operator login. Templates are static text; runtime substitutes {{CLIENT_ID}}, {{ADMIN_HUB_URL}}, {{CORE_ENGINE_URL}} server-side from env + operator scope.",
+  "snippets": [
+    {
+      "id": "velo_events_backend",
+      "name": "events.js — Velo Backend Webhook Forwarder",
+      "category": "required",
+      "criticality": "critical",
+      "description": "The Velo backend file that forwards Wix Pricing Plan, Bookings, and Member events to AccessSync. Without this installed, NO door access provisioning happens. Most critical snippet in the system.",
+      "wix_install_path": "Wix Editor → Dev Mode → Backend → events.js",
+      "current_version": "v2.1.0",
+      "required_env_vars": ["CORE_ENGINE_URL"],
+      "verify_via": "webhook_header",
+      "verify_header_name": "x-accesssync-snippet-version",
+      "expected_header_value": "v2.1.0",
+      "stale_after_days": 7,
+      "instructions": [
+        "Open your Wix Editor and click Dev Mode in the top menu bar",
+        "Go to Dashboard → Developer Tools → Secrets Manager",
+        "Add a secret named 'accesssync_webhook_secret' with the HMAC value from the Webhook Setup card below",
+        "In the left panel, click Backend → + New File → name it 'events.js' (replace contents if it exists)",
+        "Paste the snippet below",
+        "Save and publish your Wix site"
+      ],
+      "template": "/**\n * AccessSync Velo backend webhook forwarder — version {{VERSION}}\n * Generated for client {{CLIENT_ID}}\n * Do not modify the version header below — AccessSync uses it for install detection.\n */\nimport { fetch } from 'wix-fetch';\nimport { getSecret } from 'wix-secrets-backend';\nimport { createHmac } from 'crypto';\n\nconst CORE_ENGINE_URL = '{{CORE_ENGINE_URL}}/webhooks/wix';\nconst CLIENT_ID = '{{CLIENT_ID}}';\nconst SNIPPET_VERSION = '{{VERSION}}';\n\nasync function _send(eventType, data) {\n  try {\n    const secret = await getSecret('accesssync_webhook_secret');\n    const payload = { eventType, data };\n    const body = JSON.stringify(payload);\n    const sig = createHmac('sha256', secret).update(body).digest('base64');\n    await fetch(CORE_ENGINE_URL, {\n      method: 'POST',\n      headers: {\n        'Content-Type': 'application/json',\n        'x-wix-signature': sig,\n        'x-accesssync-client-id': CLIENT_ID,\n        'x-accesssync-snippet-version': SNIPPET_VERSION\n      },\n      body\n    });\n  } catch (e) { console.error('AccessSync webhook error:', e); }\n}\n\nexport function wixPricingPlans_onOrderPurchased(event)        { return _send('wixPricingPlans.orderPurchased', event); }\nexport function wixPricingPlans_onOrderStarted(event)          { return _send('wixPricingPlans.orderStarted', event); }\nexport function wixPricingPlans_onOrderCanceled(event)         { return _send('wixPricingPlans.orderCanceled', event); }\nexport function wixPricingPlans_onOrderAutoRenewCanceled(event){ return _send('wixPricingPlans.orderAutoRenewCanceled', event); }\nexport function wixPricingPlans_onOrderEnded(event)            { return _send('wixPricingPlans.orderEnded', event); }\nexport function wixPricingPlans_onOrderUpdated(event)          { return _send('wixPricingPlans.orderUpdated', event); }\nexport function wixBookings_onBookingConfirmed(event)          { return _send('wixBookings.bookingConfirmed', event); }\nexport function wixBookings_onBookingCanceled(event)           { return _send('wixBookings.bookingCanceled', event); }\nexport function wixMembers_onMemberDeleted(event)              { return _send('wixMembers.memberDeleted', event); }\n"
+    },
+    {
+      "id": "sync_status_page",
+      "name": "Sync Status Page",
+      "category": "required",
+      "criticality": "high",
+      "description": "Member-facing page that shows door access provisioning status after a plan purchase. Embed in your Wix site as a members-only page so members see whether their access is ready.",
+      "wix_install_path": "Wix Editor → new page 'Access Status' → add HTML iFrame (id html1) → Velo Dev Mode → page code",
+      "current_version": "v2.1.0",
+      "required_env_vars": ["ADMIN_HUB_URL"],
+      "verify_via": "iframe_heartbeat",
+      "verify_heartbeat_path": "/sync-status/heartbeat",
+      "stale_after_days": 30,
+      "instructions": [
+        "In your Wix editor, create a new members-only page called 'Access Status'",
+        "Add an HTML iFrame component to the page and set its ID to 'html1'",
+        "Open the Velo Dev Mode code panel for that page",
+        "Paste the snippet below"
+      ],
+      "template": "// AccessSync Sync Status page — version {{VERSION}}\nimport wixUsers from 'wix-users';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\nconst SNIPPET_VERSION = '{{VERSION}}';\n\n$w.onReady(async function () {\n  const user = wixUsers.currentUser;\n  if (!user.loggedIn) { $w('#html1').src = ''; return; }\n  const token = await user.getAuthToken();\n  const memberId = user.id;\n  $w('#html1').src = ADMIN_HUB + '/sync-status'\n    + '?memberId=' + encodeURIComponent(memberId)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&v=' + encodeURIComponent(SNIPPET_VERSION)\n    + '&token=' + encodeURIComponent(token);\n});\n"
+    },
+    {
+      "id": "my_access_page",
+      "name": "My Access Page (Member Hub)",
+      "category": "required",
+      "criticality": "high",
+      "description": "Member-facing self-service page showing active door access, plan details, and family-plan management. Embed as a members-only page.",
+      "wix_install_path": "Wix Editor → new members-only page 'My Access' → add HTML iFrame (id html1) → Velo Dev Mode → page code",
+      "current_version": "v2.1.0",
+      "required_env_vars": ["ADMIN_HUB_URL"],
+      "verify_via": "iframe_heartbeat",
+      "verify_heartbeat_path": "/member-hub/heartbeat",
+      "stale_after_days": 30,
+      "instructions": [
+        "In your Wix editor, create a new members-only page called 'My Access'",
+        "Add an HTML iFrame component with the ID 'html1'",
+        "Open the Velo Dev Mode code panel for that page",
+        "Paste the snippet below"
+      ],
+      "template": "// AccessSync My Access (Member Hub) — version {{VERSION}}\nimport wixUsers from 'wix-users';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\nconst SNIPPET_VERSION = '{{VERSION}}';\n\n$w.onReady(async function () {\n  const user = wixUsers.currentUser;\n  if (!user.loggedIn) { $w('#html1').src = ''; return; }\n  const token = await user.getAuthToken();\n  const memberId = user.id;\n  $w('#html1').src = ADMIN_HUB + '/member-hub'\n    + '?memberId=' + encodeURIComponent(memberId)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&v=' + encodeURIComponent(SNIPPET_VERSION)\n    + '&token=' + encodeURIComponent(token);\n});\n"
+    },
+    {
+      "id": "thank_you_redirect",
+      "name": "Post-Purchase Thank-You Redirect",
+      "category": "optional",
+      "criticality": "low",
+      "description": "Redirects a member to the Sync Status page automatically after they complete a plan purchase. Optional — without this, members can still reach Sync Status manually, but UX is smoother with the redirect.",
+      "wix_install_path": "Wix Editor → existing Thank You page → Velo Dev Mode → page code",
+      "current_version": "v2.0.0",
+      "required_env_vars": ["ADMIN_HUB_URL"],
+      "verify_via": "none",
+      "stale_after_days": 60,
+      "instructions": [
+        "In your Wix editor, open the Thank You page that members see after completing a plan purchase",
+        "Open the Velo Dev Mode code panel for that page",
+        "Paste the snippet below"
+      ],
+      "template": "// AccessSync post-purchase redirect — version {{VERSION}}\nimport wixLocationFrontend from 'wix-location-frontend';\nimport { currentMember } from 'wix-members-frontend';\n\nconst ACCESSSYNC_URL = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\n\n$w.onReady(async function () {\n  try {\n    const member = await currentMember.getMember();\n    if (!member?._id) return;\n    wixLocationFrontend.to(\n      ACCESSSYNC_URL + '/sync-status'\n      + '?memberId=' + encodeURIComponent(member._id)\n      + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    );\n  } catch (e) {\n    console.error('AccessSync redirect error:', e);\n  }\n});\n"
+    }
+  ]
+}
