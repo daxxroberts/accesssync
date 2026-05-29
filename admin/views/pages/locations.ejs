@@ -206,6 +206,56 @@
     .snippet-loading { font-size: 12px; color: var(--muted); padding: 32px 0; text-align: center; }
     .snippet-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 
+    /* OB-237 Phase B — Setup Hub status badges + env-issue banner */
+    .setup-aggregate {
+      padding: 14px 18px; border-radius: 10px; margin-bottom: 18px;
+      display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 600;
+      border: 1px solid var(--border);
+    }
+    .setup-aggregate.green  { background: var(--sage-dim);  color: var(--sage-dark);  border-color: var(--sage-border); }
+    .setup-aggregate.amber  { background: #FEF3C7;          color: #92400E;           border-color: #FCD34D; }
+    .setup-aggregate.red    { background: #FEE2E2;          color: #991B1B;           border-color: #FCA5A5; }
+    .setup-aggregate-icon { font-size: 18px; }
+    .setup-aggregate-action { margin-left: auto; font-size: 11px; }
+
+    .snippet-status-badge {
+      font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 12px;
+      display: inline-flex; align-items: center; gap: 4px;
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .snippet-status-badge.verified            { background: var(--sage-dim);  color: var(--sage-dark); }
+    .snippet-status-badge.installed_unverified{ background: #FEF3C7;          color: #92400E; }
+    .snippet-status-badge.stale               { background: #FEF3C7;          color: #92400E; }
+    .snippet-status-badge.broken              { background: #FEE2E2;          color: #991B1B; }
+    .snippet-status-badge.not_installed       { background: var(--bg);        color: var(--muted); border: 1px solid var(--border); }
+    .snippet-status-dot {
+      width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+    }
+    .verified .snippet-status-dot             { background: var(--sage-dark); }
+    .installed_unverified .snippet-status-dot { background: #92400E; }
+    .stale .snippet-status-dot                { background: #92400E; }
+    .broken .snippet-status-dot               { background: #991B1B; }
+    .not_installed .snippet-status-dot        { background: var(--muted); }
+
+    .snippet-card.broken { border-color: #FCA5A5; }
+    .snippet-render-error {
+      background: #FEE2E2; color: #991B1B; padding: 10px 14px; border-radius: 8px;
+      font-size: 11px; margin-bottom: 12px; border: 1px solid #FCA5A5;
+    }
+    .setup-env-banner {
+      background: #FEE2E2; color: #991B1B; padding: 12px 16px; border-radius: 10px;
+      font-size: 12px; margin-bottom: 18px; border: 1px solid #FCA5A5;
+    }
+    .setup-env-banner strong { font-weight: 700; }
+    .snippet-meta {
+      font-size: 10px; color: var(--muted); margin-top: 8px;
+      display: flex; gap: 12px; flex-wrap: wrap;
+    }
+    .snippet-meta-item { display: inline-flex; align-items: center; gap: 4px; }
+    .snippet-badge-row {
+      display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+    }
+
     @media (max-width: 600px) {
       .loc-stats   { grid-template-columns: repeat(2, 1fr); }
       .page-header { flex-direction: column; }
@@ -345,115 +395,16 @@
 
     </div><!-- /section-locations -->
 
-    <!-- ══ Wix Setup Guide section ════════════════════════════════════ -->
+    <!-- ══ Wix Setup Hub section (OB-237 Phase B) ═════════════════════ -->
     <div id="section-setup" class="setup-section">
       <div id="setup-loading" class="snippet-loading">
         <div class="spinner"></div>Loading setup data…
       </div>
       <div id="setup-content" style="display:none;">
-
-        <!-- 1. Webhook Setup -->
-        <div class="snippet-card">
-          <div class="snippet-card-header">
-            <div>
-              <div class="snippet-card-title">Webhook Setup</div>
-              <div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">
-                Connects Wix to AccessSync so member plan changes trigger door access updates.
-                <ol>
-                  <li>In Wix, go to <strong>Settings → Advanced → Webhooks</strong></li>
-                  <li>Click <strong>Add Webhook</strong></li>
-                  <li>Paste the webhook URL below</li>
-                  <li>Set the secret to the HMAC secret below</li>
-                  <li>Select events: <strong>Order Paid, Order Cancelled, Member Joined</strong></li>
-                  <li>Save the webhook</li>
-                </ol>
-              </div>
-            </div>
-            <span class="snippet-card-badge">REQUIRED</span>
-          </div>
-
-          <hr class="snippet-divider">
-
-          <div class="snippet-field-label">Webhook URL</div>
-          <div class="snippet-row">
-            <span class="snippet-value" id="sg-webhook-url">Loading…</span>
-            <button class="snippet-copy-btn" onclick="sgCopy('sg-webhook-url', this)">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy
-            </button>
-          </div>
-
-          <div class="snippet-field-label" style="margin-top:12px;">HMAC Secret</div>
-          <div class="snippet-row">
-            <span class="snippet-value masked" id="sg-hmac-secret" onclick="sgReveal('sg-hmac-secret')">Click to reveal</span>
-            <button class="snippet-reveal-btn" id="sg-hmac-reveal-btn" onclick="sgReveal('sg-hmac-secret')">Reveal</button>
-            <button class="snippet-copy-btn" onclick="sgCopy('sg-hmac-secret', this)">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy
-            </button>
-          </div>
-        </div>
-
-        <!-- 2. Member Sync Status Page -->
-        <div class="snippet-card">
-          <div class="snippet-card-header">
-            <div>
-              <div class="snippet-card-title">Member Sync Status Page</div>
-              <div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">
-                Shows members their current door access status after purchasing a plan.
-                <ol>
-                  <li>In your Wix editor, create a new page (e.g. "Access Status")</li>
-                  <li>Add a <strong>Custom Element</strong> or <strong>HTML iFrame</strong> component</li>
-                  <li>Open the <strong>Velo Dev Mode</strong> code panel for that page</li>
-                  <li>Paste the snippet below into the page's code</li>
-                </ol>
-              </div>
-            </div>
-            <span class="snippet-card-badge">REQUIRED</span>
-          </div>
-          <hr class="snippet-divider">
-          <div class="snippet-field-label">Velo Page Code</div>
-          <div class="snippet-code-block">
-            <pre id="sg-sync-snippet">Loading…</pre>
-          </div>
-          <div class="snippet-copy-row">
-            <button class="snippet-copy-btn" onclick="sgCopyPre('sg-sync-snippet', this)">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy snippet
-            </button>
-          </div>
-        </div>
-
-        <!-- 3. My Access / Member Hub Page -->
-        <div class="snippet-card">
-          <div class="snippet-card-header">
-            <div>
-              <div class="snippet-card-title">My Access Page</div>
-              <div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">
-                Gives members a self-service view of their active door access and plan details.
-                <ol>
-                  <li>In your Wix editor, create a new members-only page (e.g. "My Access")</li>
-                  <li>Open the <strong>Velo Dev Mode</strong> code panel for that page</li>
-                  <li>Paste the snippet below into the page's code</li>
-                  <li>Add an <strong>HTML iFrame</strong> component with ID <code>html1</code></li>
-                </ol>
-              </div>
-            </div>
-            <span class="snippet-card-badge">REQUIRED</span>
-          </div>
-          <hr class="snippet-divider">
-          <div class="snippet-field-label">Velo Page Code</div>
-          <div class="snippet-code-block">
-            <pre id="sg-hub-snippet">Loading…</pre>
-          </div>
-          <div class="snippet-copy-row">
-            <button class="snippet-copy-btn" onclick="sgCopyPre('sg-hub-snippet', this)">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy snippet
-            </button>
-          </div>
-        </div>
-
+        <div id="setup-aggregate-pill"></div>
+        <div id="setup-env-banner"></div>
+        <div id="setup-webhook-card"></div>
+        <div id="setup-snippets-list"></div>
       </div><!-- /setup-content -->
     </div><!-- /section-setup -->
 
@@ -1173,17 +1124,16 @@
       if (tab === 'setup' && !_snippetsLoaded) loadSetupSnippets();
     }
 
-    // ── Setup Guide ───────────────────────────────────────────────────
-    var _snippetData = null;
-    var _hmacRevealed = false;
+    // ── Setup Hub (OB-237 Phase B — registry-driven) ──────────────────
+    var _setupState = null;
 
     function loadSetupSnippets() {
       _snippetsLoaded = true;
-      apiFetch('/operator/' + clientId + '/setup-snippets')
+      apiFetch('/operator/' + clientId + '/setup-state')
         .then(function(res) { return res.json(); })
         .then(function(data) {
-          _snippetData = data;
-          renderSetupSnippets(data);
+          _setupState = data;
+          renderSetupHub(data);
         })
         .catch(function() {
           document.getElementById('setup-loading').innerHTML =
@@ -1191,88 +1141,198 @@
         });
     }
 
-    function renderSetupSnippets(d) {
+    function renderSetupHub(d) {
       document.getElementById('setup-loading').style.display = 'none';
       document.getElementById('setup-content').style.display = '';
 
-      // Webhook URL
-      var urlEl = document.getElementById('sg-webhook-url');
-      urlEl.textContent = d.webhookUrl || '(CORE_ENGINE_URL not configured — contact support)';
-      if (!d.webhookUrl) urlEl.style.color = 'var(--red)';
+      renderAggregatePill(d.aggregate);
+      renderEnvBanner(d.envIssues || []);
+      renderWebhookCard(d);
+      renderSnippetCards(d.snippets || []);
+    }
 
-      // HMAC secret — masked until revealed
-      var secretEl = document.getElementById('sg-hmac-secret');
-      secretEl.setAttribute('data-secret', d.hmacSecret || '');
-      if (!d.hmacSecret) {
-        secretEl.textContent = '(WIX_WEBHOOK_SECRET not configured)';
-        secretEl.classList.remove('masked');
-        secretEl.style.color = 'var(--red)';
-        document.getElementById('sg-hmac-reveal-btn').style.display = 'none';
+    function renderAggregatePill(agg) {
+      var el = document.getElementById('setup-aggregate-pill');
+      var labels = {
+        green: { icon: '🟢', text: 'All required snippets installed and verified', action: '' },
+        amber: { icon: '🟡', text: 'Some snippets need attention',                  action: 'Review below' },
+        red:   { icon: '🔴', text: 'Critical setup issue — door access may be broken', action: 'Fix below' }
+      };
+      var info = labels[agg] || labels.amber;
+      el.className = 'setup-aggregate ' + agg;
+      el.innerHTML =
+        '<span class="setup-aggregate-icon">' + info.icon + '</span>' +
+        '<span>' + esc(info.text) + '</span>' +
+        (info.action ? '<span class="setup-aggregate-action">' + esc(info.action) + '</span>' : '');
+    }
+
+    function renderEnvBanner(envIssues) {
+      var el = document.getElementById('setup-env-banner');
+      if (!envIssues.length) { el.innerHTML = ''; return; }
+      el.className = 'setup-env-banner';
+      el.innerHTML =
+        '<strong>Server configuration issue:</strong> the following environment variables are not set: <code>' +
+        envIssues.map(esc).join('</code>, <code>') + '</code>. Snippets that depend on these cannot be generated. Contact AccessSync support.';
+    }
+
+    function renderWebhookCard(d) {
+      var el = document.getElementById('setup-webhook-card');
+      var webhookUrl = d.webhookUrl;
+      var hmacSecret = d.hmacSecret;
+      var html = '<div class="snippet-card"><div class="snippet-card-header"><div>' +
+                 '<div class="snippet-card-title">Webhook URL + HMAC Secret</div>' +
+                 '<div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">' +
+                 'Used by the Velo backend snippet below to verify webhook authenticity. ' +
+                 'Paste these into your Wix Secrets Manager (see events.js install instructions).' +
+                 '</div></div>' +
+                 '<span class="snippet-card-badge">CONFIG</span></div>' +
+                 '<hr class="snippet-divider">' +
+                 '<div class="snippet-field-label">Webhook URL</div>' +
+                 '<div class="snippet-row">' +
+                 '<span class="snippet-value"' + (webhookUrl ? '' : ' style="color:var(--red)"') + '>' +
+                 esc(webhookUrl || '(CORE_ENGINE_URL not configured — contact AccessSync support)') +
+                 '</span>' +
+                 (webhookUrl ? '<button class="snippet-copy-btn" data-copy-text="' + esc(webhookUrl) + '">Copy</button>' : '') +
+                 '</div>' +
+                 '<div class="snippet-field-label" style="margin-top:12px;">HMAC Secret</div>' +
+                 '<div class="snippet-row">';
+      if (hmacSecret) {
+        html += '<span class="snippet-value masked" data-secret="' + esc(hmacSecret) + '">Click to reveal</span>' +
+                '<button class="snippet-reveal-btn">Reveal</button>' +
+                '<button class="snippet-copy-btn" data-copy-secret="1">Copy</button>';
+      } else {
+        html += '<span class="snippet-value" style="color:var(--red)">(WIX_WEBHOOK_SECRET not configured)</span>';
+      }
+      html += '</div></div>';
+      el.innerHTML = html;
+
+      // Wire up reveal + copy
+      var revealBtn = el.querySelector('.snippet-reveal-btn');
+      var maskedEl = el.querySelector('.snippet-value.masked');
+      function reveal() {
+        if (!maskedEl) return;
+        maskedEl.classList.remove('masked');
+        maskedEl.textContent = maskedEl.getAttribute('data-secret');
+        if (revealBtn) revealBtn.style.display = 'none';
+      }
+      if (revealBtn) revealBtn.addEventListener('click', reveal);
+      if (maskedEl)  maskedEl.addEventListener('click', reveal);
+
+      el.querySelectorAll('.snippet-copy-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var text = btn.getAttribute('data-copy-secret')
+            ? (maskedEl ? maskedEl.getAttribute('data-secret') : '')
+            : btn.getAttribute('data-copy-text');
+          if (!text) return;
+          navigator.clipboard.writeText(text.trim()).then(function() {
+            btn.classList.add('copied');
+            var originalText = btn.textContent;
+            btn.textContent = '✓ Copied';
+            setTimeout(function() { btn.classList.remove('copied'); btn.textContent = originalText; }, 1800);
+          }).catch(function() { toast('Copy failed — try manually selecting', 'error'); });
+        });
+      });
+    }
+
+    function renderSnippetCards(snippets) {
+      var el = document.getElementById('setup-snippets-list');
+      var html = snippets.map(buildSnippetCardHtml).join('');
+      el.innerHTML = html;
+      // Wire up each card's Copy button
+      el.querySelectorAll('.snippet-card[data-snippet-id]').forEach(function(card) {
+        var snippetId = card.getAttribute('data-snippet-id');
+        var copyBtn = card.querySelector('.snippet-copy-btn');
+        if (copyBtn) copyBtn.addEventListener('click', function() { copySnippet(snippetId, copyBtn); });
+      });
+    }
+
+    function buildSnippetCardHtml(s) {
+      var stateClass = s.install_state || 'not_installed';
+      var stateLabels = {
+        verified: 'Verified',
+        installed_unverified: 'Installed — awaiting verification',
+        stale: 'Out of date',
+        broken: 'Broken',
+        not_installed: 'Not installed'
+      };
+      var stateLabel = stateLabels[stateClass] || stateClass;
+      var categoryBadge = s.category === 'required'
+        ? '<span class="snippet-card-badge">REQUIRED</span>'
+        : (s.category === 'optional' ? '<span class="snippet-card-badge" style="background:var(--bg);color:var(--muted);">OPTIONAL</span>' : '');
+
+      var instructionsHtml = (s.instructions || []).map(function(step) {
+        return '<li>' + esc(step) + '</li>';
+      }).join('');
+
+      var renderErrorHtml = '';
+      if (s.render_error === 'missing_env_vars') {
+        renderErrorHtml = '<div class="snippet-render-error">' +
+          '⚠ This snippet cannot be generated — missing server configuration: <strong>' +
+          (s.render_missing_env || []).map(esc).join(', ') + '</strong>. Contact AccessSync support.' +
+          '</div>';
+      } else if (s.render_error) {
+        renderErrorHtml = '<div class="snippet-render-error">⚠ Snippet render error: ' + esc(s.render_error) + '</div>';
       }
 
-      var base = (d.adminHubBase || '').replace(/\/$/, '');
-      var cid  = d.clientId || '';
+      var metaHtml = '<div class="snippet-meta">' +
+        '<span class="snippet-meta-item"><strong>Version:</strong> ' + esc(s.current_version) + '</span>' +
+        '<span class="snippet-meta-item"><strong>Install in:</strong> ' + esc(s.wix_install_path) + '</span>' +
+        (s.version_installed ? '<span class="snippet-meta-item"><strong>You have:</strong> ' + esc(s.version_installed) + '</span>' : '') +
+        (s.last_telemetry_at ? '<span class="snippet-meta-item"><strong>Last seen:</strong> ' + esc(fmtRelative(s.last_telemetry_at)) + '</span>' : '') +
+        '</div>';
 
-      // Sync status snippet
-      document.getElementById('sg-sync-snippet').textContent = [
-        "import wixUsers from 'wix-users';",
-        "",
-        "$w.onReady(async function () {",
-        "  const user = wixUsers.currentUser;",
-        "  if (!user.loggedIn) { $w('#html1').src = ''; return; }",
-        "  const token = await user.getAuthToken();",
-        "  const memberId = user.id;",
-        "  $w('#html1').src = '" + base + "/sync-status'",
-        "    + '?memberId=' + memberId",
-        "    + '&clientId=" + cid + "'",
-        "    + '&token=' + encodeURIComponent(token);",
-        "});"
-      ].join('\n');
+      var bodyHtml = s.body
+        ? '<div class="snippet-code-block"><pre>' + esc(s.body) + '</pre></div>' +
+          '<div class="snippet-copy-row">' +
+          '<button class="snippet-copy-btn">' +
+          '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+          ' Copy snippet</button></div>'
+        : '';
 
-      // Member hub / My Access snippet
-      document.getElementById('sg-hub-snippet').textContent = [
-        "import wixUsers from 'wix-users';",
-        "",
-        "$w.onReady(async function () {",
-        "  const user = wixUsers.currentUser;",
-        "  if (!user.loggedIn) { $w('#html1').src = ''; return; }",
-        "  const token = await user.getAuthToken();",
-        "  const memberId = user.id;",
-        "  $w('#html1').src = '" + base + "/member-hub'",
-        "    + '?memberId=' + memberId",
-        "    + '&clientId=" + cid + "'",
-        "    + '&token=' + encodeURIComponent(token);",
-        "});"
-      ].join('\n');
+      return '<div class="snippet-card ' + (stateClass === 'broken' ? 'broken' : '') + '" data-snippet-id="' + esc(s.id) + '">' +
+        '<div class="snippet-card-header">' +
+        '<div style="flex:1;">' +
+        '<div class="snippet-badge-row">' +
+        '<div class="snippet-card-title">' + esc(s.name) + '</div>' +
+        '<span class="snippet-status-badge ' + stateClass + '">' +
+        '<span class="snippet-status-dot"></span>' + esc(stateLabel) + '</span>' +
+        '</div>' +
+        '<div class="snippet-instructions" style="margin-top:8px;margin-bottom:0;">' +
+        esc(s.description) +
+        (instructionsHtml ? '<ol>' + instructionsHtml + '</ol>' : '') +
+        '</div>' +
+        '</div>' + categoryBadge + '</div>' +
+        '<hr class="snippet-divider">' +
+        renderErrorHtml + metaHtml + bodyHtml +
+        '</div>';
     }
 
-    function sgReveal(elId) {
-      var el = document.getElementById(elId);
-      var secret = el.getAttribute('data-secret');
-      if (!secret) return;
-      el.classList.remove('masked');
-      el.textContent = secret;
-      var revealBtn = document.getElementById('sg-hmac-reveal-btn');
-      if (revealBtn) revealBtn.style.display = 'none';
-    }
-
-    function sgCopy(elId, btn) {
-      var el = document.getElementById(elId);
-      var text = el.getAttribute('data-secret') || el.textContent;
-      navigator.clipboard.writeText(text.trim()).then(function() {
+    function copySnippet(snippetId, btn) {
+      if (!_setupState) return;
+      var snippet = (_setupState.snippets || []).find(function(s) { return s.id === snippetId; });
+      if (!snippet || !snippet.body) return;
+      navigator.clipboard.writeText(snippet.body).then(function() {
         btn.classList.add('copied');
+        var originalText = btn.textContent;
         btn.textContent = '✓ Copied';
-        setTimeout(function() { btn.classList.remove('copied'); btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy'; }, 1800);
+        setTimeout(function() { btn.classList.remove('copied'); btn.textContent = originalText; }, 1800);
+        // Record the copy action server-side (transitions state to installed_unverified)
+        apiFetch('/operator/' + clientId + '/setup-state/copied', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ snippet_id: snippetId })
+        }).catch(function() { /* non-blocking */ });
       }).catch(function() { toast('Copy failed — try manually selecting', 'error'); });
     }
 
-    function sgCopyPre(preId, btn) {
-      var text = document.getElementById(preId).textContent;
-      navigator.clipboard.writeText(text.trim()).then(function() {
-        btn.classList.add('copied');
-        btn.textContent = '✓ Copied';
-        setTimeout(function() { btn.classList.remove('copied'); btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy snippet'; }, 1800);
-      }).catch(function() { toast('Copy failed — try manually selecting', 'error'); });
+    function fmtRelative(iso) {
+      if (!iso) return '';
+      var t = new Date(iso).getTime();
+      var diff = Date.now() - t;
+      if (diff < 60_000)    return 'just now';
+      if (diff < 3_600_000) return Math.floor(diff / 60_000) + ' min ago';
+      if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + ' hr ago';
+      return Math.floor(diff / 86_400_000) + ' day(s) ago';
     }
   </script>
 </body>

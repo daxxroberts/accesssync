@@ -396,6 +396,143 @@ router.get('/:clientId/setup-snippets', async (req, res) => {
   }
 });
 
+// ── GET /operator/:clientId/setup-state ───────────────────────────
+// OB-237 Phase B — registry-driven Setup Hub data.
+// Returns: webhook URL + HMAC status, per-snippet metadata + rendered body
+// + install state from operator_setup_state, plus aggregate health pill.
+const snippetRegistry = require('../../core/snippet-registry');
+
+router.get('/:clientId/setup-state', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const client = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    const stateRows = await db.query(
+      `SELECT snippet_id, install_state, version_installed,
+              last_telemetry_at, last_telemetry_version,
+              last_verified_at, last_test_at, last_test_result
+       FROM operator_setup_state WHERE client_id = $1`,
+      [clientId]
+    );
+    const stateBySnippet = {};
+    for (const row of stateRows.rows) stateBySnippet[row.snippet_id] = row;
+
+    const coreEngineUrl = (process.env.CORE_ENGINE_URL || '').replace(/\/$/, '');
+    const adminHubUrl   = (process.env.ADMIN_HUB_URL   || '').replace(/\/$/, '');
+    const webhookUrl    = coreEngineUrl ? `${coreEngineUrl}/webhooks/wix` : null;
+    const hmacSecret    = process.env.WIX_WEBHOOK_SECRET || null;
+
+    const envIssues = [];
+    if (!coreEngineUrl) envIssues.push('CORE_ENGINE_URL');
+    if (!adminHubUrl)   envIssues.push('ADMIN_HUB_URL');
+    if (!hmacSecret)    envIssues.push('WIX_WEBHOOK_SECRET');
+
+    const snippets = snippetRegistry.listSnippets().map(meta => {
+      const rendered = snippetRegistry.renderSnippet(meta.id, { clientId });
+      const state = stateBySnippet[meta.id] || {
+        install_state: 'not_installed', version_installed: null,
+        last_telemetry_at: null, last_telemetry_version: null,
+        last_verified_at: null, last_test_at: null, last_test_result: null,
+      };
+
+      let effectiveState = state.install_state;
+      if (rendered.error) {
+        effectiveState = 'broken';
+      } else if (state.version_installed && state.version_installed !== meta.current_version) {
+        effectiveState = 'stale';
+      }
+
+      return {
+        id: meta.id,
+        name: meta.name,
+        category: meta.category,
+        criticality: meta.criticality,
+        description: meta.description,
+        wix_install_path: meta.wix_install_path,
+        current_version: meta.current_version,
+        required_env_vars: meta.required_env_vars,
+        instructions: meta.instructions,
+        verify_via: meta.verify_via,
+        stale_after_days: meta.stale_after_days,
+        body: rendered.body || null,
+        render_error: rendered.error || null,
+        render_missing_env: rendered.missing || null,
+        install_state: effectiveState,
+        version_installed: state.version_installed,
+        last_telemetry_at: state.last_telemetry_at,
+        last_telemetry_version: state.last_telemetry_version,
+        last_verified_at: state.last_verified_at,
+        last_test_at: state.last_test_at,
+        last_test_result: state.last_test_result,
+      };
+    });
+
+    let aggregate = 'green';
+    for (const s of snippets) {
+      if (s.category === 'required' && (s.install_state === 'broken' || s.install_state === 'not_installed')) {
+        aggregate = 'red';
+        break;
+      }
+      if (s.install_state === 'stale' || s.install_state === 'installed_unverified') aggregate = 'amber';
+    }
+    if (envIssues.length) aggregate = 'red';
+
+    res.json({
+      clientId,
+      webhookUrl,
+      hmacSecret,
+      coreEngineUrl,
+      adminHubUrl,
+      envIssues,
+      snippets,
+      aggregate,
+    });
+  } catch (err) {
+    log.error('operator.setup_state.error', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /operator/:clientId/setup-state/copied ───────────────────
+// OB-237 Phase B — operator clicked Copy on a snippet. Records install
+// intent in operator_setup_state. Verification (Phase C) flips state
+// to 'verified' when telemetry arrives.
+router.post('/:clientId/setup-state/copied', async (req, res) => {
+  const { clientId } = req.params;
+  const { snippet_id } = req.body || {};
+  if (!snippet_id) return res.status(400).json({ error: 'snippet_id required' });
+
+  const snippet = snippetRegistry.getSnippet(snippet_id);
+  if (!snippet) return res.status(404).json({ error: 'snippet_not_found' });
+
+  try {
+    const client = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    await db.query(
+      `INSERT INTO operator_setup_state
+         (client_id, snippet_id, install_state, version_installed, updated_at)
+       VALUES ($1, $2, 'installed_unverified', $3, NOW())
+       ON CONFLICT (client_id, snippet_id) DO UPDATE
+         SET install_state = CASE
+               WHEN operator_setup_state.install_state IN ('verified', 'stale')
+                 THEN operator_setup_state.install_state
+               ELSE 'installed_unverified'
+             END,
+             version_installed = EXCLUDED.version_installed,
+             updated_at = NOW()`,
+      [clientId, snippet_id, snippet.current_version]
+    );
+
+    recordActivity(req, 'admin.setup_hub.snippet_copied', { snippet_id, version: snippet.current_version });
+    res.json({ ok: true });
+  } catch (err) {
+    log.error('operator.setup_state.copied.error', { clientId, snippet_id }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /operator/verify-bypass ─────────────────────────────────
 // Owner bypass PIN validation for onboarding (skips Kisi key step).
 // PIN checked against OWNER_PIN env var (Railway ADMIN service) — never hardcoded.
@@ -1716,6 +1853,7 @@ router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
               mm.platform_member_id,
               mm.first_name,
               mm.last_name,
+              mm.email,
               ma.sub_master_id AS plan_holder_id,
               mas.status AS source_status,
               ma.status  AS access_status,
@@ -1736,9 +1874,11 @@ router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
           platformMemberId: r.platform_member_id,
           firstName:        r.first_name,
           lastName:         r.last_name,
+          email:            r.email,
           role:             r.role,
           planHolderId:     r.plan_holder_id,
-          status:           r.status || 'active',
+          sourceStatus:     r.source_status || 'active',
+          accessStatus:     r.access_status || 'inactive',
         };
       }),
     });
