@@ -191,11 +191,17 @@
     if (e === 'admin.setup_hub.test_connection') {
       var testedId = ev.detail?.snippet_id || c.snippet_id || 'a snippet';
       var testResult = ev.detail?.result || c.result || 'unknown';
-      var verdict = testResult === 'ok' ? 'verified live' :
-                    testResult === 'no_telemetry' ? 'no telemetry yet (snippet may not be installed)' :
-                    testResult === 'version_mismatch' ? 'installed version is out of date' :
-                    testResult === 'stale_telemetry' ? 'last telemetry is older than the staleness window' :
-                    testResult;
+      var verdict =
+        testResult === 'ok'                       ? 'verified live via telemetry' :
+        testResult === 'evidence_without_version' ? 'webhook evidence found but no version header yet (likely pre-v2.1 install OR just-upgraded waiting for next Wix event)' :
+        testResult === 'no_telemetry'             ? 'no telemetry yet' :
+        testResult === 'no_heartbeat'             ? 'no iframe heartbeat received yet (page may not have been visited by a logged-in member)' :
+        testResult === 'no_activity'              ? 'no webhook activity at all from this Wix site' :
+        testResult === 'version_mismatch'         ? 'installed version is out of date' :
+        testResult === 'stale_telemetry'          ? 'last telemetry is older than the staleness window' :
+        testResult === 'hmac_failed'              ? 'recent webhooks failed HMAC verification (secret mismatch between AccessSync and Wix Secrets Manager)' :
+        testResult === 'no_verification'          ? 'no automatic verification available for this snippet' :
+        testResult;
       return (who || 'An operator') + ' tested the ' + testedId + ' Wix snippet' + at + ' — ' + verdict + '.';
     }
     if (e === 'admin.wix_webhook_secret.rotated')

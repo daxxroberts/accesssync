@@ -57,26 +57,42 @@ async function recordSnippetTelemetry(clientId, snippetId, versionInstalled) {
 
 /**
  * Record a Test Connection result.
- * `result` is 'ok' or an error string.
+ *
+ * @param {string} clientId
+ * @param {string} snippetId
+ * @param {string} result      — result code string (e.g. 'ok', 'evidence_without_version', 'no_heartbeat')
+ * @param {string} [newState]  — install_state to set ('verified', 'installed_unverified', 'stale', 'broken').
+ *                                If omitted, install_state is preserved (only updates test fields).
  */
-async function recordTestResult(clientId, snippetId, result) {
+async function recordTestResult(clientId, snippetId, result, newState) {
   if (!clientId || !snippetId) return;
   try {
-    const broken = result !== 'ok';
-    await db.query(
-      `INSERT INTO operator_setup_state
-         (client_id, snippet_id, install_state, last_test_at, last_test_result, updated_at)
-       VALUES ($1, $2, $3, NOW(), $4, NOW())
-       ON CONFLICT (client_id, snippet_id) DO UPDATE
-         SET install_state = CASE
-               WHEN $3 = 'broken' THEN 'broken'
-               ELSE operator_setup_state.install_state
-             END,
-             last_test_at = NOW(),
-             last_test_result = EXCLUDED.last_test_result,
-             updated_at = NOW()`,
-      [clientId, snippetId, broken ? 'broken' : 'verified', result]
-    );
+    if (newState) {
+      // Set install_state explicitly + record test fields
+      await db.query(
+        `INSERT INTO operator_setup_state
+           (client_id, snippet_id, install_state, last_test_at, last_test_result, updated_at)
+         VALUES ($1, $2, $3, NOW(), $4, NOW())
+         ON CONFLICT (client_id, snippet_id) DO UPDATE
+           SET install_state = $3,
+               last_test_at = NOW(),
+               last_test_result = EXCLUDED.last_test_result,
+               updated_at = NOW()`,
+        [clientId, snippetId, newState, result]
+      );
+    } else {
+      // Don't change install_state — only record test fields
+      await db.query(
+        `INSERT INTO operator_setup_state
+           (client_id, snippet_id, install_state, last_test_at, last_test_result, updated_at)
+         VALUES ($1, $2, 'not_installed', NOW(), $3, NOW())
+         ON CONFLICT (client_id, snippet_id) DO UPDATE
+           SET last_test_at = NOW(),
+               last_test_result = EXCLUDED.last_test_result,
+               updated_at = NOW()`,
+        [clientId, snippetId, result]
+      );
+    }
   } catch (err) {
     log.error('setup_telemetry.test_result_failed', { clientId, snippetId, result }, err);
   }

@@ -668,39 +668,104 @@ router.post('/:clientId/setup-state/test', async (req, res) => {
        WHERE client_id = $1 AND snippet_id = $2`,
       [clientId, snippet_id]
     );
+    const telemetryAt = stateRow.rows[0]?.last_telemetry_at;
+    const telemetryVersion = stateRow.rows[0]?.last_telemetry_version;
 
     let result, message, ok;
+
     if (snippet.verify_via === 'none') {
-      result = 'ok';
+      // thank_you_redirect — no automatic verification possible
+      result = 'no_verification';
       ok = true;
-      message = 'This snippet has no automatic verification — no telemetry expected.';
-    } else if (!stateRow.rows.length || !stateRow.rows[0].last_telemetry_at) {
+      message = 'This snippet has no automatic verification. Complete a test plan purchase in Wix to confirm the redirect lands on AccessSync sync-status.';
+
+    } else if (snippet.id === 'velo_events_backend') {
+      // events.js is a Velo backend file — fires only on real Wix events.
+      // We cannot actively probe it from AccessSync. We can only passively
+      // observe via webhook_log + version-header telemetry.
+      const evidence = await db.query(
+        `SELECT received_at, hmac_status
+         FROM webhook_log
+         WHERE client_id = $1
+         ORDER BY received_at DESC
+         LIMIT 1`,
+        [clientId]
+      );
+      const latestWebhook = evidence.rows[0] || null;
+      const latestAcceptedQ = await db.query(
+        `SELECT received_at FROM webhook_log
+         WHERE client_id = $1 AND hmac_status = 'accepted'
+         ORDER BY received_at DESC LIMIT 1`,
+        [clientId]
+      );
+      const latestAccepted = latestAcceptedQ.rows[0] || null;
+
+      if (telemetryAt && telemetryVersion === snippet.current_version) {
+        const ageMin = Math.floor((Date.now() - new Date(telemetryAt).getTime()) / 60_000);
+        result = 'ok';
+        ok = true;
+        message = `Verified — events.js v${telemetryVersion} confirmed via webhook ${ageMin} min ago.`;
+      } else if (telemetryAt && telemetryVersion && telemetryVersion !== snippet.current_version) {
+        result = 'version_mismatch';
+        ok = false;
+        message = `Installed v${telemetryVersion}, current v${snippet.current_version}. Replace your Wix events.js with the snippet below + publish, then trigger a Wix plan event to confirm.`;
+      } else if (latestAccepted) {
+        // Accepted webhooks exist but no version header — pre-v2.1 events.js,
+        // OR v2.1 installed but no Wix event has fired since the upgrade.
+        const ageMin = Math.floor((Date.now() - new Date(latestAccepted.received_at).getTime()) / 60_000);
+        const ageStr = ageMin < 60 ? `${ageMin} min ago` :
+                       ageMin < 1440 ? `${Math.floor(ageMin / 60)} hr ago` :
+                       `${Math.floor(ageMin / 1440)} day(s) ago`;
+        result = 'evidence_without_version';
+        ok = true;
+        message = `Webhooks are arriving and verifying (last accepted ${ageStr}), but no version header has been received yet. Either you're still on a pre-v2.1 events.js, OR you just installed v2.1 and no Wix event has fired since. To confirm v2.1: trigger a plan event in Wix (purchase/cancel a test plan in Wix admin).`;
+      } else if (latestWebhook && latestWebhook.hmac_status === 'rejected') {
+        result = 'hmac_failed';
+        ok = false;
+        message = `Recent webhook(s) from Wix failed HMAC verification. The HMAC secret in your Wix Secrets Manager doesn't match the one AccessSync expects. Click Reveal on the HMAC Secret field above, copy it, and paste into Wix Secrets Manager under "accesssync_webhook_secret".`;
+      } else {
+        result = 'no_activity';
+        ok = false;
+        message = `No webhooks have ever arrived from your Wix site. Either events.js isn't installed (or Wix isn't published), or no Wix events have fired yet. Trigger a test plan event in Wix admin to verify the chain end-to-end.`;
+      }
+
+    } else if (snippet.verify_via === 'iframe_heartbeat') {
+      // sync_status_page + my_access_page — verified by iframe heartbeat
+      // which fires on first mount by a logged-in member.
+      if (telemetryAt && telemetryVersion === snippet.current_version) {
+        const ageMin = Math.floor((Date.now() - new Date(telemetryAt).getTime()) / 60_000);
+        result = 'ok';
+        ok = true;
+        message = `Verified — iframe v${telemetryVersion} heartbeat received ${ageMin} min ago.`;
+      } else if (telemetryAt && telemetryVersion && telemetryVersion !== snippet.current_version) {
+        result = 'version_mismatch';
+        ok = false;
+        message = `Installed v${telemetryVersion}, current v${snippet.current_version}. Replace the Velo page code below + publish, then visit the page (logged in as a member) to confirm.`;
+      } else {
+        result = 'no_heartbeat';
+        ok = false;
+        message = `No iframe heartbeat received yet. Heartbeats fire when a logged-in member loads the page. To verify: open the Wix page in preview mode while logged in as a member, OR ask a real member to visit the page.`;
+      }
+
+    } else {
+      // Fallback for unknown verify_via — shouldn't hit this in normal flow
       result = 'no_telemetry';
       ok = false;
-      message = 'No telemetry from this snippet has been received. Confirm the snippet is pasted into the right Wix page and your site is published.';
-    } else {
-      const lastSeen = new Date(stateRow.rows[0].last_telemetry_at);
-      const ageHours = (Date.now() - lastSeen.getTime()) / 3_600_000;
-      const staleAfterHours = (snippet.stale_after_days || 30) * 24;
-      if (ageHours > staleAfterHours) {
-        result = 'stale_telemetry';
-        ok = false;
-        message = `Last telemetry was ${Math.floor(ageHours / 24)} day(s) ago — older than the ${snippet.stale_after_days}-day window. Snippet may be removed or the Wix site may not be receiving traffic.`;
-      } else {
-        const installedVersion = stateRow.rows[0].last_telemetry_version;
-        if (installedVersion !== snippet.current_version) {
-          result = 'version_mismatch';
-          ok = false;
-          message = `Snippet installed is v${installedVersion}, but current version is v${snippet.current_version}. Copy the latest snippet below and replace your installed version.`;
-        } else {
-          result = 'ok';
-          ok = true;
-          message = `Verified — last telemetry ${Math.floor(ageHours * 60)} min ago, version v${installedVersion}.`;
-        }
-      }
+      message = 'No telemetry from this snippet has been received.';
     }
 
-    await setupTelemetryRoute.recordTestResult(clientId, snippet_id, result);
+    // Map result -> install_state. Results that prove install (verified or
+    // evidence-based) set state explicitly; "unknown" results don't change state.
+    const stateByResult = {
+      ok:                          'verified',
+      evidence_without_version:    'installed_unverified',
+      version_mismatch:            'stale',
+      hmac_failed:                 'broken',
+      // no_verification / no_heartbeat / no_activity: don't change state
+    };
+    const newState = stateByResult[result];
+
+    await setupTelemetryRoute.recordTestResult(clientId, snippet_id, result, newState);
     recordActivity(req, 'admin.setup_hub.test_connection', { snippet_id, result });
     res.json({ ok, result, message });
   } catch (err) {

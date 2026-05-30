@@ -75,11 +75,18 @@ describe('POST /operator/:clientId/setup-state/test', () => {
     process.env.ADMIN_HUB_URL = 'https://admin.example.com';
   });
 
-  test('returns no_telemetry when state row absent', async () => {
+  // events.js path: 4 db queries — SELECT client, SELECT state, SELECT latest webhook, SELECT latest accepted webhook
+
+  test('events.js: ok when version telemetry matches current_version', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rowCount: 1 });
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })  // client
+      .mockResolvedValueOnce({ rows: [{                        // state
+        last_telemetry_at: new Date().toISOString(),
+        last_telemetry_version: 'v2.1.0',
+      }] })
+      .mockResolvedValueOnce({ rows: [{ received_at: new Date().toISOString(), hmac_status: 'accepted' }] }) // latest webhook
+      .mockResolvedValueOnce({ rows: [{ received_at: new Date().toISOString() }] })                          // latest accepted
+      .mockResolvedValueOnce({ rowCount: 1 });                                                                // recordTestResult UPSERT
 
     const router = require('../../admin/routes/operator');
     const handler = findRouteHandler(router, 'post', '/:clientId/setup-state/test');
@@ -87,17 +94,20 @@ describe('POST /operator/:clientId/setup-state/test', () => {
     const res = mockRes();
     await handler(req, res);
 
-    expect(res.body.ok).toBe(false);
-    expect(res.body.result).toBe('no_telemetry');
+    expect(res.body.ok).toBe(true);
+    expect(res.body.result).toBe('ok');
+    expect(res.body.message).toContain('Verified');
   });
 
-  test('returns version_mismatch when installed != current', async () => {
+  test('events.js: version_mismatch when installed != current', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
       .mockResolvedValueOnce({ rows: [{
         last_telemetry_at: new Date().toISOString(),
         last_telemetry_version: 'v1.0.0',
       }] })
+      .mockResolvedValueOnce({ rows: [{ received_at: new Date().toISOString(), hmac_status: 'accepted' }] })
+      .mockResolvedValueOnce({ rows: [{ received_at: new Date().toISOString() }] })
       .mockResolvedValueOnce({ rowCount: 1 });
 
     const router = require('../../admin/routes/operator');
@@ -110,7 +120,68 @@ describe('POST /operator/:clientId/setup-state/test', () => {
     expect(res.body.result).toBe('version_mismatch');
   });
 
-  test('returns ok when version matches and telemetry is fresh', async () => {
+  test('events.js: evidence_without_version when accepted webhooks exist but no telemetry yet (the HOG case)', async () => {
+    // This is the exact scenario Builder hit: pasted v2.1, published Wix,
+    // no event has fired yet, but historical accepted webhooks exist.
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rows: [] })  // no telemetry row
+      .mockResolvedValueOnce({ rows: [{ received_at: new Date().toISOString(), hmac_status: 'accepted' }] })
+      .mockResolvedValueOnce({ rows: [{ received_at: new Date(Date.now() - 60_000).toISOString() }] })  // 1 min ago
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    const router = require('../../admin/routes/operator');
+    const handler = findRouteHandler(router, 'post', '/:clientId/setup-state/test');
+    const req = { params: { clientId: 'client-1' }, body: { snippet_id: 'velo_events_backend' } };
+    const res = mockRes();
+    await handler(req, res);
+
+    expect(res.body.ok).toBe(true);  // soft-positive — evidence shows snippet works
+    expect(res.body.result).toBe('evidence_without_version');
+    expect(res.body.message).toContain('trigger a plan event in Wix');
+  });
+
+  test('events.js: hmac_failed when latest webhook was rejected', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ received_at: new Date().toISOString(), hmac_status: 'rejected' }] })
+      .mockResolvedValueOnce({ rows: [] })  // no accepted
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    const router = require('../../admin/routes/operator');
+    const handler = findRouteHandler(router, 'post', '/:clientId/setup-state/test');
+    const req = { params: { clientId: 'client-1' }, body: { snippet_id: 'velo_events_backend' } };
+    const res = mockRes();
+    await handler(req, res);
+
+    expect(res.body.ok).toBe(false);
+    expect(res.body.result).toBe('hmac_failed');
+    expect(res.body.message).toMatch(/HMAC|secret/i);
+  });
+
+  test('events.js: no_activity when zero webhooks have ever arrived', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
+      .mockResolvedValueOnce({ rows: [] })  // no telemetry
+      .mockResolvedValueOnce({ rows: [] })  // no webhooks at all
+      .mockResolvedValueOnce({ rows: [] })  // no accepted
+      .mockResolvedValueOnce({ rowCount: 1 });
+
+    const router = require('../../admin/routes/operator');
+    const handler = findRouteHandler(router, 'post', '/:clientId/setup-state/test');
+    const req = { params: { clientId: 'client-1' }, body: { snippet_id: 'velo_events_backend' } };
+    const res = mockRes();
+    await handler(req, res);
+
+    expect(res.body.ok).toBe(false);
+    expect(res.body.result).toBe('no_activity');
+    expect(res.body.message).toMatch(/trigger a test plan event/i);
+  });
+
+  // iframe snippets: 3 db queries — SELECT client, SELECT state, then UPSERT
+
+  test('iframe: ok when version heartbeat matches current_version', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
       .mockResolvedValueOnce({ rows: [{
@@ -121,7 +192,7 @@ describe('POST /operator/:clientId/setup-state/test', () => {
 
     const router = require('../../admin/routes/operator');
     const handler = findRouteHandler(router, 'post', '/:clientId/setup-state/test');
-    const req = { params: { clientId: 'client-1' }, body: { snippet_id: 'velo_events_backend' } };
+    const req = { params: { clientId: 'client-1' }, body: { snippet_id: 'sync_status_page' } };
     const res = mockRes();
     await handler(req, res);
 
@@ -129,27 +200,24 @@ describe('POST /operator/:clientId/setup-state/test', () => {
     expect(res.body.result).toBe('ok');
   });
 
-  test('returns stale_telemetry when telemetry older than registry stale_after_days', async () => {
-    const veryOld = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString(); // 30 days ago
+  test('iframe: no_heartbeat when no telemetry ever received', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
-      .mockResolvedValueOnce({ rows: [{
-        last_telemetry_at: veryOld,
-        last_telemetry_version: 'v2.1.0',
-      }] })
+      .mockResolvedValueOnce({ rows: [] })  // no telemetry
       .mockResolvedValueOnce({ rowCount: 1 });
 
     const router = require('../../admin/routes/operator');
     const handler = findRouteHandler(router, 'post', '/:clientId/setup-state/test');
-    const req = { params: { clientId: 'client-1' }, body: { snippet_id: 'velo_events_backend' } };
+    const req = { params: { clientId: 'client-1' }, body: { snippet_id: 'sync_status_page' } };
     const res = mockRes();
     await handler(req, res);
 
     expect(res.body.ok).toBe(false);
-    expect(res.body.result).toBe('stale_telemetry');
+    expect(res.body.result).toBe('no_heartbeat');
+    expect(res.body.message).toMatch(/logged in as a member/i);
   });
 
-  test('returns ok for thank_you_redirect (verify_via=none)', async () => {
+  test('thank_you_redirect: returns no_verification (no telemetry path exists)', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ id: 'client-1' }] })
       .mockResolvedValueOnce({ rows: [] })
@@ -162,7 +230,8 @@ describe('POST /operator/:clientId/setup-state/test', () => {
     await handler(req, res);
 
     expect(res.body.ok).toBe(true);
-    expect(res.body.result).toBe('ok');
+    expect(res.body.result).toBe('no_verification');
+    expect(res.body.message).toMatch(/no automatic verification/i);
   });
 
   test('400 when snippet_id missing', async () => {
