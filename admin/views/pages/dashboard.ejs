@@ -897,22 +897,14 @@
           if (syncLabel && c.last_sync_at) {
             syncLabel.textContent = new Date(c.last_sync_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
           }
-          // Wix-first flow: show pending_hardware banner if members are waiting
-          if (s.pending_hardware > 0) {
-            var platformRow = document.querySelector('.platform-row');
-            if (platformRow) {
-              var pending = document.createElement('div');
-              pending.className = 'key-cta';
-              pending.style.borderLeftColor = '#F5A623';
-              pending.innerHTML =
-                '<div class="key-cta-icon"><svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="#F5A623" stroke-width="1.3" fill="none"/><path d="M9 5.5v4M9 12v.5" stroke="#F5A623" stroke-width="1.5" stroke-linecap="round"/></svg></div>' +
-                '<div class="key-cta-text"><strong>' + s.pending_hardware + ' member' + (s.pending_hardware !== 1 ? 's are' : ' is') + ' waiting for door access.</strong> ' +
-                (hasConnectorKey ? 'Assign a door group to their plan so AccessSync can provision them.' : 'Add your API key so AccessSync can start provisioning.') + '</div>' +
-                '<a class="key-cta-link" href="/' + (hasConnectorKey ? 'plan-mapping' : 'locations') + '?clientId=' + clientId + '">' +
-                (hasConnectorKey ? 'Map Plans' : 'Add Key') + '</a>';
-              platformRow.parentNode.insertBefore(pending, platformRow.nextSibling);
-            }
-          }
+          // Pending-hardware banner removed 2026-05-31 — banner assumed
+          // pending_hardware = "go map this plan," which is wrong. A source
+          // row can be in pending_hardware for many reasons (Kisi API failure,
+          // hardware group missing on Kisi side, reconcile retry-in-flight,
+          // OB-221 asymmetric-risk downgrade, etc.). Sending the operator to
+          // /plan-mapping when their mapping is fine is a false diagnosis.
+          // The pending_hardware count is still visible on Members page +
+          // individual member drawer; no synthetic banner needed.
           // Phase 3A: Setup checklist when no data yet
           if (s.member_count === 0 && s.location_count === 0) {
             var statsGrid = document.querySelector('.stats-grid');
