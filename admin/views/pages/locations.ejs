@@ -255,16 +255,7 @@
     .snippet-badge-row {
       display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
     }
-    .snippet-test-result {
-      font-size: 11px; padding: 8px 12px; border-radius: 6px;
-      margin: 8px 0; border: 1px solid var(--border);
-    }
-    .snippet-test-result[data-result="ok"] {
-      background: var(--sage-dim); color: var(--sage-dark); border-color: var(--sage-border);
-    }
-    .snippet-test-result:not([data-result="ok"]) {
-      background: #FEF3C7; color: #92400E; border-color: #FCD34D;
-    }
+    /* .snippet-test-result removed 2026-05-30 (Test Connection ripped out). */
 
     @media (max-width: 600px) {
       .loc-stats   { grid-template-columns: repeat(2, 1fr); }
@@ -1391,13 +1382,11 @@
 
       el.innerHTML = html;
 
-      // Wire up Copy + Test buttons across all groups
+      // Wire up Copy buttons across all groups
       el.querySelectorAll('[data-snippet-id]').forEach(function(node) {
         var snippetId = node.getAttribute('data-snippet-id');
         var copyBtn = node.querySelector('.snippet-copy-btn');
         if (copyBtn) copyBtn.addEventListener('click', function() { copySnippet(snippetId, copyBtn); });
-        var testBtn = node.querySelector('[data-test-connection]');
-        if (testBtn) testBtn.addEventListener('click', function() { testConnection(snippetId, testBtn); });
       });
     }
 
@@ -1471,21 +1460,11 @@
         (s.last_telemetry_at ? '<span class="snippet-meta-item"><strong>Last seen:</strong> ' + esc(fmtRelative(s.last_telemetry_at)) + '</span>' : '') +
         '</div>';
 
-      var testBtnHtml = s.verify_via && s.verify_via !== 'none'
-        ? '<button class="snippet-reveal-btn" data-test-connection="1">Test Connection</button>'
-        : '';
-
-      var lastTestHtml = s.last_test_result
-        ? '<div class="snippet-test-result" data-result="' + esc(s.last_test_result) + '">' +
-          (s.last_test_result === 'ok' ? '✓ Last test: verified' : '⚠ Last test: ' + esc(s.last_test_result)) +
-          '</div>'
-        : '';
-
+      // Test Connection button removed 2026-05-30 — was passive (read-only),
+      // gave no signal beyond what the status badge + last-seen meta show.
       var bodyHtml = s.body
         ? '<div class="snippet-code-block"><pre>' + esc(s.body) + '</pre></div>' +
-          lastTestHtml +
           '<div class="snippet-copy-row">' +
-          testBtnHtml +
           '<button class="snippet-copy-btn">' +
           '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
           ' Copy snippet</button></div>'
@@ -1545,21 +1524,11 @@
         (s.last_telemetry_at ? '<span class="snippet-meta-item"><strong>Last seen:</strong> ' + esc(fmtRelative(s.last_telemetry_at)) + '</span>' : '') +
         '</div>';
 
-      var testBtnHtml = s.verify_via && s.verify_via !== 'none'
-        ? '<button class="snippet-reveal-btn" data-test-connection="1">Test Connection</button>'
-        : '';
-
-      var lastTestHtml = s.last_test_result
-        ? '<div class="snippet-test-result" data-result="' + esc(s.last_test_result) + '">' +
-          (s.last_test_result === 'ok' ? '✓ Last test: verified' : '⚠ Last test: ' + esc(s.last_test_result)) +
-          '</div>'
-        : '';
-
+      // Test Connection button removed 2026-05-30 — was passive (read-only),
+      // gave no signal beyond what the status badge + last-seen meta show.
       var bodyHtml = s.body
         ? '<div class="snippet-code-block"><pre>' + esc(s.body) + '</pre></div>' +
-          lastTestHtml +
           '<div class="snippet-copy-row">' +
-          testBtnHtml +
           '<button class="snippet-copy-btn">' +
           '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
           ' Copy snippet</button></div>'
@@ -1601,31 +1570,7 @@
       }).catch(function() { toast('Copy failed — try manually selecting', 'error'); });
     }
 
-    function testConnection(snippetId, btn) {
-      var originalText = btn.textContent;
-      btn.textContent = 'Testing…';
-      btn.disabled = true;
-      apiFetch('/operator/' + clientId + '/setup-state/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ snippet_id: snippetId })
-      })
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-          btn.textContent = originalText;
-          btn.disabled = false;
-          toast(data.message || (data.ok ? 'Verified' : 'Test failed'), data.ok ? 'success' : 'error');
-          // Reload state so badges update
-          loadSetupSnippets();
-          _snippetsLoaded = false;
-          loadSetupSnippets();
-        })
-        .catch(function() {
-          btn.textContent = originalText;
-          btn.disabled = false;
-          toast('Test request failed — check your connection', 'error');
-        });
-    }
+    // testConnection() removed 2026-05-30 — endpoint deleted, button removed.
 
     function fmtRelative(iso) {
       if (!iso) return '';
