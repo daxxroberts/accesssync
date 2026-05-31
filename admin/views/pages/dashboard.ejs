@@ -59,19 +59,7 @@
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
     }
 
-    /* OB-237 Phase D — Setup Hub status pill */
-    .setup-pill {
-      margin-top: 10px; padding: 11px 16px; border-radius: 10px;
-      display: flex; align-items: center; gap: 10px;
-      font-size: 12px; font-weight: 600; cursor: pointer;
-      border: 1px solid; transition: filter 0.12s;
-    }
-    .setup-pill:hover { filter: brightness(1.05); }
-    .setup-pill.green { background: var(--sage-dim);  color: var(--sage-dark);  border-color: var(--sage-border); }
-    .setup-pill.amber { background: #FEF3C7;          color: #92400E;           border-color: #FCD34D; }
-    .setup-pill.red   { background: #FEE2E2;          color: #991B1B;           border-color: #FCA5A5; }
-    .setup-pill-icon  { font-size: 16px; }
-    .setup-pill-action{ margin-left: auto; font-size: 11px; font-weight: 700; }
+    /* .setup-pill removed 2026-05-30. */
     .client-name { font-size: 17px; font-weight: 800; letter-spacing: -0.4px; color: var(--text); }
     .client-sub  { font-size: 11px; color: var(--muted); margin-top: 3px; }
     .add-btn {
@@ -330,8 +318,9 @@
       </div>
     </div>
 
-    <!-- OB-237 Phase D — Setup Hub status pill -->
-    <div id="setup-pill" class="setup-pill" style="display:none;" title="Click to open Setup Hub"></div>
+    <!-- Setup Hub status pill removed 2026-05-30 — synthetic state had no
+         basis in actual testability. Operator navigates to the Wix Setup Guide
+         tab directly when they want to copy snippets. -->
 
     <!-- Platform connections -->
     <div>
@@ -766,30 +755,7 @@
       return days + ' day' + (days > 1 ? 's' : '') + ' ago';
     }
 
-    // ══ OB-237 Phase D: Setup Hub status pill ══════════════════════
-    (function loadSetupPill() {
-      var clientId = new URLSearchParams(window.location.search).get('clientId');
-      if (!clientId) return;
-      apiFetch('/operator/' + clientId + '/setup-aggregate')
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-          if (!data || !data.aggregate) return;
-          var pill = document.getElementById('setup-pill');
-          if (!pill) return;
-          var icons = { green: '🟢', amber: '🟡', red: '🔴' };
-          var action = data.aggregate === 'green' ? '' : 'Open Setup Hub →';
-          pill.className = 'setup-pill ' + data.aggregate;
-          pill.innerHTML =
-            '<span class="setup-pill-icon">' + (icons[data.aggregate] || '') + '</span>' +
-            '<span>' + esc(data.message || '') + '</span>' +
-            (action ? '<span class="setup-pill-action">' + esc(action) + '</span>' : '');
-          pill.style.display = 'flex';
-          pill.addEventListener('click', function() {
-            window.location.href = '/locations?clientId=' + encodeURIComponent(clientId) + '#setup';
-          });
-        })
-        .catch(function() { /* silently fail — pill stays hidden */ });
-    })();
+    // Setup Hub pill loader removed 2026-05-30.
 
     // ══ OB-29: Live data loading ══════════════════════════════════
     (function loadLiveData() {

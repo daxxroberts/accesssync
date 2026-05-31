@@ -1,7 +1,7 @@
 /**
- * P2 — Setup Hub route shape.
- * OB-237 Phase B. Validates GET /operator/:clientId/setup-state returns
- * the registry-driven shape with aggregate + per-snippet states.
+ * P2 — Setup Hub route shape (post-2026-05-30 strip-down).
+ * Status indicators (install_state, aggregate, envIssues) removed.
+ * Only validates the stripped response shape: client + webhook + snippets.
  */
 
 'use strict';
@@ -19,9 +19,6 @@ jest.mock('../../admin/middleware/auth', () => ({
 jest.mock('../../admin/middleware/activity', () => ({
   recordActivity: jest.fn(),
 }));
-// OB-238 followup auto-gen — mock crypto so decryption is deterministic.
-// All tests set wix_webhook_secret to 'ENC[mock]' on the client mock so
-// the auto-gen path doesn't trigger (it only fires when value is NULL).
 jest.mock('../../core/crypto-utils', () => ({
   encryptApiKey: (plaintext) => 'ENC[' + plaintext + ']',
   decryptApiKey: (stored)    => stored.replace(/^ENC\[(.+)\]$/, '$1'),
@@ -43,39 +40,6 @@ describe('GET /operator/:clientId/setup-state', () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  test('returns aggregate red when CORE_ENGINE_URL is missing', async () => {
-    delete process.env.CORE_ENGINE_URL;
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    const router = require('../../admin/routes/operator');
-    const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
-    const req = { params: { clientId: 'client-1' } };
-    const res = mockRes();
-    await handler(req, res);
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.aggregate).toBe('red');
-    expect(res.body.envIssues).toContain('CORE_ENGINE_URL');
-  });
-
-  test('returns aggregate red when ADMIN_HUB_URL is missing', async () => {
-    delete process.env.ADMIN_HUB_URL;
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    const router = require('../../admin/routes/operator');
-    const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
-    const req = { params: { clientId: 'client-1' } };
-    const res = mockRes();
-    await handler(req, res);
-
-    expect(res.body.aggregate).toBe('red');
-    expect(res.body.envIssues).toContain('ADMIN_HUB_URL');
-  });
-
   test('returns 404 when client not found', async () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
@@ -89,9 +53,7 @@ describe('GET /operator/:clientId/setup-state', () => {
   });
 
   test('returns snippet body for velo_events_backend with substitutions applied', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
-      .mockResolvedValueOnce({ rows: [] });
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] });
 
     const router = require('../../admin/routes/operator');
     const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
@@ -106,10 +68,8 @@ describe('GET /operator/:clientId/setup-state', () => {
     expect(events.render_error).toBeNull();
   });
 
-  test('snippet install_state defaults to not_installed when no row in operator_setup_state', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
-      .mockResolvedValueOnce({ rows: [] });
+  test('response shape contains only the kept fields (no aggregate, envIssues, install_state)', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] });
 
     const router = require('../../admin/routes/operator');
     const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
@@ -117,42 +77,21 @@ describe('GET /operator/:clientId/setup-state', () => {
     const res = mockRes();
     await handler(req, res);
 
-    const events = res.body.snippets.find(s => s.id === 'velo_events_backend');
-    expect(events.install_state).toBe('not_installed');
-  });
+    // Kept
+    expect(res.body.clientId).toBeDefined();
+    expect(res.body.webhookUrl).toBeDefined();
+    expect(res.body.hmacSecret).toBeDefined();
+    expect(res.body.hmacSource).toBeDefined();
+    expect(Array.isArray(res.body.snippets)).toBe(true);
 
-  test('aggregate red when a required snippet has no install row', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
-      .mockResolvedValueOnce({ rows: [] });
-
-    const router = require('../../admin/routes/operator');
-    const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
-    const req = { params: { clientId: 'client-1' } };
-    const res = mockRes();
-    await handler(req, res);
-
-    expect(res.body.aggregate).toBe('red');
-  });
-
-  test('aggregate amber when required snippet is installed but version is stale', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[mock-existing]' }] })
-      .mockResolvedValueOnce({ rows: [
-        { snippet_id: 'velo_events_backend', install_state: 'verified', version_installed: 'v1.0.0' },
-        { snippet_id: 'sync_status_page',    install_state: 'verified', version_installed: 'v2.1.0' },
-        { snippet_id: 'my_access_page',      install_state: 'verified', version_installed: 'v2.1.0' },
-      ] });
-
-    const router = require('../../admin/routes/operator');
-    const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
-    const req = { params: { clientId: 'client-1' } };
-    const res = mockRes();
-    await handler(req, res);
-
-    const events = res.body.snippets.find(s => s.id === 'velo_events_backend');
-    expect(events.install_state).toBe('stale');
-    expect(res.body.aggregate).toBe('amber');
+    // Removed 2026-05-30 — no synthetic status
+    expect(res.body.aggregate).toBeUndefined();
+    expect(res.body.envIssues).toBeUndefined();
+    res.body.snippets.forEach(s => {
+      expect(s.install_state).toBeUndefined();
+      expect(s.last_telemetry_at).toBeUndefined();
+      expect(s.version_installed).toBeUndefined();
+    });
   });
 });
 

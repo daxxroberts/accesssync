@@ -208,10 +208,11 @@ describe('GET /operator/:clientId/setup-state — hmacSource field (OB-238)', ()
     process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
   });
 
+  // Post-2026-05-30: setup-state route no longer does the SELECT state-rows
+  // query, so mock sequences are: SELECT client [+ UPDATE auto-gen + maybe re-read]
+
   test('hmacSource = per_client when clients.wix_webhook_secret is set (no auto-gen)', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[my-per-client-secret]' }] })
-      .mockResolvedValueOnce({ rows: [] });
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: 'ENC[my-per-client-secret]' }] });
 
     const router = require('../../admin/routes/operator');
     const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
@@ -223,11 +224,10 @@ describe('GET /operator/:clientId/setup-state — hmacSource field (OB-238)', ()
     expect(res.body.hmacSecret).toBe('my-per-client-secret');
   });
 
-  test('auto-generates per-client secret on first visit when NULL (followup)', async () => {
+  test('auto-generates per-client secret on first visit when NULL', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: null }] })  // SELECT client
-      .mockResolvedValueOnce({ rows: [] })                                              // SELECT state
-      .mockResolvedValueOnce({ rows: [{ wix_webhook_secret: 'ENC[autogen-newvalue]' }], rowCount: 1 });  // UPDATE auto-gen
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: null }] })                       // SELECT client
+      .mockResolvedValueOnce({ rows: [{ wix_webhook_secret: 'ENC[autogen-newvalue]' }], rowCount: 1 });      // UPDATE auto-gen
 
     const router = require('../../admin/routes/operator');
     const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
@@ -237,15 +237,13 @@ describe('GET /operator/:clientId/setup-state — hmacSource field (OB-238)', ()
 
     expect(res.body.hmacSource).toBe('per_client');
     expect(res.body.hmacSecret).toBe('autogen-newvalue');
-    // Confirm the auto-gen UPDATE was guarded by WHERE ... IS NULL
-    const updateCall = db.query.mock.calls[2];
+    const updateCall = db.query.mock.calls[1];
     expect(updateCall[0]).toContain('wix_webhook_secret IS NULL');
   });
 
   test('auto-gen race: re-reads existing value when UPDATE returns 0 rows', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: null }] })  // SELECT client
-      .mockResolvedValueOnce({ rows: [] })                                              // SELECT state
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })                                 // UPDATE lost race
       .mockResolvedValueOnce({ rows: [{ wix_webhook_secret: 'ENC[winner-value]' }] }); // re-read
 

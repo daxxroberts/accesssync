@@ -397,9 +397,13 @@ router.get('/:clientId/setup-snippets', async (req, res) => {
 });
 
 // ── GET /operator/:clientId/setup-state ───────────────────────────
-// OB-237 Phase B — registry-driven Setup Hub data.
-// Returns: webhook URL + HMAC status, per-snippet metadata + rendered body
-// + install state from operator_setup_state, plus aggregate health pill.
+// Registry-driven Setup Hub data. Returns webhook URL + HMAC secret
+// (with source — per-client or env fallback) + per-snippet metadata
+// + rendered body. No install_state, no aggregate, no env-issue banner
+// — the synthetic status indicators were removed 2026-05-30 because
+// we can't actually test snippets without a real Wix event firing.
+// Operator gets clean docs + working snippets; nothing pretending to
+// know whether a snippet is installed/broken/etc.
 const snippetRegistry = require('../../core/snippet-registry');
 
 router.get('/:clientId/setup-state', async (req, res) => {
@@ -411,22 +415,11 @@ router.get('/:clientId/setup-state', async (req, res) => {
     );
     if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
 
-    const stateRows = await db.query(
-      `SELECT snippet_id, install_state, version_installed,
-              last_telemetry_at, last_telemetry_version,
-              last_verified_at, last_test_at, last_test_result
-       FROM operator_setup_state WHERE client_id = $1`,
-      [clientId]
-    );
-    const stateBySnippet = {};
-    for (const row of stateRows.rows) stateBySnippet[row.snippet_id] = row;
-
     const coreEngineUrl = (process.env.CORE_ENGINE_URL || '').replace(/\/$/, '');
     const adminHubUrl   = (process.env.ADMIN_HUB_URL   || '').replace(/\/$/, '');
     const webhookUrl    = coreEngineUrl ? `${coreEngineUrl}/webhooks/wix` : null;
 
-    // OB-238 followup — auto-generate per-client secret if NULL.
-    // Default state = per-client always exists. Race-safe via WHERE
+    // Auto-generate per-client secret if NULL. Race-safe via WHERE
     // wix_webhook_secret IS NULL clause + RETURNING to detect winner.
     let storedEncryptedSecret = client.rows[0].wix_webhook_secret;
     if (!storedEncryptedSecret) {
@@ -450,7 +443,7 @@ router.get('/:clientId/setup-state', async (req, res) => {
       }
     }
 
-    // OB-238 — per-client secret takes precedence over env fallback
+    // Per-client secret takes precedence over env fallback
     let hmacSecret = null;
     let hmacSource = 'none';
     if (storedEncryptedSecret) {
@@ -466,94 +459,31 @@ router.get('/:clientId/setup-state', async (req, res) => {
       hmacSource = 'platform_env_fallback';
     }
 
-    const envIssues = [];
-    if (!coreEngineUrl) envIssues.push('CORE_ENGINE_URL');
-    if (!adminHubUrl)   envIssues.push('ADMIN_HUB_URL');
-    if (!hmacSecret)    envIssues.push('WIX_WEBHOOK_SECRET');
-
-    // OB-238 followup — for clients onboarded before OB-237 telemetry shipped,
-    // operator_setup_state is empty. Detect evidence-based install for
-    // velo_events_backend via recent accepted webhooks. This stops showing
-    // "Not installed" on a snippet we know is installed.
-    let webhookEvidence = false;
-    try {
-      const evidence = await db.query(
-        `SELECT 1 FROM webhook_log
-         WHERE client_id = $1 AND hmac_status = 'accepted'
-           AND received_at > NOW() - INTERVAL '14 days'
-         LIMIT 1`,
-        [clientId]
-      );
-      webhookEvidence = evidence.rows.length > 0;
-    } catch (e) {
-      log.warn('operator.setup_state.webhook_evidence_check_failed', { clientId });
-    }
-
     const snippets = snippetRegistry.listSnippets().map(meta => {
       const rendered = snippetRegistry.renderSnippet(meta.id, { clientId });
-      const state = stateBySnippet[meta.id] || {
-        install_state: 'not_installed', version_installed: null,
-        last_telemetry_at: null, last_telemetry_version: null,
-        last_verified_at: null, last_test_at: null, last_test_result: null,
-      };
-
-      let effectiveState = state.install_state;
-      if (rendered.error) {
-        effectiveState = 'broken';
-      } else if (state.version_installed && state.version_installed !== meta.current_version) {
-        effectiveState = 'stale';
-      } else if (effectiveState === 'not_installed' && meta.id === 'velo_events_backend' && webhookEvidence) {
-        // Evidence-based detection — webhooks are landing, so events.js IS
-        // installed even though we haven't received a version header yet.
-        effectiveState = 'installed_unverified';
-      }
-
       return {
         id: meta.id,
         name: meta.name,
-        display_group: meta.display_group, // OB-238 followup
+        display_group: meta.display_group,
         category: meta.category,
-        criticality: meta.criticality,
         description: meta.description,
         wix_install_path: meta.wix_install_path,
         current_version: meta.current_version,
-        required_env_vars: meta.required_env_vars,
         instructions: meta.instructions,
-        verify_via: meta.verify_via,
-        stale_after_days: meta.stale_after_days,
         body: rendered.body || null,
         render_error: rendered.error || null,
         render_missing_env: rendered.missing || null,
-        install_state: effectiveState,
-        version_installed: state.version_installed,
-        last_telemetry_at: state.last_telemetry_at,
-        last_telemetry_version: state.last_telemetry_version,
-        last_verified_at: state.last_verified_at,
-        last_test_at: state.last_test_at,
-        last_test_result: state.last_test_result,
       };
     });
-
-    let aggregate = 'green';
-    for (const s of snippets) {
-      if (s.category === 'required' && (s.install_state === 'broken' || s.install_state === 'not_installed')) {
-        aggregate = 'red';
-        break;
-      }
-      if (s.install_state === 'stale' || s.install_state === 'installed_unverified') aggregate = 'amber';
-    }
-    if (envIssues.length) aggregate = 'red';
 
     res.json({
       clientId,
       webhookUrl,
       hmacSecret,
-      hmacSource,  // OB-238 — 'per_client' / 'platform_env_fallback' / 'none'
+      hmacSource,
       coreEngineUrl,
       adminHubUrl,
-      envIssues,
       snippets,
-      aggregate,
     });
   } catch (err) {
     log.error('operator.setup_state.error', { clientId }, err);
@@ -561,86 +491,12 @@ router.get('/:clientId/setup-state', async (req, res) => {
   }
 });
 
-// ── GET /operator/:clientId/setup-aggregate ──────────────────────
-// OB-237 Phase D — lightweight pill state for Dashboard. Returns
-// aggregate (green/amber/red) + a short summary message + count of
-// snippets needing attention. Cheaper than full /setup-state — no
-// snippet bodies returned, no rendering.
-router.get('/:clientId/setup-aggregate', async (req, res) => {
-  const { clientId } = req.params;
-  try {
-    const client = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
-    if (!client.rows.length) return res.status(404).json({ error: 'Client not found' });
-
-    const stateRows = await db.query(
-      `SELECT snippet_id, install_state, version_installed
-       FROM operator_setup_state WHERE client_id = $1`,
-      [clientId]
-    );
-    const stateBySnippet = {};
-    for (const row of stateRows.rows) stateBySnippet[row.snippet_id] = row;
-
-    // OB-238 followup — evidence-based events.js detection (mirror of setup-state)
-    let webhookEvidence = false;
-    try {
-      const evidence = await db.query(
-        `SELECT 1 FROM webhook_log
-         WHERE client_id = $1 AND hmac_status = 'accepted'
-           AND received_at > NOW() - INTERVAL '14 days'
-         LIMIT 1`,
-        [clientId]
-      );
-      webhookEvidence = evidence.rows.length > 0;
-    } catch (e) { /* silent — evidence is optional */ }
-
-    const envIssues = [];
-    if (!process.env.CORE_ENGINE_URL)    envIssues.push('CORE_ENGINE_URL');
-    if (!process.env.ADMIN_HUB_URL)      envIssues.push('ADMIN_HUB_URL');
-    if (!process.env.WIX_WEBHOOK_SECRET) envIssues.push('WIX_WEBHOOK_SECRET');
-
-    let aggregate = 'green';
-    let attentionCount = 0;
-    let criticalReason = null;
-
-    for (const meta of snippetRegistry.listSnippets()) {
-      const state = stateBySnippet[meta.id];
-      let installState = state ? state.install_state : 'not_installed';
-      const versionInstalled = state ? state.version_installed : null;
-      const isStale = versionInstalled && versionInstalled !== meta.current_version;
-
-      // Evidence override (same rule as setup-state)
-      if (installState === 'not_installed' && meta.id === 'velo_events_backend' && webhookEvidence) {
-        installState = 'installed_unverified';
-      }
-
-      if (meta.category === 'required') {
-        if (installState === 'not_installed' || installState === 'broken') {
-          aggregate = 'red';
-          if (!criticalReason) criticalReason = meta.name + ' not installed';
-          attentionCount++;
-        } else if (isStale || installState === 'stale' || installState === 'installed_unverified') {
-          if (aggregate !== 'red') aggregate = 'amber';
-          attentionCount++;
-        }
-      }
-    }
-    // Env issues take precedence in the message — they're the root cause
-    // when snippets can't be rendered correctly.
-    if (envIssues.length) {
-      aggregate = 'red';
-      criticalReason = 'Server configuration missing: ' + envIssues.join(', ');
-    }
-
-    let message = 'All required snippets installed and verified';
-    if (aggregate === 'red')   message = criticalReason || 'Critical setup issue';
-    if (aggregate === 'amber') message = attentionCount + ' snippet(s) need attention';
-
-    res.json({ aggregate, attentionCount, message });
-  } catch (err) {
-    log.error('operator.setup_aggregate.error', { clientId }, err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// GET /:clientId/setup-aggregate was removed 2026-05-30 along with the
+// Dashboard setup pill. The aggregate (green/amber/red) was synthetic —
+// derived from telemetry we never actually got to test, plus env-vars
+// checks that produced loud "critical" alerts without proportionate
+// signal. Operator navigates to the Setup Hub tab directly when they
+// need snippets; no proactive alert needed.
 
 // POST /:clientId/setup-state/test was removed 2026-05-30. The endpoint
 // was passive (just read operator_setup_state) and gave no actionable
