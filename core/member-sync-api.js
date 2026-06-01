@@ -167,11 +167,17 @@ class MemberSyncApi {
       //    Resolve door_name per (mapping, hardware_group_id) via plan_mapping_groups
       //    so multi-door plans show each door distinctly. plan_mappings.door_name is
       //    the legacy single-column fallback used only when no group row exists.
+      //
+      //    Also pull source_plan_id + billing_snapshot for the plans dedup downstream.
+      //    Same display name CAN be two different plans (annual vs monthly Couples) —
+      //    must dedupe by source_plan_id and surface the rate to disambiguate.
       const rolesResult = await db.query(
         `SELECT mas.role_assignment_id, mas.hardware_group_id,
+                mas.source_plan_id, mas.billing_id,
                 pm.plan_name,
                 COALESCE(pmg.door_name, pm.door_name) AS door_name,
-                l.name AS location_name
+                l.name AS location_name,
+                mb.billing_snapshot
          FROM member_access_sources mas
          JOIN member_access ma ON ma.id = mas.access_id
          JOIN plan_mappings pm ON pm.id = mas.mapping_id
@@ -179,6 +185,7 @@ class MemberSyncApi {
                 ON pmg.mapping_id = mas.mapping_id
                AND pmg.hardware_group_id = mas.hardware_group_id
          LEFT JOIN locations l ON pm.location_id = l.id
+         LEFT JOIN member_billing mb ON mb.id = mas.billing_id AND mb.status = 'active'
          WHERE ma.id = ANY($1)
            AND mas.billing_id IN (
              SELECT id FROM member_billing WHERE status = 'active'
@@ -192,14 +199,34 @@ class MemberSyncApi {
         doorName:     r.door_name,
         locationName: r.location_name,
         groupId:      r.hardware_group_id,
+        sourcePlanId: r.source_plan_id,
       }));
 
-      // Derive unique plans from role assignments — deduped by planName
+      // Derive unique plans — deduped by source_plan_id (NOT planName).
+      // Two Couples plans (annual + monthly) have the same name but different
+      // source_plan_id. Group correctly + surface rate to distinguish.
+      function rateLabel(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') return null;
+        // billing_snapshot shape varies; try common paths from DR-042
+        const cycleUnit = snapshot.cycleUnit || snapshot.cycle_unit || null; // 'MONTH' | 'YEAR' | ...
+        const amount    = Number(snapshot.amount ?? snapshot.price ?? snapshot.rate ?? snapshot.total ?? 0);
+        if (!amount) return null;
+        if (cycleUnit === 'YEAR' || cycleUnit === 'YEARLY' || cycleUnit === 'ANNUAL') return '$' + amount + '/yr';
+        if (cycleUnit === 'MONTH' || cycleUnit === 'MONTHLY')                          return '$' + amount + '/mo';
+        return '$' + amount;
+      }
+
       const seenPlans = new Set();
-      const plans = access.reduce((acc, r) => {
-        if (r.planName && !seenPlans.has(r.planName)) {
-          seenPlans.add(r.planName);
-          acc.push({ planName: r.planName, status: 'Active' });
+      const plans = rolesResult.rows.reduce((acc, r) => {
+        const key = r.source_plan_id || r.plan_name;
+        if (!seenPlans.has(key)) {
+          seenPlans.add(key);
+          acc.push({
+            planName:     r.plan_name,
+            sourcePlanId: r.source_plan_id,
+            rateLabel:    rateLabel(r.billing_snapshot),
+            status:       'Active',
+          });
         }
         return acc;
       }, []);

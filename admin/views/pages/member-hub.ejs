@@ -1470,7 +1470,10 @@ function renderPlans(plans) {
     el.innerHTML = '<div class="empty-access">No active plans found.</div>';
     return;
   }
-  el.innerHTML = plans.map(p => `
+  el.innerHTML = plans.map(p => {
+    const name = p.planName || p.name || 'Plan';
+    const rate = p.rateLabel ? ' — ' + p.rateLabel : '';
+    return `
     <div class="plan-row">
       <div class="plan-icon">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -1478,11 +1481,11 @@ function renderPlans(plans) {
         </svg>
       </div>
       <div>
-        <div class="plan-name">${esc(p.planName || p.name || 'Plan')}</div>
+        <div class="plan-name">${esc(name)}${esc(rate)}</div>
         <div class="plan-meta">${esc(p.status || 'Active')}</div>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 // Dedupe access rows by door (doorName + locationName). One row per unique door,
@@ -1977,7 +1980,9 @@ function mmPlanGroupHtml(plan) {
       '</div>' +
       '<div class="mm-hero-info">' +
         '<div class="mm-eyebrow">Your plan</div>' +
-        '<div class="mm-plan-name">' + esc(plan.planName || 'Your Plan') + '</div>' +
+        '<div class="mm-plan-name">' + esc(plan.planName || 'Your Plan') +
+          (plan.rateLabel ? ' <span class="mm-plan-rate" style="font-weight:500;color:var(--muted);font-size:13px;">— ' + esc(plan.rateLabel) + '</span>' : '') +
+        '</div>' +
         '<div class="mm-meta">' + metaText + '</div>' +
         '<div class="spot-pips">' + pipsHtml + '</div>' +
       '</div>' +

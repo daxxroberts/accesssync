@@ -98,15 +98,41 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
 
     const holder = holderResult.rows[0];
 
-    // 2. Get plan mappings that allow multiple members
+    // 2. Get plan mappings that allow multiple members AND the holder has
+    //    actually purchased. Filter to holder-owned plans so the operator
+    //    doesn't see phantom "Couples" rows from plans they don't own.
+    //    Include billing_snapshot so we can show rate inline ("Couples — $50/mo")
+    //    to distinguish duplicate-named plans (annual vs monthly).
     const plansResult = await db.query(
-      `SELECT pm.id, pm.source_plan_id, pm.plan_name, pm.allow_multiple, pm.max_members,
-              pm.hardware_group_id, pm.door_name
+      `SELECT DISTINCT ON (pm.id)
+              pm.id, pm.source_plan_id, pm.plan_name, pm.allow_multiple, pm.max_members,
+              pm.hardware_group_id, pm.door_name,
+              mb.billing_snapshot
        FROM plan_mappings pm
+       JOIN member_access_sources mas
+              ON mas.mapping_id = pm.id
+             AND mas.status = 'active'
+       JOIN member_access ma
+              ON ma.id = mas.access_id
+             AND ma.member_master_id = $2
+             AND ma.sub_master_id IS NULL
+       LEFT JOIN member_billing mb
+              ON mb.id = mas.billing_id
+             AND mb.status = 'active'
        WHERE pm.client_id = $1 AND pm.status = 'active' AND pm.allow_multiple = true
-       ORDER BY pm.plan_name`,
-      [clientId]
+       ORDER BY pm.id, mb.created_at DESC NULLS LAST`,
+      [clientId, holder.member_master_id]
     );
+
+    function rateLabel(snapshot) {
+      if (!snapshot || typeof snapshot !== 'object') return null;
+      const cycleUnit = snapshot.cycleUnit || snapshot.cycle_unit || null;
+      const amount    = Number(snapshot.amount ?? snapshot.price ?? snapshot.rate ?? snapshot.total ?? 0);
+      if (!amount) return null;
+      if (cycleUnit === 'YEAR' || cycleUnit === 'YEARLY' || cycleUnit === 'ANNUAL') return '$' + amount + '/yr';
+      if (cycleUnit === 'MONTH' || cycleUnit === 'MONTHLY')                          return '$' + amount + '/mo';
+      return '$' + amount;
+    }
 
     // 3. Get existing sub-members for this holder (sub_master_id = holder's member_master_id).
     // S-11/DR-046: per-plan state lives on member_access_sources. Each sub-member's
@@ -194,10 +220,11 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
         id:            p.id,
         sourcePlanId:  p.source_plan_id,
         planName:      p.plan_name || 'Unnamed Plan',
+        rateLabel:     rateLabel(p.billing_snapshot),
         allowMultiple: p.allow_multiple,
         maxMembers:    p.max_members,
         doorName:      p.door_name,
-        holderHasSlot: holderMappingIds.has(p.id),
+        holderHasSlot: true,  // always true now — query filters to holder-owned plans
       })),
       subMembers: Array.from(subByKey.values()),
     });
