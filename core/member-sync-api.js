@@ -205,15 +205,27 @@ class MemberSyncApi {
       // Derive unique plans — deduped by source_plan_id (NOT planName).
       // Two Couples plans (annual + monthly) have the same name but different
       // source_plan_id. Group correctly + surface rate to distinguish.
-      function rateLabel(snapshot) {
-        if (!snapshot || typeof snapshot !== 'object') return null;
-        // billing_snapshot shape varies; try common paths from DR-042
-        const cycleUnit = snapshot.cycleUnit || snapshot.cycle_unit || null; // 'MONTH' | 'YEAR' | ...
-        const amount    = Number(snapshot.amount ?? snapshot.price ?? snapshot.rate ?? snapshot.total ?? 0);
-        if (!amount) return null;
-        if (cycleUnit === 'YEAR' || cycleUnit === 'YEARLY' || cycleUnit === 'ANNUAL') return '$' + amount + '/yr';
-        if (cycleUnit === 'MONTH' || cycleUnit === 'MONTHLY')                          return '$' + amount + '/mo';
-        return '$' + amount;
+      //
+      // Canonical snapshot shape per DR-042 (matches admin/public/members-bridge.js
+      // formatRate): { planPrice, cycleUnit, cycleCount, currency, ... }
+      function rateLabel(snap) {
+        if (!snap || !snap.planPrice) return null;
+        const amount = parseFloat(snap.planPrice);
+        if (!isFinite(amount)) return null;
+        const symbol = (snap.currency === 'USD' || !snap.currency) ? '$' : snap.currency + ' ';
+        const amountStr = amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2);
+        const unit = (snap.cycleUnit || 'MONTH').toLowerCase();
+        const count = snap.cycleCount || 1;
+        let period;
+        if (count === 1) {
+          period = unit.indexOf('year') === 0 ? 'yr'
+                 : unit.indexOf('week') === 0 ? 'wk'
+                 : unit.indexOf('day')  === 0 ? 'day'
+                 : 'mo';
+        } else {
+          period = count + ' ' + unit + 's';
+        }
+        return symbol + amountStr + '/' + period;
       }
 
       const seenPlans = new Set();
