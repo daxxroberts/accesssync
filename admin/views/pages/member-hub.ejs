@@ -198,21 +198,21 @@ body {
 
 /* ── Plan rows ────────────────────────────────────────── */
 .plan-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 11px 0;
+  padding: 11px 0 11px 12px;
   border-bottom: 1px solid var(--border);
 }
 .plan-row:last-child { border-bottom: none; padding-bottom: 0; }
 .plan-row:first-child { padding-top: 0; }
-.plan-icon {
-  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
-  background: var(--brand-dim);
-  display: flex; align-items: center; justify-content: center;
-  color: var(--brand);
-  box-shadow: inset 0 0 0 1px var(--brand-glow);
-}
 .plan-name { font-size: 13px; font-weight: 600; color: var(--text); }
-.plan-meta { font-size: 11.5px; color: var(--text2); margin-top: 1px; }
+.plan-meta {
+  font-size: 11.5px; color: var(--text2); margin-top: 2px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.plan-meta-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--sage); display: inline-block;
+  box-shadow: 0 0 4px var(--sage-glow, rgba(74, 222, 128, 0.5));
+}
 
 /* ── Door rows ────────────────────────────────────────── */
 .door-row {
@@ -1472,18 +1472,13 @@ function renderPlans(plans) {
   }
   el.innerHTML = plans.map(p => {
     const name = p.planName || p.name || 'Plan';
-    const rate = p.rateLabel ? ' — ' + p.rateLabel : '';
+    // Meta line: sage-green dot + rate (replaces "Active" — the dot conveys
+    // active state, and the rate is more useful than the redundant word).
+    const metaText = p.rateLabel || (p.status || 'Active');
     return `
     <div class="plan-row">
-      <div class="plan-icon">
-        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8 1l2.1 4.2L15 6.1l-3.5 3.4.8 4.8L8 12.1l-4.3 2.2.8-4.8L1 6.1l4.9-.9L8 1z"/>
-        </svg>
-      </div>
-      <div>
-        <div class="plan-name">${esc(name)}${esc(rate)}</div>
-        <div class="plan-meta">${esc(p.status || 'Active')}</div>
-      </div>
+      <div class="plan-name">${esc(name)}</div>
+      <div class="plan-meta"><span class="plan-meta-dot"></span>${esc(metaText)}</div>
     </div>`;
   }).join('');
 }
