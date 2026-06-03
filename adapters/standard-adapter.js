@@ -485,6 +485,29 @@ class StandardAdapter {
           );
           billingId = existing.rows[0]?.id || null;
         }
+
+        // OB-242 — multi-cycle transition. When a new cycle (index > 1) arrives
+        // for the same Wix subscription, close out all prior cycles to
+        // status='completed' and stamp their effective_end with the new
+        // cycle's effective_start. Without this, both cycles stay 'active'
+        // and v_active_members / downstream UIs see duplicate rows.
+        // Idempotent: re-running with the same cycle is a no-op.
+        // Defense-in-depth: a partial UNIQUE index now enforces this invariant
+        // at the schema level (migrations/ob-242-...).
+        const cycleN = cycleIndex || 1;
+        if (wixSubscriptionId && cycleN > 1) {
+          await db.query(
+            `UPDATE member_billing
+             SET status = 'completed',
+                 effective_end = COALESCE(effective_end, $4),
+                 updated_at = NOW()
+             WHERE client_id = $1
+               AND wix_subscription_id = $2
+               AND cycle_index < $3
+               AND status = 'active'`,
+            [tenantId, wixSubscriptionId, cycleN, effectiveStart || null]
+          );
+        }
       }
 
       // INSERT member_access_sources — S-11/A9: client_id NOT NULL (multi-tenancy hardening).
