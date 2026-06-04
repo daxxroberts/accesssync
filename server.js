@@ -14,6 +14,7 @@ const express = require('express');
 
 // Import Modules
 const wixConnector = require('./adapters/wix/wix-connector');
+const wixAppMarket = require('./core/wix-app-market');
 const memberSyncApi = require('./core/member-sync-api');
 const db = require('./db');
 const { startWorker } = require('./core/queue-worker');
@@ -52,6 +53,19 @@ app.post('/webhooks/wix', async (req, res) => {
     }
     await wixConnector.handleWebhook(req, res);
 });
+
+// Wix App Market: Operator-billing Webhook Entry (OB-66 STUB)
+// Mounted with express.raw so the raw JWT body is preserved for future
+// verification (signed against WIX_APP_PUBLIC_KEY, F-17). Today this returns
+// 503 with "not implemented" and logs the inbound payload to webhook_log.
+// DO NOT route App Market traffic through wix-connector -- that path is
+// HMAC-verified (WIX_WEBHOOK_SECRET) and is the member-level pipeline.
+app.post('/webhooks/wix-app-market',
+    express.raw({ type: '*/*', limit: '256kb' }),
+    async (req, res) => {
+        await wixAppMarket.handleAppMarketWebhook(req, res);
+    }
+);
 
 // AccessSync UI Endpoint: Frontend Polling (Phase 5)
 app.get('/member/access-status', async (req, res) => {

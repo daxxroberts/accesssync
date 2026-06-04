@@ -253,7 +253,7 @@ Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
 | Table | Purpose |
 |---|---|
 | `connector_subscriptions` | Per-(client + hardware platform). `hardware_platform` string + `hardware_api_key` (encrypted). Canonical post-cutover; supersedes `clients.hardware_platform`. |
-| `billing_subscriptions` | Per-(client + subscription_source + subscription_id). Wires AccessSync tier to Wix App Market / direct billing source. |
+| `billing_subscriptions` | Per-(client + subscription_source + subscription_id). Wires AccessSync tier to Wix App Market / direct billing source. **F-16 columns (added 2026-06-03):** `vendor_product_id VARCHAR(255)` (opaque Wix Plan ID from Paid Plan Purchased JWT — maps to AccessSync tier via OB-72 design), `wix_app_instance_id VARCHAR(255)` (site-scoped install ID from App Instance Installed JWT — persisted so we can iterate for `GET /apps/v1/instance` reconciliation per F-18). Both NULL on HOG row (Velo direct install per DR-016). Stub handler at `core/wix-app-market.js`; OB-66 wires it. |
 | `as_subscription_terms` | Valid tier definitions (Base / Pro / Connect) with rate-limit + feature flags. |
 | `as_client_subscriptions` | Per-client AccessSync subscription record. |
 
@@ -395,6 +395,11 @@ OPERATOR_INVITE_TOKEN                 Gate on operator signup endpoints
 CORE_ENGINE_URL                       Core Engine base URL — populates webhook URL in onboard Step 5
 WIX_APP_ID                            Wix App ID
 WIX_APP_SECRET                        Wix App Secret Key — verifies signed instance HMAC
+WIX_APP_PUBLIC_KEY                    Wix App Market JWT public key (RSA) — verifies signed webhooks for operator-side
+                                      billing (App Instance Installed / Paid Plan Purchased / Paid Plan Changed /
+                                      Paid Plan Auto-Renewal Cancelled / App Instance Removed). DIFFERENT from
+                                      WIX_WEBHOOK_SECRET (which is HMAC for member-level Pricing Plans webhooks).
+                                      Copy from Wix Dev Center → your app → Webhooks page. Required when OB-66 ships.
 ```
 
 ---
