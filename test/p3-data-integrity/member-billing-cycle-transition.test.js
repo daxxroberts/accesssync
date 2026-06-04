@@ -67,5 +67,18 @@ describe('OB-242: member_billing cycle transition invariant', () => {
       // across tenants (theoretical but defensive).
       expect(adapterSrc).toMatch(/UPDATE member_billing[\s\S]+?WHERE client_id = \$1/);
     });
+
+    test('cycle-close UPDATE precedes the INSERT INTO member_billing (ordering invariant)', () => {
+      // Trace 5ba96217 (2026-06-04): the OB-242 UPDATE shipped AFTER the INSERT,
+      // so the partial UNIQUE index member_billing_one_active_per_subscription
+      // tripped on the INSERT before the UPDATE could close the prior cycle.
+      // Anchored on block-unique fingerprints (cycle_index < $3 only appears in
+      // the cycle-close UPDATE; the full column list only appears in the grant INSERT).
+      const updateIdx = adapterSrc.search(/UPDATE member_billing[\s\S]*?cycle_index < \$3/);
+      const insertIdx = adapterSrc.search(/INSERT INTO member_billing\s+\(member_master_id, client_id, wix_order_id/);
+      expect(updateIdx).toBeGreaterThan(-1);
+      expect(insertIdx).toBeGreaterThan(-1);
+      expect(updateIdx).toBeLessThan(insertIdx);
+    });
   });
 });
