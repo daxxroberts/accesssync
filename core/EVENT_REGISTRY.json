@@ -17,6 +17,7 @@
     "reconciliation.stale_reset":         { "persist": true },
     "queue.grant.complete":               { "persist": true },
     "kisi.role.recovery_succeeded":       { "persist": true },
+    "source_retry.success":               { "persist": true },
 
     "operator.sync.revoke_skipped":       { "persist": true },
     "operator.sync.revoked":              { "persist": true },

@@ -193,6 +193,15 @@ Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='rev
 | `reconcile.member.no_identity` | info | No identity record — reconcile skipped |
 | `reconcile.integrity.alert` | warn | Integrity issue detected — alert written to config_alert_log |
 | `reconciliation.stale_reset` | warn | Stale `in_flight` member_access lock (>10 min) reset to `status='recovery_pending'`. Next reconcile sweep picks it up via `_fetchActionableRecords` and re-attempts the grant. Context: `{ stage, result, newStatus: 'recovery_pending' }`. (OB-202) |
+| `source_retry.run_start` | info | OB-240 source-retry-probe cron started — picking up `pending_hardware`/`pending_start` source rows for re-grant |
+| `source_retry.run_complete` | info | OB-240 source-retry-probe cron complete — summary counts (candidates/succeeded/failed/exhausted/skipped) |
+| `source_retry.candidate_found` | info | OB-240 probe selected a source row for retry — one log per candidate row, includes sourceId/clientId/accessId/hardwareGroupId/retryCount |
+| `source_retry.success` | info | **PERSISTED via EVENT_REGISTRY.json override.** OB-240 probe succeeded — source row flipped `pending_*`→`active`, parent `member_access` status rollup recomputed |
+| `source_retry.failed` | warn | OB-240 probe attempt failed (single attempt; retries remain). `retry_count` bumped, `failure_reason` written. `recoverable: true` flag set. |
+| `source_retry.exhausted` | error | OB-240 probe attempt exhausted retries (`retry_count` reached 3). Source row flipped to `failed`; `error_queue` row INSERTed with `error_code='SOURCE_RETRY_EXHAUSTED'`. Operator-visible. |
+| `source_retry.skipped_no_kisi_user` | warn | OB-240 probe skipped a source row because `member_master.hardware_user_id` is NULL — member never got a Kisi user. Different recovery path (identity resolution, not source retry). |
+| `source_retry.row_unhandled_error` | error | OB-240 probe caught an unhandled error in the per-row retry block (defense-in-depth — should not normally fire). |
+| `source_retry.fatal` | critical | OB-240 probe top-level crash — Railway Cron will surface non-zero exit. |
 
 ### Reconciliation actor format (OB-227, 2026-05-27)
 
