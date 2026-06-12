@@ -114,7 +114,7 @@ class StandardAdapter {
            WHERE mm.client_id = $1
              AND mm.source_platform = $2
              AND mm.platform_member_id = $3
-             AND ma.status IN ('active', 'in_flight')`,
+             AND ma.status IN ('active', 'in_flight', 'removing')`,
           [tenantId, event.sourcePlatform || 'wix', event.platformMemberId]
         );
 
