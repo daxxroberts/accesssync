@@ -125,6 +125,14 @@ class KisiAdapter {
       })
     }, apiKey);
     log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id, clientId });
+    // OB-245 (diagnostic): capture the full Kisi /users POST response so we can
+    // (a) confirm whether send_emails actually triggered an invitation, and
+    // (b) decide what shape a branded Resend welcome would need. warn-level
+    // persists to diagnostic_log per DR-038 level gate. Drop or downgrade once
+    // the email-trigger investigation closes.
+    log.warn('kisi.user.created.full_response', {
+      email, pattern, sendEmails, clientId, kisiUserId: data.id, response: data,
+    });
     return data.id;
   }
 
