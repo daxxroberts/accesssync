@@ -779,6 +779,12 @@ let S = {
   confirmingId: null,   // sub-member id showing confirm dialog
   pollTimer:   null,    // setInterval handle for pending-member polling
   pollCount:   0,       // number of poll cycles fired
+  // OB-246: poll only after explicit user action (Submit / Remove / claim / release).
+  // Page-open load doesn't poll even if rows are non-terminal — those states settle
+  // via their own action loops, not background polling. Resets to false when budget
+  // exhausts so user-re-action is required to restart.
+  userActionTriggered: false,
+  lastRenderHash: null, // OB-246: skip DOM swap if serialized state unchanged
 };
 
 // ── XSS-safe escaping ───────────────────────────────────────────
@@ -1019,6 +1025,28 @@ function render() {
 
 function renderMemberList() {
   const el = document.getElementById('member-list');
+
+  // OB-246 focus guard: if the user is typing in an input/textarea/select inside
+  // the member list, skip the re-render this cycle. A wholesale innerHTML swap
+  // would blow away the focused element and steal the cursor mid-keystroke. Poll
+  // will revisit on its next tick (or on the next user action).
+  const active = document.activeElement;
+  if (active && el.contains(active) &&
+      (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT' || active.isContentEditable)) {
+    return;
+  }
+
+  // OB-246 no-change short-circuit: if the serialized list state hasn't changed
+  // since the last render, skip the DOM swap entirely. Eliminates the idle-poll
+  // flash. Hash includes editingId + confirmingId because they affect row shape.
+  const hash = JSON.stringify({
+    subs: S.subMembers,
+    editingId: S.editingId,
+    confirmingId: S.confirmingId,
+  });
+  if (hash === S.lastRenderHash) return;
+  S.lastRenderHash = hash;
+
   if (S.subMembers.length === 0) {
     el.innerHTML = emptyStateHtml();
     return;
@@ -1324,6 +1352,7 @@ async function doRemove(subId) {
       showToast(data.error || 'Failed to remove member.', 'error');
       return;
     }
+    armPollForUserAction(); // OB-246: poll until revoke + DR-044 finalize complete
     await loadData();
     showToast(data.message || 'Member will be removed', 'info');
   } catch (e) {
@@ -1350,6 +1379,7 @@ async function claimHolderSlot() {
       return;
     }
     showToast(data.message || 'Adding you to this plan…', 'info');
+    armPollForUserAction(); // OB-246: poll until grant settles
     await loadData();
   } catch (e) {
     showToast('Something went wrong. Try again.', 'error');
@@ -1377,6 +1407,7 @@ async function releaseHolderSlot() {
       return;
     }
     showToast(data.message || 'Removing your access…', 'info');
+    armPollForUserAction(); // OB-246: poll until revoke settles
     await loadData();
   } catch (e) {
     showToast('Something went wrong. Try again.', 'error');
@@ -1402,6 +1433,7 @@ async function submitAll() {
       if (btn) btn.disabled = false;
       return;
     }
+    armPollForUserAction(); // OB-246: poll until all grants settle (or 60s budget)
     await loadData();
     showToast('Granting access to ' + data.submitted + ' member' + (data.submitted === 1 ? '' : 's') + '…', 'info');
   } catch (e) {
@@ -1478,8 +1510,13 @@ function syncPipelineHtml(memberId) {
 }
 
 // ── Polling — watch non-terminal members until all settle ────────
+// OB-246: polling is action-triggered only. Page-open load never starts a poll.
+// Submit / Remove / claim / release handlers set S.userActionTriggered = true
+// before their loadData() call; that's the only path that arms the timer.
+// Budget caps at 60s (15 cycles × 4s). When the budget exhausts, the trigger
+// flag is reset so the user has to re-act to restart polling.
 const POLL_INTERVAL_MS = 4000;
-const POLL_MAX         = 75; // 5 minutes max
+const POLL_MAX         = 15; // 60s budget — was 75 (5 min) pre-OB-246
 
 function isNonTerminal(m) {
   if (m.status === 'draft') return false;
@@ -1492,6 +1529,15 @@ function isNonTerminal(m) {
 function stopPoll() {
   if (S.pollTimer) { clearInterval(S.pollTimer); S.pollTimer = null; }
   S.pollCount = 0;
+  S.userActionTriggered = false; // OB-246: re-arm requires another user action
+}
+
+function armPollForUserAction() {
+  // OB-246: call this from any handler that initiates a state change worth watching
+  // (Submit, Remove, claim, release). Permits maybeStartPoll to actually start the
+  // timer on the next loadData. Without this, page-open and idle loadData calls
+  // never poll even if non-terminal rows are present.
+  S.userActionTriggered = true;
 }
 
 function maybeStartPoll(prevMembers) {
@@ -1501,8 +1547,6 @@ function maybeStartPoll(prevMembers) {
   pending.forEach(m => startPipeline(m.id));
 
   // Detect transitions from pending → active for banner + pipeline completion.
-  // Defensive: prevMembers may include members that were in the previous
-  // S.subMembers but are now active. We compare by id alone.
   if (prevMembers && prevMembers.length > 0) {
     const prevById = new Map(prevMembers.map(m => [m.id, m]));
     const newlyActive = S.subMembers.filter(m => {
@@ -1518,6 +1562,10 @@ function maybeStartPoll(prevMembers) {
 
   // Stop polling if everything has settled
   if (pending.length === 0) { stopPoll(); return; }
+
+  // OB-246: only start a poll if a user action triggered it. Page-open and idle
+  // reloads do not start polling on their own.
+  if (!S.userActionTriggered) return;
 
   // Already polling — no-op (poller calls loadData → re-enters here, ensures it stays alive)
   if (S.pollTimer) return;
