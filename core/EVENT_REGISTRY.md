@@ -177,6 +177,18 @@ Required context fields per event vary; minimum for adapter calls: identifying I
 |---|---|---|
 | `member.sub_member.soft_deleted` | info | DR-044: Sub-member finalize succeeded — `sub_member_status='deleted'`, PII NULL'd. Atomic UPDATE matched expected `'removing'` prior state. Lands in `member_access_log` as `event_type='sub_member_soft_deleted'`. |
 | `member.sub_member.soft_delete_idempotent_skip` | warn | DR-044: Finalize UPDATE matched 0 rows on a sub-member (plan_holder_id not NULL). Race or replay — already in terminal `'deleted'` state or never reached `'removing'`. Diagnostic only; not an error. |
+| `adapter.finalize_revoke.delete_kisi_user_start` | info | OB-248: DR-044 finalize started for a member whose access just rolled up to `'inactive'`. About to call `hardwareAdapter.deleteUser`. |
+| `adapter.finalize_revoke.complete` | info | **PERSISTED via EVENT_REGISTRY.json override.** OB-248: DR-044 finalize succeeded — Kisi user deleted (or was already gone), `member_access.status='deleted'`, all PII NULL'd on `member_master`. Trace-closing line for the revoke chain. |
+| `adapter.finalize_revoke.already_deleted` | info | OB-248: idempotent — access was already at `status='deleted'`. No-op. |
+| `adapter.finalize_revoke.access_still_active` | info | OB-248: skipped — `member_access.status` was not `'inactive'` (other sources still active for this person). No PII purge, no Kisi delete. |
+| `adapter.finalize_revoke.access_missing` | warn | OB-248: skipped — `member_access` row no longer exists for the (memberId, tenantId) pair. Should never fire under normal operation. |
+| `adapter.finalize_revoke.no_hardware_user` | info | OB-248: member never had a Kisi user (`hardware_user_id` NULL). DB-side finalize still runs (status→`deleted`, PII NULL). |
+| `adapter.finalize_revoke.refused_unowned` | warn | OB-248: DR-045 Layer B refused — Kisi user has no AccessSync marker. Operator-side or pre-DR-045 user. PII NOT purged; access stays `'inactive'`. Surfaces to `config_alert_log` as `finalize_revoke_refused_unowned_user`. |
+| `adapter.finalize_revoke.refused_cross_tenant` | warn | OB-248: DR-045 Layer B refused — marker exists but names a different client_id. Multi-tenant cross-talk attempt or stale marker. PII NOT purged. Surfaces to `config_alert_log` as `finalize_revoke_refused_client_mismatch`. |
+| `adapter.finalize_revoke.refused_elevated` | warn | OB-248: DR-045 Layer C refused — user holds an elevated role (admin/manager/owner/place scope). Operator must demote first. PII NOT purged; access stays `'inactive'`. Surfaces to `config_alert_log` as `finalize_revoke_refused_elevated_role`. |
+| `adapter.finalize_revoke.refused_foreign_source_tag` | warn | OB-248: Defense-in-depth Layer A — `member_master.source_tag` is not `'accesssync'`. Same disposition as `refused_unowned`. |
+| `adapter.finalize_revoke.kisi_delete_failed` | error | OB-248: Kisi `deleteUser` threw an error other than the 3 guard refusals (network, 5xx, transient). Bubbles up to queue-worker → BullMQ retries the whole revoke job (idempotent — `completeRevoke` already committed). |
+| `adapter.finalize_revoke.db_finalize_failed` | error | OB-248: Kisi delete succeeded but the DB UPDATE transaction (set `'deleted'` + NULL PII) failed. Rolled back. Bubbles up so the retry can re-attempt — Kisi delete itself is idempotent. |
 
 Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='revoke'`, `result`. ALS auto-populates `trace_id`, `actor_type`, `actor_id`. No PII fields included (PII is NULL by the time these events fire, and was never in the event payload).
 

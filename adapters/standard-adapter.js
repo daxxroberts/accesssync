@@ -15,7 +15,7 @@
 const db = require('../db');
 const hardwareAdapter = require('./hardware-adapter');
 const { log } = require('../core/logger');
-const { getTraceId, setTraceContext } = require('../core/trace-context');
+const { getTraceId, setTraceContext, getActor } = require('../core/trace-context');
 
 class StandardAdapter {
 
@@ -709,6 +709,193 @@ class StandardAdapter {
     this._incrementActivity(tenantId, 'revokes_completed').catch(err =>
       log.warn('adapter.activity_update_failed', { field: 'revokes_completed' }, err)
     );
+  }
+
+  /**
+   * OB-248: DR-044 finalize — delete Kisi user + NULL PII + mark access 'deleted'.
+   *
+   * Runs after completeRevoke succeeds and the access has rolled up to 'inactive'
+   * (i.e. all sources cancelled, no active grants remain). Closes the loop on:
+   *   - DR-044 sub-member soft-delete state machine (Brittany case): code wrote
+   *     'removing' then expected 'deleted' + PII purge. Pre-OB-248 nothing ever
+   *     flipped 'removing' → 'deleted'; access landed at 'inactive', PII intact.
+   *   - The "email-on-re-add" silent failure: if we keep the Kisi user as an
+   *     empty invited account, the next grant's findUserByEmail reuses it,
+   *     skipping createUser, skipping the welcome email. Member never knows
+   *     to install the Kisi app. Deleting on revoke means every re-grant
+   *     triggers a fresh createUser → fresh Kisi welcome email.
+   *
+   * Three-layer DR-045 guard still applies (delegated to hardwareAdapter.deleteUser):
+   *   Layer A — caller (grant-revoke) verifies source_tag='accesssync'
+   *   Layer B — Kisi notes marker parsed; refuses UNOWNED_USER / CLIENT_MISMATCH
+   *   Layer C — refuses ELEVATED_ROLE_ATTACHED (admin/manager/owner roles)
+   *
+   * On guard refusal we DO NOT throw — we log + surface to config_alert_log
+   * (operator sees it) + leave access at 'inactive' with PII intact. The user
+   * is either not ours to delete or has elevated rights that must be reviewed
+   * by an operator before they can be detached from AccessSync.
+   *
+   * On Kisi 404 (user already gone — operator manually deleted, or earlier
+   * sweep already cleaned up) we treat as idempotent success and proceed
+   * with the DB-side finalize.
+   *
+   * Idempotent on access already in 'deleted' state — early-exit.
+   *
+   * @param {string} memberId          member_access.id
+   * @param {string} tenantId          client.id
+   * @param {string} hardwarePlatform  resolved adapter key (e.g. 'kisi')
+   * @param {string} apiKey            decrypted hardware API key
+   * @param {string|number} hardwareUserId   Kisi user_id from member_access.hardware_user_id
+   * @returns {Promise<{ finalized: boolean, reason: string }>}
+   */
+  async finalizeRevoke(memberId, tenantId, hardwarePlatform, apiKey, hardwareUserId) {
+    // Re-check the post-completeRevoke status. If the access rolled up to 'active'
+    // (other sources survived the revoke) or somehow ended elsewhere, do not finalize.
+    const accessRow = await db.query(
+      `SELECT ma.status, ma.hardware_user_id, ma.member_master_id, mm.source_tag
+       FROM member_access ma
+       JOIN member_master mm ON mm.id = ma.member_master_id
+       WHERE ma.id = $1 AND ma.client_id = $2`,
+      [memberId, tenantId]
+    );
+
+    if (accessRow.rows.length === 0) {
+      log.warn('adapter.finalize_revoke.access_missing', { memberId, tenantId });
+      return { finalized: false, reason: 'access_missing' };
+    }
+
+    const { status, member_master_id, source_tag } = accessRow.rows[0];
+
+    if (status === 'deleted') {
+      // Idempotent — earlier finalize completed
+      log.info('adapter.finalize_revoke.already_deleted', { memberId, tenantId });
+      return { finalized: false, reason: 'already_deleted' };
+    }
+
+    if (status !== 'inactive') {
+      log.info('adapter.finalize_revoke.access_still_active', {
+        memberId, tenantId, currentStatus: status,
+      });
+      return { finalized: false, reason: 'access_still_active' };
+    }
+
+    if (source_tag !== 'accesssync') {
+      // Defense-in-depth Layer A — this is also enforced upstream in grant-revoke,
+      // but finalize is a separate destructive step, so re-check here.
+      log.warn('adapter.finalize_revoke.refused_foreign_source_tag', {
+        memberId, tenantId, sourceTag: source_tag,
+      });
+      return { finalized: false, reason: 'foreign_source_tag' };
+    }
+
+    // Attempt Kisi user delete (DR-045 Layers B + C live inside hardwareAdapter.deleteUser)
+    let kisiDeleteResult = 'attempted';
+    if (hardwareUserId) {
+      log.info('adapter.finalize_revoke.delete_kisi_user_start', {
+        memberId, tenantId, hardwareUserId,
+      });
+      try {
+        await hardwareAdapter.deleteUser(hardwarePlatform, apiKey, hardwareUserId, { clientId: tenantId });
+        kisiDeleteResult = 'deleted';
+      } catch (err) {
+        // DR-045 guard refusals — surface to operator, leave PII intact, no throw
+        if (err.code === 'UNOWNED_USER') {
+          log.warn('adapter.finalize_revoke.refused_unowned', {
+            memberId, tenantId, hardwareUserId, kisiNotes: err.kisiNotes || null,
+          });
+          await this._alertOperatorFinalizeRefused(tenantId, memberId, hardwareUserId, 'unowned_user', err.message);
+          return { finalized: false, reason: 'kisi_refused_unowned' };
+        }
+        if (err.code === 'CLIENT_MISMATCH') {
+          log.warn('adapter.finalize_revoke.refused_cross_tenant', {
+            memberId, tenantId, hardwareUserId,
+            ownerClientId: err.ownerClientId, requestingClientId: err.requestingClientId,
+          });
+          await this._alertOperatorFinalizeRefused(tenantId, memberId, hardwareUserId, 'client_mismatch', err.message);
+          return { finalized: false, reason: 'kisi_refused_cross_tenant' };
+        }
+        if (err.code === 'ELEVATED_ROLE_ATTACHED') {
+          log.warn('adapter.finalize_revoke.refused_elevated', {
+            memberId, tenantId, hardwareUserId,
+            elevatedAssignments: err.elevatedAssignments || [],
+          });
+          await this._alertOperatorFinalizeRefused(tenantId, memberId, hardwareUserId, 'elevated_role', err.message);
+          return { finalized: false, reason: 'kisi_refused_elevated' };
+        }
+        // Any other error (network, 5xx, transient) — bubble up so BullMQ retries
+        log.error('adapter.finalize_revoke.kisi_delete_failed', {
+          memberId, tenantId, hardwareUserId, statusCode: err.statusCode || null,
+        }, err);
+        throw err;
+      }
+    } else {
+      // No Kisi user to delete (member never had one). Still finalize DB-side.
+      kisiDeleteResult = 'no_hardware_user';
+      log.info('adapter.finalize_revoke.no_hardware_user', { memberId, tenantId });
+    }
+
+    // DB finalize — atomic transaction
+    const dbClient = await db.getClient();
+    try {
+      await dbClient.query('BEGIN');
+
+      await dbClient.query(
+        `UPDATE member_access SET status = 'deleted', updated_at = NOW() WHERE id = $1`,
+        [memberId]
+      );
+
+      await dbClient.query(
+        `UPDATE member_master
+         SET email = NULL,
+             first_name = NULL,
+             last_name = NULL,
+             display_name = NULL,
+             phone = NULL,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [member_master_id]
+      );
+
+      await dbClient.query('COMMIT');
+    } catch (dbErr) {
+      await dbClient.query('ROLLBACK');
+      log.error('adapter.finalize_revoke.db_finalize_failed', { memberId, tenantId }, dbErr);
+      throw dbErr;
+    } finally {
+      dbClient.release();
+    }
+
+    log.info('adapter.finalize_revoke.complete', {
+      memberId, tenantId, hardwareUserId: hardwareUserId || null,
+      kisiDeleteResult,
+    });
+    return { finalized: true, reason: 'ok' };
+  }
+
+  /**
+   * OB-248 helper — write a config_alert_log row so the operator dashboard
+   * surfaces a Kisi delete refusal. Non-throwing; failure to log alert must
+   * never crash the finalize.
+   */
+  async _alertOperatorFinalizeRefused(clientId, memberId, hardwareUserId, reason, message) {
+    const _actor = getActor() || {};
+    try {
+      await db.query(
+        `INSERT INTO config_alert_log
+           (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          clientId,
+          `finalize_revoke_refused_${reason}`,
+          `member_id=${memberId} kisi_user_id=${hardwareUserId} reason=${reason} message=${message}`,
+          getTraceId() || null,
+          _actor.type || 'system',
+          _actor.id || 'standard-adapter',
+        ]
+      );
+    } catch (_) {
+      // Best-effort
+    }
   }
 
   /**

@@ -453,6 +453,48 @@ async function _processJobBody(job, traceId) {
         stage: 'revoke', result: 'success',
       });
 
+      // Step 4 (OB-248): DR-044 finalize — delete Kisi user + NULL PII + mark
+      // access 'deleted'. Only runs on full revoke (targetStatus='inactive');
+      // suspends (targetStatus='disabled') and recoveries ('active') skip.
+      // DR-045 three-layer guard inside finalizeRevoke handles unowned /
+      // cross-tenant / elevated-role refusals — surfaces to operator queue
+      // without throwing. Other Kisi errors throw so BullMQ can retry.
+      if (targetStatus === 'inactive') {
+        lastStep = 'revoke.finalize';
+        try {
+          const finalizeApiKey = await getClientApiKey(tenantId);
+          if (finalizeApiKey) {
+            const finalizeResult = await standardAdapter.finalizeRevoke(
+              memberId, tenantId, hardwarePlatform, finalizeApiKey, hardwareUserId
+            );
+            logger.info('queue.revoke.finalize.result', {
+              clientId, memberId, eventId,
+              finalized: finalizeResult.finalized,
+              reason:    finalizeResult.reason,
+              hardwareUserId: hardwareUserId || null,
+              durationMs: Date.now() - jobStart,
+              stage: 'revoke', result: finalizeResult.finalized ? 'success' : 'skipped',
+            });
+          } else {
+            logger.warn('queue.revoke.finalize_skipped_no_api_key', {
+              clientId, memberId, eventId,
+              hardwareUserId: hardwareUserId || null,
+              stage: 'revoke', result: 'skipped',
+            });
+          }
+        } catch (finalizeErr) {
+          // finalizeRevoke threw — propagate so BullMQ retries the whole revoke job.
+          // completeRevoke already committed (sources cleared); the retry will see
+          // status='inactive' and finalize will resume from there. Idempotent.
+          logger.error('queue.revoke.finalize_failed', {
+            clientId, memberId, eventId,
+            hardwareUserId: hardwareUserId || null,
+            stage: 'revoke', result: 'failed',
+          }, finalizeErr);
+          throw finalizeErr;
+        }
+      }
+
     } else {
       logger.warn('queue.job.unknown_name', { jobId: job.id, jobName: job.name, clientId, eventId });
     }

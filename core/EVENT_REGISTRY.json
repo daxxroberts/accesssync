@@ -19,6 +19,7 @@
     "kisi.role.recovery_succeeded":       { "persist": true },
     "source_retry.success":               { "persist": true },
     "reconciliation.sub_member_holder_lapsed": { "persist": true },
+    "adapter.finalize_revoke.complete":   { "persist": true },
 
     "operator.sync.revoke_skipped":       { "persist": true },
     "operator.sync.revoked":              { "persist": true },
