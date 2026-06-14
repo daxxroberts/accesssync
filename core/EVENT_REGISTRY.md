@@ -218,6 +218,17 @@ Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='rev
 | `reconciliation.sub_member_holder_lapsed_queue_failed` | error | OB-247 Pass 1.5 — failed to enqueue the synthetic revoke job for a specific sub-member source. Other source revokes in the same sweep are unaffected. Investigate BullMQ/Redis health. |
 | `reconciliation.pass_1_5_complete` | info | OB-247 Pass 1.5 finished for a client. Reports `lapsedSubsFound` (count of sub-members whose holder is non-active) and `subMemberRevokesQueued` (total revoke jobs enqueued across all source plans). |
 | `reconciliation.pass_1_5_failed` | error | OB-247 Pass 1.5 top-level error — query failed or unhandled exception. Sweep continues to Pass 2/3 for this client. |
+| `reconciliation.pass_3_aborted_kisi_unavailable` | warn | OB-249 Pass 3 — `listAllUsers` threw. Outage short-circuit: Pass 3 aborts for this client; Pass 1, Pass 1.5, and the grant queue continue. Re-attempted next sweep. |
+| `reconciliation.pass_3_skipped_unsupported_platform` | info | OB-249 Pass 3 — `hardware_platform !== 'kisi'` (Seam stub doesn't implement `listAllUsers`). Skipped, no action. |
+| `reconciliation.kisi_user_disappeared_first_sighting` | info | OB-249 Pass 3 — bulk Kisi user-list missing this member's `hardware_user_id` for the FIRST sweep. Two-strike marker `kisi_user_disappeared_observed_at` set. No destructive action. |
+| `reconciliation.kisi_user_disappeared_confirmed` | warn | **OB-249 Pass 3 — SECOND consecutive sweep with the member's Kisi user missing. Synthetic plan.cancelled queued per active source. Operator manually deleted the user in Kisi dashboard (or persistent Kisi failure).** |
+| `reconciliation.kisi_user_recovered` | info | OB-249 Pass 3 — the user that was previously marked missing is back in Kisi. Two-strike marker cleared (`kisi_user_disappeared_observed_at = NULL`). Transient outage or operator restored the user. |
+| `reconciliation.role_assignment_drifted` | warn | **OB-249 Pass 3 — user exists in Kisi but one of our DB-active source rows is missing its expected `(user_id, group_id)` role assignment.** Operator removed a specific role via Kisi dashboard. Per-source synthetic plan.cancelled queued. A12 universe filter applied (only groups AccessSync manages). |
+| `reconciliation.pass_3_revoke_queue_failed` | error | OB-249 Pass 3 — BullMQ enqueue failed for a specific drift-derived revoke. Other Pass 3 revokes in same sweep unaffected. Investigate Redis health. |
+| `reconciliation.pass_3_complete` | info | OB-249 Pass 3 finished for a client. Reports: `outage`, `totalKisiUsersFetched`, `disappearedFirstSighting`, `disappearedConfirmed`, `roleDrifted`, `userRecovered`. |
+| `kisi.list_users.fetched` | info | OB-249 — Kisi `listAllUsers` paginated through all users in the org. `totalUsers` count included. |
+| `kisi.list_users_no_key` | warn | OB-249 — `listAllUsers` called without an API key. Returns empty array, no throw. |
+| `kisi.list_users_failed` | error | OB-249 — Kisi bulk user-list paginate threw at some offset. Caller (Pass 3) catches and treats as outage. |
 
 ### Reconciliation actor format (OB-227, 2026-05-27)
 

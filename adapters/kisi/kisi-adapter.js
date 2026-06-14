@@ -388,6 +388,47 @@ class KisiAdapter {
   }
 
   /**
+   * OB-249: Bulk list of all Kisi users in the org. Used by reconcile Pass 3
+   * to detect operator-deleted-Kisi-user drift in a single bulk read instead
+   * of one GET per active member.
+   *
+   * Paginates via offset/limit=100 (matches Kisi list-endpoint convention
+   * verified by PARSE 2026-05-02). Returns Kisi user objects with at least
+   * { id, email, name } populated. Returns [] on missing key.
+   *
+   * Throws on non-2xx errors so caller can short-circuit Pass 3 on outage.
+   */
+  async listAllUsers(apiKey) {
+    if (!apiKey) {
+      log.warn('kisi.list_users_no_key', {});
+      return [];
+    }
+    const allUsers = [];
+    let offset = 0;
+    const limit = 100;
+    try {
+      while (true) {
+        const data = await kisiConnector.makeRequest(
+          `/users?limit=${limit}&offset=${offset}`,
+          { method: 'GET' },
+          apiKey
+        );
+        const users = Array.isArray(data) ? data : [];
+        for (const u of users) {
+          allUsers.push({ id: u.id, email: u.email || null, name: u.name || null });
+        }
+        if (users.length < limit) break;
+        offset += limit;
+      }
+      log.info('kisi.list_users.fetched', { totalUsers: allUsers.length });
+      return allUsers;
+    } catch (err) {
+      log.error('kisi.list_users_failed', { statusCode: err.statusCode || null, offset }, err);
+      throw err;
+    }
+  }
+
+  /**
    * Fetch all access groups for the org (OB-42).
    * Used by onboarding (show groups after key validated) and plan-mapping dropdown.
    * Returns [] on error or missing key.

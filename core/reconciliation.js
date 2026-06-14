@@ -360,6 +360,216 @@ class NightlyReconciliation {
       }
     }
 
+    // ── Pass 3: Operator-deleted-Kisi-user drift detection (OB-249) ──
+    // After Pass 2 has observed Kisi orphans, Pass 3 detects the INVERSE case:
+    // our DB says a member is 'active' with hardware_user_id pointing at a
+    // Kisi user that no longer exists. Trigger: operator manually deletes a
+    // user via the Kisi dashboard. Observed live 2026-06-12 (Brittany).
+    //
+    // Bulk-read optimized (SAGE-locked 2026-06-14): one paginated listAllUsers
+    // call (~2-3 HTTP roundtrips up to ~500 users) instead of N per-user GETs.
+    // Reuses Pass 2's `kisiAssignments` to detect per-source role drift
+    // without additional Kisi calls.
+    //
+    // Two-strike requirement (SAGE condition): we set
+    // `kisi_user_disappeared_observed_at` (OB-249 migration column) on the FIRST
+    // observation. The NEXT sweep sees it populated and proceeds with synthetic
+    // plan.cancelled. Single transient 404s during Kisi outages can't trigger
+    // false revokes — they need consecutive confirmations.
+    //
+    // Outage short-circuit: if listAllUsers throws (network/5xx/auth), abort
+    // Pass 3 for this client. Pass 1, Pass 1.5, and the 3A grant queue continue.
+    //
+    // Platform gate: Kisi only for now. Seam stub doesn't implement listAllUsers
+    // yet (OB-XXX when Seam ships).
+    let pass3OutageObserved = false;
+    let pass3KisiUsers = null;
+    let pass3DisappearedFirstSighting = 0;
+    let pass3DisappearedConfirmed = 0;
+    let pass3RoleDrifted = 0;
+    let pass3UserRecovered = 0;
+
+    if (hardwarePlatform === 'kisi') {
+      try {
+        pass3KisiUsers = await hardwareAdapter.listAllUsers(hardwarePlatform, hardwareApiKey);
+      } catch (err) {
+        pass3OutageObserved = true;
+        log.warn('reconciliation.pass_3_aborted_kisi_unavailable', {
+          clientId: client.id,
+          statusCode: err.statusCode || null,
+          traceId: this._sweepTraceId,
+        }, err);
+      }
+    } else {
+      log.info('reconciliation.pass_3_skipped_unsupported_platform', {
+        clientId: client.id, hardwarePlatform,
+      });
+    }
+
+    if (!pass3OutageObserved && pass3KisiUsers !== null) {
+      const kisiUserIdSet = new Set(pass3KisiUsers.map(u => String(u.id)));
+
+      // Build a set of (userId, groupId) pairs from Pass 2's already-fetched
+      // assignments so per-source role drift detection is free of new HTTP calls.
+      const kisiAssignmentPairs = new Set(
+        kisiAssignments
+          .filter(a => a.userId && a.groupId)
+          .map(a => `${a.userId}:${a.groupId}`)
+      );
+
+      const activeAccessRows = await db.query(
+        `SELECT ma.id AS access_id, ma.hardware_user_id::text AS hardware_user_id,
+                ma.kisi_user_disappeared_observed_at,
+                mm.platform_member_id, ma.sub_master_id
+         FROM member_access ma
+         JOIN member_master mm ON mm.id = ma.member_master_id
+         WHERE ma.client_id = $1
+           AND ma.status = 'active'
+           AND ma.hardware_user_id IS NOT NULL
+           AND mm.source_tag = 'accesssync'`,
+        [client.id]
+      );
+
+      for (const row of activeAccessRows.rows) {
+        const userPresent = kisiUserIdSet.has(row.hardware_user_id);
+
+        if (!userPresent) {
+          if (row.kisi_user_disappeared_observed_at) {
+            // SECOND consecutive observation — queue synthetic revoke per active source
+            const subSources = await db.query(
+              `SELECT DISTINCT source_plan_id FROM member_access_sources
+               WHERE access_id = $1 AND status = 'active' AND source_plan_id IS NOT NULL`,
+              [row.access_id]
+            );
+            for (const src of subSources.rows) {
+              const tid = mintTraceId();
+              const syntheticEvent = {
+                eventType:        'plan.cancelled',
+                platformMemberId: row.platform_member_id,
+                sourcePlatform:   'wix',
+                planId:           src.source_plan_id,
+                synthetic:        true,
+                traceId:          tid,
+              };
+              try {
+                await eventQueue.add(
+                  'revoke',
+                  { tenantId: client.id, standardEvent: syntheticEvent },
+                  { jobId: `pass3-userdrift-${row.access_id}-${src.source_plan_id}-${Date.now()}` }
+                );
+                pass3DisappearedConfirmed++;
+                log.warn('reconciliation.kisi_user_disappeared_confirmed', {
+                  clientId:         client.id,
+                  accessId:         row.access_id,
+                  platformMemberId: row.platform_member_id,
+                  hardwareUserId:   row.hardware_user_id,
+                  sourcePlanId:     src.source_plan_id,
+                  traceId:          tid,
+                  sweepTraceId:     this._sweepTraceId,
+                });
+              } catch (err) {
+                log.error('reconciliation.pass_3_revoke_queue_failed', {
+                  clientId: client.id, accessId: row.access_id, sourcePlanId: src.source_plan_id,
+                }, err);
+              }
+            }
+          } else {
+            // FIRST observation — record timestamp only, no destructive action
+            await db.query(
+              `UPDATE member_access SET kisi_user_disappeared_observed_at = NOW()
+               WHERE id = $1`,
+              [row.access_id]
+            );
+            pass3DisappearedFirstSighting++;
+            log.info('reconciliation.kisi_user_disappeared_first_sighting', {
+              clientId:         client.id,
+              accessId:         row.access_id,
+              platformMemberId: row.platform_member_id,
+              hardwareUserId:   row.hardware_user_id,
+              sweepTraceId:     this._sweepTraceId,
+            });
+          }
+        } else {
+          // User exists in Kisi.
+          // (a) Clear any prior disappear marker — recovery path
+          if (row.kisi_user_disappeared_observed_at) {
+            await db.query(
+              `UPDATE member_access SET kisi_user_disappeared_observed_at = NULL
+               WHERE id = $1`,
+              [row.access_id]
+            );
+            pass3UserRecovered++;
+            log.info('reconciliation.kisi_user_recovered', {
+              clientId:         client.id,
+              accessId:         row.access_id,
+              platformMemberId: row.platform_member_id,
+              hardwareUserId:   row.hardware_user_id,
+            });
+          }
+          // (b) Per-source role drift check — verify each active source's expected
+          //     Kisi role assignment is still present. Reuses Pass 2's kisiAssignmentPairs.
+          //     A12 universe filter — only check groups AccessSync manages.
+          const sourceRows = await db.query(
+            `SELECT id, source_plan_id, hardware_group_id::text AS hardware_group_id
+             FROM member_access_sources
+             WHERE access_id = $1
+               AND status = 'active'
+               AND hardware_group_id IS NOT NULL
+               AND source_plan_id IS NOT NULL`,
+            [row.access_id]
+          );
+          for (const src of sourceRows.rows) {
+            if (!accessSyncGroupIds.has(String(src.hardware_group_id))) continue;
+            const pairKey = `${row.hardware_user_id}:${src.hardware_group_id}`;
+            if (!kisiAssignmentPairs.has(pairKey)) {
+              const tid = mintTraceId();
+              const syntheticEvent = {
+                eventType:        'plan.cancelled',
+                platformMemberId: row.platform_member_id,
+                sourcePlatform:   'wix',
+                planId:           src.source_plan_id,
+                synthetic:        true,
+                traceId:          tid,
+              };
+              try {
+                await eventQueue.add(
+                  'revoke',
+                  { tenantId: client.id, standardEvent: syntheticEvent },
+                  { jobId: `pass3-roledrift-${row.access_id}-${src.source_plan_id}-${Date.now()}` }
+                );
+                pass3RoleDrifted++;
+                log.warn('reconciliation.role_assignment_drifted', {
+                  clientId:         client.id,
+                  accessId:         row.access_id,
+                  platformMemberId: row.platform_member_id,
+                  hardwareUserId:   row.hardware_user_id,
+                  hardwareGroupId:  src.hardware_group_id,
+                  sourcePlanId:     src.source_plan_id,
+                  traceId:          tid,
+                  sweepTraceId:     this._sweepTraceId,
+                });
+              } catch (err) {
+                log.error('reconciliation.pass_3_revoke_queue_failed', {
+                  clientId: client.id, accessId: row.access_id, sourcePlanId: src.source_plan_id,
+                }, err);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    log.info('reconciliation.pass_3_complete', {
+      clientId:                  client.id,
+      outage:                    pass3OutageObserved,
+      totalKisiUsersFetched:     pass3KisiUsers?.length || 0,
+      disappearedFirstSighting:  pass3DisappearedFirstSighting,
+      disappearedConfirmed:      pass3DisappearedConfirmed,
+      roleDrifted:               pass3RoleDrifted,
+      userRecovered:             pass3UserRecovered,
+      traceId:                   this._sweepTraceId,
+    });
+
     // OB-185 Pass 1 promotion logic — for each Wix-active member who EXISTS in our DB,
     // ensure their source rows reflect "active" status. This handles the post-S-11 case
     // where migration translated existing access_status='inactive' → source.status='cancelled'

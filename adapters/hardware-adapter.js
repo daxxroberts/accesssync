@@ -178,6 +178,11 @@ class HardwareAdapter {
   async getManagedRoleAssignments(hardwarePlatform, apiKey) {
     return this._getAdapter(hardwarePlatform).getManagedRoleAssignments(apiKey);
   }
+
+  // OB-249: bulk-read user list for reconcile Pass 3 (operator-deleted drift detection)
+  async listAllUsers(hardwarePlatform, apiKey) {
+    return this._getAdapter(hardwarePlatform).listAllUsers(apiKey);
+  }
 }
 
 module.exports = new HardwareAdapter();

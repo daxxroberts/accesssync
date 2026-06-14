@@ -20,6 +20,8 @@
     "source_retry.success":               { "persist": true },
     "reconciliation.sub_member_holder_lapsed": { "persist": true },
     "adapter.finalize_revoke.complete":   { "persist": true },
+    "reconciliation.kisi_user_disappeared_confirmed": { "persist": true },
+    "reconciliation.role_assignment_drifted":         { "persist": true },
 
     "operator.sync.revoke_skipped":       { "persist": true },
     "operator.sync.revoked":              { "persist": true },
