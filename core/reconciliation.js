@@ -645,6 +645,98 @@ class NightlyReconciliation {
       clientId: client.id, promoted, backfilled, traceId: this._sweepTraceId,
     });
 
+    // ── Pass 1.5: Holder-lapse → sub-member revoke propagation (OB-247) ──
+    // After Pass 1 has settled holder state from Wix, any sub-member whose
+    // holder is no longer 'active' should also lose access. Pure DB-derived;
+    // no Kisi calls in this pass. Synthetic plan.cancelled events flow through
+    // the existing revoke worker → cancels source rows + Kisi removeRole.
+    //
+    // Per-source semantics (OB-150 invariant): processRevoke requires planId on
+    // the synthetic event to target the right source row. We enumerate each
+    // active source on the sub-member and queue ONE synthetic per source — one
+    // sub with 2 plans = 2 revoke jobs. Each job is independently idempotent.
+    //
+    // Architecturally distinct from Pass 2 (Kisi orphan observe) and Pass 3
+    // (operator-deleted-Kisi-user drift). Pass 1.5 catches BILLING lapse only.
+    let subMemberRevokesQueued = 0;
+    try {
+      const lapsedSubsResult = await db.query(
+        `SELECT sub.id AS sub_access_id, sub_mm.platform_member_id
+         FROM member_access sub
+         JOIN member_master sub_mm ON sub_mm.id = sub.member_master_id
+         LEFT JOIN member_access holder
+                ON holder.member_master_id = sub.sub_master_id
+               AND holder.client_id        = sub.client_id
+         WHERE sub.client_id      = $1
+           AND sub.sub_master_id IS NOT NULL
+           AND sub.status         = 'active'
+           AND (holder.status IS NULL OR holder.status <> 'active')`,
+        [client.id]
+      );
+
+      for (const sub of lapsedSubsResult.rows) {
+        // Enumerate distinct active source plans for this sub-member.
+        // Each gets its own synthetic plan.cancelled with planId set so
+        // processRevoke's targeted DELETE hits (OB-150 invariant).
+        const subSourcesResult = await db.query(
+          `SELECT DISTINCT source_plan_id
+           FROM member_access_sources
+           WHERE access_id = $1
+             AND status = 'active'
+             AND source_plan_id IS NOT NULL`,
+          [sub.sub_access_id]
+        );
+
+        for (const source of subSourcesResult.rows) {
+          const subTraceId = mintTraceId();
+          const syntheticEvent = {
+            eventType:        'plan.cancelled',
+            platformMemberId: sub.platform_member_id,
+            sourcePlatform:   'wix',
+            planId:           source.source_plan_id,
+            synthetic:        true,
+            traceId:          subTraceId,
+          };
+          const jobId = `pass1.5-${sub.sub_access_id}-${source.source_plan_id}-${Date.now()}`;
+          try {
+            await eventQueue.add(
+              'revoke',
+              { tenantId: client.id, standardEvent: syntheticEvent },
+              { jobId }
+            );
+            subMemberRevokesQueued++;
+            log.info('reconciliation.sub_member_holder_lapsed', {
+              clientId:         client.id,
+              subAccessId:      sub.sub_access_id,
+              platformMemberId: sub.platform_member_id,
+              sourcePlanId:     source.source_plan_id,
+              jobId,
+              traceId:          subTraceId,
+              sweepTraceId:     this._sweepTraceId,
+              stage:            'reconcile',
+              result:           'revoke_queued',
+            });
+          } catch (err) {
+            log.error('reconciliation.sub_member_holder_lapsed_queue_failed', {
+              clientId:     client.id,
+              subAccessId:  sub.sub_access_id,
+              sourcePlanId: source.source_plan_id,
+              traceId:      subTraceId,
+            }, err);
+          }
+        }
+      }
+
+      log.info('reconciliation.pass_1_5_complete', {
+        clientId:               client.id,
+        lapsedSubsFound:        lapsedSubsResult.rows.length,
+        subMemberRevokesQueued,
+        traceId:                this._sweepTraceId,
+      });
+    } catch (err) {
+      log.error('reconciliation.pass_1_5_failed', { clientId: client.id }, err);
+    }
+
     // 3A. In Wix, not in Kisi → paid but not provisioned → queue grant
     //     EXCEPT: opt-in holder rule (DR-040). If a Wix order is for a multi-member plan
     //     and the buyer is the would-be plan holder, do NOT auto-grant. The holder must

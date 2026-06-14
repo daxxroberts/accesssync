@@ -202,6 +202,10 @@ Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='rev
 | `source_retry.skipped_no_kisi_user` | warn | OB-240 probe skipped a source row because `member_master.hardware_user_id` is NULL — member never got a Kisi user. Different recovery path (identity resolution, not source retry). |
 | `source_retry.row_unhandled_error` | error | OB-240 probe caught an unhandled error in the per-row retry block (defense-in-depth — should not normally fire). |
 | `source_retry.fatal` | critical | OB-240 probe top-level crash — Railway Cron will surface non-zero exit. |
+| `reconciliation.sub_member_holder_lapsed` | info | **PERSISTED via EVENT_REGISTRY.json override.** OB-247 Pass 1.5 — a sub-member's holder is no longer `active` (billing lapse or full revoke). A synthetic `plan.cancelled` revoke has been queued for ONE of the sub-member's active source rows (one event per source). Context: `{ subAccessId, platformMemberId, sourcePlanId, jobId, traceId, sweepTraceId }`. |
+| `reconciliation.sub_member_holder_lapsed_queue_failed` | error | OB-247 Pass 1.5 — failed to enqueue the synthetic revoke job for a specific sub-member source. Other source revokes in the same sweep are unaffected. Investigate BullMQ/Redis health. |
+| `reconciliation.pass_1_5_complete` | info | OB-247 Pass 1.5 finished for a client. Reports `lapsedSubsFound` (count of sub-members whose holder is non-active) and `subMemberRevokesQueued` (total revoke jobs enqueued across all source plans). |
+| `reconciliation.pass_1_5_failed` | error | OB-247 Pass 1.5 top-level error — query failed or unhandled exception. Sweep continues to Pass 2/3 for this client. |
 
 ### Reconciliation actor format (OB-227, 2026-05-27)
 
