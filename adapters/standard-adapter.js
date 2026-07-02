@@ -633,8 +633,20 @@ class StandardAdapter {
    * @param {string} targetStatus
    * @param {Object} [options]  { sourcePlanId, sourceType, hardwareGroupId }
    */
+  // INCIDENT 2026-07-02: 'inactive' used to be in the clearSources list below, which
+  // made this blanket-delete every member_access_sources row for the access_id on
+  // every plan.cancelled/booking.cancelled revoke — not just the plan being cancelled.
+  // grant-revoke.js's processRevoke() already deletes the correctly-scoped row(s) for
+  // that specific plan (matched on source_plan_id, which wix-adapter.js populates
+  // reliably for both plan and booking cancellations) before this function ever runs.
+  // Re-deleting everything here was both redundant for a single-plan member and
+  // destructive for a multi-plan member (e.g. a Couples + Family + Student holder —
+  // cancelling one wiped all three). 'deleted' (member.deleted) and 'revoked'/
+  // 'cancelled' (legacy/explicit full-teardown callers) are genuinely person-wide
+  // events and keep the blanket delete; only queue-worker.js's plan/booking-cancel
+  // path (targetStatus='inactive') relies on processRevoke's per-plan scoping instead.
   async completeRevoke(memberId, tenantId, targetStatus, options = {}) {
-    const clearSources = targetStatus === 'inactive' || targetStatus === 'revoked' ||
+    const clearSources = targetStatus === 'revoked' ||
                          targetStatus === 'deleted'  || targetStatus === 'cancelled';
     const isSuspend    = targetStatus === 'disabled';
     const isReactivate = targetStatus === 'active';

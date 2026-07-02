@@ -451,6 +451,37 @@ describe('[P1] completeRevoke — DELETEs from member_access_sources, UPDATEs me
     expect(updateCall[0]).not.toContain('member_access_state');
     expect(updateCall[1]).toEqual([MEMBER_ACCESS_ID]);
   });
+
+  // INCIDENT 2026-07-02 regression guard: targetStatus='inactive' (what queue-worker.js
+  // passes for every plan.cancelled/booking.cancelled revoke) must NOT blanket-delete
+  // member_access_sources. grant-revoke.js's processRevoke() already deletes the
+  // correctly-scoped row(s) for the specific plan before completeRevoke runs — a
+  // second unscoped delete here wipes every OTHER active plan on the same access_id
+  // too. This exact bug shipped and deleted all 5 plans on a real multi-plan account
+  // when only one was meant to be left. Only the status rollup should run.
+  it("targetStatus='inactive' does NOT delete member_access_sources — relies on processRevoke's per-plan scoping", async () => {
+    const dbClient = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE member_access (rollup) — the only query besides BEGIN/COMMIT
+        .mockResolvedValueOnce({ rows: [] }),// COMMIT
+      release: jest.fn(),
+    };
+    db.getClient.mockResolvedValue(dbClient);
+    db.query.mockResolvedValue({ rows: [] }); // _incrementActivity
+
+    await adapter.completeRevoke(MEMBER_ACCESS_ID, TENANT_ID, 'inactive');
+
+    const calls = dbClient.query.mock.calls;
+    // BEGIN, rollup UPDATE, COMMIT — exactly 3 calls. No DELETE.
+    expect(calls).toHaveLength(3);
+    expect(calls.some(c => c[0].includes('DELETE FROM member_access_sources'))).toBe(false);
+
+    const updateCall = calls[1];
+    expect(updateCall[0]).toContain('UPDATE member_access');
+    expect(updateCall[0]).toContain('CASE');
+    expect(updateCall[1]).toEqual([MEMBER_ACCESS_ID]);
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════

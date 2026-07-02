@@ -489,14 +489,20 @@ describe('[P3] multi-member — POST /api/multi-member/holder-release-slot', () 
   test('enqueues revoke job when holder releases slot', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', platform_member_id: 'release-pid' }] })
-      .mockResolvedValueOnce({ rows: [{ role_assignment_id: 'ra1' }] });
+      .mockResolvedValueOnce({ rows: [{ role_assignment_id: 'ra1', source_plan_id: 'sp-release-1' }] });
 
     await request(app).post('/api/multi-member/holder-release-slot').send({ holderId: 'mm1', clientId: 'c1', planMappingId: 'pm1' });
 
     expect(mockQueueAdd).toHaveBeenCalledTimes(1);
     const [jobType, payload] = mockQueueAdd.mock.calls[0];
     expect(jobType).toBe('revoke');
-    expect(payload.standardEvent.mappingId).toBe('pm1');
+    // INCIDENT 2026-07-02: must be planId (source_plan_id), not mappingId — grant-revoke.js's
+    // processRevoke() scopes its per-plan DELETE on planId only. Sending mappingId meant
+    // processRevoke had nothing to match against, so the plan being "released" was never
+    // actually targeted (only completeRevoke's now-removed blanket-delete happened to
+    // wipe it, along with every other plan on the same access_id).
+    expect(payload.standardEvent.planId).toBe('sp-release-1');
+    expect(payload.standardEvent.mappingId).toBeUndefined();
   });
 });
 

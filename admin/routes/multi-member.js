@@ -766,9 +766,14 @@ router.post('/api/multi-member/holder-release-slot', async (req, res) => {
     );
     if (!holderResult.rows.length) return res.status(404).json({ error: 'Plan holder not found' });
 
-    // Confirm holder has an active role assignment for this plan via member_access_sources
+    // Confirm holder has an active role assignment for this plan via member_access_sources,
+    // and pull source_plan_id — INCIDENT 2026-07-02: this synthetic event previously set
+    // `mappingId`, which grant-revoke.js's processRevoke() never reads (it scopes its
+    // per-plan DELETE on `planId`/source_plan_id only). Without a real planId, processRevoke
+    // couldn't narrow the delete to this one plan. See standard-adapter.js completeRevoke
+    // for the other half of this incident's fix.
     const assignmentResult = await db.query(
-      `SELECT mas.role_assignment_id
+      `SELECT mas.role_assignment_id, mas.source_plan_id
        FROM member_access_sources mas
        JOIN member_access ma ON ma.id = mas.access_id
        WHERE ma.member_master_id = $1 AND mas.mapping_id = $2`,
@@ -781,7 +786,7 @@ router.post('/api/multi-member/holder-release-slot', async (req, res) => {
       eventType:        'plan.cancelled',
       platformMemberId: holder.platform_member_id,
       sourcePlatform:   'wix',
-      mappingId:        planMappingId,
+      planId:           assignmentResult.rows[0].source_plan_id || null,
       synthetic:        true,
       traceId:          mintTraceId(),
     };
