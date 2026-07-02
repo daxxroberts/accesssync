@@ -146,7 +146,9 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
       .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'holder-pid', source_platform: 'wix' }] })
       // plan check
       .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 3 }] })
-      // slot count
+      // holder's own slot count (holder not occupying this plan)
+      .mockResolvedValueOnce({ rows: [{ cnt: 0 }] })
+      // sub-member slot count
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] })
       // holder platform_member_id lookup is already in holderCheck above
       // INSERT member_master
@@ -171,7 +173,8 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'holder-pid', source_platform: 'wix' }] })
       .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 2 }] })
-      .mockResolvedValueOnce({ rows: [{ cnt: 1 }] }) // one slot taken
+      .mockResolvedValueOnce({ rows: [{ cnt: 0 }] }) // holder slot count — not occupying
+      .mockResolvedValueOnce({ rows: [{ cnt: 1 }] }) // sub-member slot count — one slot taken
       .mockResolvedValueOnce({ rows: [{ id: 'mm-new', platform_member_id: 'p2', first_name: 'X', last_name: 'Y', email: 'x@test.com', phone: '555' }] })
       .mockResolvedValueOnce({ rows: [{ id: 'a2', status: 'pending', plan_mapping_id: 'pm1' }] });
 
@@ -179,7 +182,7 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
       .post('/api/multi-member/members')
       .send({ holderId: 'mm1', clientId: 'c1', firstName: 'X', lastName: 'Y', email: 'x@test.com', phone: '555', planMappingId: 'pm1' });
 
-    const slotSql = db.query.mock.calls[2]?.[0] || '';
+    const slotSql = db.query.mock.calls[3]?.[0] || '';
     expect(slotSql).toMatch(/member_access/);
     expect(slotSql).toMatch(/sub_master_id/);
     expect(slotSql).not.toMatch(/member_identity/);
@@ -190,7 +193,8 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'holder-pid', source_platform: 'wix' }] })
       .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 2, source_plan_id: 'sp-1', hardware_group_id: 'g-1' }] })
-      .mockResolvedValueOnce({ rows: [{ cnt: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ cnt: 0 }] }) // holder slot count
+      .mockResolvedValueOnce({ rows: [{ cnt: 0 }] }) // sub-member slot count
       .mockResolvedValueOnce({ rows: [{ id: 'mm-new', platform_member_id: 'p3', first_name: 'A', last_name: 'B', email: 'a@test.com', phone: '555' }] })
       .mockResolvedValueOnce({ rows: [{ id: 'a3', status: 'pending_identity' }] })
       .mockResolvedValueOnce({ rows: [] }); // INSERT source row
@@ -200,16 +204,35 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
       .send({ holderId: 'mm1', clientId: 'c1', firstName: 'A', lastName: 'B', email: 'a@test.com', phone: '555', planMappingId: 'pm1' });
 
     // S-11/DR-046: slot count joins member_access_sources for per-mapping scoping.
-    const slotSql = db.query.mock.calls[2]?.[0] || '';
+    const slotSql = db.query.mock.calls[3]?.[0] || '';
     expect(slotSql).toMatch(/member_access_sources/);
     expect(slotSql).toMatch(/mapping_id/);
   });
 
-  test('returns 409 when plan is full', async () => {
+  test('returns 409 when plan is full (sub-members alone reach max)', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'hp', source_platform: 'wix' }] })
       .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ cnt: 0 }] }) // holder not occupying
       .mockResolvedValueOnce({ rows: [{ cnt: 1 }] }); // full
+
+    const res = await request(app)
+      .post('/api/multi-member/members')
+      .send({ holderId: 'mm1', clientId: 'c1', firstName: 'Z', lastName: 'Z', email: 'z@test.com', phone: '555', planMappingId: 'pm1' });
+
+    expect(res.status).toBe(409);
+  });
+
+  test('returns 409 when the holder\'s own seat plus sub-members reach max (holder seat counts toward the cap)', async () => {
+    // Couples-style plan: max_members=2. Holder already occupies 1 seat, and 1
+    // sub-member already occupies the other. A second sub-member add must be
+    // rejected — previously this endpoint only counted sub-members and would
+    // have allowed a 3rd person on a 2-person plan.
+    db.query
+      .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'hp', source_platform: 'wix' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ cnt: 1 }] }) // holder occupies a seat
+      .mockResolvedValueOnce({ rows: [{ cnt: 1 }] }); // one sub-member already added
 
     const res = await request(app)
       .post('/api/multi-member/members')

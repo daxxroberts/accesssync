@@ -287,7 +287,21 @@ router.post('/api/multi-member/members', async (req, res) => {
 
     // Check limit per plan — count source rows that occupy a slot.
     // S-11/DR-046: drafts/active/pending_hardware/pending_start all consume a slot.
+    // The holder's own seat counts too (same accounting as holder-claim-slot below) —
+    // max_members is a total-people cap, not an "additional members" cap. Without this,
+    // a Couples plan (max_members=2) would let the holder add 2 more people on top of
+    // their own seat, silently allowing 3 people on a 2-person plan.
     const maxMembers = planCheck.rows[0].max_members || 1;
+    const holderSlotResult = await db.query(
+      `SELECT COUNT(*)::int AS cnt
+       FROM member_access_sources mas
+       JOIN member_access ma ON ma.id = mas.access_id
+       WHERE ma.member_master_id = $1
+         AND ma.sub_master_id IS NULL
+         AND mas.mapping_id = $2
+         AND mas.status = 'active'`,
+      [holderId, planMappingId]
+    );
     const currentCount = await db.query(
       `SELECT COUNT(DISTINCT mas.access_id)::int AS cnt
        FROM member_access_sources mas
@@ -297,8 +311,9 @@ router.post('/api/multi-member/members', async (req, res) => {
          AND mas.status IN ('draft','active','pending_hardware','pending_start','in_flight')`,
       [holderId, planMappingId]
     );
-    if (currentCount.rows[0].cnt >= maxMembers) {
-      return res.status(409).json({ error: `Maximum ${maxMembers} additional members allowed for this plan` });
+    const totalOccupied = holderSlotResult.rows[0].cnt + currentCount.rows[0].cnt;
+    if (totalOccupied >= maxMembers) {
+      return res.status(409).json({ error: `Maximum ${maxMembers} members allowed for this plan` });
     }
 
     const holderRow = holderCheck.rows[0];
