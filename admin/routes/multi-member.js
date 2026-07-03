@@ -98,26 +98,28 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
 
     const holder = holderResult.rows[0];
 
-    // 2. Get plan mappings that allow multiple members AND the holder has
-    //    actually purchased. Filter to holder-owned plans so the operator
-    //    doesn't see phantom "Couples" rows from plans they don't own.
-    //    Include billing_snapshot so we can show rate inline ("Couples — $50/mo")
-    //    to distinguish duplicate-named plans (annual vs monthly).
+    // 2. Get the multi-member plans this holder is PAYING FOR — sourced from
+    //    member_billing (DR-050: "what plans do you have" is a billing question), joined
+    //    to plan_mappings only for the multi-member CONFIG (allow_multiple, max_members,
+    //    door). billing_snapshot gives the inline rate ("Couples — $50/mo") and
+    //    disambiguates duplicate-named plans (annual vs monthly).
+    //
+    //    INCIDENT 2026-07-03: this used to JOIN member_access_sources gated on
+    //    mas.status='active' — so a holder who used "Leave this plan" to release their own
+    //    door seat lost the plan from Manage Members entirely and could no longer manage
+    //    the OTHER seats they were still paying for. Billing is untouched by a seat-release
+    //    (holder-release-slot, DR-048), so it's the correct source. Join key:
+    //    member_billing.plan_id = plan_mappings.source_plan_id (verified live 2026-07-03).
     const plansResult = await db.query(
       `SELECT DISTINCT ON (pm.id)
               pm.id, pm.source_plan_id, pm.plan_name, pm.allow_multiple, pm.max_members,
               pm.hardware_group_id, pm.door_name,
               mb.billing_snapshot
        FROM plan_mappings pm
-       JOIN member_access_sources mas
-              ON mas.mapping_id = pm.id
-             AND mas.status = 'active'
-       JOIN member_access ma
-              ON ma.id = mas.access_id
-             AND ma.member_master_id = $2
-             AND ma.sub_master_id IS NULL
-       LEFT JOIN member_billing mb
-              ON mb.id = mas.billing_id
+       JOIN member_billing mb
+              ON mb.plan_id = pm.source_plan_id
+             AND mb.member_master_id = $2
+             AND mb.client_id = $1
              AND mb.status = 'active'
        WHERE pm.client_id = $1 AND pm.status = 'active' AND pm.allow_multiple = true
        ORDER BY pm.id, mb.created_at DESC NULLS LAST`,

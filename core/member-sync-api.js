@@ -192,6 +192,30 @@ class MemberSyncApi {
         [accessIds]
       );
 
+      // 4b. "Your Plans" is a BILLING question, not an access question — DR-050.
+      // Read member_billing directly. This is the source of truth for "what am I paying
+      // for," independent of "do I personally hold a door seat right now."
+      //
+      // INCIDENT 2026-07-03: "Your Plans" used to be derived off rolesResult (i.e. off
+      // member_access_sources) — so the moment a holder used "Leave this plan" to release
+      // their own door seat, the plan vanished from "Your Plans" too, even though the Wix
+      // order was still active and they were still being billed. holder-release-slot only
+      // ever touches member_access_sources (DR-048); it never cancels the order, and never
+      // touches member_billing. Reading billing keeps the two independent.
+      //
+      // Just WHERE status='active': the OB-242 invariant (one active billing row per
+      // subscription; renewals close the old cycle to 'completed' and open a new 'active'
+      // one) means active rows already are the current plans — no DISTINCT ON / cycle_index
+      // gymnastics needed. Dedupe by plan_id in JS below for the rare non-subscription case.
+      const billingResult = await db.query(
+        `SELECT mb.plan_name, mb.plan_id, mb.billing_snapshot
+         FROM member_billing mb
+         WHERE mb.member_master_id = $1 AND mb.client_id = $2
+           AND mb.status = 'active'
+         ORDER BY mb.plan_name`,
+        [identity.member_master_id, clientId]
+      );
+
       const access = rolesResult.rows.map(r => ({
         planName:     r.plan_name,
         doorName:     r.door_name,
@@ -200,9 +224,10 @@ class MemberSyncApi {
         sourcePlanId: r.source_plan_id,
       }));
 
-      // Derive unique plans — deduped by source_plan_id (NOT planName).
-      // Two Couples plans (annual + monthly) have the same name but different
-      // source_plan_id. Group correctly + surface rate to distinguish.
+      // Derive unique plans from billingResult (member_billing), NOT from rolesResult
+      // (member_access_sources) — see the 4b comment above. Deduped by plan_id (NOT
+      // planName): two Couples plans (annual + monthly) have the same name but different
+      // plan_id. Group correctly + surface rate to distinguish.
       //
       // Canonical snapshot shape per DR-042 (matches admin/public/members-bridge.js
       // formatRate): { planPrice, cycleUnit, cycleCount, currency, ... }
@@ -227,13 +252,13 @@ class MemberSyncApi {
       }
 
       const seenPlans = new Set();
-      const plans = rolesResult.rows.reduce((acc, r) => {
-        const key = r.source_plan_id || r.plan_name;
+      const plans = billingResult.rows.reduce((acc, r) => {
+        const key = r.plan_id || r.plan_name;
         if (!seenPlans.has(key)) {
           seenPlans.add(key);
           acc.push({
             planName:     r.plan_name,
-            sourcePlanId: r.source_plan_id,
+            sourcePlanId: r.plan_id,
             rateLabel:    rateLabel(r.billing_snapshot),
             status:       'Active',
           });
