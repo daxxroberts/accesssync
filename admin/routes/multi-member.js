@@ -238,7 +238,15 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
         allowMultiple: p.allow_multiple,
         maxMembers:    p.max_members,
         doorName:      p.door_name,
-        holderHasSlot: true,  // always true now — query filters to holder-owned plans
+        // holderHasSlot = does the holder actually hold a door seat on this plan RIGHT NOW
+        // (an active member_access_sources row, per holderMappingIds above). This is an
+        // ACCESS question, distinct from "is the plan in the list" which is a BILLING
+        // question (plansResult now comes from member_billing, DR-050). It was hardcoded
+        // `true` back when plansResult was gated on the holder having an active seat; now
+        // that the plan list is billing-sourced, the seat state has to be looked up
+        // separately — otherwise a holder who used "Leave this plan" still shows as
+        // occupying a seat (ring "1 of 2", "View members (1)") that they released.
+        holderHasSlot: holderMappingIds.has(p.id),
       })),
       subMembers: Array.from(subByKey.values()),
     });
