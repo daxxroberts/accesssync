@@ -187,9 +187,7 @@ class MemberSyncApi {
          LEFT JOIN locations l ON pm.location_id = l.id
          LEFT JOIN member_billing mb ON mb.id = mas.billing_id AND mb.status = 'active'
          WHERE ma.id = ANY($1)
-           AND mas.billing_id IN (
-             SELECT id FROM member_billing WHERE status = 'active'
-           )
+           AND mas.status = 'active'
          ORDER BY pm.plan_name`,
         [accessIds]
       );
