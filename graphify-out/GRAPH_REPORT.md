@@ -1,11 +1,11 @@
 # Graph Report - .  (2026-07-02)
 
 ## Corpus Check
-- 196 files · ~261,234 words
+- 197 files · ~261,539 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 757 nodes · 836 edges · 187 communities detected
+- 758 nodes · 836 edges · 188 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
@@ -777,6 +777,10 @@ Nodes (0):
 Cohesion: 1.0
 Nodes (0): 
 
+### Community 187 - "Community 187"
+Cohesion: 1.0
+Nodes (0): 
+
 ## Knowledge Gaps
 - **Thin community `Community 96`** (2 nodes): `simulate.js`, `runSimulation()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -930,35 +934,37 @@ Nodes (0):
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 171`** (1 nodes): `member-billing-cycle-transition.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 172`** (1 nodes): `ob-240-migration.test.js`
+- **Thin community `Community 172`** (1 nodes): `member-sync-api-billing-conflation.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 173`** (1 nodes): `ob-244-member-access-status-enum.test.js`
+- **Thin community `Community 173`** (1 nodes): `ob-240-migration.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 174`** (1 nodes): `ob-247-pass-1-5-holder-lapse.test.js`
+- **Thin community `Community 174`** (1 nodes): `ob-244-member-access-status-enum.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 175`** (1 nodes): `ob-249-pass-3-operator-delete-drift.test.js`
+- **Thin community `Community 175`** (1 nodes): `ob-247-pass-1-5-holder-lapse.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 176`** (1 nodes): `rate-limiter.test.js`
+- **Thin community `Community 176`** (1 nodes): `ob-249-pass-3-operator-delete-drift.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 177`** (1 nodes): `recon-traceid-guard.test.js`
+- **Thin community `Community 177`** (1 nodes): `rate-limiter.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 178`** (1 nodes): `reconcile-trigger-source.test.js`
+- **Thin community `Community 178`** (1 nodes): `recon-traceid-guard.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 179`** (1 nodes): `reconciliation-new-schema.test.js`
+- **Thin community `Community 179`** (1 nodes): `reconcile-trigger-source.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 180`** (1 nodes): `reconciliation-pass2-source-lookup.test.js`
+- **Thin community `Community 180`** (1 nodes): `reconciliation-new-schema.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 181`** (1 nodes): `redaction-edge-cases.test.js`
+- **Thin community `Community 181`** (1 nodes): `reconciliation-pass2-source-lookup.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 182`** (1 nodes): `schema-concepts-new.test.js`
+- **Thin community `Community 182`** (1 nodes): `redaction-edge-cases.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 183`** (1 nodes): `snippet-registry.test.js`
+- **Thin community `Community 183`** (1 nodes): `schema-concepts-new.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 184`** (1 nodes): `trace-context-unhappy.test.js`
+- **Thin community `Community 184`** (1 nodes): `snippet-registry.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 185`** (1 nodes): `trace-propagation.test.js`
+- **Thin community `Community 185`** (1 nodes): `trace-context-unhappy.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 186`** (1 nodes): `wix-adapter-parsing.test.js`
+- **Thin community `Community 186`** (1 nodes): `trace-propagation.test.js`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 187`** (1 nodes): `wix-adapter-parsing.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions

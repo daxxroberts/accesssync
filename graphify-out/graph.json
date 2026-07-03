@@ -2735,7 +2735,7 @@
       "label": "._verifyWixJWT()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L301",
+      "source_location": "L299",
       "id": "member_sync_api_membersyncapi_verifywixjwt",
       "community": 33
     },
@@ -2743,7 +2743,7 @@
       "label": "._getWixPublicKey()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L353",
+      "source_location": "L351",
       "id": "member_sync_api_membersyncapi_getwixpublickey",
       "community": 33
     },
@@ -2751,7 +2751,7 @@
       "label": "._fetchWixJwks()",
       "file_type": "code",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L368",
+      "source_location": "L366",
       "id": "member_sync_api_membersyncapi_fetchwixjwks",
       "community": 33
     },
@@ -5676,6 +5676,14 @@
       "community": 171
     },
     {
+      "label": "member-sync-api-billing-conflation.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\member-sync-api-billing-conflation.test.js",
+      "source_location": "L1",
+      "id": "member_sync_api_billing_conflation_test",
+      "community": 172
+    },
+    {
       "label": "member-table-client-id.test.js",
       "file_type": "code",
       "source_file": "test\\p3-data-integrity\\member-table-client-id.test.js",
@@ -5801,7 +5809,7 @@
       "source_file": "test\\p3-data-integrity\\ob-240-migration.test.js",
       "source_location": "L1",
       "id": "ob_240_migration_test",
-      "community": 172
+      "community": 173
     },
     {
       "label": "ob-244-member-access-status-enum.test.js",
@@ -5809,7 +5817,7 @@
       "source_file": "test\\p3-data-integrity\\ob-244-member-access-status-enum.test.js",
       "source_location": "L1",
       "id": "ob_244_member_access_status_enum_test",
-      "community": 173
+      "community": 174
     },
     {
       "label": "ob-247-pass-1-5-holder-lapse.test.js",
@@ -5817,7 +5825,7 @@
       "source_file": "test\\p3-data-integrity\\ob-247-pass-1-5-holder-lapse.test.js",
       "source_location": "L1",
       "id": "ob_247_pass_1_5_holder_lapse_test",
-      "community": 174
+      "community": 175
     },
     {
       "label": "ob-249-pass-3-operator-delete-drift.test.js",
@@ -5825,7 +5833,7 @@
       "source_file": "test\\p3-data-integrity\\ob-249-pass-3-operator-delete-drift.test.js",
       "source_location": "L1",
       "id": "ob_249_pass_3_operator_delete_drift_test",
-      "community": 175
+      "community": 176
     },
     {
       "label": "operator-members-disambiguation.test.js",
@@ -5849,7 +5857,7 @@
       "source_file": "test\\p3-data-integrity\\rate-limiter.test.js",
       "source_location": "L1",
       "id": "rate_limiter_test",
-      "community": 176
+      "community": 177
     },
     {
       "label": "recon-traceid-guard.test.js",
@@ -5857,7 +5865,7 @@
       "source_file": "test\\p3-data-integrity\\recon-traceid-guard.test.js",
       "source_location": "L1",
       "id": "recon_traceid_guard_test",
-      "community": 177
+      "community": 178
     },
     {
       "label": "reconcile-trigger-source.test.js",
@@ -5865,7 +5873,7 @@
       "source_file": "test\\p3-data-integrity\\reconcile-trigger-source.test.js",
       "source_location": "L1",
       "id": "reconcile_trigger_source_test",
-      "community": 178
+      "community": 179
     },
     {
       "label": "reconciliation-new-schema.test.js",
@@ -5873,7 +5881,7 @@
       "source_file": "test\\p3-data-integrity\\reconciliation-new-schema.test.js",
       "source_location": "L1",
       "id": "reconciliation_new_schema_test",
-      "community": 179
+      "community": 180
     },
     {
       "label": "reconciliation-pass2-source-lookup.test.js",
@@ -5881,7 +5889,7 @@
       "source_file": "test\\p3-data-integrity\\reconciliation-pass2-source-lookup.test.js",
       "source_location": "L1",
       "id": "reconciliation_pass2_source_lookup_test",
-      "community": 180
+      "community": 181
     },
     {
       "label": "redaction-edge-cases.test.js",
@@ -5889,7 +5897,7 @@
       "source_file": "test\\p3-data-integrity\\redaction-edge-cases.test.js",
       "source_location": "L1",
       "id": "redaction_edge_cases_test",
-      "community": 181
+      "community": 182
     },
     {
       "label": "schema-concepts-new.test.js",
@@ -5897,7 +5905,7 @@
       "source_file": "test\\p3-data-integrity\\schema-concepts-new.test.js",
       "source_location": "L1",
       "id": "schema_concepts_new_test",
-      "community": 182
+      "community": 183
     },
     {
       "label": "snippet-registry.test.js",
@@ -5905,7 +5913,7 @@
       "source_file": "test\\p3-data-integrity\\snippet-registry.test.js",
       "source_location": "L1",
       "id": "snippet_registry_test",
-      "community": 183
+      "community": 184
     },
     {
       "label": "trace-context-unhappy.test.js",
@@ -5913,7 +5921,7 @@
       "source_file": "test\\p3-data-integrity\\trace-context-unhappy.test.js",
       "source_location": "L1",
       "id": "trace_context_unhappy_test",
-      "community": 184
+      "community": 185
     },
     {
       "label": "trace-propagation.test.js",
@@ -5921,7 +5929,7 @@
       "source_file": "test\\p3-data-integrity\\trace-propagation.test.js",
       "source_location": "L1",
       "id": "trace_propagation_test",
-      "community": 185
+      "community": 186
     },
     {
       "label": "wix-adapter-parsing.test.js",
@@ -5929,7 +5937,7 @@
       "source_file": "test\\p3-data-integrity\\wix-adapter-parsing.test.js",
       "source_location": "L1",
       "id": "wix_adapter_parsing_test",
-      "community": 186
+      "community": 187
     },
     {
       "label": "wix-adapter-payment-guard.test.js",
@@ -11657,7 +11665,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L301",
+      "source_location": "L299",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_verifywixjwt",
@@ -11669,7 +11677,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L353",
+      "source_location": "L351",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_getwixpublickey",
@@ -11681,7 +11689,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L368",
+      "source_location": "L366",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi",
       "_tgt": "member_sync_api_membersyncapi_fetchwixjwks",
@@ -11705,7 +11713,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L321",
+      "source_location": "L319",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_verifywixjwt",
       "_tgt": "member_sync_api_membersyncapi_getwixpublickey",
@@ -11717,7 +11725,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\member-sync-api.js",
-      "source_location": "L356",
+      "source_location": "L354",
       "weight": 1.0,
       "_src": "member_sync_api_membersyncapi_getwixpublickey",
       "_tgt": "member_sync_api_membersyncapi_fetchwixjwks",
