@@ -164,12 +164,17 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
     expect(countCall[1][0]).toBe(MEMBER_ID);
   });
 
-  test('skips removeRole when remaining sources > 0 after DELETE', async () => {
+  // INCIDENT 2026-07-02 shape: a holder with 5 plans sharing one hardware_group_id
+  // (e.g. Couples + Family + First Responder + Military + Student all granting the same
+  // Entrance Door group) cancels one. The remaining 4 sources on that same group are what
+  // must suppress the Kisi removeRole call — this is the exact real-world count from the
+  // incident, not an arbitrary placeholder.
+  test('skips removeRole when 4 of 5 plans on the same door group remain after DELETE', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ hardware_api_key: null }] })
       .mockResolvedValueOnce({ rows: [{ role_assignment_id: RA_ID, hardware_group_id: GROUP_ID, mapping_id: MAPPING_ID }] })
-      .mockResolvedValueOnce({ rowCount: 1 })             // DELETE
-      .mockResolvedValueOnce({ rows: [{ cnt: '2' }] })    // COUNT → 2 remaining
+      .mockResolvedValueOnce({ rowCount: 1 })             // DELETE — removes the 1 cancelled plan's source row
+      .mockResolvedValueOnce({ rows: [{ cnt: '4' }] })    // COUNT → 4 other plans still active on this group
       .mockResolvedValueOnce({ rowCount: 1 })             // member_access_log INSERT
       .mockResolvedValueOnce({ rowCount: 0 })             // DR-044 finalize → no sub-member
       .mockResolvedValueOnce({ rows: [{ plan_holder_id: null }] });
@@ -178,7 +183,11 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
       TENANT_ID, MEMBER_ID, 'kisi-user-99', [RA_ID], 'kisi', 'plan.cancelled', cancelEvent
     );
 
+    // The Kisi role assignment must survive — 4 other plans still need this door group.
     expect(hardwareAdapter.removeRole).not.toHaveBeenCalled();
+    // processRevoke still reports 'inactive' (its return value doesn't reflect the rollup —
+    // completeRevoke's own rollup query is what correctly sets member_access.status='active'
+    // when other sources remain; see standard-adapter-new-schema.test.js Test 6).
     expect(status).toBe('inactive');
   });
 });

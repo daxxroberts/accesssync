@@ -911,7 +911,7 @@ body {
         <div class="data-card" id="plans-card">
           <div class="data-card-header">
             <span class="data-card-title">Your Plans</span>
-            <span class="data-card-caption">Active memberships on your account.</span>
+            <span class="data-card-caption">Plans you're paying for on this account.</span>
           </div>
           <div id="plans-list"></div>
         </div>
@@ -1667,6 +1667,7 @@ const MM = {
   activeAddPlanId: null,           // plan whose Add form is currently open
   editingId:   null,
   confirmingId: null,
+  confirmingHolderPlanId: null,    // plan id whose holder "Leave this plan" is being confirmed
   expandedPlanIds: new Set(),      // plan ids whose body (members + add form) is expanded
 };
 
@@ -2034,19 +2035,20 @@ function mmRenderListForPlan(plan, subsForPlan) {
 }
 
 // Renders the plan holder's own row in the member list.
-//   - Holder occupies a seat on this plan (plan.holderHasSlot) — show "Plan holder" badge.
-//     No Leave action: see INCIDENT note below.
+//   - Holder occupies a seat on this plan (plan.holderHasSlot) — show "Plan holder" badge
+//     + a Leave action wired to holder-release-slot.
 //   - Holder does not currently occupy a seat — show a Join action wired to
 //     holder-claim-slot (kept for when a plan can appear before the holder claims).
 //
-// INCIDENT 2026-07-02: a "Leave this plan" action (holder-release-slot → revoke job
-// → completeRevoke) was here and got removed after it wiped a multi-plan holder's
-// ENTIRE access, not just the one plan. Root cause: completeRevoke() in
-// standard-adapter.js clears ALL member_access_sources rows for the access_id
-// whenever its `options` param is omitted — and queue-worker.js's revoke handler
-// never passes options. This is a shared revoke-pipeline bug (affects any
-// multi-plan cancellation, not just this button) and needs a scoped fix +
-// tests before any "leave one plan" control is reintroduced.
+// Reinstated 2026-07-02 after the INCIDENT 2026-07-02 root-cause fix: Leave used to wipe a
+// multi-plan holder's ENTIRE access, not just the one plan, because completeRevoke()
+// blanket-deleted every member_access_sources row for the access_id whenever its `options`
+// param was omitted (which queue-worker.js's revoke handler always did). Now completeRevoke
+// no longer treats 'inactive' as a blanket-delete trigger — it relies on processRevoke's
+// existing per-plan source_plan_id scoping — and holder-release-slot sends the real
+// source_plan_id (not mappingId, which processRevoke never read). Covered by regression
+// tests in test/p1-critical-path/standard-adapter-new-schema.test.js and
+// grant-revoke-new-schema.test.js.
 function mmHolderRowHtml(plan) {
   const holder = MM.holder || {};
   const name = [holder.firstName, holder.lastName].filter(Boolean).join(' ') || holder.email || 'You';
@@ -2064,6 +2066,22 @@ function mmHolderRowHtml(plan) {
     '</div>';
   }
 
+  if (MM.confirmingHolderPlanId === plan.id) {
+    return '<div class="confirm-row">' +
+      '<div class="confirm-inner">' +
+        '<div class="member-avatar green" style="width:36px;height:36px;border-radius:10px;font-size:13px">' + esc(mmInitials(holder.firstName, holder.lastName)) + '</div>' +
+        '<div class="confirm-text">' +
+          '<div class="confirm-title">Leave ' + esc(plan.planName || 'this plan') + '?</div>' +
+          '<div class="confirm-sub">Your own door access from this plan will be revoked. Your other plans are unaffected.</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="confirm-btns">' +
+        '<button class="btn-ghost" onclick="mmCancelHolderConfirm()">Cancel</button>' +
+        '<button class="btn-danger" onclick="mmDoHolderRelease(\'' + esc(plan.id) + '\')">Leave</button>' +
+      '</div>' +
+    '</div>';
+  }
+
   return '<div class="member-row">' +
     '<div class="member-avatar green">' + esc(mmInitials(holder.firstName, holder.lastName)) + '</div>' +
     '<div class="member-body">' +
@@ -2073,7 +2091,32 @@ function mmHolderRowHtml(plan) {
         (holder.email ? '<span style="word-break:break-all;min-width:0">' + esc(holder.email) + '</span>' : '') +
       '</div>' +
     '</div>' +
+    '<div class="member-actions">' +
+      '<button class="icon-btn danger" title="Leave this plan" onclick="mmBeginHolderConfirm(\'' + esc(plan.id) + '\')">' +
+        '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L12 4M6.5 7v4M9.5 7v4"/></svg>' +
+      '</button>' +
+    '</div>' +
   '</div>';
+}
+
+function mmBeginHolderConfirm(planId) { MM.confirmingHolderPlanId = planId; mmRenderList(); notifyHeight(); }
+function mmCancelHolderConfirm()      { MM.confirmingHolderPlanId = null;   mmRenderList(); notifyHeight(); }
+
+async function mmDoHolderRelease(planId) {
+  MM.confirmingHolderPlanId = null;
+  try {
+    const res = await fetch(BASE + '/api/multi-member/holder-release-slot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ holderId: MM.holder.id, clientId, planMappingId: planId }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Failed to leave plan.', 'error'); return; }
+    await mmLoadData();
+    showToast(data.message || 'Leaving this plan…', 'info');
+  } catch (e) {
+    showToast('Something went wrong. Try again.', 'error');
+  }
 }
 
 async function mmDoHolderClaim(planId) {

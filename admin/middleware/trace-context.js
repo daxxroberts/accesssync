@@ -37,6 +37,14 @@ function resolveActor(req) {
     const isOwner = req.admin.email === process.env.ADMIN_ALLOWED_EMAIL;
     return { type: isOwner ? 'owner' : 'operator', id: req.admin.email };
   }
+  // INCIDENT 2026-07-02 follow-up: the admin JWT payload is signed as { role: 'admin' } —
+  // email is verified via Google OAuth at login but never added to the token, so admin
+  // sessions always missed the branch above and fell through to 'system'/'anonymous' in
+  // every activity/diagnostic log entry. There is exactly one admin today
+  // (ADMIN_ALLOWED_EMAIL), so substitute it directly rather than reissuing tokens.
+  if (req.admin && req.admin.role === 'admin' && process.env.ADMIN_ALLOWED_EMAIL) {
+    return { type: 'owner', id: process.env.ADMIN_ALLOWED_EMAIL };
+  }
   if (req.admin && req.admin.role === 'operator' && req.admin.clientId) {
     return { type: 'operator', id: `wix:${req.admin.clientId}` };
   }

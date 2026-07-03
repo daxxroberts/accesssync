@@ -485,6 +485,56 @@ describe('[P1] completeRevoke — DELETEs from member_access_sources, UPDATEs me
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// Test 6b — finalizeRevoke: safety guard for multi-plan holders (INCIDENT 2026-07-02 follow-up)
+// ════════════════════════════════════════════════════════════════════════════
+// BOT review (STRATA): pressure-test the actual reported shape — a holder with 5 active
+// plans on one access_id, one of them revoked. completeRevoke's rollup (tested above) leaves
+// member_access.status = 'active' because 4 sources are still active. queue-worker.js calls
+// finalizeRevoke() unconditionally whenever processRevoke returns targetStatus='inactive' —
+// regardless of how many other plans the member holds — so finalizeRevoke's own fresh status
+// re-check is the ONLY thing standing between a single-plan cancellation and deleting the
+// member's entire Kisi user account. This locks that guard in explicitly rather than relying
+// on inference.
+describe('[P1] finalizeRevoke — bails out when other plans keep the member active (multi-plan safety)', () => {
+  it('holder with 4 remaining active plans: returns access_still_active and does not call deleteUser', async () => {
+    const hardwareAdapter = require('../../adapters/hardware-adapter');
+
+    // Reflects the post-rollup state: member_access.status was recomputed to 'active' because
+    // 4 of the original 5 member_access_sources rows are still active (source_tag intact).
+    db.query.mockResolvedValueOnce({
+      rows: [{ status: 'active', hardware_user_id: HARDWARE_USER_ID, member_master_id: MEMBER_MASTER_ID, source_tag: 'accesssync' }],
+    });
+
+    const result = await adapter.finalizeRevoke(MEMBER_ACCESS_ID, TENANT_ID, 'kisi', 'decrypted-key', HARDWARE_USER_ID);
+
+    expect(result).toEqual({ finalized: false, reason: 'access_still_active' });
+    expect(hardwareAdapter.deleteUser).not.toHaveBeenCalled();
+    // Only the status re-check query should have run — no DB finalize transaction opened.
+    expect(db.getClient).not.toHaveBeenCalled();
+  });
+
+  it('holder with zero remaining active plans (true single-plan cancellation): proceeds to delete', async () => {
+    const hardwareAdapter = require('../../adapters/hardware-adapter');
+    hardwareAdapter.deleteUser.mockResolvedValueOnce(undefined);
+
+    db.query
+      .mockResolvedValueOnce({
+        rows: [{ status: 'inactive', hardware_user_id: HARDWARE_USER_ID, member_master_id: MEMBER_MASTER_ID, source_tag: 'accesssync' }],
+      });
+    const dbClient = {
+      query: jest.fn().mockResolvedValue({ rows: [] }),
+      release: jest.fn(),
+    };
+    db.getClient.mockResolvedValue(dbClient);
+
+    const result = await adapter.finalizeRevoke(MEMBER_ACCESS_ID, TENANT_ID, 'kisi', 'decrypted-key', HARDWARE_USER_ID);
+
+    expect(hardwareAdapter.deleteUser).toHaveBeenCalledWith('kisi', 'decrypted-key', HARDWARE_USER_ID, { clientId: TENANT_ID });
+    expect(result.finalized).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // Test 7 — releaseLock: UPDATE member_access.status='failed'
 // ════════════════════════════════════════════════════════════════════════════
 describe('[P1] releaseLock — UPDATEs member_access.status (not member_access_state)', () => {

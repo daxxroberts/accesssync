@@ -626,8 +626,12 @@ router.post('/api/multi-member/submit', async (req, res) => {
       };
       recordSyntheticOrigin(syntheticEvent.traceId, {
         clientId,
-        actorType: req.admin?.actorType || req.operator?.actorType || 'operator',
-        actorId:   req.admin?.email     || req.operator?.clientId  || holderId,
+        // INCIDENT 2026-07-02 follow-up: req.operator is never set anywhere (dead read); the
+        // admin JWT payload carries `.role`, not `.actorType`. Fall back to the resolved admin
+        // email (see admin/middleware/trace-context.js resolveActor()'s ADMIN_ALLOWED_EMAIL
+        // substitution) before the holder's own id.
+        actorType: req.admin?.role  || 'operator',
+        actorId:   req.admin?.email || (req.admin?.role === 'admin' ? process.env.ADMIN_ALLOWED_EMAIL : null) || holderId,
         action:    'sub_member.grant_queued',
         diff: { subMemberId: draft.access_id, platformMemberId: draft.platform_member_id, planId: draft.source_plan_id, jobId: `grant-multi-member-${draft.access_id}` },
       });

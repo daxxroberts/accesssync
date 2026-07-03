@@ -3018,7 +3018,11 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
     if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
 
     const reconciliation = require('../../core/reconciliation');
-    const operatorActor = req.admin?.email || req.admin?.userId || 'operator';
+    // INCIDENT 2026-07-02 follow-up: admin JWTs never carry .email/.userId (see
+    // admin/middleware/trace-context.js resolveActor()), so this always fell through to the
+    // literal string 'operator' — every manual sync run logged an unidentifiable actor.
+    // clientId (already resolved above) is a real identifier at least scoped to who ran it.
+    const operatorActor = req.admin?.email || req.admin?.userId || clientId;
     const traceId = mintTraceId();
     reconciliation._sweepTraceId = traceId;
     const { granted, revoked, skippedHolderOptin, runId, aborted, reason, sanityGateTriggered } = await runWith(
@@ -3039,6 +3043,14 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
       clientId, runId, granted, revoked,
       skippedHolderOptin: skippedHolderOptin || 0,
       sanityGateTriggered: !!sanityGateTriggered,
+      aborted: !!aborted, reason: reason || null,
+    });
+    // Mirrors the per-member 'member.synced' activity entry — gives an operator-visible
+    // audit trail of who ran a sync and what it granted/revoked, independent of whether
+    // diagnostic_log's own persistence is currently healthy.
+    recordActivity(req, 'client.synced', {
+      clientId, runId, granted, revoked,
+      skippedHolderOptin: skippedHolderOptin || 0,
       aborted: !!aborted, reason: reason || null,
     });
     res.json({
