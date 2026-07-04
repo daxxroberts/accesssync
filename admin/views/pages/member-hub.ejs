@@ -997,18 +997,10 @@ body {
 
         <!-- Inline add form — single instance, moved into the active plan group on open -->
         <div id="mm-add-form" class="add-form hidden">
-          <div class="add-form-header">
-            <div class="add-icon">
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
-            </div>
-            <div>
-              <div class="add-form-title">Add a member</div>
-              <div class="add-form-sub" id="mm-add-form-sub">They'll be saved as a draft until you grant access.</div>
-            </div>
-          </div>
-          <!-- DR-051: when the plan holder isn't seated, their "Join plan" quick action is
-               injected here on open (mmOpenAddForm) so it lives inside Add members, not as a
-               standalone called-out row. -->
+          <!-- DR-051: the panel introduces itself contextually via mm-add-join — the holder's
+               "Join plan" quick action + "or invite someone else" divider when unseated, or a
+               plain "Invite a member" heading when seated. This replaces the old redundant
+               "Add a member" header (you're always doing exactly one of: joining, or inviting). -->
           <div id="mm-add-join" class="hidden"></div>
           <div class="form-grid">
             <div class="field">
@@ -2306,15 +2298,12 @@ function mmOpenAddForm(planId) {
 
   // Personalise the form subtitle with the plan name.
   const plan = MM.plans.find(p => p.id === planId);
-  const subEl = document.getElementById('mm-add-form-sub');
-  if (subEl) {
-    subEl.textContent = plan && plan.planName
-      ? 'Adding to ' + plan.planName + ' — saved as a draft until you grant access.'
-      : "They'll be saved as a draft until you grant access.";
-  }
 
-  // DR-051: when this plan's holder isn't seated, surface their "Join plan" quick action at
-  // the top of the panel instead of a standalone called-out row. Cleared when they're seated.
+  // DR-051: the panel introduces itself contextually (replacing the removed "Add a member"
+  // header). Unseated holder → their "Join plan" quick action + an "or invite someone else"
+  // divider before the form. Seated → a plain "Invite a member" heading. Either way the user
+  // is doing exactly one of: joining, or inviting — so a generic "Add a member" title on top
+  // was redundant.
   const joinEl = document.getElementById('mm-add-join');
   if (joinEl) {
     if (plan && !plan.holderHasSlot) {
@@ -2329,11 +2318,10 @@ function mmOpenAddForm(planId) {
           '<button class="btn-ghost" style="height:30px;padding:0 13px;font-size:12.5px" onclick="mmDoHolderClaim(\'' + esc(plan.id) + '\')">Join plan</button>' +
         '</div>' +
         '<div class="mm-join-divider">or invite someone else</div>';
-      joinEl.classList.remove('hidden');
     } else {
-      joinEl.innerHTML = '';
-      joinEl.classList.add('hidden');
+      joinEl.innerHTML = '<div class="add-form-title" style="margin-bottom:12px">Invite a member</div>';
     }
+    joinEl.classList.remove('hidden');
   }
 
   // mmRender does the heavy lifting: rebuilds groups, then re-attaches the
