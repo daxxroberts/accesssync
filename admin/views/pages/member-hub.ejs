@@ -773,6 +773,29 @@ body {
   background: var(--brand-dim); color: var(--brand);
   box-shadow: inset 0 0 0 1px rgba(79,110,247,0.25);
 }
+/* Inline variant — sits in the "Additional members" header, not full-width below the list */
+.add-trigger.add-trigger-inline {
+  margin-top: 0; width: auto; height: 32px; border-radius: 9px;
+  padding: 0 12px; font-size: 12.5px; font-weight: 600; flex: none;
+}
+/* "Full" marker shown in the header in place of the add button when no spots remain */
+.mm-full-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text2); white-space: nowrap;
+}
+/* Plan-holder "Join plan" quick action + divider, shown inside the add-members panel */
+.mm-join-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--border2);
+}
+.mm-join-divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 12px 0 4px; font-size: 12px; color: var(--text2);
+}
+.mm-join-divider::before, .mm-join-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border2);
+}
 
 /* ── Limit notice ─────────────────────────────────────── */
 .limit-notice {
@@ -983,6 +1006,10 @@ body {
               <div class="add-form-sub" id="mm-add-form-sub">They'll be saved as a draft until you grant access.</div>
             </div>
           </div>
+          <!-- DR-051: when the plan holder isn't seated, their "Join plan" quick action is
+               injected here on open (mmOpenAddForm) so it lives inside Add members, not as a
+               standalone called-out row. -->
+          <div id="mm-add-join" class="hidden"></div>
           <div class="form-grid">
             <div class="field">
               <label class="field-label" for="f-first">First name</label>
@@ -1945,9 +1972,10 @@ function mmPlanGroupHtml(plan) {
   ).join('');
   const metaText = (plan.doorName ? esc(plan.doorName) + ' &middot; ' : '') +
     (max - used > 0 ? (max - used) + ' spot' + (max - used === 1 ? '' : 's') + ' left' : 'Full');
-  const sectionSub = subsForPlan.length === 0
-    ? (max - used > 0 ? 'No additional members yet &mdash; ' + (max - used) + ' spot' + (max - used === 1 ? '' : 's') + ' left' : 'All spots used')
-    : used + ' of ' + max + ' spot' + (max === 1 ? '' : 's') + ' used';
+  const spotsLeft  = max - used;
+  const sectionSub = spotsLeft > 0
+    ? spotsLeft + ' spot' + (spotsLeft === 1 ? '' : 's') + ' left'
+    : 'Full &middot; 0 spots left';
   const draftChipHtml = drafts.length > 0
     ? '<span class="draft-chip">' + drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + '</span>'
     : '';
@@ -1999,20 +2027,20 @@ function mmPlanGroupHtml(plan) {
           '<div class="mm-section-title">Additional members</div>' +
           '<div class="mm-section-sub">' + sectionSub + '</div>' +
         '</div>' +
-        draftChipHtml +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+          draftChipHtml +
+          (atLimit
+            ? '<span class="mm-full-tag">' +
+                '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>' +
+                'Full' +
+              '</span>'
+            : '<button class="add-trigger add-trigger-inline" onclick="mmOpenAddForm(\'' + pid + '\')">' +
+                '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>' +
+                'Add members' +
+              '</button>') +
+        '</div>' +
       '</div>' +
       '<div id="mm-plan-' + pid + '-list" class="member-list"></div>' +
-      '<div>' +
-        (atLimit
-          ? '<div class="limit-notice">' +
-              '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.5v4M8 4.7v.05" stroke-linecap="round"/></svg>' +
-              '<span>All ' + max + ' spots are used. Remove a member to add a new one.</span>' +
-            '</div>'
-          : '<button class="add-trigger" onclick="mmOpenAddForm(\'' + pid + '\')">' +
-              '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>' +
-              'Add member' +
-            '</button>') +
-      '</div>' +
       '<div id="mm-plan-' + pid + '-addform-slot"></div>' +
     '</div>' +
   '</div>';
@@ -2021,16 +2049,15 @@ function mmPlanGroupHtml(plan) {
 function mmRenderListForPlan(plan, subsForPlan) {
   const el = document.getElementById('mm-plan-' + plan.id + '-list');
   if (!el) return;
-  const subsHtml = subsForPlan.length === 0
-    ? mmEmptyHtml(plan)
-    : subsForPlan.map(m => {
-        if (m.id === MM.confirmingId) return mmConfirmRowHtml(m);
-        if (m.id === MM.editingId)    return mmEditRowHtml(m);
-        return mmMemberRowHtml(m);
-      }).join('');
-  // Holder row always renders first — the plan holder occupies a seat (or can join
-  // one) just like any other member, so the list should be honest about who's
-  // actually using the plan rather than only showing people they've invited.
+  // DR-051: no big empty-state card any more — an empty list renders nothing under the
+  // "Additional members" header (the header's Add members button is the single entry point).
+  const subsHtml = subsForPlan.map(m => {
+    if (m.id === MM.confirmingId) return mmConfirmRowHtml(m);
+    if (m.id === MM.editingId)    return mmEditRowHtml(m);
+    return mmMemberRowHtml(m);
+  }).join('');
+  // Holder row renders first only when the holder occupies a seat; when they've left, their
+  // Join lives inside Add members instead of a standalone row (mmHolderRowHtml returns '').
   el.innerHTML = mmHolderRowHtml(plan) + subsHtml;
 }
 
@@ -2053,18 +2080,10 @@ function mmHolderRowHtml(plan) {
   const holder = MM.holder || {};
   const name = [holder.firstName, holder.lastName].filter(Boolean).join(' ') || holder.email || 'You';
 
-  if (!plan.holderHasSlot) {
-    return '<div class="member-row">' +
-      '<div class="member-avatar">' + esc(mmInitials(holder.firstName, holder.lastName)) + '</div>' +
-      '<div class="member-body">' +
-        '<div class="member-name">' + esc(name) + '</div>' +
-        '<div class="member-detail"><span class="badge badge-amber"><span class="badge-dot"></span>Not on this plan</span></div>' +
-      '</div>' +
-      '<div class="member-actions">' +
-        '<button class="btn-ghost" style="height:28px;padding:0 10px;font-size:12px" onclick="mmDoHolderClaim(\'' + esc(plan.id) + '\')">Join</button>' +
-      '</div>' +
-    '</div>';
-  }
+  // DR-051: when the holder isn't seated they no longer get a standalone "Not on this plan"
+  // row — the ring (0 of N) already shows it, and their Join lives inside the Add members
+  // panel (mmOpenAddForm). Returning '' keeps the list to actual additional members.
+  if (!plan.holderHasSlot) return '';
 
   if (MM.confirmingHolderPlanId === plan.id) {
     return '<div class="confirm-row">' +
@@ -2085,11 +2104,11 @@ function mmHolderRowHtml(plan) {
   return '<div class="member-row">' +
     '<div class="member-avatar green">' + esc(mmInitials(holder.firstName, holder.lastName)) + '</div>' +
     '<div class="member-body">' +
-      '<div class="member-name">' + esc(name) + '</div>' +
-      '<div class="member-detail">' +
+      '<div class="member-name" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<span>' + esc(name) + '</span>' +
         '<span class="badge badge-brand"><span class="badge-dot"></span>Plan holder</span>' +
-        (holder.email ? '<span style="word-break:break-all;min-width:0">' + esc(holder.email) + '</span>' : '') +
       '</div>' +
+      (holder.email ? '<div class="member-detail"><span style="word-break:break-all;min-width:0">' + esc(holder.email) + '</span></div>' : '') +
     '</div>' +
     '<div class="member-actions">' +
       '<button class="icon-btn danger" title="Leave this plan" onclick="mmBeginHolderConfirm(\'' + esc(plan.id) + '\')">' +
@@ -2128,6 +2147,10 @@ async function mmDoHolderClaim(planId) {
     });
     const data = await res.json();
     if (!res.ok) { showToast(data.error || 'Failed to join plan.', 'error'); return; }
+    // Close the add-members panel — the holder is now seated, so its Join row is stale.
+    const addForm = document.getElementById('mm-add-form');
+    if (addForm) addForm.classList.add('hidden');
+    MM.activeAddPlanId = null;
     await mmLoadData();
     showToast(data.message || 'Adding you to this plan…', 'info');
   } catch (e) {
@@ -2166,9 +2189,11 @@ function mmMemberRowHtml(m) {
   return '<div class="member-row' + (isDraft ? ' draft' : '') + '">' +
     '<div class="member-avatar' + (tone ? ' ' + tone : '') + '">' + esc(mmInitials(m.firstName, m.lastName)) + '</div>' +
     '<div class="member-body">' +
-      '<div class="member-name">' + esc(m.firstName) + ' ' + esc(m.lastName) + '</div>' +
-      '<div class="member-detail">' +
+      '<div class="member-name" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<span>' + esc(m.firstName) + ' ' + esc(m.lastName) + '</span>' +
         mmBadgeHtml(m) +
+      '</div>' +
+      '<div class="member-detail">' +
         '<span style="word-break:break-all;min-width:0">' + esc(m.email) + '</span>' +
         (ago ? '<span style="color:var(--green);white-space:nowrap;display:inline-flex;align-items:center;gap:3px;font-size:11px">' +
           '<svg viewBox="0 0 16 16" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7.5"/></svg>' +
@@ -2273,6 +2298,29 @@ function mmOpenAddForm(planId) {
     subEl.textContent = plan && plan.planName
       ? 'Adding to ' + plan.planName + ' — saved as a draft until you grant access.'
       : "They'll be saved as a draft until you grant access.";
+  }
+
+  // DR-051: when this plan's holder isn't seated, surface their "Join plan" quick action at
+  // the top of the panel instead of a standalone called-out row. Cleared when they're seated.
+  const joinEl = document.getElementById('mm-add-join');
+  if (joinEl) {
+    if (plan && !plan.holderHasSlot) {
+      const h = MM.holder || {};
+      const hname = [h.firstName, h.lastName].filter(Boolean).join(' ') || h.email || 'You';
+      joinEl.innerHTML =
+        '<div class="mm-join-row">' +
+          '<div class="member-avatar green" style="width:34px;height:34px;border-radius:9px;font-size:12px">' + esc(mmInitials(h.firstName, h.lastName)) + '</div>' +
+          '<div style="flex:1;min-width:0">' +
+            '<div class="member-name" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span>' + esc(hname) + '</span><span class="badge badge-brand"><span class="badge-dot"></span>Plan holder</span></div>' +
+          '</div>' +
+          '<button class="btn-ghost" style="height:30px;padding:0 13px;font-size:12.5px" onclick="mmDoHolderClaim(\'' + esc(plan.id) + '\')">Join plan</button>' +
+        '</div>' +
+        '<div class="mm-join-divider">or invite someone else</div>';
+      joinEl.classList.remove('hidden');
+    } else {
+      joinEl.innerHTML = '';
+      joinEl.classList.add('hidden');
+    }
   }
 
   // mmRender does the heavy lifting: rebuilds groups, then re-attaches the
