@@ -65,6 +65,12 @@ function capturedQueries() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // DR-051: also reset db.query's implementation queue. jest.clearAllMocks() clears call
+  // history but NOT the mockResolvedValueOnce queue, so a test that consumes a different
+  // number of queries than it enqueues would leak leftover Once responses into the next
+  // test (this masked the DR-051 handler query-count changes as unrelated failures).
+  // Resetting keeps each test's sequence self-contained.
+  db.query.mockReset();
   // Default: return a resolved promise for any unregistered db.query call.
   // This covers the fire-and-forget recordSyntheticOrigin() calls (trace_context +
   // activity_event INSERTs) that fire via setImmediate after the response is sent.
@@ -111,18 +117,21 @@ describe('[P3] multi-member — GET /member/:memberId/widget-data', () => {
     expect(subMemberQuery).not.toMatch(/member_identity/);
   });
 
-  test('holder slot check uses member_access not member_role_assignments', async () => {
+  test('DR-051: holder seat state comes from member_billing.holder_seated, not a separate slot query', async () => {
+    // The separate active-source "holder slot check" query was retired in DR-051 — the
+    // Manage Members badge now reads member_billing.holder_seated (surfaced on the plans
+    // query) as the single source of truth. Assert the flag is read and no legacy
+    // role-assignment table is referenced.
     db.query
       .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', access_id: 'a1', platform_member_id: 'p1', first_name: 'Joe', last_name: 'Smith', email: 'j@test.com', phone: '555', access_status: 'active', provisioned_at: null }] })
-      .mockResolvedValueOnce({ rows: [] }) // plans
-      .mockResolvedValueOnce({ rows: [] }) // sub-members
-      .mockResolvedValueOnce({ rows: [] }); // holder slot check
+      .mockResolvedValueOnce({ rows: [] }) // plans (SELECTs mb.holder_seated)
+      .mockResolvedValueOnce({ rows: [] }); // sub-members
 
     await request(app).get('/member/mm1/widget-data').query({ clientId: 'c1' });
 
-    const slotQuery = db.query.mock.calls[3]?.[0] || '';
-    expect(slotQuery).toMatch(/member_access/);
-    expect(slotQuery).not.toMatch(/member_role_assignments/);
+    const allSql = capturedQueries().join('\n');
+    expect(allSql).toMatch(/holder_seated/);
+    expect(allSql).not.toMatch(/member_role_assignments/);
   });
 
   test('returns 404 when holder not found', async () => {

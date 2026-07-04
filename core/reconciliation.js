@@ -721,6 +721,45 @@ class NightlyReconciliation {
             }
           }
 
+          // DR-051 — durable leave enforcement. If this holder released their OWN seat on
+          // this plan (member_billing.holder_seated=false), the 6-hour reconcile must (a)
+          // NOT re-add the seat Wix still lists, and (b) self-heal any lingering active
+          // holder seat by marking it cancelled (DB-only — no Kisi call; the door role
+          // follows the normal remaining-source logic, and in the all-same-door reality
+          // other plans still hold it). Scoped to the holder's own access row
+          // (sub_master_id IS NULL) + this plan's source_plan_id. Sub-members / members
+          // with no billing row → no flag row → normal backfill proceeds below.
+          const seatFlagRes = await db.query(
+            `SELECT mb.holder_seated
+             FROM member_billing mb
+             JOIN member_master mm ON mm.id = mb.member_master_id
+             WHERE mb.client_id = $1 AND mm.platform_member_id = $2 AND mb.plan_id = $3
+             ORDER BY mb.cycle_index DESC LIMIT 1`,
+            [client.id, memberId, plan.planId]
+          );
+          if (seatFlagRes.rows.length > 0 && seatFlagRes.rows[0].holder_seated === false) {
+            const healed = await db.query(
+              `UPDATE member_access_sources mas
+               SET status = 'cancelled', updated_at = NOW()
+               FROM member_access ma
+               JOIN member_master mm ON mm.id = ma.member_master_id
+               WHERE mas.access_id = ma.id
+                 AND ma.client_id = $1
+                 AND mm.platform_member_id = $2
+                 AND ma.sub_master_id IS NULL
+                 AND mas.source_plan_id = $3
+                 AND mas.status = 'active'
+               RETURNING mas.id`,
+              [client.id, memberId, plan.planId]
+            );
+            log.info('reconciliation.holder_seat_released_enforced', {
+              clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+              healedCount: healed.rowCount,
+              traceId: this._sweepTraceId, stage: 'reconcile', result: 'skipped_release',
+            });
+            continue; // skip the seat backfill for this plan — holder is unseated by choice
+          }
+
           for (const target of targets.rows) {
             if (!target.hardware_group_id) continue; // mapping exists but no group set yet
 

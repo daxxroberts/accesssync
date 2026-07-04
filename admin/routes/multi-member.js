@@ -114,7 +114,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
       `SELECT DISTINCT ON (pm.id)
               pm.id, pm.source_plan_id, pm.plan_name, pm.allow_multiple, pm.max_members,
               pm.hardware_group_id, pm.door_name,
-              mb.billing_snapshot
+              mb.billing_snapshot, mb.holder_seated
        FROM plan_mappings pm
        JOIN member_billing mb
               ON mb.plan_id = pm.source_plan_id
@@ -171,19 +171,11 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
       [holder.member_master_id]
     );
 
-    // 4. Holder slot check — does the holder have an active source row per plan?
-    // S-11/DR-046: holder "having a slot on plan X" means they have an active source row
-    // with mapping_id=X under their (non-sub-member) access row.
-    const holderSlotResult = await db.query(
-      `SELECT mas.mapping_id
-       FROM member_access_sources mas
-       JOIN member_access ma ON ma.id = mas.access_id
-       WHERE ma.member_master_id = $1
-         AND ma.sub_master_id IS NULL
-         AND mas.status = 'active'`,
-      [holder.member_master_id]
-    );
-    const holderMappingIds = new Set(holderSlotResult.rows.map(r => r.mapping_id));
+    // 4. Holder slot check — DR-051: whether the holder occupies their own seat is read
+    // directly from member_billing.holder_seated (surfaced on plansResult above), NOT from
+    // the live source rows. The flag is the single source of truth; the seat table is kept
+    // in sync with it (Leave sets false + removes the seat, Join sets true + adds it). Reading
+    // the flag makes the badge instant and impossible to disagree with the seat table.
 
     // Collapse rows by (access_id, plan_mapping_id). A sub-member whose plan
     // provisions to multiple doors (e.g. Couples = Entrance + TestGroup1) yields
@@ -238,15 +230,14 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
         allowMultiple: p.allow_multiple,
         maxMembers:    p.max_members,
         doorName:      p.door_name,
-        // holderHasSlot = does the holder actually hold a door seat on this plan RIGHT NOW
-        // (an active member_access_sources row, per holderMappingIds above). This is an
-        // ACCESS question, distinct from "is the plan in the list" which is a BILLING
-        // question (plansResult now comes from member_billing, DR-050). It was hardcoded
-        // `true` back when plansResult was gated on the holder having an active seat; now
-        // that the plan list is billing-sourced, the seat state has to be looked up
-        // separately — otherwise a holder who used "Leave this plan" still shows as
-        // occupying a seat (ring "1 of 2", "View members (1)") that they released.
-        holderHasSlot: holderMappingIds.has(p.id),
+        // holderHasSlot = does the holder occupy their own seat on this plan? DR-051 reads
+        // this from member_billing.holder_seated (the single source of truth), NOT from a
+        // live source-row lookup. "Is the plan in the list" is a BILLING question (plansResult
+        // is billing-sourced, DR-050); "does the holder sit in a seat" is answered by the flag,
+        // which Leave/Join toggle and which renewals + reconcile honor. A holder who used
+        // "Leave this plan" has holder_seated=false → badge shows an open seat they can rejoin,
+        // while the plan itself stays listed because they're still paying for it.
+        holderHasSlot: p.holder_seated,
       })),
       subMembers: Array.from(subByKey.values()),
     });
@@ -729,6 +720,18 @@ router.post('/api/multi-member/holder-claim-slot', async (req, res) => {
       return res.status(409).json({ error: `Plan is full — ${planResult.rows[0].max_members} member limit reached` });
     }
 
+    // DR-051 — clear the durable-leave flag so the grant path re-seats the holder. Set
+    // BEFORE enqueuing so the standard-adapter grant guard (which reads holder_seated) sees
+    // true and creates the seat. Idempotent; scoped to this holder's active billing for this plan.
+    const claimPlanId = planResult.rows[0].source_plan_id || null;
+    if (claimPlanId) {
+      await db.query(
+        `UPDATE member_billing SET holder_seated = true, updated_at = NOW()
+         WHERE member_master_id = $1 AND plan_id = $2 AND status = 'active'`,
+        [holderId, claimPlanId]
+      );
+    }
+
     const holder = holderResult.rows[0];
     const syntheticEvent = {
       eventType:        'plan.purchased',
@@ -794,6 +797,20 @@ router.post('/api/multi-member/holder-release-slot', async (req, res) => {
       [holderId, planMappingId]
     );
     if (!assignmentResult.rows.length) return res.status(409).json({ error: 'Not currently on this plan' });
+
+    // DR-051 — record the holder's intent to be unseated on this plan BEFORE the async revoke
+    // runs. This flag is the single source of truth that makes "Leave" durable: renewals (the
+    // standard-adapter grant guard) and the 6-hour reconcile both read it and refuse to
+    // re-seat. Billing is untouched (they're still paying — status stays 'active'); only the
+    // seat is released. The flag flips instantly here; the seat removal is the queued revoke.
+    const releasePlanId = assignmentResult.rows[0].source_plan_id || null;
+    if (releasePlanId) {
+      await db.query(
+        `UPDATE member_billing SET holder_seated = false, updated_at = NOW()
+         WHERE member_master_id = $1 AND plan_id = $2 AND status = 'active'`,
+        [holderId, releasePlanId]
+      );
+    }
 
     const holder = holderResult.rows[0];
     const syntheticEvent = {

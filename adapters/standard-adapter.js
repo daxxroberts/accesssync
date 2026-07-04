@@ -452,6 +452,12 @@ class StandardAdapter {
       const planIdToWrite = planId || (snapshotToWrite && snapshotToWrite.orderId === wixOrderId
         ? (sourcePlanId || null) : sourcePlanId) || null;
       let billingId = null;
+      // DR-051 — the authoritative current holder_seated for this (holder × plan), captured
+      // from the billing write's RETURNING so the seat guard below needs no extra query on
+      // the common path. Stays null when there is no billing INSERT for this assignment
+      // (e.g. holder-claim-slot's synthetic grant has no wix order) → guard falls back to a
+      // direct read. undefined (older mocks / pre-migration rows) is treated as "not false".
+      let holderSeatedCurrent = null;
       if (wixOrderId) {
         // OB-242 — multi-cycle transition. Must run BEFORE the INSERT below: the
         // partial UNIQUE index member_billing_one_active_per_subscription allows
@@ -476,11 +482,32 @@ class StandardAdapter {
           );
         }
 
+        // DR-051 — carry the holder_seated flag forward across renewal cycles.
+        // A renewal INSERTs a BRAND-NEW cycle row, so the ON CONFLICT below never fires
+        // and a bare DEFAULT true would silently re-seat a holder who used "Leave this
+        // plan" on a prior cycle. Read the most recent prior cycle's flag for this
+        // subscription and carry it into the new row. No prior cycle (fresh purchase /
+        // new subscription id) → default true (auto-seat on purchase). Keyed on
+        // wix_subscription_id so a genuine re-purchase (new subscription) starts seated.
+        let holderSeatedToWrite = true;
+        if (wixSubscriptionId && cycleN > 1) {
+          const priorSeat = await db.query(
+            `SELECT holder_seated FROM member_billing
+             WHERE client_id = $1 AND wix_subscription_id = $2 AND cycle_index < $3
+             ORDER BY cycle_index DESC LIMIT 1`,
+            [tenantId, wixSubscriptionId, cycleN]
+          );
+          if (priorSeat.rows.length > 0) {
+            holderSeatedToWrite = priorSeat.rows[0].holder_seated;
+          }
+        }
+
         const billingResult = await db.query(
           `INSERT INTO member_billing
              (member_master_id, client_id, wix_order_id, wix_subscription_id, cycle_index,
-              plan_id, plan_name, effective_start, effective_end, status, billing_snapshot)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10)
+              plan_id, plan_name, effective_start, effective_end, status, holder_seated,
+              billing_snapshot)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11)
            ON CONFLICT (client_id, wix_order_id, cycle_index) DO UPDATE
              SET billing_snapshot   = COALESCE(EXCLUDED.billing_snapshot,   member_billing.billing_snapshot),
                  plan_id            = COALESCE(EXCLUDED.plan_id,            member_billing.plan_id),
@@ -489,51 +516,87 @@ class StandardAdapter {
                  effective_start    = COALESCE(EXCLUDED.effective_start,    member_billing.effective_start),
                  effective_end      = COALESCE(EXCLUDED.effective_end,      member_billing.effective_end),
                  updated_at         = NOW()
-           RETURNING id`,
+           RETURNING id, holder_seated`,
+          // DR-051: holder_seated is $10 (deliberately BEFORE billing_snapshot so the
+          // snapshot stays the last param). It is NOT in the ON CONFLICT SET — an idempotent
+          // replay of the SAME cycle must preserve the stored value (which a Leave may have
+          // flipped to false); only a genuinely new cycle row uses the carried-forward $10.
+          // RETURNING surfaces the authoritative post-ON-CONFLICT value for the seat guard.
           [
             memberMasterId, tenantId, wixOrderId, wixSubscriptionId || null,
             cycleIndex || 1, planIdToWrite, planName || null,
             effectiveStart || null, effectiveEnd || null,
+            holderSeatedToWrite,
             snapshotToWrite ? JSON.stringify(snapshotToWrite) : null,
           ]
         );
         // If DO NOTHING fired, fetch the existing row's id
         if (billingResult.rows.length > 0) {
           billingId = billingResult.rows[0].id;
+          holderSeatedCurrent = billingResult.rows[0].holder_seated;
         } else {
           const existing = await db.query(
-            `SELECT id FROM member_billing
+            `SELECT id, holder_seated FROM member_billing
              WHERE client_id = $1 AND wix_order_id = $2 AND cycle_index = $3`,
             [tenantId, wixOrderId, cycleIndex || 1]
           );
           billingId = existing.rows[0]?.id || null;
+          holderSeatedCurrent = existing.rows[0]?.holder_seated ?? null;
         }
+      }
+
+      // DR-051 — durable leave guard. If this holder released their OWN seat on this plan
+      // (member_billing.holder_seated=false), a renewal / reconcile / sync grant must NOT
+      // recreate the seat. The billing write above already returned the authoritative flag
+      // (holderSeatedCurrent) post-ON-CONFLICT, so no extra query is needed on the common
+      // path. When there was no billing INSERT for this assignment (holderSeatedCurrent is
+      // still null — e.g. holder-claim-slot's synthetic grant carries no wix order), fall
+      // back to a direct read. Sub-members have NO member_billing row → the read returns
+      // nothing → holderSeatedCurrent stays null → seat provisions normally. That absence is
+      // exactly what scopes this guard to holders. The member_access rollup below runs
+      // regardless, so other plans holding seats on the door keep the person active.
+      if (holderSeatedCurrent === null && memberMasterId && sourcePlanId) {
+        const seatFlag = await db.query(
+          `SELECT holder_seated FROM member_billing
+           WHERE member_master_id = $1 AND plan_id = $2
+           ORDER BY cycle_index DESC LIMIT 1`,
+          [memberMasterId, sourcePlanId]
+        );
+        holderSeatedCurrent = seatFlag.rows.length > 0 ? seatFlag.rows[0].holder_seated : null;
+      }
+      const seatSuppressed = holderSeatedCurrent === false;
+      if (seatSuppressed) {
+        log.info('adapter.complete_grant.seat_suppressed_holder_released', {
+          memberId, memberMasterId, sourcePlanId, tenantId,
+        });
       }
 
       // INSERT member_access_sources — S-11/A9: client_id NOT NULL (multi-tenancy hardening).
       // status='active' since this row represents a successful grant. provisioned_at set NOW().
       // UNIQUE constraint is now (client_id, access_id, source_type, source_plan_id, hardware_group_id).
-      await db.query(
-        `INSERT INTO member_access_sources
-           (client_id, access_id, billing_id, source_type, source_plan_id, hardware_group_id,
-            role_assignment_id, mapping_id, status, provisioned_at,
-            effective_start, valid_until)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), $9, $10)
-         ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
-           SET role_assignment_id = EXCLUDED.role_assignment_id,
-               billing_id = COALESCE(EXCLUDED.billing_id, member_access_sources.billing_id),
-               status = 'active',
-               provisioned_at = COALESCE(member_access_sources.provisioned_at, NOW()),
-               effective_start = COALESCE(EXCLUDED.effective_start, member_access_sources.effective_start),
-               valid_until = EXCLUDED.valid_until,
-               updated_at = NOW()`,
-        [
-          tenantId, memberId, billingId || null, sourceType || 'plan',
-          sourcePlanId || null, hardwareGroupId || null,
-          roleAssignmentId || null, mappingId || null,
-          effectiveStart || null, planEndDate || null,
-        ]
-      );
+      if (!seatSuppressed) {
+        await db.query(
+          `INSERT INTO member_access_sources
+             (client_id, access_id, billing_id, source_type, source_plan_id, hardware_group_id,
+              role_assignment_id, mapping_id, status, provisioned_at,
+              effective_start, valid_until)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), $9, $10)
+           ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
+             SET role_assignment_id = EXCLUDED.role_assignment_id,
+                 billing_id = COALESCE(EXCLUDED.billing_id, member_access_sources.billing_id),
+                 status = 'active',
+                 provisioned_at = COALESCE(member_access_sources.provisioned_at, NOW()),
+                 effective_start = COALESCE(EXCLUDED.effective_start, member_access_sources.effective_start),
+                 valid_until = EXCLUDED.valid_until,
+                 updated_at = NOW()`,
+          [
+            tenantId, memberId, billingId || null, sourceType || 'plan',
+            sourcePlanId || null, hardwareGroupId || null,
+            roleAssignmentId || null, mappingId || null,
+            effectiveStart || null, planEndDate || null,
+          ]
+        );
+      }
     }
 
     // S-11/DR-046: member_access.status is the rollup of source-row state.
