@@ -1711,6 +1711,19 @@ function mmTogglePlanExpanded(planId) {
   mmRender();
 }
 
+// DR-051 UI: one-button behavior for the plan hero. An EMPTY plan (no holder seat, no
+// sub-members) jumps straight into the add panel — the hero reads "Add members", so a
+// second "Add members" would be redundant. A plan WITH members reads "Manage" and just
+// expands the member list. Expanded → collapse.
+function mmHeroAction(planId) {
+  if (MM.expandedPlanIds.has(planId)) { mmTogglePlanExpanded(planId); return; }
+  const plan = MM.plans.find(p => p.id === planId);
+  const subs = MM.subMembers.filter(m => m.planMappingId === planId);
+  const used = subs.length + (plan && plan.holderHasSlot ? 1 : 0);
+  if (used === 0) { mmOpenAddForm(planId); }   // mmRender auto-expands the active-form plan
+  else { mmTogglePlanExpanded(planId); }
+}
+
 function mmInitials(first, last) {
   return (((first || '').trim()[0] || '') + ((last || '').trim()[0] || '')).toUpperCase() || '?';
 }
@@ -1984,14 +1997,14 @@ function mmPlanGroupHtml(plan) {
   const isExpanded = MM.expandedPlanIds.has(plan.id);
   const toggleLabel = isExpanded
     ? 'Hide members'
-    : (used === 0 ? 'Add members' : 'View members (' + used + ')');
+    : (used === 0 ? 'Add members' : 'Manage');
   const toggleIcon = isExpanded
     ? '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4-4 4 4"/></svg>'
     : '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
 
   return '<div class="mm-plan-group" data-plan-id="' + pid + '" id="mm-plan-' + pid + '">' +
     // Hero card — clickable to toggle expansion
-    '<div class="mm-hero mm-hero-clickable" onclick="mmTogglePlanExpanded(\'' + pid + '\')">' +
+    '<div class="mm-hero mm-hero-clickable" onclick="mmHeroAction(\'' + pid + '\')">' +
       '<div class="mm-hero-glow"></div>' +
       '<div class="mm-ring">' +
         '<svg width="64" height="64" viewBox="0 0 64 64">' +
@@ -2014,7 +2027,7 @@ function mmPlanGroupHtml(plan) {
         '<div class="spot-pips">' + pipsHtml + '</div>' +
       '</div>' +
       '<div class="mm-hero-toggle">' +
-        '<button type="button" class="btn-toggle" onclick="event.stopPropagation(); mmTogglePlanExpanded(\'' + pid + '\')">' +
+        '<button type="button" class="btn-toggle" onclick="event.stopPropagation(); mmHeroAction(\'' + pid + '\')">' +
           toggleIcon + '<span>' + toggleLabel + '</span>' +
         '</button>' +
         (drafts.length > 0 ? '<span class="draft-chip-compact">' + drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + '</span>' : '') +
