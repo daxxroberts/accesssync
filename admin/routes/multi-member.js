@@ -28,6 +28,51 @@ const { mintTraceId } = require('../../core/trace-context');
 const standardAdapter = require('../../adapters/standard-adapter');
 
 /**
+ * S-11/DR-046 slot accounting, shared by add-member and holder-claim-slot.
+ * All three run on the pool (no transaction at either call site).
+ *
+ * countHolderSlots — the holder's own active source rows on this mapping
+ * (their claimed seat). Only 'active' occupies the holder seat.
+ *
+ * countSubSlots — distinct sub-member access rows holding any
+ * slot-consuming source on this mapping. Status set is a total-people cap
+ * per DR-040: drafts count so a pending add can't oversell the plan.
+ */
+async function countHolderSlots(holderMasterId, planMappingId) {
+  const result = await db.query(
+    `SELECT COUNT(*)::int AS cnt
+     FROM member_access_sources mas
+     JOIN member_access ma ON ma.id = mas.access_id
+     WHERE ma.member_master_id = $1
+       AND ma.sub_master_id IS NULL
+       AND mas.mapping_id = $2
+       AND mas.status = 'active'`,
+    [holderMasterId, planMappingId]
+  );
+  return result.rows[0].cnt;
+}
+
+async function countSubSlots(holderMasterId, planMappingId) {
+  const result = await db.query(
+    `SELECT COUNT(DISTINCT mas.access_id)::int AS cnt
+     FROM member_access_sources mas
+     JOIN member_access ma ON ma.id = mas.access_id
+     WHERE ma.sub_master_id = $1
+       AND mas.mapping_id  = $2
+       AND mas.status IN ('draft','active','pending_hardware','pending_start','in_flight')`,
+    [holderMasterId, planMappingId]
+  );
+  return result.rows[0].cnt;
+}
+
+/** Combined occupancy against max_members (holder's seat counts too). */
+async function countOccupiedSlots(holderMasterId, planMappingId) {
+  const holderCount = await countHolderSlots(holderMasterId, planMappingId);
+  const subCount = await countSubSlots(holderMasterId, planMappingId);
+  return { holderCount, subCount, total: holderCount + subCount };
+}
+
+/**
  * Write the origin record for a synthetic grant/revoke job fired from the Member Hub.
  * Writes two rows, both fire-and-forget:
  *   1. trace_context  — seeds entry_point='member-hub'
@@ -294,26 +339,7 @@ router.post('/api/multi-member/members', async (req, res) => {
     // a Couples plan (max_members=2) would let the holder add 2 more people on top of
     // their own seat, silently allowing 3 people on a 2-person plan.
     const maxMembers = planCheck.rows[0].max_members || 1;
-    const holderSlotResult = await db.query(
-      `SELECT COUNT(*)::int AS cnt
-       FROM member_access_sources mas
-       JOIN member_access ma ON ma.id = mas.access_id
-       WHERE ma.member_master_id = $1
-         AND ma.sub_master_id IS NULL
-         AND mas.mapping_id = $2
-         AND mas.status = 'active'`,
-      [holderId, planMappingId]
-    );
-    const currentCount = await db.query(
-      `SELECT COUNT(DISTINCT mas.access_id)::int AS cnt
-       FROM member_access_sources mas
-       JOIN member_access ma ON ma.id = mas.access_id
-       WHERE ma.sub_master_id = $1
-         AND mas.mapping_id  = $2
-         AND mas.status IN ('draft','active','pending_hardware','pending_start','in_flight')`,
-      [holderId, planMappingId]
-    );
-    const totalOccupied = holderSlotResult.rows[0].cnt + currentCount.rows[0].cnt;
+    const { total: totalOccupied } = await countOccupiedSlots(holderId, planMappingId);
     if (totalOccupied >= maxMembers) {
       return res.status(409).json({ error: `Maximum ${maxMembers} members allowed for this plan` });
     }
@@ -680,32 +706,16 @@ router.post('/api/multi-member/holder-claim-slot', async (req, res) => {
     if (!planResult.rows.length) return res.status(404).json({ error: 'Plan not found or does not allow additional members' });
 
     // S-11/DR-046: slot occupancy = source rows in active/pending state for this mapping.
-    // Holder slot: count holder's own source rows on this mapping.
-    const holderHasSlot = await db.query(
-      `SELECT COUNT(*)::int AS cnt
-       FROM member_access_sources mas
-       JOIN member_access ma ON ma.id = mas.access_id
-       WHERE ma.member_master_id = $1
-         AND ma.sub_master_id IS NULL
-         AND mas.mapping_id = $2
-         AND mas.status = 'active'`,
-      [holderId, planMappingId]
-    );
-    if (holderHasSlot.rows[0].cnt > 0) {
+    // Holder check first — early-exit before the sub count runs (keeps this
+    // path at exactly one occupancy query when the holder is already seated).
+    const holderSlotCount = await countHolderSlots(holderId, planMappingId);
+    if (holderSlotCount > 0) {
       return res.status(409).json({ error: 'Already on this plan' });
     }
 
     // Sub-member slot count: distinct sub-members holding any active/pending state source.
-    const subCount = await db.query(
-      `SELECT COUNT(DISTINCT mas.access_id)::int AS cnt
-       FROM member_access_sources mas
-       JOIN member_access ma ON ma.id = mas.access_id
-       WHERE ma.sub_master_id = $1
-         AND mas.mapping_id  = $2
-         AND mas.status IN ('active','pending_hardware','pending_start','in_flight','draft')`,
-      [holderId, planMappingId]
-    );
-    const totalOccupied = holderHasSlot.rows[0].cnt + subCount.rows[0].cnt;
+    const subSlotCount = await countSubSlots(holderId, planMappingId);
+    const totalOccupied = holderSlotCount + subSlotCount;
     if (totalOccupied >= planResult.rows[0].max_members) {
       return res.status(409).json({ error: `Plan is full — ${planResult.rows[0].max_members} member limit reached` });
     }
