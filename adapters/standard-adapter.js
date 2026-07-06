@@ -826,6 +826,45 @@ class StandardAdapter {
   }
 
   /**
+   * OB-20 / OB-257: location-lapse suspend for one member. Flips this member's
+   * active source rows under the lapsed location's plan mappings to 'failed' —
+   * the same suspended semantic as completeRevoke's payment.failed path: rows
+   * preserved for fast recovery, invisible to the OB-240 retry probe (which
+   * only selects pending_hardware/pending_start) — then recomputes the
+   * member_access rollup. Location scoping via plan_mappings.location_id.
+   * Sources at the member's OTHER locations are untouched; the rollup keeps
+   * the member 'active' if any of those remain.
+   *
+   * @param {string} memberId    member_access.id
+   * @param {string} tenantId    client UUID
+   * @param {string} locationId  lapsed location UUID
+   */
+  async suspendMemberLocationSources(memberId, tenantId, locationId) {
+    const dbClient = await db.getClient();
+    try {
+      await dbClient.query('BEGIN');
+      await dbClient.query(
+        `UPDATE member_access_sources mas
+         SET status = 'failed', updated_at = NOW()
+         FROM plan_mappings pm
+         WHERE mas.access_id = $1
+           AND mas.client_id = $2
+           AND mas.status = 'active'
+           AND pm.id = mas.mapping_id
+           AND pm.location_id = $3`,
+        [memberId, tenantId, locationId]
+      );
+      await this.rollupAccessStatus(memberId, { dbClient });
+      await dbClient.query('COMMIT');
+    } catch (err) {
+      await dbClient.query('ROLLBACK');
+      throw err;
+    } finally {
+      dbClient.release();
+    }
+  }
+
+  /**
    * DR-023 / OB-185 Pass 1: status rollup for one platform member, resolved
    * via member_master join — reconciliation does not hold access_id at the
    * point it calls this. Same rollup rule as rollupAccessStatus(); the join

@@ -1,16 +1,16 @@
 # Graph Report - .  (2026-07-06)
 
 ## Corpus Check
-- 202 files · ~269,038 words
+- 207 files · ~281,193 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 793 nodes · 877 edges · 193 communities detected
+- 814 nodes · 906 edges · 198 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## God Nodes (most connected - your core abstractions)
-1. `StandardAdapter` - 28 edges
+1. `StandardAdapter` - 29 edges
 2. `HardwareAdapter` - 15 edges
 3. `buildTraceBundle()` - 14 edges
 4. `KisiAdapter` - 13 edges
@@ -59,19 +59,19 @@ Nodes (15): attachErrors(), buildMembersArray(), deriveExpiresLabel(), fetchJSON
 
 ### Community 7 - "Community 7"
 Cohesion: 0.19
-Nodes (6): buildWebhookHeaders(), buildWebhookSignature(), getAdminCookie(), getWixWebhookSecret(), postWebhook(), setAdminCookieOnContext()
-
-### Community 8 - "Community 8"
-Cohesion: 0.19
 Nodes (6): App(), Drawer(), fmtClock(), fmtRel(), getVoiceCookie(), Row()
 
-### Community 9 - "Community 9"
+### Community 8 - "Community 8"
 Cohesion: 0.18
 Nodes (5): activateJumpTarget(), apiFetch(), esc(), showSessionExpiredModal(), stopAllPolling()
 
-### Community 10 - "Community 10"
+### Community 9 - "Community 9"
 Cohesion: 0.22
 Nodes (1): NightlyReconciliation
+
+### Community 10 - "Community 10"
+Cohesion: 0.19
+Nodes (6): buildWebhookHeaders(), buildWebhookSignature(), getAdminCookie(), getWixWebhookSecret(), postWebhook(), setAdminCookieOnContext()
 
 ### Community 11 - "Community 11"
 Cohesion: 0.23
@@ -106,16 +106,16 @@ Cohesion: 0.35
 Nodes (10): _send(), wixBookings_onBookingCanceled(), wixBookings_onBookingConfirmed(), wixMembers_onMemberDeleted(), wixPricingPlans_onOrderAutoRenewCanceled(), wixPricingPlans_onOrderCanceled(), wixPricingPlans_onOrderEnded(), wixPricingPlans_onOrderPurchased() (+2 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.42
-Nodes (7): listActiveOrders(), listAllMappable(), listBookingServices(), listConfirmedBookings(), listPricingPlans(), testApiKey(), wixFetch()
-
-### Community 20 - "Community 20"
-Cohesion: 0.28
+Cohesion: 0.24
 Nodes (3): activateLocationMembers(), resolveApiKey(), syncMappingMembers()
 
-### Community 21 - "Community 21"
+### Community 20 - "Community 20"
 Cohesion: 0.36
 Nodes (5): getLog(), healthCheck(), query(), queryOne(), queryRows()
+
+### Community 21 - "Community 21"
+Cohesion: 0.42
+Nodes (7): listActiveOrders(), listAllMappable(), listBookingServices(), listConfirmedBookings(), listPricingPlans(), testApiKey(), wixFetch()
 
 ### Community 22 - "Community 22"
 Cohesion: 0.47
@@ -126,144 +126,144 @@ Cohesion: 0.39
 Nodes (3): BusinessRiskReporter, formatDivider(), getTierForPath()
 
 ### Community 24 - "Community 24"
+Cohesion: 0.54
+Nodes (7): brandingFromClientRow(), escapeHtml(), isValidHexColor(), renderAccessReady(), renderAccessRemoved(), renderLayout(), renderSubMemberInvite()
+
+### Community 25 - "Community 25"
 Cohesion: 0.25
 Nodes (1): TenantResolver
 
-### Community 25 - "Community 25"
+### Community 26 - "Community 26"
 Cohesion: 0.43
 Nodes (1): WebhookProcessor
 
-### Community 26 - "Community 26"
+### Community 27 - "Community 27"
 Cohesion: 0.43
 Nodes (1): WixConnector
 
-### Community 27 - "Community 27"
+### Community 28 - "Community 28"
 Cohesion: 0.52
 Nodes (5): _collectContactEmails(), _extractName(), _getContactById(), getMemberById(), wixFetch()
 
-### Community 28 - "Community 28"
+### Community 29 - "Community 29"
+Cohesion: 0.48
+Nodes (6): captureAccessRemovedContext(), _grantEmailAllowed(), maybeSendAccessRemovedEmail(), maybeSendGrantEmail(), _revokeEmailAllowed(), sendMemberEmail()
+
+### Community 30 - "Community 30"
 Cohesion: 0.48
 Nodes (5): getRegistry(), getSnippet(), listSnippets(), renderSnippet(), validateEnv()
 
-### Community 29 - "Community 29"
+### Community 31 - "Community 31"
 Cohesion: 0.43
 Nodes (4): addSubMember(), postWebhook(), provisionCouplesWithSub(), waitFor()
 
-### Community 30 - "Community 30"
+### Community 32 - "Community 32"
 Cohesion: 0.47
 Nodes (1): KisiConnector
 
-### Community 31 - "Community 31"
+### Community 33 - "Community 33"
 Cohesion: 0.47
 Nodes (3): countHolderSlots(), countOccupiedSlots(), countSubSlots()
 
-### Community 32 - "Community 32"
+### Community 34 - "Community 34"
 Cohesion: 0.53
 Nodes (4): redact(), redactObject(), redactString(), redactValue()
 
-### Community 33 - "Community 33"
+### Community 35 - "Community 35"
 Cohesion: 0.4
 Nodes (2): emit(), persistToDiagnosticLog()
 
-### Community 34 - "Community 34"
+### Community 36 - "Community 36"
 Cohesion: 0.53
 Nodes (1): MemberSyncApi
 
-### Community 35 - "Community 35"
+### Community 37 - "Community 37"
 Cohesion: 0.47
 Nodes (1): RetryEngine
 
-### Community 36 - "Community 36"
+### Community 38 - "Community 38"
 Cohesion: 0.53
 Nodes (4): _recordFailure(), _recordSuccess(), _retryOne(), _runProbeBody()
 
-### Community 37 - "Community 37"
+### Community 39 - "Community 39"
 Cohesion: 0.33
 Nodes (0): 
 
-### Community 38 - "Community 38"
+### Community 40 - "Community 40"
 Cohesion: 0.6
 Nodes (5): buildMembersArray(), formatCouponLine(), formatRate(), shapeBilling(), shapeMemberMinimal()
 
-### Community 39 - "Community 39"
+### Community 41 - "Community 41"
 Cohesion: 0.4
 Nodes (0): 
 
-### Community 40 - "Community 40"
+### Community 42 - "Community 42"
 Cohesion: 0.4
 Nodes (1): SeamConnector
 
-### Community 41 - "Community 41"
+### Community 43 - "Community 43"
 Cohesion: 0.7
 Nodes (4): extractSiteIdFromAuthCode(), recordWixAdminSeen(), requireWixInstance(), verifySignedInstance()
 
-### Community 42 - "Community 42"
+### Community 44 - "Community 44"
 Cohesion: 0.6
 Nodes (3): describeSqlstate(), humanize(), isSqlstate()
 
-### Community 43 - "Community 43"
+### Community 45 - "Community 45"
 Cohesion: 0.5
 Nodes (1): GrantRevokeLogic
 
-### Community 44 - "Community 44"
+### Community 46 - "Community 46"
 Cohesion: 0.5
 Nodes (2): getClientApiKey(), _processJobBody()
 
-### Community 45 - "Community 45"
+### Community 47 - "Community 47"
 Cohesion: 0.4
 Nodes (1): RateLimiter
 
-### Community 46 - "Community 46"
+### Community 48 - "Community 48"
 Cohesion: 0.5
 Nodes (2): waitFor(), waitForActive()
 
-### Community 47 - "Community 47"
+### Community 49 - "Community 49"
 Cohesion: 0.7
 Nodes (4): grantAndActivate(), postWebhook(), waitFor(), waitForStatus()
-
-### Community 48 - "Community 48"
-Cohesion: 0.4
-Nodes (0): 
-
-### Community 49 - "Community 49"
-Cohesion: 0.5
-Nodes (2): dumpTable(), QUOTE_ID()
 
 ### Community 50 - "Community 50"
 Cohesion: 0.4
 Nodes (0): 
 
 ### Community 51 - "Community 51"
+Cohesion: 0.5
+Nodes (2): dumpTable(), QUOTE_ID()
+
+### Community 52 - "Community 52"
 Cohesion: 0.4
 Nodes (0): 
 
-### Community 52 - "Community 52"
-Cohesion: 0.67
-Nodes (1): WixAdapter
-
 ### Community 53 - "Community 53"
-Cohesion: 0.5
+Cohesion: 0.4
 Nodes (0): 
 
 ### Community 54 - "Community 54"
-Cohesion: 0.83
-Nodes (3): decryptApiKey(), encryptApiKey(), _getKey()
+Cohesion: 0.67
+Nodes (1): WixAdapter
 
 ### Community 55 - "Community 55"
 Cohesion: 0.5
 Nodes (0): 
 
 ### Community 56 - "Community 56"
-Cohesion: 0.67
-Nodes (2): waitFor(), waitForStatus()
+Cohesion: 0.83
+Nodes (3): decryptApiKey(), encryptApiKey(), _getKey()
 
 ### Community 57 - "Community 57"
 Cohesion: 0.5
 Nodes (0): 
 
 ### Community 58 - "Community 58"
-Cohesion: 0.5
-Nodes (0): 
+Cohesion: 0.67
+Nodes (2): waitFor(), waitForStatus()
 
 ### Community 59 - "Community 59"
 Cohesion: 0.5
@@ -283,7 +283,7 @@ Nodes (0):
 
 ### Community 63 - "Community 63"
 Cohesion: 0.5
-Nodes (1): PrioritySequencer
+Nodes (0): 
 
 ### Community 64 - "Community 64"
 Cohesion: 0.5
@@ -291,7 +291,7 @@ Nodes (0):
 
 ### Community 65 - "Community 65"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (1): PrioritySequencer
 
 ### Community 66 - "Community 66"
 Cohesion: 0.5
@@ -302,11 +302,11 @@ Cohesion: 0.5
 Nodes (0): 
 
 ### Community 68 - "Community 68"
-Cohesion: 0.67
+Cohesion: 0.5
 Nodes (0): 
 
 ### Community 69 - "Community 69"
-Cohesion: 0.67
+Cohesion: 0.5
 Nodes (0): 
 
 ### Community 70 - "Community 70"
@@ -318,28 +318,28 @@ Cohesion: 0.67
 Nodes (0): 
 
 ### Community 72 - "Community 72"
+Cohesion: 0.67
+Nodes (0): 
+
+### Community 73 - "Community 73"
+Cohesion: 0.67
+Nodes (0): 
+
+### Community 74 - "Community 74"
 Cohesion: 1.0
 Nodes (2): recordFailure(), _sendAlert()
 
-### Community 73 - "Community 73"
+### Community 75 - "Community 75"
 Cohesion: 1.0
 Nodes (2): _setLocationStatus(), suspendLocationMembers()
 
-### Community 74 - "Community 74"
+### Community 76 - "Community 76"
 Cohesion: 0.67
 Nodes (1): PlanMappingResolver
 
-### Community 75 - "Community 75"
+### Community 77 - "Community 77"
 Cohesion: 1.0
 Nodes (2): getRedisConnection(), parseRedisUrl()
-
-### Community 76 - "Community 76"
-Cohesion: 0.67
-Nodes (0): 
-
-### Community 77 - "Community 77"
-Cohesion: 0.67
-Nodes (0): 
 
 ### Community 78 - "Community 78"
 Cohesion: 0.67
@@ -378,16 +378,16 @@ Cohesion: 0.67
 Nodes (0): 
 
 ### Community 87 - "Community 87"
-Cohesion: 1.0
-Nodes (2): kisiRequest(), main()
+Cohesion: 0.67
+Nodes (0): 
 
 ### Community 88 - "Community 88"
 Cohesion: 0.67
 Nodes (0): 
 
 ### Community 89 - "Community 89"
-Cohesion: 0.67
-Nodes (0): 
+Cohesion: 1.0
+Nodes (2): kisiRequest(), main()
 
 ### Community 90 - "Community 90"
 Cohesion: 0.67
@@ -414,16 +414,16 @@ Cohesion: 0.67
 Nodes (0): 
 
 ### Community 96 - "Community 96"
-Cohesion: 1.0
-Nodes (2): scan(), walkJsFiles()
+Cohesion: 0.67
+Nodes (0): 
 
 ### Community 97 - "Community 97"
 Cohesion: 0.67
 Nodes (0): 
 
 ### Community 98 - "Community 98"
-Cohesion: 0.67
-Nodes (0): 
+Cohesion: 1.0
+Nodes (2): scan(), walkJsFiles()
 
 ### Community 99 - "Community 99"
 Cohesion: 0.67
@@ -434,11 +434,11 @@ Cohesion: 0.67
 Nodes (0): 
 
 ### Community 101 - "Community 101"
-Cohesion: 1.0
+Cohesion: 0.67
 Nodes (0): 
 
 ### Community 102 - "Community 102"
-Cohesion: 1.0
+Cohesion: 0.67
 Nodes (0): 
 
 ### Community 103 - "Community 103"
@@ -801,190 +801,216 @@ Nodes (0):
 Cohesion: 1.0
 Nodes (0): 
 
+### Community 193 - "Community 193"
+Cohesion: 1.0
+Nodes (0): 
+
+### Community 194 - "Community 194"
+Cohesion: 1.0
+Nodes (0): 
+
+### Community 195 - "Community 195"
+Cohesion: 1.0
+Nodes (0): 
+
+### Community 196 - "Community 196"
+Cohesion: 1.0
+Nodes (0): 
+
+### Community 197 - "Community 197"
+Cohesion: 1.0
+Nodes (0): 
+
 ## Knowledge Gaps
-- **Thin community `Community 101`** (2 nodes): `simulate.js`, `runSimulation()`
+- **Thin community `Community 103`** (2 nodes): `simulate.js`, `runSimulation()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 102`** (2 nodes): `audit.js`, `logAdminAction()`
+- **Thin community `Community 104`** (2 nodes): `audit.js`, `logAdminAction()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 103`** (2 nodes): `members-app.jsx`, `App()`
+- **Thin community `Community 105`** (2 nodes): `members-app.jsx`, `App()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 104`** (2 nodes): `members-icons.jsx`, `Icon()`
+- **Thin community `Community 106`** (2 nodes): `members-icons.jsx`, `Icon()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 105`** (2 nodes): `clients.js`, `activateLocationMembersAdmin()`
+- **Thin community `Community 107`** (2 nodes): `clients.js`, `activateLocationMembersAdmin()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 106`** (2 nodes): `toast.js`, `showToast()`
+- **Thin community `Community 108`** (2 nodes): `toast.js`, `showToast()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 107`** (2 nodes): `billing-snapshot.js`, `extractBillingSnapshot()`
+- **Thin community `Community 109`** (2 nodes): `billing-snapshot.js`, `extractBillingSnapshot()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 108`** (2 nodes): `member-access-log.js`, `logMemberAccessEvent()`
+- **Thin community `Community 110`** (2 nodes): `member-access-log.js`, `logMemberAccessEvent()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 109`** (2 nodes): `wix-app-market.js`, `handleAppMarketWebhook()`
+- **Thin community `Community 111`** (2 nodes): `wix-app-market.js`, `handleAppMarketWebhook()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 110`** (2 nodes): `admin-operator-overview.spec.js`, `getDbStats()`
+- **Thin community `Community 112`** (2 nodes): `admin-operator-overview.spec.js`, `getDbStats()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 111`** (2 nodes): `admin-ui-walkthrough.spec.js`, `attachConsoleCapture()`
+- **Thin community `Community 113`** (2 nodes): `admin-ui-walkthrough.spec.js`, `attachConsoleCapture()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 112`** (2 nodes): `api-auth-pin.spec.js`, `postPin()`
+- **Thin community `Community 114`** (2 nodes): `api-auth-pin.spec.js`, `postPin()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 113`** (2 nodes): `api-operator-stats.spec.js`, `fetchOperator()`
+- **Thin community `Community 115`** (2 nodes): `api-operator-stats.spec.js`, `fetchOperator()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 114`** (2 nodes): `schema-indexes.spec.js`, `indexExists()`
+- **Thin community `Community 116`** (2 nodes): `schema-indexes.spec.js`, `indexExists()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 115`** (2 nodes): `audit-by-internal-id.js`, `section()`
+- **Thin community `Community 117`** (2 nodes): `audit-by-internal-id.js`, `section()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 116`** (2 nodes): `audit-kisi.js`, `header()`
+- **Thin community `Community 118`** (2 nodes): `audit-kisi.js`, `header()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 117`** (2 nodes): `audit-member.js`, `section()`
+- **Thin community `Community 119`** (2 nodes): `audit-member.js`, `section()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 118`** (2 nodes): `member-cancels-loses-access.test.js`, `mockClientApiKey()`
+- **Thin community `Community 120`** (2 nodes): `member-cancels-loses-access.test.js`, `mockClientApiKey()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 119`** (2 nodes): `ob-125-source-tag-guard.test.js`, `mockSourceTagLookup()`
+- **Thin community `Community 121`** (2 nodes): `member-email-hooks.test.js`, `mockDb()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 120`** (2 nodes): `queue-worker-new-schema.test.js`, `constructor()`
+- **Thin community `Community 122`** (2 nodes): `ob-125-source-tag-guard.test.js`, `mockSourceTagLookup()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 121`** (2 nodes): `standard-adapter-new-schema.test.js`, `makeDbClient()`
+- **Thin community `Community 123`** (2 nodes): `queue-worker-new-schema.test.js`, `constructor()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 122`** (2 nodes): `clients-kisi-user-pattern.test.js`, `mockDbForPattern()`
+- **Thin community `Community 124`** (2 nodes): `standard-adapter-new-schema.test.js`, `makeDbClient()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 123`** (2 nodes): `middleware-actor-edge-cases.test.js`, `runMiddleware()`
+- **Thin community `Community 125`** (2 nodes): `clients-kisi-user-pattern.test.js`, `mockDbForPattern()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 124`** (2 nodes): `plan-mapping-resolver-new-schema.test.js`, `mockConnectorRow()`
+- **Thin community `Community 126`** (2 nodes): `middleware-actor-edge-cases.test.js`, `runMiddleware()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 125`** (2 nodes): `plan-mapping-resolver.test.js`, `mockMappingRow()`
+- **Thin community `Community 127`** (2 nodes): `plan-mapping-resolver-new-schema.test.js`, `mockConnectorRow()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 126`** (2 nodes): `source-retry-probe.test.js`, `candidateRow()`
+- **Thin community `Community 128`** (2 nodes): `plan-mapping-resolver.test.js`, `mockMappingRow()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 127`** (2 nodes): `wix-app-market-stub.test.js`, `mockRes()`
+- **Thin community `Community 129`** (2 nodes): `source-retry-probe.test.js`, `candidateRow()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 128`** (2 nodes): `diagnostic-log-db-sync.test.js`, `flushImmediate()`
+- **Thin community `Community 130`** (2 nodes): `wix-app-market-stub.test.js`, `mockRes()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 129`** (2 nodes): `event-registry-sync.test.js`, `extractMarkdownEvents()`
+- **Thin community `Community 131`** (2 nodes): `diagnostic-log-db-sync.test.js`, `flushImmediate()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 130`** (2 nodes): `operator-members-disambiguation.test.js`, `makeApp()`
+- **Thin community `Community 132`** (2 nodes): `event-registry-sync.test.js`, `extractMarkdownEvents()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 131`** (2 nodes): `wix-adapter-payment-guard.test.js`, `makeOrder()`
+- **Thin community `Community 133`** (2 nodes): `operator-members-disambiguation.test.js`, `makeApp()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 132`** (1 nodes): `jest.config.js`
+- **Thin community `Community 134`** (2 nodes): `wix-adapter-payment-guard.test.js`, `makeOrder()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 133`** (1 nodes): `playwright.config.js`
+- **Thin community `Community 135`** (1 nodes): `jest.config.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 134`** (1 nodes): `errors.js`
+- **Thin community `Community 136`** (1 nodes): `playwright.config.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 135`** (1 nodes): `members.js`
+- **Thin community `Community 137`** (1 nodes): `errors.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 136`** (1 nodes): `portal.js`
+- **Thin community `Community 138`** (1 nodes): `members.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 137`** (1 nodes): `queue.js`
+- **Thin community `Community 139`** (1 nodes): `portal.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 138`** (1 nodes): `webhooks.js`
+- **Thin community `Community 140`** (1 nodes): `queue.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 139`** (1 nodes): `wix-admins.js`
+- **Thin community `Community 141`** (1 nodes): `webhooks.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 140`** (1 nodes): `main.js`
+- **Thin community `Community 142`** (1 nodes): `wix-admins.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 141`** (1 nodes): `plan-mapping-entry.js`
+- **Thin community `Community 143`** (1 nodes): `main.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 142`** (1 nodes): `global-setup.js`
+- **Thin community `Community 144`** (1 nodes): `plan-mapping-entry.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 143`** (1 nodes): `admin-access-log.spec.js`
+- **Thin community `Community 145`** (1 nodes): `global-setup.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 144`** (1 nodes): `admin-dashboard.spec.js`
+- **Thin community `Community 146`** (1 nodes): `admin-access-log.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 145`** (1 nodes): `admin-empty-states.spec.js`
+- **Thin community `Community 147`** (1 nodes): `admin-dashboard.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 146`** (1 nodes): `admin-error-queue.spec.js`
+- **Thin community `Community 148`** (1 nodes): `admin-empty-states.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 147`** (1 nodes): `admin-location-detail.spec.js`
+- **Thin community `Community 149`** (1 nodes): `admin-error-queue.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 148`** (1 nodes): `admin-location-list.spec.js`
+- **Thin community `Community 150`** (1 nodes): `admin-location-detail.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 149`** (1 nodes): `admin-responsive.spec.js`
+- **Thin community `Community 151`** (1 nodes): `admin-location-list.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 150`** (1 nodes): `api-operator-locations.spec.js`
+- **Thin community `Community 152`** (1 nodes): `admin-responsive.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 151`** (1 nodes): `logging-diagnostic-gaps.spec.js`
+- **Thin community `Community 153`** (1 nodes): `api-operator-locations.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 152`** (1 nodes): `logging-error-queue.spec.js`
+- **Thin community `Community 154`** (1 nodes): `logging-diagnostic-gaps.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 153`** (1 nodes): `schema-effective-start.spec.js`
+- **Thin community `Community 155`** (1 nodes): `logging-error-queue.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 154`** (1 nodes): `schema-tables.spec.js`
+- **Thin community `Community 156`** (1 nodes): `schema-effective-start.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 155`** (1 nodes): `lightbox.js`
+- **Thin community `Community 157`** (1 nodes): `schema-tables.spec.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 156`** (1 nodes): `multi-member-page.js`
+- **Thin community `Community 158`** (1 nodes): `lightbox.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 157`** (1 nodes): `thank-you-page.js`
+- **Thin community `Community 159`** (1 nodes): `multi-member-page.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 158`** (1 nodes): `audit-summary.js`
+- **Thin community `Community 160`** (1 nodes): `thank-you-page.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 159`** (1 nodes): `supabase-3-apply-data.js`
+- **Thin community `Community 161`** (1 nodes): `audit-summary.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 160`** (1 nodes): `fixtures.js`
+- **Thin community `Community 162`** (1 nodes): `supabase-3-apply-data.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 161`** (1 nodes): `grant-retry-idempotency.test.js`
+- **Thin community `Community 163`** (1 nodes): `fixtures.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 162`** (1 nodes): `grant-revoke-new-schema.test.js`
+- **Thin community `Community 164`** (1 nodes): `grant-retry-idempotency.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 163`** (1 nodes): `kisi-user-pattern.test.js`
+- **Thin community `Community 165`** (1 nodes): `grant-revoke-new-schema.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 164`** (1 nodes): `member-pays-gets-access.test.js`
+- **Thin community `Community 166`** (1 nodes): `kisi-user-pattern.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 165`** (1 nodes): `ob-244-revoke-finds-removing-status.test.js`
+- **Thin community `Community 167`** (1 nodes): `member-pays-gets-access.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 166`** (1 nodes): `ob-248-finalize-revoke.test.js`
+- **Thin community `Community 168`** (1 nodes): `ob-244-revoke-finds-removing-status.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 167`** (1 nodes): `ob-89-two-gate.test.js`
+- **Thin community `Community 169`** (1 nodes): `ob-248-finalize-revoke.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 168`** (1 nodes): `api-key-encryption.test.js`
+- **Thin community `Community 170`** (1 nodes): `ob-89-two-gate.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 169`** (1 nodes): `billing-snapshot.test.js`
+- **Thin community `Community 171`** (1 nodes): `api-key-encryption.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 170`** (1 nodes): `billing-subscriptions-wix-app-market-columns.test.js`
+- **Thin community `Community 172`** (1 nodes): `email-branding-routes.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 171`** (1 nodes): `cron-trace.test.js`
+- **Thin community `Community 173`** (1 nodes): `email-templates.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 172`** (1 nodes): `kisi-user-explicit-flags.test.js`
+- **Thin community `Community 174`** (1 nodes): `billing-snapshot.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 173`** (1 nodes): `logger-context-redaction.test.js`
+- **Thin community `Community 175`** (1 nodes): `billing-subscriptions-wix-app-market-columns.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 174`** (1 nodes): `logger-message-field.test.js`
+- **Thin community `Community 176`** (1 nodes): `cron-trace.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 175`** (1 nodes): `member-access-sources-unique-constraint.test.js`
+- **Thin community `Community 177`** (1 nodes): `kisi-user-explicit-flags.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 176`** (1 nodes): `member-billing-cycle-transition.test.js`
+- **Thin community `Community 178`** (1 nodes): `logger-context-redaction.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 177`** (1 nodes): `member-sync-api-billing-conflation.test.js`
+- **Thin community `Community 179`** (1 nodes): `logger-message-field.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 178`** (1 nodes): `ob-240-migration.test.js`
+- **Thin community `Community 180`** (1 nodes): `member-access-sources-unique-constraint.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 179`** (1 nodes): `ob-244-member-access-status-enum.test.js`
+- **Thin community `Community 181`** (1 nodes): `member-billing-cycle-transition.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 180`** (1 nodes): `ob-247-pass-1-5-holder-lapse.test.js`
+- **Thin community `Community 182`** (1 nodes): `member-sync-api-billing-conflation.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 181`** (1 nodes): `ob-249-pass-3-operator-delete-drift.test.js`
+- **Thin community `Community 183`** (1 nodes): `ob-240-migration.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 182`** (1 nodes): `rate-limiter.test.js`
+- **Thin community `Community 184`** (1 nodes): `ob-244-member-access-status-enum.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 183`** (1 nodes): `recon-traceid-guard.test.js`
+- **Thin community `Community 185`** (1 nodes): `ob-247-pass-1-5-holder-lapse.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 184`** (1 nodes): `reconcile-trigger-source.test.js`
+- **Thin community `Community 186`** (1 nodes): `ob-249-pass-3-operator-delete-drift.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 185`** (1 nodes): `reconciliation-new-schema.test.js`
+- **Thin community `Community 187`** (1 nodes): `rate-limiter.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 186`** (1 nodes): `reconciliation-pass2-source-lookup.test.js`
+- **Thin community `Community 188`** (1 nodes): `recon-traceid-guard.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 187`** (1 nodes): `redaction-edge-cases.test.js`
+- **Thin community `Community 189`** (1 nodes): `reconcile-trigger-source.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 188`** (1 nodes): `schema-concepts-new.test.js`
+- **Thin community `Community 190`** (1 nodes): `reconciliation-new-schema.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 189`** (1 nodes): `snippet-registry.test.js`
+- **Thin community `Community 191`** (1 nodes): `reconciliation-pass2-source-lookup.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 190`** (1 nodes): `trace-context-unhappy.test.js`
+- **Thin community `Community 192`** (1 nodes): `redaction-edge-cases.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 191`** (1 nodes): `trace-propagation.test.js`
+- **Thin community `Community 193`** (1 nodes): `schema-concepts-new.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 192`** (1 nodes): `wix-adapter-parsing.test.js`
+- **Thin community `Community 194`** (1 nodes): `snippet-registry.test.js`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 195`** (1 nodes): `trace-context-unhappy.test.js`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 196`** (1 nodes): `trace-propagation.test.js`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 197`** (1 nodes): `wix-adapter-parsing.test.js`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions

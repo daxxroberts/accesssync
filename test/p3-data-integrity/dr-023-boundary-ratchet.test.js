@@ -39,20 +39,17 @@ const WRITE_RE = {
 
 // ── Allowlist: file → exact write count. Everything else must be zero. ──────
 //
-// member_access / member_master: L3-exclusive per DR-023. One exception:
-//   - core/location-lapse.js writes status='disabled' — a LEGACY enum value
-//     (s11.sql translated 'disabled' → 'cancelled'; the OB-244 CHECK
-//     constraint does not allow it). This write would trip 23514 in
-//     production if a location lapse fired. Surfaced to Builder 2026-07-06;
-//     needs a design ruling (what should suspend write post-S-11?) before
-//     it can be routed through L3. Do NOT copy this pattern.
+// member_access / member_master: L3-exclusive per DR-023 — no exceptions.
+// (The former core/location-lapse.js legacy 'disabled' write was routed
+// through standardAdapter.suspendMemberLocationSources per the OB-257
+// ruling, 2026-07-06.)
 //
 // member_access_sources has multiple designed-in writers (DR-034 revoke
 // deletes, OB-185 Pass 1 promote/insert, OB-240 retry probe, plan-mapping
 // remap flows). Counts pinned so NEW writes still trip the ratchet.
 const ALLOWLIST = {
   member_access: {
-    'core/location-lapse.js': 1, // legacy 'disabled' write — pending Builder ruling
+    // none — L3-exclusive
   },
   member_master: {
     // none — L3-exclusive

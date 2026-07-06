@@ -2,9 +2,10 @@
  * @file location-lapse.js
  * @layer core/layer4
  * @role subscription-lapse
- * @reads locations, clients, connector_subscriptions, member_access, plan_mappings
- * @writes member_access, member_access_log, billing_subscriptions.status
- * @calls hardware-adapter (suspendAccess)
+ * @reads locations, clients, connector_subscriptions, member_access, member_access_sources, plan_mappings
+ * @writes member_access_log, billing_subscriptions.status
+ *         (member_access_sources + member_access rollup via standard-adapter — DR-023)
+ * @calls hardware-adapter (suspendAccess), standard-adapter (suspendMemberLocationSources)
  * @exports suspendLocationMembers(locationId, clientId, targetStatus)
  * @dr DR-027, DR-028
  *
@@ -16,9 +17,11 @@
  *
  * Flow:
  *   1. Resolve client hardware platform + API key
- *   2. Find all active members with role assignments tied to this location
+ *   2. Find all members holding an active source row under this location's mappings
  *   3. Call hardwareAdapter.suspendAccess() per member
- *   4. Update member_access.status → 'disabled'
+ *   4. Flip the location's source rows 'active' → 'failed' + rollup member_access
+ *      via standardAdapter.suspendMemberLocationSources (OB-257 ruling — mirrors
+ *      the payment.failed suspend semantic; source rows preserved for recovery)
  *   5. Log to member_access_log
  *   6. Set locations.subscription_status → target status
  *
@@ -30,6 +33,7 @@
 
 const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
+const standardAdapter = require('../adapters/standard-adapter');
 const { decryptApiKey } = require('./crypto-utils');
 const { log } = require('./logger');
 const { getTraceId, getActor } = require('./trace-context');
@@ -80,17 +84,20 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
 
   const platform = hardware_platform || 'kisi';
 
-  // 2. Find all active members at this location via member_access (new schema)
+  // 2. Find members holding an active source row under this location's mappings.
+  // S-11/DR-046: location membership lives on member_access_sources.mapping_id →
+  // plan_mappings.location_id. (The pre-S-11 join on pm.client_id alone matched
+  // every active member of the client, not just this location's members.)
   const membersResult = await db.query(
     `SELECT DISTINCT
             ma.id               AS member_id,
             ma.hardware_user_id,
-            ma.platform_member_id,
-            ma.status           AS current_access_status
+            ma.platform_member_id
      FROM   member_access ma
-     JOIN   plan_mappings pm ON pm.client_id = ma.client_id AND pm.location_id = $1
+     JOIN   member_access_sources mas ON mas.access_id = ma.id AND mas.status = 'active'
+     JOIN   plan_mappings pm ON pm.id = mas.mapping_id AND pm.location_id = $1
      WHERE  ma.client_id = $2
-       AND  ma.status IN ('active', 'pending_sync', 'in_flight')`,
+       AND  ma.status IN ('active', 'in_flight')`,
     [locationId, clientId]
   );
 
@@ -119,12 +126,10 @@ async function suspendLocationMembers(locationId, clientId, targetStatus = 'susp
         skipped++;
       }
 
-      await db.query(
-        `UPDATE member_access
-         SET    status = 'disabled', updated_at = NOW()
-         WHERE  id = $1`,
-        [row.member_id]
-      );
+      // OB-257: 'disabled' is a legacy enum value (s11.sql translated it away;
+      // the OB-244 CHECK constraint rejects it). The suspend write is now the
+      // location-scoped source-row flip + DR-046 rollup, routed through L3.
+      await standardAdapter.suspendMemberLocationSources(row.member_id, clientId, locationId);
 
       // created_at uses the DB column default (CURRENT_TIMESTAMP) — equivalent to NOW().
       await logMemberAccessEvent({
