@@ -2106,6 +2106,51 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
 // These are consumed by OB-06 (Wix widget) once built.
 // Auth: OB-08 (Wix JWT) will gate these before widget launch.
 
+// ── GET /operator/:clientId/members — SQL fragment builders ──────
+// The members SELECT aggregates per-plan info with a holder-fallback: a
+// member's plans come from their OWN source rows; holders may have no own
+// rows (billing identity only, DR-046), so fall back to aggregating their
+// sub-members' rows. That COALESCE pair repeats for four output columns —
+// single-sourced here. Query structure is pinned by
+// test/p3-data-integrity/operator-members-query-shape.test.js — update the
+// counts there consciously if you add or remove a subquery.
+
+// Source rows that still count toward plan display (not dead).
+const MAS_NOT_DEAD = `NOT IN ('cancelled','revoked')`;
+
+/**
+ * Holder-fallback COALESCE pair. Evaluates `expr` (which may reference pm.*)
+ * over the member's own source rows; when that yields NULL, re-evaluates it
+ * over the holder's sub-members' source rows. `ownTail`/`subTail` append
+ * clause-level SQL (ORDER BY/LIMIT) after each branch's WHERE.
+ *
+ * @param {string} expr        SELECT expression, e.g. ARRAY_AGG(DISTINCT pm.id ORDER BY pm.id)
+ * @param {string} notNullCol  plan_mappings column that must be non-null to count
+ * @param {string} [ownTail]   appended to the own-rows branch (uses alias mas)
+ * @param {string} [subTail]   appended to the sub-members branch (uses alias sub_mas)
+ */
+function holderFallback(expr, notNullCol, ownTail = '', subTail = '') {
+  return `COALESCE(
+                  (
+                    SELECT ${expr}
+                    FROM member_access_sources mas
+                    JOIN plan_mappings pm ON pm.id = mas.mapping_id
+                    WHERE mas.access_id = ma.id
+                      AND mas.status ${MAS_NOT_DEAD}
+                      AND pm.${notNullCol} IS NOT NULL${ownTail}
+                  ),
+                  (
+                    SELECT ${expr}
+                    FROM member_access sub_ma
+                    JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
+                    JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
+                    WHERE sub_ma.sub_master_id = ma.member_master_id
+                      AND sub_mas.status ${MAS_NOT_DEAD}
+                      AND pm.${notNullCol} IS NOT NULL${subTail}
+                  )
+                )`;
+}
+
 // ── GET /operator/:clientId/members ─────────────────────────────
 // Paginated member list for operator's account view.
 router.get('/:clientId/members', async (req, res) => {
@@ -2156,98 +2201,33 @@ router.get('/:clientId/members', async (req, res) => {
                 ma.provisioned_at,
                 -- Plan(s) this member is in: source rows under this access OR (for holders)
                 -- under their sub-members' access rows.
-                COALESCE(
-                  (
-                    SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
-                    FROM member_access_sources mas
-                    JOIN plan_mappings pm ON pm.id = mas.mapping_id
-                    WHERE mas.access_id = ma.id
-                      AND mas.status NOT IN ('cancelled','revoked')
-                      AND pm.plan_name IS NOT NULL
-                  ),
-                  (
-                    SELECT ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)
-                    FROM member_access sub_ma
-                    JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
-                    JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
-                    WHERE sub_ma.sub_master_id = ma.member_master_id
-                      AND sub_mas.status NOT IN ('cancelled','revoked')
-                      AND pm.plan_name IS NOT NULL
-                  )
-                )                                AS plan_names,
-                COALESCE(
-                  (
-                    SELECT ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)
-                    FROM member_access_sources mas
-                    JOIN plan_mappings pm ON pm.id = mas.mapping_id
-                    WHERE mas.access_id = ma.id
-                      AND mas.status NOT IN ('cancelled','revoked')
-                      AND pm.source_plan_id IS NOT NULL
-                  ),
-                  (
-                    SELECT ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)
-                    FROM member_access sub_ma
-                    JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
-                    JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
-                    WHERE sub_ma.sub_master_id = ma.member_master_id
-                      AND sub_mas.status NOT IN ('cancelled','revoked')
-                      AND pm.source_plan_id IS NOT NULL
-                  )
-                )                                AS plan_ids,
+                ${holderFallback(`ARRAY_AGG(DISTINCT pm.plan_name ORDER BY pm.plan_name)`, 'plan_name')}
+                                                 AS plan_names,
+                ${holderFallback(`ARRAY_AGG(DISTINCT pm.source_plan_id ORDER BY pm.source_plan_id)`, 'source_plan_id')}
+                                                 AS plan_ids,
                 -- OB-223 disambiguation support. Aggregate DISTINCT plan_mapping.id values
                 -- (NOT plan_name, so duplicate-name mappings stay separate entries) so the
                 -- JS layer can map each entry through a client-wide name-collision Map and
                 -- emit plan_names_disambiguated. Holder-fallback mirrors plan_names.
-                COALESCE(
-                  (
-                    SELECT ARRAY_AGG(DISTINCT pm.id ORDER BY pm.id)
-                    FROM member_access_sources mas
-                    JOIN plan_mappings pm ON pm.id = mas.mapping_id
-                    WHERE mas.access_id = ma.id
-                      AND mas.status NOT IN ('cancelled','revoked')
-                      AND pm.plan_name IS NOT NULL
-                  ),
-                  (
-                    SELECT ARRAY_AGG(DISTINCT pm.id ORDER BY pm.id)
-                    FROM member_access sub_ma
-                    JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
-                    JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
-                    WHERE sub_ma.sub_master_id = ma.member_master_id
-                      AND sub_mas.status NOT IN ('cancelled','revoked')
-                      AND pm.plan_name IS NOT NULL
-                  )
-                )                                AS plan_mapping_ids,
+                ${holderFallback(`ARRAY_AGG(DISTINCT pm.id ORDER BY pm.id)`, 'plan_name')}
+                                                 AS plan_mapping_ids,
                 (
                   SELECT ARRAY_AGG(mas.valid_until ORDER BY pm.plan_name)
                   FROM member_access_sources mas
                   JOIN plan_mappings pm ON pm.id = mas.mapping_id
                   WHERE mas.access_id = ma.id
-                    AND mas.status NOT IN ('cancelled','revoked')
+                    AND mas.status ${MAS_NOT_DEAD}
                     AND pm.plan_name IS NOT NULL
                 )                                AS plan_valid_untils,
-                COALESCE(
-                  (
-                    SELECT pm.plan_name
-                    FROM member_access_sources mas
-                    JOIN plan_mappings pm ON pm.id = mas.mapping_id
-                    WHERE mas.access_id = ma.id
-                      AND mas.status NOT IN ('cancelled','revoked')
-                      AND pm.plan_name IS NOT NULL
+                -- First plan (by source-row creation) as the representative name.
+                ${holderFallback(`pm.plan_name`, 'plan_name',
+                                 `
                     ORDER BY mas.created_at ASC
-                    LIMIT 1
-                  ),
-                  (
-                    SELECT pm.plan_name
-                    FROM member_access sub_ma
-                    JOIN member_access_sources sub_mas ON sub_mas.access_id = sub_ma.id
-                    JOIN plan_mappings pm ON pm.id = sub_mas.mapping_id
-                    WHERE sub_ma.sub_master_id = ma.member_master_id
-                      AND sub_mas.status NOT IN ('cancelled','revoked')
-                      AND pm.plan_name IS NOT NULL
+                    LIMIT 1`,
+                                 `
                     ORDER BY sub_mas.created_at ASC
-                    LIMIT 1
-                  )
-                )                                AS plan_name,
+                    LIMIT 1`)}
+                                                 AS plan_name,
                 -- Per-plan billing pulled from v_active_members (canonical DB view that
                 -- extracts plan_price/cycle_unit/monthly_rate/coupon/auto_renew/payment from
                 -- member_billing.billing_snapshot JSON). One row per (member × plan) — we
@@ -2283,7 +2263,7 @@ router.get('/:clientId/members', async (req, res) => {
                   FROM member_access_sources mas
                   LEFT JOIN member_billing mb ON mb.id = mas.billing_id
                   WHERE mas.access_id = ma.id
-                    AND mas.status NOT IN ('cancelled','revoked')
+                    AND mas.status ${MAS_NOT_DEAD}
                     AND mb.billing_snapshot IS NOT NULL
                   ORDER BY mas.created_at DESC
                   LIMIT 1
@@ -2293,7 +2273,7 @@ router.get('/:clientId/members', async (req, res) => {
                   SELECT COUNT(*)::int
                   FROM member_access_sources mas
                   WHERE mas.access_id = ma.id
-                    AND mas.status NOT IN ('cancelled','revoked')
+                    AND mas.status ${MAS_NOT_DEAD}
                 )                                AS assignment_count,
                 -- Number of sources currently in 'active' state — separates "has door access right now"
                 -- from "has a source row at all" (which may be pending_hardware/pending_start).
@@ -2315,7 +2295,7 @@ router.get('/:clientId/members', async (req, res) => {
                   SELECT mas.mapping_id
                   FROM member_access_sources mas
                   WHERE mas.access_id = ma.id
-                    AND mas.status NOT IN ('cancelled','revoked')
+                    AND mas.status ${MAS_NOT_DEAD}
                   ORDER BY mas.created_at ASC
                   LIMIT 1
                 )                                AS plan_mapping_id,
@@ -2324,7 +2304,7 @@ router.get('/:clientId/members', async (req, res) => {
                   FROM member_access_sources mas
                   JOIN plan_mappings pm ON pm.id = mas.mapping_id
                   WHERE mas.access_id = ma.id
-                    AND mas.status NOT IN ('cancelled','revoked')
+                    AND mas.status ${MAS_NOT_DEAD}
                   ORDER BY mas.created_at ASC
                   LIMIT 1
                 )                                AS sub_plan_name,
