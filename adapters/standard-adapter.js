@@ -600,23 +600,12 @@ class StandardAdapter {
     }
 
     // S-11/DR-046: member_access.status is the rollup of source-row state.
-    // active if ≥1 source is active, else inactive. provisioned_at stamps the
-    // first time we saw any successful hardware call land for this person.
-    await db.query(
-      `UPDATE member_access
-       SET status = CASE
-                      WHEN EXISTS (
-                        SELECT 1 FROM member_access_sources mas
-                        WHERE mas.access_id = $1 AND mas.status = 'active'
-                      ) THEN 'active'
-                      ELSE 'inactive'
-                    END,
-           provisioned_at = COALESCE(provisioned_at, NOW()),
-           hardware_platform = COALESCE(hardware_platform, $2),
-           updated_at = NOW()
-       WHERE id = $1`,
-      [memberId, resolvedHardwarePlatform]
-    );
+    // provisioned_at stamps the first time we saw any successful hardware
+    // call land for this person.
+    await this.rollupAccessStatus(memberId, {
+      stampProvisioned: true,
+      hardwarePlatform: resolvedHardwarePlatform,
+    });
 
     this._incrementActivity(tenantId, 'grants_completed').catch(err =>
       log.warn('adapter.activity_update_failed', { field: 'grants_completed' }, err)
@@ -625,6 +614,58 @@ class StandardAdapter {
     this._maybeFireFirstGrantEmail(tenantId, memberId).catch(err =>
       log.warn('adapter.first_grant_email_failed', {}, err)
     );
+  }
+
+  /**
+   * S-11/DR-046 single source of truth for the member_access status rollup:
+   * active if ≥1 source row is active, else inactive. Every status recompute
+   * in L3 goes through here; reconciliation's set-based Pass 1 variant is
+   * rollupAccessStatusByPlatformMember(). Exactly ONE query per call — P1
+   * suites mock db.query by sequence position.
+   *
+   * @param {string} memberId  member_access.id
+   * @param {Object} [opts]
+   * @param {Object} [opts.dbClient]  transaction client (completeRevoke); defaults to pool
+   * @param {boolean} [opts.stampProvisioned]  grant path: also stamps
+   *        provisioned_at = COALESCE(provisioned_at, NOW()) and
+   *        hardware_platform = COALESCE(hardware_platform, $2). Runs even when
+   *        hardwarePlatform is null (provisioned_at still stamps — pre-refactor
+   *        behavior preserved).
+   * @param {string|null} [opts.hardwarePlatform]  only read when stampProvisioned
+   */
+  async rollupAccessStatus(memberId, { dbClient = null, stampProvisioned = false, hardwarePlatform = null } = {}) {
+    const q = dbClient || db;
+    if (stampProvisioned) {
+      await q.query(
+        `UPDATE member_access
+         SET status = CASE
+                        WHEN EXISTS (
+                          SELECT 1 FROM member_access_sources mas
+                          WHERE mas.access_id = $1 AND mas.status = 'active'
+                        ) THEN 'active'
+                        ELSE 'inactive'
+                      END,
+             provisioned_at = COALESCE(provisioned_at, NOW()),
+             hardware_platform = COALESCE(hardware_platform, $2),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [memberId, hardwarePlatform]
+      );
+    } else {
+      await q.query(
+        `UPDATE member_access
+         SET status = CASE
+                        WHEN EXISTS (
+                          SELECT 1 FROM member_access_sources mas
+                          WHERE mas.access_id = $1 AND mas.status = 'active'
+                        ) THEN 'active'
+                        ELSE 'inactive'
+                      END,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [memberId]
+      );
+    }
   }
 
   /**
@@ -759,19 +800,7 @@ class StandardAdapter {
       }
 
       // S-11: access-row status = source-aggregate rollup.
-      await dbClient.query(
-        `UPDATE member_access
-         SET status = CASE
-                        WHEN EXISTS (
-                          SELECT 1 FROM member_access_sources mas
-                          WHERE mas.access_id = $1 AND mas.status = 'active'
-                        ) THEN 'active'
-                        ELSE 'inactive'
-                      END,
-             updated_at = NOW()
-         WHERE id = $1`,
-        [memberId]
-      );
+      await this.rollupAccessStatus(memberId, { dbClient });
 
       await dbClient.query('COMMIT');
     } catch (err) {
@@ -1150,19 +1179,7 @@ class StandardAdapter {
 
     // Recompute access status from sources — 'pending_start' is not 'active' so this
     // resolves to 'inactive'. Reconcile / orderStarted will flip when ready.
-    await db.query(
-      `UPDATE member_access
-       SET status = CASE
-                      WHEN EXISTS (
-                        SELECT 1 FROM member_access_sources mas
-                        WHERE mas.access_id = $1 AND mas.status = 'active'
-                      ) THEN 'active'
-                      ELSE 'inactive'
-                    END,
-           updated_at = NOW()
-       WHERE id = $1`,
-      [memberId]
-    ).catch(err =>
+    await this.rollupAccessStatus(memberId).catch(err =>
       log.error('adapter.park_pending_start.access_rollup_failed', { memberId }, err)
     );
 
@@ -1220,19 +1237,7 @@ class StandardAdapter {
 
     // Recompute access status from sources — 'pending_hardware' is not 'active' so this
     // resolves to 'inactive'. Operator UI surfaces the per-plan pending state from sources.
-    await db.query(
-      `UPDATE member_access
-       SET status = CASE
-                      WHEN EXISTS (
-                        SELECT 1 FROM member_access_sources mas
-                        WHERE mas.access_id = $1 AND mas.status = 'active'
-                      ) THEN 'active'
-                      ELSE 'inactive'
-                    END,
-           updated_at = NOW()
-       WHERE id = $1`,
-      [memberId]
-    ).catch(err =>
+    await this.rollupAccessStatus(memberId).catch(err =>
       log.error('adapter.park_pending_hardware.access_rollup_failed', { memberId }, err)
     );
   }
