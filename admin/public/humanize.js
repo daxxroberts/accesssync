@@ -168,10 +168,14 @@
     if (e === 'member.synced')          return (who || 'An operator') + ' ran a per-member sync' + at + '.';
     if (e === 'error.retried')          return (who || 'An operator') + ' retried a failed job' + at + '.';
     if (e === 'client_deleted')         return (who || 'An owner') + ' deleted client ' + (c.client || '') + '.';
+    // Passive voice: `who` (member_name) on these events is the SUB-MEMBER being
+    // added/removed, not the actor who did it. Active voice ("X added a sub-member")
+    // wrongly read as if the sub-member performed the action. The actor lives in a
+    // separate actor_id and doesn't reliably resolve to a name (esp. on revoke).
     if (e === 'sub_member.revoke_queued')
-      return (who || 'A plan holder') + ' removed a sub-member' + onPlan + at + '.';
+      return (who || 'A member') + ' was removed as a sub-member' + onPlan + at + '.';
     if (e === 'sub_member.grant_queued')
-      return (who || 'A plan holder') + ' added a sub-member' + onPlan + at + '.';
+      return (who || 'A member') + ' was added as a sub-member' + onPlan + at + '.';
     if (e === 'holder.claim_slot_queued')
       return (who || 'A plan holder') + ' claimed their own access slot' + onPlan + at + '.';
     if (e === 'holder.release_slot_queued')
