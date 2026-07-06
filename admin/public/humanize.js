@@ -180,6 +180,23 @@
       return (who || 'A plan holder') + ' claimed their own access slot' + onPlan + at + '.';
     if (e === 'holder.release_slot_queued')
       return (who || 'A plan holder') + ' released their access slot' + onPlan + at + '.';
+    // DR-052 — member-facing branded email pipeline. `who` is the MEMBER the email
+    // is about (recipient), never the sender — passive/system voice keeps it honest.
+    if (e === 'email.member.sent')
+      return 'A branded email was sent to ' + who + at + '.';
+    if (e === 'email.member.suppressed')
+      return 'A member email was skipped — already sent for this event (or a background sync, which never emails members).';
+    if (e === 'email.member.skipped_disabled')
+      return 'A member email was skipped — member emails are turned off for this gym (or no address on file).';
+    if (e === 'email.member.failed')
+      return "A member email failed to send — access itself is unaffected.";
+    if (e === 'email_branding.updated')
+      return (who || 'An operator') + ' updated the member-email branding' + at + '.';
+    if (e === 'email_branding.logo_uploaded')
+      return (who || 'An operator') + ' uploaded a member-email logo' + at + '.';
+    if (e === 'email_branding.test_sent')
+      return (who || 'An operator') + ' sent a branded test email' + at + '.';
+
     if (e === 'sub_member_soft_deleted')
       return 'Sub-member record finalized — personal info purged, audit row preserved.';
     if (e === 'member.sub_member.soft_deleted')

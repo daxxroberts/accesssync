@@ -42,6 +42,7 @@ const { decryptApiKey } = require('./crypto-utils');
 const { extractBillingSnapshot } = require('./billing-snapshot');
 const { log, withTrace } = require('./logger');
 const { runWith, registerTrace, setTraceContext } = require('./trace-context');
+const memberMailer = require('./member-mailer');
 
 const connection = getRedisConnection();
 
@@ -204,6 +205,11 @@ async function _processJobBody(job, traceId) {
           durationMs: Date.now() - jobStart,
           stage: 'grant', result: 'success',
         });
+        // DR-052 — access became live on plan.started too (delayed-start plans).
+        memberMailer.maybeSendGrantEmail({
+          clientId: tenantId, accessId: memberId, standardEvent, assignments: startedAssignments,
+          eventKey: eventId || job.id,
+        }).catch(() => {});
         return;
       }
 
@@ -375,6 +381,14 @@ async function _processJobBody(job, traceId) {
         stage: 'grant', result: 'success',
       });
 
+      // DR-052 — member-facing branded email (M1 access-ready / M3 sub-member invite).
+      // Fire-and-forget: email outcome never affects the grant job. The mailer applies
+      // the ship-dark toggle, the allow-list synthetic suppression, and atomic dedup.
+      memberMailer.maybeSendGrantEmail({
+        clientId: tenantId, accessId: memberId, standardEvent, assignments,
+        eventKey: eventId || job.id,
+      }).catch(() => {});
+
     } else if (job.name === 'revoke') {
       // Step 1: Resolve identity + acquire lock (reads hardwarePlatform from existing row).
       // Revoke is per-member (all access rows), not per-plan — planMappingId=null.
@@ -452,6 +466,25 @@ async function _processJobBody(job, traceId) {
         durationMs: Date.now() - jobStart,
         stage: 'revoke', result: 'success',
       });
+
+      // DR-052 — M2 access-removed email. The recipient capture MUST be synchronous and
+      // MUST happen HERE: finalizeRevoke below (same awaited job) NULLs member PII per
+      // DR-044, after which the address is gone. Only true cancellations qualify
+      // (targetStatus 'inactive'); the capture helper itself enforces the allow-list
+      // (real plan/booking cancellations + holder-initiated sub-member removals — never
+      // holder self-release, reconcile drift, or member.deleted). The send is then
+      // fire-and-forget with the context already in memory.
+      if (targetStatus === 'inactive') {
+        const removedCtx = await memberMailer.captureAccessRemovedContext({
+          clientId: tenantId, accessId: memberId, standardEvent,
+        });
+        if (removedCtx) {
+          memberMailer.maybeSendAccessRemovedEmail({
+            clientId: tenantId, accessId: memberId, standardEvent,
+            context: removedCtx, eventKey: eventId || job.id,
+          }).catch(() => {});
+        }
+      }
 
       // Step 4 (OB-248): DR-044 finalize — delete Kisi user + NULL PII + mark
       // access 'deleted'. Only runs on full revoke (targetStatus='inactive');

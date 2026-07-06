@@ -356,6 +356,60 @@
       </div>
     </div>
 
+    <!-- ══ Member Email Branding (DR-052) ═════════════════════════════ -->
+    <div class="org-key-card" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div>
+          <div class="org-key-title" style="margin-bottom:2px;">Member Emails</div>
+          <div style="font-size:12px;color:var(--muted);">Brand the emails your members receive — logo, two colors, done. Replies go to your rollup email.</div>
+        </div>
+        <span class="config-row-status" id="eb-enabled-status">Loading…</span>
+      </div>
+
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;">
+        <div style="flex:1;min-width:240px;">
+          <!-- Logo -->
+          <div class="config-row" style="border-bottom:none;padding-top:0;">
+            <div class="config-row-header">
+              <span class="config-row-label">Logo</span>
+              <img id="eb-logo-thumb" alt="" style="display:none;height:32px;max-width:140px;border-radius:6px;background:#f1f5f9;padding:2px 6px;"/>
+              <span class="config-row-status" id="eb-logo-status">None uploaded</span>
+              <button class="btn btn-sm btn-secondary" onclick="document.getElementById('eb-logo-file').click()">Upload</button>
+              <input type="file" id="eb-logo-file" accept="image/png,image/jpeg" style="display:none;" onchange="ebUploadLogo(this)"/>
+            </div>
+            <div class="key-input-hint" style="margin-top:6px;">PNG or JPEG, up to 1&nbsp;MB. Shown in the email header.</div>
+          </div>
+          <!-- Colors -->
+          <div class="config-row" style="border-bottom:none;">
+            <div class="config-row-header">
+              <span class="config-row-label">Primary color</span>
+              <input type="color" id="eb-primary" value="#333333" style="width:36px;height:28px;border:1px solid var(--border);border-radius:6px;padding:0;background:none;cursor:pointer;" oninput="ebColorChanged('primary')"/>
+              <input type="text" class="key-input" id="eb-primary-hex" value="#333333" maxlength="7" style="width:96px;margin-bottom:0;" oninput="ebHexChanged('primary')"/>
+            </div>
+            <div class="key-input-hint" style="margin-top:4px;">The header band behind your logo.</div>
+          </div>
+          <div class="config-row" style="border-bottom:none;">
+            <div class="config-row-header">
+              <span class="config-row-label">Secondary color</span>
+              <input type="color" id="eb-secondary" value="#333333" style="width:36px;height:28px;border:1px solid var(--border);border-radius:6px;padding:0;background:none;cursor:pointer;" oninput="ebColorChanged('secondary')"/>
+              <input type="text" class="key-input" id="eb-secondary-hex" value="#333333" maxlength="7" style="width:96px;margin-bottom:0;" oninput="ebHexChanged('secondary')"/>
+            </div>
+            <div class="key-input-hint" style="margin-top:4px;">Buttons and links. Everything else stays white.</div>
+          </div>
+          <div class="key-form-actions" style="margin-top:12px;justify-content:flex-start;gap:8px;">
+            <button class="btn btn-primary btn-sm" onclick="ebSave()">Save branding</button>
+            <button class="btn btn-secondary btn-sm" onclick="ebSendTest()">Send test email</button>
+            <button class="btn btn-ghost btn-sm" id="eb-toggle-btn" onclick="ebToggleEnabled()" style="display:none;">Enable member emails</button>
+          </div>
+        </div>
+        <!-- Live preview — renders the REAL template server-side -->
+        <div style="flex:1.2;min-width:280px;">
+          <div class="key-input-hint" style="margin-bottom:6px;">Live preview — exactly what members receive:</div>
+          <iframe id="eb-preview" sandbox="" title="Email preview" style="width:100%;height:360px;border:1px solid var(--border);border-radius:10px;background:#f4f4f4;"></iframe>
+        </div>
+      </div>
+    </div>
+
     <!-- Locations -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <div class="section-label" style="margin-bottom:0;">Locations</div>
@@ -434,6 +488,7 @@
       loadClientProfile();
       loadWixKeyStatus();
       loadNotifEmail();
+      ebLoad();
       loadLocations();
       // OB-237 Phase D — deep link from Dashboard pill: #setup auto-opens the Setup Hub tab
       if (window.location.hash === '#setup') {
@@ -493,6 +548,161 @@
           }
         })
         .catch(function() { toast('Save failed — network error', 'error'); });
+    }
+
+    // ── Member email branding (DR-052) ─────────────────────────────────
+    var ebState = { enabled: false, logoUrl: null };
+    var ebPreviewTimer = null;
+
+    function ebLoad() {
+      apiFetch('/operator/clients/' + clientId + '/email-branding')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          ebState.enabled = !!data.enabled;
+          ebState.logoUrl = data.logoUrl || null;
+          if (data.primaryColor)   { ebSetColor('primary', data.primaryColor); }
+          if (data.secondaryColor) { ebSetColor('secondary', data.secondaryColor); }
+          ebRenderLogo();
+          ebRenderEnabled();
+          ebRefreshPreview();
+        })
+        .catch(function() {
+          document.getElementById('eb-enabled-status').textContent = 'Unable to load';
+        });
+    }
+
+    function ebSetColor(which, hex) {
+      document.getElementById('eb-' + which).value = hex;
+      document.getElementById('eb-' + which + '-hex').value = hex;
+    }
+    function ebColorChanged(which) {
+      document.getElementById('eb-' + which + '-hex').value = document.getElementById('eb-' + which).value;
+      ebRefreshPreview();
+    }
+    function ebHexChanged(which) {
+      var v = document.getElementById('eb-' + which + '-hex').value.trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+        document.getElementById('eb-' + which).value = v;
+        ebRefreshPreview();
+      }
+    }
+
+    function ebRenderLogo() {
+      var thumb  = document.getElementById('eb-logo-thumb');
+      var status = document.getElementById('eb-logo-status');
+      if (ebState.logoUrl) {
+        thumb.src = ebState.logoUrl;
+        thumb.style.display = '';
+        status.textContent = '';
+      } else {
+        thumb.style.display = 'none';
+        status.textContent = 'None uploaded';
+      }
+    }
+
+    function ebRenderEnabled() {
+      var el  = document.getElementById('eb-enabled-status');
+      var btn = document.getElementById('eb-toggle-btn');
+      if (ebState.enabled) {
+        el.textContent = '✓ Sending to members';
+        el.className   = 'config-row-status set';
+        btn.textContent = 'Turn off member emails';
+      } else {
+        el.textContent = 'Off — members receive no emails yet';
+        el.className   = 'config-row-status';
+        btn.textContent = 'Turn on member emails';
+      }
+      btn.style.display = '';
+    }
+
+    // Live preview — server renders the REAL template; query params track unsaved edits.
+    function ebRefreshPreview() {
+      if (ebPreviewTimer) clearTimeout(ebPreviewTimer);
+      ebPreviewTimer = setTimeout(function() {
+        var p = document.getElementById('eb-primary').value;
+        var s = document.getElementById('eb-secondary').value;
+        var url = '/operator/clients/' + clientId + '/email-branding/preview' +
+          '?primary=' + encodeURIComponent(p) + '&secondary=' + encodeURIComponent(s) + '&_t=' + Date.now();
+        apiFetch(url)
+          .then(function(res) { return res.text(); })
+          .then(function(html) { document.getElementById('eb-preview').srcdoc = html; })
+          .catch(function() {});
+      }, 250);
+    }
+
+    function ebSave() {
+      var p = document.getElementById('eb-primary-hex').value.trim();
+      var s = document.getElementById('eb-secondary-hex').value.trim();
+      if (!/^#[0-9a-fA-F]{6}$/.test(p) || !/^#[0-9a-fA-F]{6}$/.test(s)) {
+        toast('Colors must be #rrggbb hex values', 'error'); return;
+      }
+      apiFetch('/operator/clients/' + clientId + '/email-branding', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ primaryColor: p, secondaryColor: s }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) { toast('Email branding saved', 'success'); ebRefreshPreview(); }
+          else toast(data.error || 'Save failed', 'error');
+        })
+        .catch(function() { toast('Save failed — network error', 'error'); });
+    }
+
+    function ebToggleEnabled() {
+      var next = !ebState.enabled;
+      apiFetch('/operator/clients/' + clientId + '/email-branding', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          primaryColor: document.getElementById('eb-primary-hex').value.trim(),
+          secondaryColor: document.getElementById('eb-secondary-hex').value.trim(),
+          enabled: next,
+        }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            ebState.enabled = next;
+            ebRenderEnabled();
+            toast(next ? 'Member emails are ON' : 'Member emails are OFF', 'success');
+          } else toast(data.error || 'Update failed', 'error');
+        })
+        .catch(function() { toast('Update failed — network error', 'error'); });
+    }
+
+    function ebUploadLogo(input) {
+      var file = input.files && input.files[0];
+      input.value = '';
+      if (!file) return;
+      if (file.size > 1024 * 1024) { toast('Logo must be 1 MB or smaller', 'error'); return; }
+      var fd = new FormData();
+      fd.append('logo', file);
+      document.getElementById('eb-logo-status').textContent = 'Uploading…';
+      apiFetch('/operator/clients/' + clientId + '/email-branding/logo', { method: 'POST', body: fd })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            ebState.logoUrl = data.logoUrl;
+            ebRenderLogo();
+            ebRefreshPreview();
+            toast('Logo uploaded', 'success');
+          } else {
+            ebRenderLogo();
+            toast(data.error || 'Upload failed', 'error');
+          }
+        })
+        .catch(function() { ebRenderLogo(); toast('Upload failed — network error', 'error'); });
+    }
+
+    function ebSendTest() {
+      apiFetch('/operator/clients/' + clientId + '/email-branding/test-send', { method: 'POST' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) toast(data.message || 'Test email sent', 'success');
+          else toast(data.error || 'Test send failed', 'error');
+        })
+        .catch(function() { toast('Test send failed — network error', 'error'); });
     }
 
     // ── Wix API key ───────────────────────────────────────────────────

@@ -367,3 +367,25 @@ Operator-portal (per-client operator scope) mutation events. All persisted-by-ov
 |---|---|---|
 | `logger.diagnostic_log_write_failed` | error | diagnostic_log INSERT failed — written to stdout only |
 | `activity.write_failed` | error | activity_event INSERT failed — written to stdout only |
+
+---
+
+## Member Email Events (DR-052, 2026-07-05)
+
+Member-facing branded email pipeline (`core/member-mailer.js` + queue-worker hooks).
+Send outcomes are auditable in `member_email_log`; these events cover the decision trail.
+
+| Event | Level | Description |
+|---|---|---|
+| `email.member.sent` | info | Branded member email handed to Resend (resendId recorded on member_email_log) |
+| `email.member.suppressed` | info | Send skipped — dedup hit or synthetic source not on the allow-list |
+| `email.member.skipped_disabled` | info | Send skipped — client's member_emails_enabled toggle is off, or no recipient address |
+| `email.member.failed` | warn | Send attempt failed (Resend error / exception) — grant/revoke job unaffected |
+
+## Email Branding Activity Events (DR-052)
+
+| Event | Level | Description |
+|---|---|---|
+| `email_branding.updated` | activity | Operator saved member-email branding (colors / enabled toggle) |
+| `email_branding.logo_uploaded` | activity | Operator uploaded a member-email logo |
+| `email_branding.test_sent` | activity | Operator sent a branded test email to the admin contact |

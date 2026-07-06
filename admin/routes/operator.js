@@ -36,6 +36,15 @@ const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
 const { getTraceId, getActor, runWith, mintTraceId } = require('../../core/trace-context');
 const { recordActivity } = require('../middleware/activity');
+// DR-052 — member-facing branded email: templates for the live preview, mailer for
+// the test-send button, multer for the logo upload (memory storage; 1 MB cap).
+const multer = require('multer');
+const emailTemplates = require('../../core/email-templates');
+const memberMailer = require('../../core/member-mailer');
+const logoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1024 * 1024, files: 1 },
+});
 
 // Global rate limiter on all operator read endpoints (500 req/min/IP)
 // Higher limit needed: plan-mapping page fires N parallel per-mapping requests on load
@@ -1072,6 +1081,208 @@ router.put('/clients/:clientId/notification-email', async (req, res) => {
     res.json({ ok: true, message: 'Notification email updated' });
   } catch (err) {
     log.error('operator.notification.update_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// DR-052 — Member email branding ("Set up logo" card, locations.ejs)
+// Exactly three branding inputs (logo + primary + secondary color) on a white
+// body; clients.notification_email doubles as the member-facing admin contact.
+// member_emails_enabled is the ship-dark toggle (default false).
+// ═══════════════════════════════════════════════════════════════
+
+// ── GET /operator/clients/:clientId/email-branding ─────────────
+router.get('/clients/:clientId/email-branding', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const result = await db.query(
+      `SELECT email_logo_url, email_primary_color, email_secondary_color, member_emails_enabled
+       FROM clients WHERE id = $1`,
+      [clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const r = result.rows[0];
+    res.json({
+      logoUrl:        r.email_logo_url || null,
+      primaryColor:   r.email_primary_color || null,
+      secondaryColor: r.email_secondary_color || null,
+      enabled:        !!r.member_emails_enabled,
+    });
+  } catch (err) {
+    log.error('operator.email_branding.get_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── PUT /operator/clients/:clientId/email-branding ─────────────
+// Colors are #rrggbb or null (clear). enabled flips the ship-dark toggle.
+router.put('/clients/:clientId/email-branding', async (req, res) => {
+  const { clientId } = req.params;
+  const { primaryColor, secondaryColor, enabled } = req.body || {};
+  for (const [label, val] of [['primaryColor', primaryColor], ['secondaryColor', secondaryColor]]) {
+    if (val !== null && val !== undefined && !emailTemplates.isValidHexColor(val)) {
+      return res.status(400).json({ error: label + ' must be a #rrggbb hex color' });
+    }
+  }
+  if (enabled !== undefined && typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled must be a boolean' });
+  }
+  try {
+    const result = await db.query(
+      `UPDATE clients
+       SET email_primary_color   = $1,
+           email_secondary_color = $2,
+           member_emails_enabled = COALESCE($3, member_emails_enabled),
+           updated_at = NOW()
+       WHERE id = $4
+       RETURNING id`,
+      [primaryColor || null, secondaryColor || null, enabled === undefined ? null : enabled, clientId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    log.info('operator.email_branding.updated', { clientId, enabled });
+    recordActivity(req, 'email_branding.updated', { clientId });
+    res.json({ ok: true, message: 'Email branding saved' });
+  } catch (err) {
+    log.error('operator.email_branding.update_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /operator/clients/:clientId/email-branding/logo ───────
+// First upload infrastructure in the app (Builder ruling 2026-07-05): multer memory
+// → Supabase Storage public bucket 'email-assets' via plain REST (no supabase-js dep).
+// Fixed path {clientId}/logo.{ext} with x-upsert (self-cleaning on replace); the
+// stored URL carries ?v={ts} so email clients / previews don't serve a stale image.
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://gklgwyrnkedebyulrclv.supabase.co';
+// Multer errors (e.g. LIMIT_FILE_SIZE) fire in the middleware chain BEFORE the route
+// body — without this wrapper they fall through to Express's default 500 handler.
+function logoUploadMiddleware(req, res, next) {
+  logoUpload.single('logo')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'Logo must be 1 MB or smaller' });
+      log.warn('operator.email_branding.logo_multer_error', { code: err.code }, err);
+      return res.status(400).json({ error: 'Upload failed — check the file and try again' });
+    }
+    next();
+  });
+}
+router.post('/clients/:clientId/email-branding/logo', logoUploadMiddleware, async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      log.warn('operator.email_branding.logo_no_service_key', { clientId });
+      return res.status(503).json({ error: 'Logo storage is not configured yet (SUPABASE_SERVICE_ROLE_KEY missing). Ask your AccessSync admin.' });
+    }
+    const file = req.file;
+    if (!file || !file.buffer || !file.buffer.length) {
+      return res.status(400).json({ error: 'No file uploaded (field name: logo)' });
+    }
+    const MIME_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg' };
+    const ext = MIME_EXT[file.mimetype];
+    if (!ext) return res.status(400).json({ error: 'Logo must be a PNG or JPEG image' });
+
+    // Confirm the client exists before writing to storage.
+    const clientCheck = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!clientCheck.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    const objectPath = `${clientId}/logo.${ext}`;
+    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/email-assets/${objectPath}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': file.mimetype,
+        'x-upsert': 'true',
+      },
+      body: file.buffer,
+    });
+    if (!uploadRes.ok) {
+      const detail = await uploadRes.text().catch(() => '');
+      log.error('operator.email_branding.logo_upload_failed', { clientId, status: uploadRes.status, detail: detail.slice(0, 200) });
+      return res.status(502).json({ error: 'Logo storage upload failed' });
+    }
+
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/email-assets/${objectPath}?v=${Date.now()}`;
+    await db.query(
+      `UPDATE clients SET email_logo_url = $1, updated_at = NOW() WHERE id = $2`,
+      [publicUrl, clientId]
+    );
+    log.info('operator.email_branding.logo_uploaded', { clientId });
+    recordActivity(req, 'email_branding.logo_uploaded', { clientId });
+    res.json({ ok: true, logoUrl: publicUrl });
+  } catch (err) {
+    // Multer size-limit errors surface here too.
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'Logo must be 1 MB or smaller' });
+    }
+    log.error('operator.email_branding.logo_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /operator/clients/:clientId/email-branding/preview ─────
+// Renders the REAL access-ready template with sample data — what the operator sees
+// in the preview iframe is byte-for-byte what members receive. Query params override
+// saved values so the preview tracks unsaved edits live.
+router.get('/clients/:clientId/email-branding/preview', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const result = await db.query(
+      `SELECT name, notification_email, email_logo_url, email_primary_color, email_secondary_color
+       FROM clients WHERE id = $1`,
+      [clientId]
+    );
+    if (!result.rows.length) return res.status(404).send('Client not found');
+    const row = Object.assign({}, result.rows[0]);
+    if (emailTemplates.isValidHexColor(req.query.primary))   row.email_primary_color   = req.query.primary;
+    if (emailTemplates.isValidHexColor(req.query.secondary)) row.email_secondary_color = req.query.secondary;
+    if (typeof req.query.logo === 'string' && /^https:\/\//.test(req.query.logo)) row.email_logo_url = req.query.logo;
+
+    const branding = emailTemplates.brandingFromClientRow(row);
+    const { html } = emailTemplates.renderAccessReady({
+      branding,
+      member: { firstName: 'Jane' },
+      plans: [{ planName: 'Monthly Membership', doorName: 'Front Door' }],
+    });
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('Cache-Control', 'no-store');
+    res.send(html);
+  } catch (err) {
+    log.error('operator.email_branding.preview_failed', { clientId }, err);
+    res.status(500).send('Preview failed');
+  }
+});
+
+// ── POST /operator/clients/:clientId/email-branding/test-send ──
+// Sends the sample access-ready email through the REAL mailer + Resend to the
+// client's admin contact ONLY (never an arbitrary address — no spam vector).
+// Bypasses the ship-dark toggle: a test send is the operator explicitly asking.
+router.post('/clients/:clientId/email-branding/test-send', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    const result = await db.query('SELECT notification_email FROM clients WHERE id = $1', [clientId]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const to = result.rows[0].notification_email;
+    if (!to) return res.status(400).json({ error: 'Set a notification email first — the test sends to your admin contact.' });
+
+    const sendResult = await memberMailer.sendMemberEmail({
+      clientId,
+      memberMasterId: null,
+      emailType: 'test',
+      dedupKey: `test:${Date.now()}`,
+      recipient: to,
+      bypassEnabledGate: true,
+      render: emailTemplates.renderAccessReady,
+      renderArgs: { member: { firstName: 'Jane' }, plans: [{ planName: 'Monthly Membership', doorName: 'Front Door' }] },
+    });
+    if (!sendResult.sent) {
+      return res.status(502).json({ error: 'Test send failed (' + (sendResult.reason || 'unknown') + ')' });
+    }
+    log.info('operator.email_branding.test_sent', { clientId });
+    recordActivity(req, 'email_branding.test_sent', { clientId });
+    res.json({ ok: true, message: 'Test email sent to ' + to });
+  } catch (err) {
+    log.error('operator.email_branding.test_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

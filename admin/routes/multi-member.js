@@ -538,6 +538,9 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
         sourcePlatform:   'wix',
         planId:           member.source_plan_id || null,
         synthetic:        true,
+        // DR-052: on the member-email allow-list — a holder removing a sub-member IS a
+        // real "your access ended" moment for that sub-member.
+        syntheticSource:  'multi-member.remove_sub',
         traceId:          mintTraceId(),
       };
       recordSyntheticOrigin(syntheticEvent.traceId, {
@@ -627,6 +630,8 @@ router.post('/api/multi-member/submit', async (req, res) => {
         email:            draft.email,
         name:             `${draft.first_name} ${draft.last_name}`,
         synthetic:        true,
+        // DR-052: allow-listed — drives the M3 sub-member invite email on grant completion.
+        syntheticSource:  'multi-member.submit',
         traceId:          mintTraceId(),
       };
       recordSyntheticOrigin(syntheticEvent.traceId, {
@@ -729,6 +734,8 @@ router.post('/api/multi-member/holder-claim-slot', async (req, res) => {
       email:            holder.email,
       name:             `${holder.first_name || ''} ${holder.last_name || ''}`.trim(),
       synthetic:        true,
+      // DR-052: allow-listed — a holder claiming their seat gets the access-ready email.
+      syntheticSource:  'multi-member.holder_claim',
       traceId:          mintTraceId(),
     };
     recordSyntheticOrigin(syntheticEvent.traceId, {
@@ -807,6 +814,9 @@ router.post('/api/multi-member/holder-release-slot', async (req, res) => {
       sourcePlatform:   'wix',
       planId:           assignmentResult.rows[0].source_plan_id || null,
       synthetic:        true,
+      // DR-052: NOT on the member-email allow-list — the holder clicked "Leave this plan"
+      // themselves; an "your access has been removed" email would read as an alarm.
+      syntheticSource:  'multi-member.holder_release',
       traceId:          mintTraceId(),
     };
     recordSyntheticOrigin(syntheticEvent.traceId, {
