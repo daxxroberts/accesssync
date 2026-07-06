@@ -58,11 +58,18 @@ describe('OB-244: member_access.status CHECK constraint covers all DR-044 + OB-2
       path.join(__dirname, '../../admin/routes/multi-member.js'),
       'utf8'
     );
+    const standardAdapterSrc = fs.readFileSync(
+      path.join(__dirname, '../../adapters/standard-adapter.js'),
+      'utf8'
+    );
 
-    test("DELETE /api/multi-member/members/:subId still writes status='removing' (DR-044 entry)", () => {
-      // If someone refactors this string away, the constraint is no longer load-bearing
+    test("DELETE /api/multi-member/members/:subId still writes status='removing' via L3 (DR-044 entry, DR-023)", () => {
+      // If someone refactors this write away, the constraint is no longer load-bearing
       // for this path — but we want to know immediately so we can re-evaluate.
-      expect(deleteHandler).toMatch(/UPDATE member_access SET status = 'removing'/);
+      // The UPDATE itself lives in standard-adapter (L3 owns member_access writes);
+      // the route calls the primitive.
+      expect(standardAdapterSrc).toMatch(/UPDATE member_access SET status = 'removing'/);
+      expect(deleteHandler).toMatch(/standardAdapter\.markSubMemberRemoving\(subId\)/);
     });
   });
 });

@@ -25,6 +25,7 @@ const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
 const { log } = require('../../core/logger');
 const { mintTraceId } = require('../../core/trace-context');
+const standardAdapter = require('../../adapters/standard-adapter');
 
 /**
  * Write the origin record for a synthetic grant/revoke job fired from the Member Hub.
@@ -516,11 +517,9 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
 
     // Submitted/active path
     if (member.hardware_user_id) {
-      // Has hardware — mark removing and enqueue revoke job
-      await db.query(
-        `UPDATE member_access SET status = 'removing', updated_at = NOW() WHERE id = $1`,
-        [subId]
-      );
+      // Has hardware — mark removing and enqueue revoke job.
+      // DR-023: member_access write routed through L3.
+      await standardAdapter.markSubMemberRemoving(subId);
       // OB-150 fix: planId populated from pm.source_plan_id JOIN above.
       // Without planId, processRevoke skips the targeted source-row DELETE,
       // remainingCount stays > 0, removeRole is suppressed, Kisi role stays orphaned.

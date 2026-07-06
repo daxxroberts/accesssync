@@ -46,12 +46,15 @@ describe("OB-244 follow-up: revoke resolve query includes 'removing' status", ()
     );
 
     test("multi-member DELETE handler writes status='removing' before queueing revoke", () => {
-      const updateIdx = deleteHandler.search(/UPDATE member_access SET status = 'removing'/);
+      // DR-023: the UPDATE itself lives in standard-adapter (markSubMemberRemoving);
+      // the handler awaits the primitive. The ordering invariant is unchanged:
+      // the write must land BEFORE the queue add, otherwise a race could let the
+      // worker see 'active' status and the lock semantics break.
+      expect(adapterSrc).toMatch(/UPDATE member_access SET status = 'removing'/);
+      const updateIdx = deleteHandler.search(/await standardAdapter\.markSubMemberRemoving\(subId\)/);
       const queueAddIdx = deleteHandler.search(/eventQueue\.add\('revoke'/);
       expect(updateIdx).toBeGreaterThan(-1);
       expect(queueAddIdx).toBeGreaterThan(-1);
-      // UPDATE must come BEFORE the queue add, otherwise a race could let the
-      // worker see 'active' status and the lock semantics break.
       expect(updateIdx).toBeLessThan(queueAddIdx);
     });
   });

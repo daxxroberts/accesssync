@@ -634,6 +634,20 @@ class StandardAdapter {
    * @param {string|null} [opts.hardwarePlatform]  only read when stampProvisioned
    */
   /**
+   * DR-023 / DR-044: sub-member removal entry state. 'removing' is the
+   * DR-044 state-machine entry written before the revoke job is queued;
+   * OB-248 finalizeRevoke later flips 'removing' → 'deleted'.
+   *
+   * @param {string} memberId  member_access.id (sub-member access row)
+   */
+  async markSubMemberRemoving(memberId) {
+    await db.query(
+      `UPDATE member_access SET status = 'removing', updated_at = NOW() WHERE id = $1`,
+      [memberId]
+    );
+  }
+
+  /**
    * DR-023 / OB-185 Pass 1: status rollup for one platform member, resolved
    * via member_master join — reconciliation does not hold access_id at the
    * point it calls this. Same rollup rule as rollupAccessStatus(); the join
