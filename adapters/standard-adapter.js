@@ -1058,6 +1058,20 @@ class StandardAdapter {
   }
 
   /**
+   * DR-023 / OB-216: operator manual unlock — flips one stuck access row to
+   * 'recovery_pending'. Row-level sibling of releaseStaleLocks(). Caller is
+   * responsible for verifying current status ('in_flight') and client scope.
+   *
+   * @param {string} memberId  member_access.id
+   */
+  async markRecoveryPending(memberId) {
+    await db.query(
+      `UPDATE member_access SET status = 'recovery_pending', updated_at = NOW() WHERE id = $1`,
+      [memberId]
+    );
+  }
+
+  /**
    * Parks a member whose Kisi user has been created but group assignment is deferred
    * because the plan's startDate is in the future.
    *

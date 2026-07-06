@@ -29,6 +29,7 @@ const wixPlansApi = require('../../adapters/wix/wix-plans-api');
 const { requireAuth, requireAuthOrOperator, signOperatorToken } = require('../middleware/auth');
 const hardwareAdapter = require('../../adapters/hardware-adapter');
 const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
+const standardAdapter = require('../../adapters/standard-adapter');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
@@ -2955,10 +2956,7 @@ router.post('/:clientId/members/:memberId/unlock', async (req, res) => {
     if (scope.rows[0].status !== 'in_flight') {
       return res.status(400).json({ error: `Member is not in_flight (current status: ${scope.rows[0].status})` });
     }
-    await db.query(
-      `UPDATE member_access SET status = 'recovery_pending', updated_at = NOW() WHERE id = $1`,
-      [memberId]
-    );
+    await standardAdapter.markRecoveryPending(memberId);
     log.info('operator.member.unlock', { clientId, memberId, previousStatus: 'in_flight', newStatus: 'recovery_pending' });
     res.json({ ok: true, status: 'recovery_pending' });
   } catch (err) {
