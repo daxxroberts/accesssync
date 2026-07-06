@@ -515,17 +515,9 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
     // S-11: a draft sub-member has source_status='draft' and no hardware call has fired.
     // Hard delete is safe — no Kisi role assignment to clean up.
     if (member.source_status === 'draft') {
-      // Hard delete source rows + access + member_master
-      // DR-023 TODO: these hard-DELETEs touch L3-owned tables directly. Left in
-      // place during the 2026-07-06 boundary refactor (out of scope); candidate
-      // L3 primitive for the whole-repo sweep.
-      await db.query('DELETE FROM member_access_sources WHERE access_id = $1', [subId]);
-      await db.query('DELETE FROM member_access WHERE id = $1', [subId]);
-      await db.query(
-        `DELETE FROM member_master WHERE id = $1
-         AND NOT EXISTS (SELECT 1 FROM member_access WHERE member_master_id = $1)`,
-        [member.member_master_id]
-      );
+      // Hard delete source rows + access + member_master.
+      // DR-023: routed through L3.
+      await standardAdapter.hardDeleteSubMember(subId, member.member_master_id, { includeSources: true });
       log.info('admin.sub_member_deleted', { subId, sourceStatus: 'draft' });
       return res.json({ ok: true, message: 'Draft member removed' });
     }
@@ -557,15 +549,9 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
       await eventQueue.add('revoke', { tenantId: member.client_id, standardEvent: syntheticEvent }, { jobId });
       log.info('admin.sub_member_revoke_queued', { platformMemberId: member.platform_member_id, jobId, subId });
     } else {
-      // Never provisioned to hardware — safe to delete immediately
-      // DR-023 TODO: direct DELETE on L3-owned table — see note on the draft
-      // hard-delete path above; candidate L3 primitive for the whole-repo sweep.
-      await db.query('DELETE FROM member_access WHERE id = $1', [subId]);
-      await db.query(
-        `DELETE FROM member_master WHERE id = $1
-         AND NOT EXISTS (SELECT 1 FROM member_access WHERE member_master_id = $1)`,
-        [member.member_master_id]
-      );
+      // Never provisioned to hardware — safe to delete immediately.
+      // DR-023: routed through L3.
+      await standardAdapter.hardDeleteSubMember(subId, member.member_master_id);
     }
 
     log.info('admin.sub_member_removed', { status: member.status, subId, hadHardwareUser: !!member.hardware_user_id });

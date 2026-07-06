@@ -713,6 +713,32 @@ class StandardAdapter {
   }
 
   /**
+   * DR-023 / DR-044: hard delete of a sub-member that never reached hardware —
+   * the two pre-provisioning exits of the DR-044 state machine:
+   *   draft            → includeSources: true  (explicit 'draft' source rows to clean)
+   *   never-provisioned → includeSources: false (no explicit source cleanup —
+   *                       pre-refactor behavior preserved verbatim)
+   * The member_master DELETE is guarded: only removed when no other
+   * member_access row still references it.
+   *
+   * @param {string} memberId        member_access.id (sub-member access row)
+   * @param {string} memberMasterId  member_master.id (the sub's PII anchor)
+   * @param {Object} [opts]
+   * @param {boolean} [opts.includeSources]  also DELETE the member_access_sources rows first
+   */
+  async hardDeleteSubMember(memberId, memberMasterId, { includeSources = false } = {}) {
+    if (includeSources) {
+      await db.query('DELETE FROM member_access_sources WHERE access_id = $1', [memberId]);
+    }
+    await db.query('DELETE FROM member_access WHERE id = $1', [memberId]);
+    await db.query(
+      `DELETE FROM member_master WHERE id = $1
+       AND NOT EXISTS (SELECT 1 FROM member_access WHERE member_master_id = $1)`,
+      [memberMasterId]
+    );
+  }
+
+  /**
    * DR-023 / DR-044: sub-member removal entry state. 'removing' is the
    * DR-044 state-machine entry written before the revoke job is queued;
    * OB-248 finalizeRevoke later flips 'removing' → 'deleted'.
