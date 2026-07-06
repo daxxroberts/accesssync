@@ -474,12 +474,9 @@ class NightlyReconciliation {
               }
             }
           } else {
-            // FIRST observation — record timestamp only, no destructive action
-            await db.query(
-              `UPDATE member_access SET kisi_user_disappeared_observed_at = NOW()
-               WHERE id = $1`,
-              [row.access_id]
-            );
+            // FIRST observation — record timestamp only, no destructive action.
+            // DR-023: member_access write routed through L3.
+            await standardAdapter.markKisiUserObservation(row.access_id, true);
             pass3DisappearedFirstSighting++;
             log.info('reconciliation.kisi_user_disappeared_first_sighting', {
               clientId:         client.id,
@@ -493,11 +490,8 @@ class NightlyReconciliation {
           // User exists in Kisi.
           // (a) Clear any prior disappear marker — recovery path
           if (row.kisi_user_disappeared_observed_at) {
-            await db.query(
-              `UPDATE member_access SET kisi_user_disappeared_observed_at = NULL
-               WHERE id = $1`,
-              [row.access_id]
-            );
+            // DR-023: member_access write routed through L3.
+            await standardAdapter.markKisiUserObservation(row.access_id, false);
             pass3UserRecovered++;
             log.info('reconciliation.kisi_user_recovered', {
               clientId:         client.id,

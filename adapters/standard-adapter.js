@@ -1072,6 +1072,32 @@ class StandardAdapter {
   }
 
   /**
+   * DR-023 / OB-249: Pass 3 observational marker. Sets or clears
+   * member_access.kisi_user_disappeared_observed_at (two-strike drift
+   * detection). Deliberately does NOT touch updated_at — updated_at feeds
+   * the stale-lock threshold, and an observation is not a state change.
+   *
+   * @param {string}  memberId    member_access.id
+   * @param {boolean} disappeared true → stamp NOW() (first strike);
+   *                              false → clear to NULL (recovery)
+   */
+  async markKisiUserObservation(memberId, disappeared) {
+    if (disappeared) {
+      await db.query(
+        `UPDATE member_access SET kisi_user_disappeared_observed_at = NOW()
+         WHERE id = $1`,
+        [memberId]
+      );
+    } else {
+      await db.query(
+        `UPDATE member_access SET kisi_user_disappeared_observed_at = NULL
+         WHERE id = $1`,
+        [memberId]
+      );
+    }
+  }
+
+  /**
    * Parks a member whose Kisi user has been created but group assignment is deferred
    * because the plan's startDate is in the future.
    *

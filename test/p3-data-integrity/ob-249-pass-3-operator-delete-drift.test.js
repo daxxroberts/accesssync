@@ -37,6 +37,10 @@ describe('OB-249: Pass 3 operator-deleted-Kisi-user drift detection', () => {
     path.join(__dirname, '../../adapters/hardware-adapter.js'),
     'utf8'
   );
+  const standardAdapterSrc = fs.readFileSync(
+    path.join(__dirname, '../../adapters/standard-adapter.js'),
+    'utf8'
+  );
 
   describe('migration', () => {
     const migration = fs.readFileSync(
@@ -105,8 +109,11 @@ describe('OB-249: Pass 3 operator-deleted-Kisi-user drift detection', () => {
   });
 
   describe('two-strike requirement (SAGE condition)', () => {
-    test('first sighting writes kisi_user_disappeared_observed_at = NOW()', () => {
-      expect(reconcileSrc).toMatch(/UPDATE member_access SET kisi_user_disappeared_observed_at = NOW\(\)/);
+    test('first sighting writes kisi_user_disappeared_observed_at = NOW() via L3 (DR-023)', () => {
+      // The UPDATE itself lives in standard-adapter (L3 owns member_access writes);
+      // reconciliation calls the primitive.
+      expect(standardAdapterSrc).toMatch(/UPDATE member_access SET kisi_user_disappeared_observed_at = NOW\(\)/);
+      expect(reconcileSrc).toMatch(/standardAdapter\.markKisiUserObservation\(row\.access_id, true\)/);
       expect(reconcileSrc).toMatch(/reconciliation\.kisi_user_disappeared_first_sighting/);
     });
 
@@ -124,8 +131,9 @@ describe('OB-249: Pass 3 operator-deleted-Kisi-user drift detection', () => {
       expect(slice).toMatch(/planId:\s+src\.source_plan_id/);
     });
 
-    test('recovery path — user back in Kisi clears the marker', () => {
-      expect(reconcileSrc).toMatch(/UPDATE member_access SET kisi_user_disappeared_observed_at = NULL/);
+    test('recovery path — user back in Kisi clears the marker via L3 (DR-023)', () => {
+      expect(standardAdapterSrc).toMatch(/UPDATE member_access SET kisi_user_disappeared_observed_at = NULL/);
+      expect(reconcileSrc).toMatch(/standardAdapter\.markKisiUserObservation\(row\.access_id, false\)/);
       expect(reconcileSrc).toMatch(/reconciliation\.kisi_user_recovered/);
     });
   });
