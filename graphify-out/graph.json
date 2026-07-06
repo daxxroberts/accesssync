@@ -9,7 +9,7 @@
       "source_file": "e2e\\helpers\\db.js",
       "source_location": "L1",
       "id": "db",
-      "community": 20
+      "community": 21
     },
     {
       "label": "getLog()",
@@ -17,7 +17,7 @@
       "source_file": "db.js",
       "source_location": "L21",
       "id": "db_getlog",
-      "community": 20
+      "community": 21
     },
     {
       "label": "query()",
@@ -25,7 +25,7 @@
       "source_file": "e2e\\helpers\\db.js",
       "source_location": "L29",
       "id": "db_query",
-      "community": 20
+      "community": 21
     },
     {
       "label": "getClient()",
@@ -33,7 +33,7 @@
       "source_file": "e2e\\helpers\\db.js",
       "source_location": "L43",
       "id": "db_getclient",
-      "community": 20
+      "community": 21
     },
     {
       "label": "healthCheck()",
@@ -41,7 +41,7 @@
       "source_file": "db.js",
       "source_location": "L121",
       "id": "db_healthcheck",
-      "community": 20
+      "community": 21
     },
     {
       "label": "jest.config.js",
@@ -49,7 +49,7 @@
       "source_file": "jest.config.js",
       "source_location": "L1",
       "id": "jest_config",
-      "community": 130
+      "community": 132
     },
     {
       "label": "playwright.config.js",
@@ -57,7 +57,7 @@
       "source_file": "playwright.config.js",
       "source_location": "L1",
       "id": "playwright_config",
-      "community": 131
+      "community": 133
     },
     {
       "label": "seed.js",
@@ -65,7 +65,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L1",
       "id": "seed",
-      "community": 7
+      "community": 11
     },
     {
       "label": "seed()",
@@ -73,7 +73,7 @@
       "source_file": "seed.js",
       "source_location": "L112",
       "id": "seed_seed",
-      "community": 7
+      "community": 11
     },
     {
       "label": "server.js",
@@ -89,7 +89,7 @@
       "source_file": "simulate.js",
       "source_location": "L1",
       "id": "simulate",
-      "community": 99
+      "community": 101
     },
     {
       "label": "runSimulation()",
@@ -97,7 +97,7 @@
       "source_file": "simulate.js",
       "source_location": "L35",
       "id": "simulate_runsimulation",
-      "community": 99
+      "community": 101
     },
     {
       "label": "hardware-adapter.js",
@@ -257,7 +257,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L1",
       "id": "standard_adapter",
-      "community": 1
+      "community": 0
     },
     {
       "label": "StandardAdapter",
@@ -265,7 +265,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L20",
       "id": "standard_adapter_standardadapter",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".resolveAndLock()",
@@ -273,7 +273,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L45",
       "id": "standard_adapter_standardadapter_resolveandlock",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".resolveIdentity()",
@@ -281,7 +281,7 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L242",
       "id": "standard_adapter_standardadapter_resolveidentity",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".completeGrant()",
@@ -289,151 +289,199 @@
       "source_file": "adapters\\standard-adapter.js",
       "source_location": "L363",
       "id": "standard_adapter_standardadapter_completegrant",
-      "community": 1
+      "community": 0
+    },
+    {
+      "label": "._resolveMasterForGrant()",
+      "file_type": "code",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L438",
+      "id": "standard_adapter_standardadapter_resolvemasterforgrant",
+      "community": 0
+    },
+    {
+      "label": "._writeBillingCycle()",
+      "file_type": "code",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L510",
+      "id": "standard_adapter_standardadapter_writebillingcycle",
+      "community": 0
+    },
+    {
+      "label": "._resolveHolderSeated()",
+      "file_type": "code",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L625",
+      "id": "standard_adapter_standardadapter_resolveholderseated",
+      "community": 0
+    },
+    {
+      "label": "._upsertSourceRow()",
+      "file_type": "code",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L644",
+      "id": "standard_adapter_standardadapter_upsertsourcerow",
+      "community": 0
     },
     {
       "label": ".createSubMemberDraft()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L666",
+      "source_location": "L719",
       "id": "standard_adapter_standardadapter_createsubmemberdraft",
-      "community": 1
+      "community": 0
+    },
+    {
+      "label": ".updateSubMemberDraftPII()",
+      "file_type": "code",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L777",
+      "id": "standard_adapter_standardadapter_updatesubmemberdraftpii",
+      "community": 0
+    },
+    {
+      "label": ".hardDeleteSubMember()",
+      "file_type": "code",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L802",
+      "id": "standard_adapter_standardadapter_harddeletesubmember",
+      "community": 0
     },
     {
       "label": ".markSubMemberRemoving()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L722",
+      "source_location": "L821",
       "id": "standard_adapter_standardadapter_marksubmemberremoving",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".rollupAccessStatusByPlatformMember()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L738",
+      "source_location": "L837",
       "id": "standard_adapter_standardadapter_rollupaccessstatusbyplatformmember",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".rollupAccessStatus()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L757",
+      "source_location": "L856",
       "id": "standard_adapter_standardadapter_rollupaccessstatus",
-      "community": 1
+      "community": 0
     },
     {
       "label": "._maybeFireFirstGrantEmail()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L797",
+      "source_location": "L896",
       "id": "standard_adapter_standardadapter_maybefirefirstgrantemail",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".completeRevoke()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L873",
+      "source_location": "L972",
       "id": "standard_adapter_standardadapter_completerevoke",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".finalizeRevoke()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L976",
+      "source_location": "L1075",
       "id": "standard_adapter_standardadapter_finalizerevoke",
-      "community": 1
+      "community": 0
     },
     {
       "label": "._alertOperatorFinalizeRefused()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1105",
+      "source_location": "L1204",
       "id": "standard_adapter_standardadapter_alertoperatorfinalizerefused",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".releaseLock()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1149",
+      "source_location": "L1248",
       "id": "standard_adapter_standardadapter_releaselock",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".releaseStaleLocks()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1200",
+      "source_location": "L1299",
       "id": "standard_adapter_standardadapter_releasestalelocks",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".markRecoveryPending()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1217",
+      "source_location": "L1316",
       "id": "standard_adapter_standardadapter_markrecoverypending",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".markKisiUserObservation()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1234",
+      "source_location": "L1333",
       "id": "standard_adapter_standardadapter_markkisiuserobservation",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".parkPendingStart()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1266",
+      "source_location": "L1365",
       "id": "standard_adapter_standardadapter_parkpendingstart",
-      "community": 1
+      "community": 0
     },
     {
       "label": ".parkPendingHardware()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1329",
+      "source_location": "L1428",
       "id": "standard_adapter_standardadapter_parkpendinghardware",
-      "community": 1
+      "community": 0
     },
     {
       "label": "._incrementActivity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1374",
+      "source_location": "L1473",
       "id": "standard_adapter_standardadapter_incrementactivity",
-      "community": 1
+      "community": 0
     },
     {
       "label": "._callHardwareToResolveIdentity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1393",
+      "source_location": "L1492",
       "id": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
-      "community": 1
+      "community": 0
     },
     {
       "label": "._recoverMissingEmail()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1433",
+      "source_location": "L1532",
       "id": "standard_adapter_standardadapter_recovermissingemail",
-      "community": 1
+      "community": 0
     },
     {
       "label": "._parkPendingIdentity()",
       "file_type": "code",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1536",
+      "source_location": "L1635",
       "id": "standard_adapter_standardadapter_parkpendingidentity",
-      "community": 1
+      "community": 0
     },
     {
       "label": "wix-adapter.js",
@@ -985,7 +1033,7 @@
       "source_file": "admin\\middleware\\activity.js",
       "source_location": "L1",
       "id": "activity",
-      "community": 67
+      "community": 68
     },
     {
       "label": "getDb()",
@@ -993,7 +1041,7 @@
       "source_file": "admin\\middleware\\activity.js",
       "source_location": "L33",
       "id": "activity_getdb",
-      "community": 67
+      "community": 68
     },
     {
       "label": "recordActivity()",
@@ -1001,7 +1049,7 @@
       "source_file": "admin\\middleware\\activity.js",
       "source_location": "L52",
       "id": "activity_recordactivity",
-      "community": 67
+      "community": 68
     },
     {
       "label": "audit.js",
@@ -1009,7 +1057,7 @@
       "source_file": "admin\\middleware\\audit.js",
       "source_location": "L1",
       "id": "audit",
-      "community": 100
+      "community": 102
     },
     {
       "label": "logAdminAction()",
@@ -1017,7 +1065,7 @@
       "source_file": "admin\\middleware\\audit.js",
       "source_location": "L20",
       "id": "audit_logadminaction",
-      "community": 100
+      "community": 102
     },
     {
       "label": "auth.js",
@@ -1025,7 +1073,7 @@
       "source_file": "e2e\\helpers\\auth.js",
       "source_location": "L1",
       "id": "auth",
-      "community": 11
+      "community": 7
     },
     {
       "label": "requireAuth()",
@@ -1033,7 +1081,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L21",
       "id": "auth_requireauth",
-      "community": 11
+      "community": 7
     },
     {
       "label": "signToken()",
@@ -1041,7 +1089,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L37",
       "id": "auth_signtoken",
-      "community": 11
+      "community": 7
     },
     {
       "label": "signOperatorToken()",
@@ -1049,7 +1097,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L45",
       "id": "auth_signoperatortoken",
-      "community": 11
+      "community": 7
     },
     {
       "label": "requireAuthPage()",
@@ -1057,7 +1105,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L53",
       "id": "auth_requireauthpage",
-      "community": 11
+      "community": 7
     },
     {
       "label": "requireAuthOrOperator()",
@@ -1065,7 +1113,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L70",
       "id": "auth_requireauthoroperator",
-      "community": 11
+      "community": 7
     },
     {
       "label": "requireAuthPageOrOperator()",
@@ -1073,7 +1121,7 @@
       "source_file": "admin\\middleware\\auth.js",
       "source_location": "L92",
       "id": "auth_requireauthpageoroperator",
-      "community": 11
+      "community": 7
     },
     {
       "label": "trace-context.js",
@@ -1145,7 +1193,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L1",
       "id": "app",
-      "community": 0
+      "community": 1
     },
     {
       "label": "apiFetch()",
@@ -1153,7 +1201,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L45",
       "id": "app_apifetch",
-      "community": 0
+      "community": 1
     },
     {
       "label": "fmt()",
@@ -1161,7 +1209,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L55",
       "id": "app_fmt",
-      "community": 0
+      "community": 1
     },
     {
       "label": "pill()",
@@ -1169,7 +1217,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L64",
       "id": "app_pill",
-      "community": 0
+      "community": 1
     },
     {
       "label": "esc()",
@@ -1177,7 +1225,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L77",
       "id": "app_esc",
-      "community": 0
+      "community": 1
     },
     {
       "label": "toast()",
@@ -1185,7 +1233,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L87",
       "id": "app_toast",
-      "community": 0
+      "community": 1
     },
     {
       "label": "showModal()",
@@ -1193,7 +1241,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L101",
       "id": "app_showmodal",
-      "community": 0
+      "community": 1
     },
     {
       "label": "openDrawer()",
@@ -1201,7 +1249,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L127",
       "id": "app_opendrawer",
-      "community": 0
+      "community": 1
     },
     {
       "label": "closeDrawer()",
@@ -1209,7 +1257,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L134",
       "id": "app_closedrawer",
-      "community": 0
+      "community": 1
     },
     {
       "label": "showLogin()",
@@ -1217,7 +1265,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L143",
       "id": "app_showlogin",
-      "community": 0
+      "community": 1
     },
     {
       "label": "showDashboard()",
@@ -1225,7 +1273,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L149",
       "id": "app_showdashboard",
-      "community": 0
+      "community": 1
     },
     {
       "label": "initGoogleSignIn()",
@@ -1233,7 +1281,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L157",
       "id": "app_initgooglesignin",
-      "community": 0
+      "community": 1
     },
     {
       "label": "showGoogleFallbackButton()",
@@ -1241,7 +1289,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L184",
       "id": "app_showgooglefallbackbutton",
-      "community": 0
+      "community": 1
     },
     {
       "label": "showLoginError()",
@@ -1249,7 +1297,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L204",
       "id": "app_showloginerror",
-      "community": 0
+      "community": 1
     },
     {
       "label": "hideLoginError()",
@@ -1257,7 +1305,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L210",
       "id": "app_hideloginerror",
-      "community": 0
+      "community": 1
     },
     {
       "label": "submitPin()",
@@ -1265,7 +1313,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L215",
       "id": "app_submitpin",
-      "community": 0
+      "community": 1
     },
     {
       "label": "switchPanel()",
@@ -1273,7 +1321,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L258",
       "id": "app_switchpanel",
-      "community": 0
+      "community": 1
     },
     {
       "label": "initDashboard()",
@@ -1281,7 +1329,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L275",
       "id": "app_initdashboard",
-      "community": 0
+      "community": 1
     },
     {
       "label": "loadErrors()",
@@ -1289,7 +1337,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L295",
       "id": "app_loaderrors",
-      "community": 0
+      "community": 1
     },
     {
       "label": "updateNavBadge()",
@@ -1297,7 +1345,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L299",
       "id": "app_updatenavbadge",
-      "community": 0
+      "community": 1
     },
     {
       "label": "startWebhookPolling()",
@@ -1305,7 +1353,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L317",
       "id": "app_startwebhookpolling",
-      "community": 0
+      "community": 1
     },
     {
       "label": "startQueuePolling()",
@@ -1313,7 +1361,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L325",
       "id": "app_startqueuepolling",
-      "community": 0
+      "community": 1
     },
     {
       "label": "loadClients()",
@@ -1321,7 +1369,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L333",
       "id": "app_loadclients",
-      "community": 0
+      "community": 1
     },
     {
       "label": "initMemberSync()",
@@ -1329,7 +1377,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L341",
       "id": "app_initmembersync",
-      "community": 0
+      "community": 1
     },
     {
       "label": "stopPolling()",
@@ -1337,7 +1385,7 @@
       "source_file": "admin\\public\\app.js",
       "source_location": "L346",
       "id": "app_stoppolling",
-      "community": 0
+      "community": 1
     },
     {
       "label": "humanize.js",
@@ -1673,7 +1721,7 @@
       "source_file": "admin\\public\\members-app.jsx",
       "source_location": "L1",
       "id": "members_app",
-      "community": 101
+      "community": 103
     },
     {
       "label": "App()",
@@ -1681,7 +1729,7 @@
       "source_file": "admin\\public\\members-app.jsx",
       "source_location": "L10",
       "id": "members_app_app",
-      "community": 101
+      "community": 103
     },
     {
       "label": "members-bridge.js",
@@ -1817,7 +1865,7 @@
       "source_file": "admin\\public\\members-data.jsx",
       "source_location": "L1",
       "id": "members_data",
-      "community": 68
+      "community": 69
     },
     {
       "label": "memberInitials()",
@@ -1825,7 +1873,7 @@
       "source_file": "admin\\public\\members-data.jsx",
       "source_location": "L15",
       "id": "members_data_memberinitials",
-      "community": 68
+      "community": 69
     },
     {
       "label": "memberFullName()",
@@ -1833,7 +1881,7 @@
       "source_file": "admin\\public\\members-data.jsx",
       "source_location": "L19",
       "id": "members_data_memberfullname",
-      "community": 68
+      "community": 69
     },
     {
       "label": "members-icons.jsx",
@@ -1841,7 +1889,7 @@
       "source_file": "admin\\public\\members-icons.jsx",
       "source_location": "L1",
       "id": "members_icons",
-      "community": 102
+      "community": 104
     },
     {
       "label": "Icon()",
@@ -1849,7 +1897,7 @@
       "source_file": "admin\\public\\members-icons.jsx",
       "source_location": "L3",
       "id": "members_icons_icon",
-      "community": 102
+      "community": 104
     },
     {
       "label": "members-parts.jsx",
@@ -2161,7 +2209,7 @@
       "source_file": "admin\\routes\\clients.js",
       "source_location": "L1",
       "id": "clients",
-      "community": 103
+      "community": 105
     },
     {
       "label": "activateLocationMembersAdmin()",
@@ -2169,7 +2217,7 @@
       "source_file": "admin\\routes\\clients.js",
       "source_location": "L35",
       "id": "clients_activatelocationmembersadmin",
-      "community": 103
+      "community": 105
     },
     {
       "label": "errors.js",
@@ -2177,7 +2225,7 @@
       "source_file": "admin\\routes\\errors.js",
       "source_location": "L1",
       "id": "errors",
-      "community": 132
+      "community": 134
     },
     {
       "label": "logs.js",
@@ -2217,7 +2265,7 @@
       "source_file": "admin\\routes\\members.js",
       "source_location": "L1",
       "id": "members",
-      "community": 133
+      "community": 135
     },
     {
       "label": "multi-member.js",
@@ -2273,7 +2321,7 @@
       "source_file": "admin\\routes\\operator.js",
       "source_location": "L1",
       "id": "operator",
-      "community": 23
+      "community": 20
     },
     {
       "label": "resolveApiKey()",
@@ -2281,7 +2329,7 @@
       "source_file": "admin\\routes\\operator.js",
       "source_location": "L69",
       "id": "operator_resolveapikey",
-      "community": 23
+      "community": 20
     },
     {
       "label": "syncMappingMembers()",
@@ -2289,7 +2337,7 @@
       "source_file": "admin\\routes\\operator.js",
       "source_location": "L92",
       "id": "operator_syncmappingmembers",
-      "community": 23
+      "community": 20
     },
     {
       "label": "activateLocationMembers()",
@@ -2297,7 +2345,7 @@
       "source_file": "admin\\routes\\operator.js",
       "source_location": "L268",
       "id": "operator_activatelocationmembers",
-      "community": 23
+      "community": 20
     },
     {
       "label": "validateApiKeyGroups()",
@@ -2305,7 +2353,7 @@
       "source_file": "admin\\routes\\operator.js",
       "source_location": "L293",
       "id": "operator_validateapikeygroups",
-      "community": 23
+      "community": 20
     },
     {
       "label": "retryPendingHardwareMembers()",
@@ -2313,7 +2361,7 @@
       "source_file": "admin\\routes\\operator.js",
       "source_location": "L333",
       "id": "operator_retrypendinghardwaremembers",
-      "community": 23
+      "community": 20
     },
     {
       "label": "requireInviteToken()",
@@ -2321,15 +2369,23 @@
       "source_file": "admin\\routes\\operator.js",
       "source_location": "L635",
       "id": "operator_requireinvitetoken",
-      "community": 23
+      "community": 20
+    },
+    {
+      "label": "holderFallback()",
+      "file_type": "code",
+      "source_file": "admin\\routes\\operator.js",
+      "source_location": "L2132",
+      "id": "operator_holderfallback",
+      "community": 20
     },
     {
       "label": "baseNameFor()",
       "file_type": "code",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L2386",
+      "source_location": "L2366",
       "id": "operator_basenamefor",
-      "community": 23
+      "community": 20
     },
     {
       "label": "portal.js",
@@ -2337,7 +2393,7 @@
       "source_file": "admin\\routes\\portal.js",
       "source_location": "L1",
       "id": "portal",
-      "community": 134
+      "community": 136
     },
     {
       "label": "queue.js",
@@ -2345,7 +2401,7 @@
       "source_file": "admin\\routes\\queue.js",
       "source_location": "L1",
       "id": "queue",
-      "community": 135
+      "community": 137
     },
     {
       "label": "system-health.js",
@@ -2353,7 +2409,7 @@
       "source_file": "admin\\routes\\system-health.js",
       "source_location": "L1",
       "id": "system_health",
-      "community": 69
+      "community": 70
     },
     {
       "label": "worstState()",
@@ -2361,7 +2417,7 @@
       "source_file": "admin\\routes\\system-health.js",
       "source_location": "L29",
       "id": "system_health_worststate",
-      "community": 69
+      "community": 70
     },
     {
       "label": "ageHours()",
@@ -2369,7 +2425,7 @@
       "source_file": "admin\\routes\\system-health.js",
       "source_location": "L38",
       "id": "system_health_agehours",
-      "community": 69
+      "community": 70
     },
     {
       "label": "webhooks.js",
@@ -2377,7 +2433,7 @@
       "source_file": "admin\\routes\\webhooks.js",
       "source_location": "L1",
       "id": "webhooks",
-      "community": 136
+      "community": 138
     },
     {
       "label": "wix-admins.js",
@@ -2385,7 +2441,7 @@
       "source_file": "admin\\routes\\wix-admins.js",
       "source_location": "L1",
       "id": "wix_admins",
-      "community": 137
+      "community": 139
     },
     {
       "label": "main.js",
@@ -2393,7 +2449,7 @@
       "source_file": "admin\\svelte\\main.js",
       "source_location": "L1",
       "id": "main",
-      "community": 138
+      "community": 140
     },
     {
       "label": "plan-mapping-entry.js",
@@ -2401,7 +2457,7 @@
       "source_file": "admin\\svelte\\plan-mapping-entry.js",
       "source_location": "L1",
       "id": "plan_mapping_entry",
-      "community": 139
+      "community": 141
     },
     {
       "label": "toast.js",
@@ -2409,7 +2465,7 @@
       "source_file": "admin\\svelte\\stores\\toast.js",
       "source_location": "L1",
       "id": "toast",
-      "community": 104
+      "community": 106
     },
     {
       "label": "showToast()",
@@ -2417,7 +2473,7 @@
       "source_file": "admin\\svelte\\stores\\toast.js",
       "source_location": "L20",
       "id": "toast_showtoast",
-      "community": 104
+      "community": 106
     },
     {
       "label": "billing-snapshot.js",
@@ -2425,7 +2481,7 @@
       "source_file": "core\\billing-snapshot.js",
       "source_location": "L1",
       "id": "billing_snapshot",
-      "community": 105
+      "community": 107
     },
     {
       "label": "extractBillingSnapshot()",
@@ -2433,7 +2489,7 @@
       "source_file": "core\\billing-snapshot.js",
       "source_location": "L27",
       "id": "billing_snapshot_extractbillingsnapshot",
-      "community": 105
+      "community": 107
     },
     {
       "label": "crypto-utils.js",
@@ -2473,7 +2529,7 @@
       "source_file": "core\\diagnostics.js",
       "source_location": "L1",
       "id": "diagnostics",
-      "community": 70
+      "community": 71
     },
     {
       "label": "diagnoseMember()",
@@ -2481,7 +2537,7 @@
       "source_file": "core\\diagnostics.js",
       "source_location": "L31",
       "id": "diagnostics_diagnosemember",
-      "community": 70
+      "community": 71
     },
     {
       "label": "getTimeline()",
@@ -2489,7 +2545,7 @@
       "source_file": "core\\diagnostics.js",
       "source_location": "L156",
       "id": "diagnostics_gettimeline",
-      "community": 70
+      "community": 71
     },
     {
       "label": "grant-revoke.js",
@@ -2625,7 +2681,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L1",
       "id": "hmac_monitor",
-      "community": 71
+      "community": 72
     },
     {
       "label": "recordFailure()",
@@ -2633,7 +2689,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L33",
       "id": "hmac_monitor_recordfailure",
-      "community": 71
+      "community": 72
     },
     {
       "label": "_sendAlert()",
@@ -2641,7 +2697,7 @@
       "source_file": "core\\hmac-monitor.js",
       "source_location": "L68",
       "id": "hmac_monitor_sendalert",
-      "community": 71
+      "community": 72
     },
     {
       "label": "location-lapse.js",
@@ -2649,7 +2705,7 @@
       "source_file": "core\\location-lapse.js",
       "source_location": "L1",
       "id": "location_lapse",
-      "community": 72
+      "community": 73
     },
     {
       "label": "suspendLocationMembers()",
@@ -2657,7 +2713,7 @@
       "source_file": "core\\location-lapse.js",
       "source_location": "L47",
       "id": "location_lapse_suspendlocationmembers",
-      "community": 72
+      "community": 73
     },
     {
       "label": "_setLocationStatus()",
@@ -2665,7 +2721,7 @@
       "source_file": "core\\location-lapse.js",
       "source_location": "L151",
       "id": "location_lapse_setlocationstatus",
-      "community": 72
+      "community": 73
     },
     {
       "label": "log-redaction.js",
@@ -2769,7 +2825,7 @@
       "source_file": "core\\member-access-log.js",
       "source_location": "L1",
       "id": "member_access_log",
-      "community": 106
+      "community": 108
     },
     {
       "label": "logMemberAccessEvent()",
@@ -2777,7 +2833,7 @@
       "source_file": "core\\member-access-log.js",
       "source_location": "L61",
       "id": "member_access_log_logmemberaccessevent",
-      "community": 106
+      "community": 108
     },
     {
       "label": "member-sync-api.js",
@@ -2833,7 +2889,7 @@
       "source_file": "core\\plan-mapping-resolver.js",
       "source_location": "L1",
       "id": "plan_mapping_resolver",
-      "community": 73
+      "community": 74
     },
     {
       "label": "PlanMappingResolver",
@@ -2841,7 +2897,7 @@
       "source_file": "core\\plan-mapping-resolver.js",
       "source_location": "L25",
       "id": "plan_mapping_resolver_planmappingresolver",
-      "community": 73
+      "community": 74
     },
     {
       "label": ".resolve()",
@@ -2849,7 +2905,7 @@
       "source_file": "core\\plan-mapping-resolver.js",
       "source_location": "L41",
       "id": "plan_mapping_resolver_planmappingresolver_resolve",
-      "community": 73
+      "community": 74
     },
     {
       "label": "queue-worker.js",
@@ -3049,7 +3105,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L1",
       "id": "redis_utils",
-      "community": 74
+      "community": 75
     },
     {
       "label": "parseRedisUrl()",
@@ -3057,7 +3113,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L15",
       "id": "redis_utils_parseredisurl",
-      "community": 74
+      "community": 75
     },
     {
       "label": "getRedisConnection()",
@@ -3065,7 +3121,7 @@
       "source_file": "core\\redis-utils.js",
       "source_location": "L29",
       "id": "redis_utils_getredisconnection",
-      "community": 74
+      "community": 75
     },
     {
       "label": "retry-engine.js",
@@ -3121,7 +3177,7 @@
       "source_file": "core\\setup-telemetry.js",
       "source_location": "L1",
       "id": "setup_telemetry",
-      "community": 75
+      "community": 76
     },
     {
       "label": "recordSnippetTelemetry()",
@@ -3129,7 +3185,7 @@
       "source_file": "core\\setup-telemetry.js",
       "source_location": "L26",
       "id": "setup_telemetry_recordsnippettelemetry",
-      "community": 75
+      "community": 76
     },
     {
       "label": "recordTestResult()",
@@ -3137,7 +3193,7 @@
       "source_file": "core\\setup-telemetry.js",
       "source_location": "L67",
       "id": "setup_telemetry_recordtestresult",
-      "community": 75
+      "community": 76
     },
     {
       "label": "snippet-registry.js",
@@ -3207,7 +3263,7 @@
       "label": "runProbe()",
       "file_type": "code",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L65",
+      "source_location": "L66",
       "id": "source_retry_probe_runprobe",
       "community": 36
     },
@@ -3215,7 +3271,7 @@
       "label": "_runProbeBody()",
       "file_type": "code",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L73",
+      "source_location": "L74",
       "id": "source_retry_probe_runprobebody",
       "community": 36
     },
@@ -3223,7 +3279,7 @@
       "label": "_retryOne()",
       "file_type": "code",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L161",
+      "source_location": "L162",
       "id": "source_retry_probe_retryone",
       "community": 36
     },
@@ -3231,7 +3287,7 @@
       "label": "_recordSuccess()",
       "file_type": "code",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L204",
+      "source_location": "L205",
       "id": "source_retry_probe_recordsuccess",
       "community": 36
     },
@@ -3239,7 +3295,7 @@
       "label": "_recordFailure()",
       "file_type": "code",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L260",
+      "source_location": "L258",
       "id": "source_retry_probe_recordfailure",
       "community": 36
     },
@@ -3449,7 +3505,7 @@
       "source_file": "core\\wix-app-market.js",
       "source_location": "L1",
       "id": "wix_app_market",
-      "community": 107
+      "community": 109
     },
     {
       "label": "handleAppMarketWebhook()",
@@ -3457,7 +3513,7 @@
       "source_file": "core\\wix-app-market.js",
       "source_location": "L71",
       "id": "wix_app_market_handleappmarketwebhook",
-      "community": 107
+      "community": 109
     },
     {
       "label": "bundle-assembler.js",
@@ -3633,7 +3689,7 @@
       "source_file": "e2e\\global-setup.js",
       "source_location": "L1",
       "id": "global_setup",
-      "community": 140
+      "community": 142
     },
     {
       "label": "admin-access-log.spec.js",
@@ -3641,7 +3697,7 @@
       "source_file": "e2e\\admin\\admin-access-log.spec.js",
       "source_location": "L1",
       "id": "admin_access_log_spec",
-      "community": 141
+      "community": 143
     },
     {
       "label": "admin-dashboard.spec.js",
@@ -3649,7 +3705,7 @@
       "source_file": "e2e\\admin\\admin-dashboard.spec.js",
       "source_location": "L1",
       "id": "admin_dashboard_spec",
-      "community": 142
+      "community": 144
     },
     {
       "label": "admin-empty-states.spec.js",
@@ -3657,7 +3713,7 @@
       "source_file": "e2e\\admin\\admin-empty-states.spec.js",
       "source_location": "L1",
       "id": "admin_empty_states_spec",
-      "community": 143
+      "community": 145
     },
     {
       "label": "admin-error-queue.spec.js",
@@ -3665,7 +3721,7 @@
       "source_file": "e2e\\admin\\admin-error-queue.spec.js",
       "source_location": "L1",
       "id": "admin_error_queue_spec",
-      "community": 144
+      "community": 146
     },
     {
       "label": "admin-location-detail.spec.js",
@@ -3673,7 +3729,7 @@
       "source_file": "e2e\\admin\\admin-location-detail.spec.js",
       "source_location": "L1",
       "id": "admin_location_detail_spec",
-      "community": 145
+      "community": 147
     },
     {
       "label": "admin-location-list.spec.js",
@@ -3681,7 +3737,7 @@
       "source_file": "e2e\\admin\\admin-location-list.spec.js",
       "source_location": "L1",
       "id": "admin_location_list_spec",
-      "community": 146
+      "community": 148
     },
     {
       "label": "admin-members-detail.spec.js",
@@ -3689,7 +3745,7 @@
       "source_file": "e2e\\admin\\admin-members-detail.spec.js",
       "source_location": "L1",
       "id": "admin_members_detail_spec",
-      "community": 76
+      "community": 77
     },
     {
       "label": "postWebhook()",
@@ -3697,7 +3753,7 @@
       "source_file": "e2e\\admin\\admin-members-detail.spec.js",
       "source_location": "L15",
       "id": "admin_members_detail_spec_postwebhook",
-      "community": 76
+      "community": 77
     },
     {
       "label": "waitFor()",
@@ -3705,7 +3761,7 @@
       "source_file": "e2e\\admin\\admin-members-detail.spec.js",
       "source_location": "L21",
       "id": "admin_members_detail_spec_waitfor",
-      "community": 76
+      "community": 77
     },
     {
       "label": "admin-members-filter.spec.js",
@@ -3713,7 +3769,7 @@
       "source_file": "e2e\\admin\\admin-members-filter.spec.js",
       "source_location": "L1",
       "id": "admin_members_filter_spec",
-      "community": 77
+      "community": 78
     },
     {
       "label": "postWebhook()",
@@ -3721,7 +3777,7 @@
       "source_file": "e2e\\admin\\admin-members-filter.spec.js",
       "source_location": "L15",
       "id": "admin_members_filter_spec_postwebhook",
-      "community": 77
+      "community": 78
     },
     {
       "label": "waitForStatus()",
@@ -3729,7 +3785,7 @@
       "source_file": "e2e\\admin\\admin-members-filter.spec.js",
       "source_location": "L21",
       "id": "admin_members_filter_spec_waitforstatus",
-      "community": 77
+      "community": 78
     },
     {
       "label": "admin-members-list.spec.js",
@@ -3737,7 +3793,7 @@
       "source_file": "e2e\\admin\\admin-members-list.spec.js",
       "source_location": "L1",
       "id": "admin_members_list_spec",
-      "community": 78
+      "community": 79
     },
     {
       "label": "postWebhook()",
@@ -3745,7 +3801,7 @@
       "source_file": "e2e\\admin\\admin-members-list.spec.js",
       "source_location": "L15",
       "id": "admin_members_list_spec_postwebhook",
-      "community": 78
+      "community": 79
     },
     {
       "label": "waitForActive()",
@@ -3753,7 +3809,7 @@
       "source_file": "e2e\\admin\\admin-members-list.spec.js",
       "source_location": "L21",
       "id": "admin_members_list_spec_waitforactive",
-      "community": 78
+      "community": 79
     },
     {
       "label": "admin-metrics-vs-db.spec.js",
@@ -3761,7 +3817,7 @@
       "source_file": "e2e\\admin\\admin-metrics-vs-db.spec.js",
       "source_location": "L1",
       "id": "admin_metrics_vs_db_spec",
-      "community": 79
+      "community": 80
     },
     {
       "label": "getApiStats()",
@@ -3769,7 +3825,7 @@
       "source_file": "e2e\\admin\\admin-metrics-vs-db.spec.js",
       "source_location": "L14",
       "id": "admin_metrics_vs_db_spec_getapistats",
-      "community": 79
+      "community": 80
     },
     {
       "label": "getDbStats()",
@@ -3777,7 +3833,7 @@
       "source_file": "e2e\\admin\\admin-metrics-vs-db.spec.js",
       "source_location": "L22",
       "id": "admin_metrics_vs_db_spec_getdbstats",
-      "community": 79
+      "community": 80
     },
     {
       "label": "admin-operator-overview.spec.js",
@@ -3785,7 +3841,7 @@
       "source_file": "e2e\\admin\\admin-operator-overview.spec.js",
       "source_location": "L1",
       "id": "admin_operator_overview_spec",
-      "community": 108
+      "community": 110
     },
     {
       "label": "getDbStats()",
@@ -3793,7 +3849,7 @@
       "source_file": "e2e\\admin\\admin-operator-overview.spec.js",
       "source_location": "L12",
       "id": "admin_operator_overview_spec_getdbstats",
-      "community": 108
+      "community": 110
     },
     {
       "label": "admin-responsive.spec.js",
@@ -3801,7 +3857,7 @@
       "source_file": "e2e\\admin\\admin-responsive.spec.js",
       "source_location": "L1",
       "id": "admin_responsive_spec",
-      "community": 147
+      "community": 149
     },
     {
       "label": "admin-ui-walkthrough.spec.js",
@@ -3809,7 +3865,7 @@
       "source_file": "e2e\\admin\\admin-ui-walkthrough.spec.js",
       "source_location": "L1",
       "id": "admin_ui_walkthrough_spec",
-      "community": 109
+      "community": 111
     },
     {
       "label": "attachConsoleCapture()",
@@ -3817,7 +3873,7 @@
       "source_file": "e2e\\admin\\admin-ui-walkthrough.spec.js",
       "source_location": "L28",
       "id": "admin_ui_walkthrough_spec_attachconsolecapture",
-      "community": 109
+      "community": 111
     },
     {
       "label": "api-auth-pin.spec.js",
@@ -3825,7 +3881,7 @@
       "source_file": "e2e\\api\\api-auth-pin.spec.js",
       "source_location": "L1",
       "id": "api_auth_pin_spec",
-      "community": 110
+      "community": 112
     },
     {
       "label": "postPin()",
@@ -3833,7 +3889,7 @@
       "source_file": "e2e\\api\\api-auth-pin.spec.js",
       "source_location": "L12",
       "id": "api_auth_pin_spec_postpin",
-      "community": 110
+      "community": 112
     },
     {
       "label": "api-member-access-status.spec.js",
@@ -3913,7 +3969,7 @@
       "source_file": "e2e\\api\\api-operator-locations.spec.js",
       "source_location": "L1",
       "id": "api_operator_locations_spec",
-      "community": 148
+      "community": 150
     },
     {
       "label": "api-operator-stats.spec.js",
@@ -3921,7 +3977,7 @@
       "source_file": "e2e\\api\\api-operator-stats.spec.js",
       "source_location": "L1",
       "id": "api_operator_stats_spec",
-      "community": 111
+      "community": 113
     },
     {
       "label": "fetchOperator()",
@@ -3929,7 +3985,7 @@
       "source_file": "e2e\\api\\api-operator-stats.spec.js",
       "source_location": "L14",
       "id": "api_operator_stats_spec_fetchoperator",
-      "community": 111
+      "community": 113
     },
     {
       "label": "api-webhook-delayed-start.spec.js",
@@ -3937,7 +3993,7 @@
       "source_file": "e2e\\api\\api-webhook-delayed-start.spec.js",
       "source_location": "L1",
       "id": "api_webhook_delayed_start_spec",
-      "community": 80
+      "community": 81
     },
     {
       "label": "postWebhook()",
@@ -3945,7 +4001,7 @@
       "source_file": "e2e\\api\\api-webhook-delayed-start.spec.js",
       "source_location": "L14",
       "id": "api_webhook_delayed_start_spec_postwebhook",
-      "community": 80
+      "community": 81
     },
     {
       "label": "waitFor()",
@@ -3953,7 +4009,7 @@
       "source_file": "e2e\\api\\api-webhook-delayed-start.spec.js",
       "source_location": "L20",
       "id": "api_webhook_delayed_start_spec_waitfor",
-      "community": 80
+      "community": 81
     },
     {
       "label": "api-webhook-grant.spec.js",
@@ -4009,7 +4065,7 @@
       "source_file": "e2e\\api\\api-webhook-idempotency.spec.js",
       "source_location": "L1",
       "id": "api_webhook_idempotency_spec",
-      "community": 81
+      "community": 82
     },
     {
       "label": "postWebhook()",
@@ -4017,7 +4073,7 @@
       "source_file": "e2e\\api\\api-webhook-idempotency.spec.js",
       "source_location": "L15",
       "id": "api_webhook_idempotency_spec_postwebhook",
-      "community": 81
+      "community": 82
     },
     {
       "label": "waitFor()",
@@ -4025,7 +4081,7 @@
       "source_file": "e2e\\api\\api-webhook-idempotency.spec.js",
       "source_location": "L21",
       "id": "api_webhook_idempotency_spec_waitfor",
-      "community": 81
+      "community": 82
     },
     {
       "label": "api-webhook-payment.spec.js",
@@ -4105,7 +4161,7 @@
       "source_file": "e2e\\api\\api-webhook-unpaid.spec.js",
       "source_location": "L1",
       "id": "api_webhook_unpaid_spec",
-      "community": 82
+      "community": 83
     },
     {
       "label": "postWebhook()",
@@ -4113,7 +4169,7 @@
       "source_file": "e2e\\api\\api-webhook-unpaid.spec.js",
       "source_location": "L14",
       "id": "api_webhook_unpaid_spec_postwebhook",
-      "community": 82
+      "community": 83
     },
     {
       "label": "waitFor()",
@@ -4121,7 +4177,7 @@
       "source_file": "e2e\\api\\api-webhook-unpaid.spec.js",
       "source_location": "L20",
       "id": "api_webhook_unpaid_spec_waitfor",
-      "community": 82
+      "community": 83
     },
     {
       "label": "getWixWebhookSecret()",
@@ -4129,7 +4185,7 @@
       "source_file": "e2e\\helpers\\auth.js",
       "source_location": "L15",
       "id": "auth_getwixwebhooksecret",
-      "community": 11
+      "community": 7
     },
     {
       "label": "getAdminCookie()",
@@ -4137,7 +4193,7 @@
       "source_file": "e2e\\helpers\\auth.js",
       "source_location": "L27",
       "id": "auth_getadmincookie",
-      "community": 11
+      "community": 7
     },
     {
       "label": "setAdminCookieOnContext()",
@@ -4145,7 +4201,7 @@
       "source_file": "e2e\\helpers\\auth.js",
       "source_location": "L56",
       "id": "auth_setadmincookieoncontext",
-      "community": 11
+      "community": 7
     },
     {
       "label": "getMemberHubHeaders()",
@@ -4153,7 +4209,7 @@
       "source_file": "e2e\\helpers\\auth.js",
       "source_location": "L75",
       "id": "auth_getmemberhubheaders",
-      "community": 11
+      "community": 7
     },
     {
       "label": "buildWebhookSignature()",
@@ -4161,7 +4217,7 @@
       "source_file": "e2e\\helpers\\auth.js",
       "source_location": "L86",
       "id": "auth_buildwebhooksignature",
-      "community": 11
+      "community": 7
     },
     {
       "label": "buildWebhookHeaders()",
@@ -4169,7 +4225,7 @@
       "source_file": "e2e\\helpers\\auth.js",
       "source_location": "L98",
       "id": "auth_buildwebhookheaders",
-      "community": 11
+      "community": 7
     },
     {
       "label": "postWebhook()",
@@ -4177,7 +4233,7 @@
       "source_file": "e2e\\helpers\\auth.js",
       "source_location": "L111",
       "id": "auth_postwebhook",
-      "community": 11
+      "community": 7
     },
     {
       "label": "deriveUrl()",
@@ -4185,7 +4241,7 @@
       "source_file": "e2e\\helpers\\db.js",
       "source_location": "L14",
       "id": "db_deriveurl",
-      "community": 20
+      "community": 21
     },
     {
       "label": "queryOne()",
@@ -4193,7 +4249,7 @@
       "source_file": "e2e\\helpers\\db.js",
       "source_location": "L33",
       "id": "db_queryone",
-      "community": 20
+      "community": 21
     },
     {
       "label": "queryRows()",
@@ -4201,7 +4257,7 @@
       "source_file": "e2e\\helpers\\db.js",
       "source_location": "L38",
       "id": "db_queryrows",
-      "community": 20
+      "community": 21
     },
     {
       "label": "end()",
@@ -4209,7 +4265,7 @@
       "source_file": "e2e\\helpers\\db.js",
       "source_location": "L47",
       "id": "db_end",
-      "community": 20
+      "community": 21
     },
     {
       "label": "seedTestClient()",
@@ -4217,7 +4273,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L66",
       "id": "seed_seedtestclient",
-      "community": 7
+      "community": 11
     },
     {
       "label": "teardownTestClient()",
@@ -4225,7 +4281,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L139",
       "id": "seed_teardowntestclient",
-      "community": 7
+      "community": 11
     },
     {
       "label": "makeE2eEmail()",
@@ -4233,7 +4289,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L150",
       "id": "seed_makee2eemail",
-      "community": 7
+      "community": 11
     },
     {
       "label": "makeWixMemberId()",
@@ -4241,7 +4297,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L157",
       "id": "seed_makewixmemberid",
-      "community": 7
+      "community": 11
     },
     {
       "label": "seedHogMemberMaster()",
@@ -4249,7 +4305,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L165",
       "id": "seed_seedhogmembermaster",
-      "community": 7
+      "community": 11
     },
     {
       "label": "seedHogMemberAccess()",
@@ -4257,7 +4313,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L187",
       "id": "seed_seedhogmemberaccess",
-      "community": 7
+      "community": 11
     },
     {
       "label": "teardownHogTestMembers()",
@@ -4265,7 +4321,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L222",
       "id": "seed_teardownhogtestmembers",
-      "community": 7
+      "community": 11
     },
     {
       "label": "teardownHogMember()",
@@ -4273,7 +4329,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L233",
       "id": "seed_teardownhogmember",
-      "community": 7
+      "community": 11
     },
     {
       "label": "buildOrderPurchasedPayload()",
@@ -4281,7 +4337,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L247",
       "id": "seed_buildorderpurchasedpayload",
-      "community": 7
+      "community": 11
     },
     {
       "label": "buildOrderCancelledPayload()",
@@ -4289,7 +4345,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L277",
       "id": "seed_buildordercancelledpayload",
-      "community": 7
+      "community": 11
     },
     {
       "label": "buildOrderPausedPayload()",
@@ -4297,7 +4353,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L302",
       "id": "seed_buildorderpausedpayload",
-      "community": 7
+      "community": 11
     },
     {
       "label": "buildOrderStartedPayload()",
@@ -4305,7 +4361,7 @@
       "source_file": "e2e\\helpers\\seed.js",
       "source_location": "L321",
       "id": "seed_buildorderstartedpayload",
-      "community": 7
+      "community": 11
     },
     {
       "label": "logging-diagnostic-gaps.spec.js",
@@ -4313,7 +4369,7 @@
       "source_file": "e2e\\logging\\logging-diagnostic-gaps.spec.js",
       "source_location": "L1",
       "id": "logging_diagnostic_gaps_spec",
-      "community": 149
+      "community": 151
     },
     {
       "label": "logging-error-queue.spec.js",
@@ -4321,7 +4377,7 @@
       "source_file": "e2e\\logging\\logging-error-queue.spec.js",
       "source_location": "L1",
       "id": "logging_error_queue_spec",
-      "community": 150
+      "community": 152
     },
     {
       "label": "logging-grant-flow.spec.js",
@@ -4329,7 +4385,7 @@
       "source_file": "e2e\\logging\\logging-grant-flow.spec.js",
       "source_location": "L1",
       "id": "logging_grant_flow_spec",
-      "community": 83
+      "community": 84
     },
     {
       "label": "waitForTraceRow()",
@@ -4337,7 +4393,7 @@
       "source_file": "e2e\\logging\\logging-grant-flow.spec.js",
       "source_location": "L21",
       "id": "logging_grant_flow_spec_waitfortracerow",
-      "community": 83
+      "community": 84
     },
     {
       "label": "getTraceIdFromWebhookLog()",
@@ -4345,7 +4401,7 @@
       "source_file": "e2e\\logging\\logging-grant-flow.spec.js",
       "source_location": "L36",
       "id": "logging_grant_flow_spec_gettraceidfromwebhooklog",
-      "community": 83
+      "community": 84
     },
     {
       "label": "logging-payment-failed.spec.js",
@@ -4353,7 +4409,7 @@
       "source_file": "e2e\\logging\\logging-payment-failed.spec.js",
       "source_location": "L1",
       "id": "logging_payment_failed_spec",
-      "community": 84
+      "community": 85
     },
     {
       "label": "postWebhook()",
@@ -4361,7 +4417,7 @@
       "source_file": "e2e\\logging\\logging-payment-failed.spec.js",
       "source_location": "L15",
       "id": "logging_payment_failed_spec_postwebhook",
-      "community": 84
+      "community": 85
     },
     {
       "label": "waitForAccessStatus()",
@@ -4369,7 +4425,7 @@
       "source_file": "e2e\\logging\\logging-payment-failed.spec.js",
       "source_location": "L21",
       "id": "logging_payment_failed_spec_waitforaccessstatus",
-      "community": 84
+      "community": 85
     },
     {
       "label": "logging-revoke-flow.spec.js",
@@ -4633,7 +4689,7 @@
       "source_file": "e2e\\schema\\schema-constraints.spec.js",
       "source_location": "L1",
       "id": "schema_constraints_spec",
-      "community": 85
+      "community": 86
     },
     {
       "label": "getUniqueConstraints()",
@@ -4641,7 +4697,7 @@
       "source_file": "e2e\\schema\\schema-constraints.spec.js",
       "source_location": "L10",
       "id": "schema_constraints_spec_getuniqueconstraints",
-      "community": 85
+      "community": 86
     },
     {
       "label": "getFkConstraints()",
@@ -4649,7 +4705,7 @@
       "source_file": "e2e\\schema\\schema-constraints.spec.js",
       "source_location": "L21",
       "id": "schema_constraints_spec_getfkconstraints",
-      "community": 85
+      "community": 86
     },
     {
       "label": "schema-effective-start.spec.js",
@@ -4657,7 +4713,7 @@
       "source_file": "e2e\\schema\\schema-effective-start.spec.js",
       "source_location": "L1",
       "id": "schema_effective_start_spec",
-      "community": 151
+      "community": 153
     },
     {
       "label": "schema-indexes.spec.js",
@@ -4665,7 +4721,7 @@
       "source_file": "e2e\\schema\\schema-indexes.spec.js",
       "source_location": "L1",
       "id": "schema_indexes_spec",
-      "community": 112
+      "community": 114
     },
     {
       "label": "indexExists()",
@@ -4673,7 +4729,7 @@
       "source_file": "e2e\\schema\\schema-indexes.spec.js",
       "source_location": "L23",
       "id": "schema_indexes_spec_indexexists",
-      "community": 112
+      "community": 114
     },
     {
       "label": "schema-tables.spec.js",
@@ -4681,7 +4737,7 @@
       "source_file": "e2e\\schema\\schema-tables.spec.js",
       "source_location": "L1",
       "id": "schema_tables_spec",
-      "community": 152
+      "community": 154
     },
     {
       "label": "events.js",
@@ -4777,7 +4833,7 @@
       "source_file": "handoff\\velo\\lightbox.js",
       "source_location": "L1",
       "id": "lightbox",
-      "community": 153
+      "community": 155
     },
     {
       "label": "multi-member-page.js",
@@ -4785,7 +4841,7 @@
       "source_file": "handoff\\velo\\multi-member-page.js",
       "source_location": "L1",
       "id": "multi_member_page",
-      "community": 154
+      "community": 156
     },
     {
       "label": "thank-you-page.js",
@@ -4793,7 +4849,7 @@
       "source_file": "handoff\\velo\\thank-you-page.js",
       "source_location": "L1",
       "id": "thank_you_page",
-      "community": 155
+      "community": 157
     },
     {
       "label": "audit-by-internal-id.js",
@@ -4801,7 +4857,7 @@
       "source_file": "scripts\\audit-by-internal-id.js",
       "source_location": "L1",
       "id": "audit_by_internal_id",
-      "community": 113
+      "community": 115
     },
     {
       "label": "section()",
@@ -4809,7 +4865,7 @@
       "source_file": "scripts\\audit-by-internal-id.js",
       "source_location": "L11",
       "id": "audit_by_internal_id_section",
-      "community": 113
+      "community": 115
     },
     {
       "label": "audit-kisi.js",
@@ -4817,7 +4873,7 @@
       "source_file": "scripts\\audit-kisi.js",
       "source_location": "L1",
       "id": "audit_kisi",
-      "community": 114
+      "community": 116
     },
     {
       "label": "header()",
@@ -4825,7 +4881,7 @@
       "source_file": "scripts\\audit-kisi.js",
       "source_location": "L21",
       "id": "audit_kisi_header",
-      "community": 114
+      "community": 116
     },
     {
       "label": "audit-member.js",
@@ -4833,7 +4889,7 @@
       "source_file": "scripts\\audit-member.js",
       "source_location": "L1",
       "id": "audit_member",
-      "community": 115
+      "community": 117
     },
     {
       "label": "section()",
@@ -4841,7 +4897,7 @@
       "source_file": "scripts\\audit-member.js",
       "source_location": "L15",
       "id": "audit_member_section",
-      "community": 115
+      "community": 117
     },
     {
       "label": "audit-summary.js",
@@ -4849,7 +4905,7 @@
       "source_file": "scripts\\audit-summary.js",
       "source_location": "L1",
       "id": "audit_summary",
-      "community": 156
+      "community": 158
     },
     {
       "label": "backstamp-kisi-marker.js",
@@ -4857,7 +4913,7 @@
       "source_file": "scripts\\backstamp-kisi-marker.js",
       "source_location": "L1",
       "id": "backstamp_kisi_marker",
-      "community": 86
+      "community": 87
     },
     {
       "label": "kisiRequest()",
@@ -4865,7 +4921,7 @@
       "source_file": "scripts\\backstamp-kisi-marker.js",
       "source_location": "L52",
       "id": "backstamp_kisi_marker_kisirequest",
-      "community": 86
+      "community": 87
     },
     {
       "label": "main()",
@@ -4873,7 +4929,7 @@
       "source_file": "scripts\\backstamp-kisi-marker.js",
       "source_location": "L66",
       "id": "backstamp_kisi_marker_main",
-      "community": 86
+      "community": 87
     },
     {
       "label": "supabase-1-dump-schema.js",
@@ -4881,7 +4937,7 @@
       "source_file": "scripts\\supabase-1-dump-schema.js",
       "source_location": "L1",
       "id": "supabase_1_dump_schema",
-      "community": 21
+      "community": 22
     },
     {
       "label": "QUOTE()",
@@ -4889,7 +4945,7 @@
       "source_file": "scripts\\supabase-1-dump-schema.js",
       "source_location": "L51",
       "id": "supabase_1_dump_schema_quote",
-      "community": 21
+      "community": 22
     },
     {
       "label": "section()",
@@ -4897,7 +4953,7 @@
       "source_file": "scripts\\supabase-1-dump-schema.js",
       "source_location": "L65",
       "id": "supabase_1_dump_schema_section",
-      "community": 21
+      "community": 22
     },
     {
       "label": "dumpExtensions()",
@@ -4905,7 +4961,7 @@
       "source_file": "scripts\\supabase-1-dump-schema.js",
       "source_location": "L67",
       "id": "supabase_1_dump_schema_dumpextensions",
-      "community": 21
+      "community": 22
     },
     {
       "label": "listTables()",
@@ -4913,7 +4969,7 @@
       "source_file": "scripts\\supabase-1-dump-schema.js",
       "source_location": "L79",
       "id": "supabase_1_dump_schema_listtables",
-      "community": 21
+      "community": 22
     },
     {
       "label": "dumpTable()",
@@ -4921,7 +4977,7 @@
       "source_file": "scripts\\supabase-1-dump-schema.js",
       "source_location": "L91",
       "id": "supabase_1_dump_schema_dumptable",
-      "community": 21
+      "community": 22
     },
     {
       "label": "dumpConstraints()",
@@ -4929,7 +4985,7 @@
       "source_file": "scripts\\supabase-1-dump-schema.js",
       "source_location": "L117",
       "id": "supabase_1_dump_schema_dumpconstraints",
-      "community": 21
+      "community": 22
     },
     {
       "label": "dumpIndexes()",
@@ -4937,7 +4993,7 @@
       "source_file": "scripts\\supabase-1-dump-schema.js",
       "source_location": "L141",
       "id": "supabase_1_dump_schema_dumpindexes",
-      "community": 21
+      "community": 22
     },
     {
       "label": "dumpViews()",
@@ -4945,7 +5001,7 @@
       "source_file": "scripts\\supabase-1-dump-schema.js",
       "source_location": "L163",
       "id": "supabase_1_dump_schema_dumpviews",
-      "community": 21
+      "community": 22
     },
     {
       "label": "supabase-2-dump-data.js",
@@ -4993,7 +5049,7 @@
       "source_file": "scripts\\supabase-3-apply-data.js",
       "source_location": "L1",
       "id": "supabase_3_apply_data",
-      "community": 157
+      "community": 159
     },
     {
       "label": "supabase-4-backfill-missing.js",
@@ -5169,7 +5225,7 @@
       "source_file": "test\\helpers\\fixtures.js",
       "source_location": "L1",
       "id": "fixtures",
-      "community": 158
+      "community": 160
     },
     {
       "label": "dr-051-holder-seated-durable-leave.test.js",
@@ -5209,7 +5265,7 @@
       "source_file": "test\\p1-critical-path\\grant-retry-idempotency.test.js",
       "source_location": "L1",
       "id": "grant_retry_idempotency_test",
-      "community": 159
+      "community": 161
     },
     {
       "label": "grant-revoke-new-schema.test.js",
@@ -5217,7 +5273,7 @@
       "source_file": "test\\p1-critical-path\\grant-revoke-new-schema.test.js",
       "source_location": "L1",
       "id": "grant_revoke_new_schema_test",
-      "community": 160
+      "community": 162
     },
     {
       "label": "kisi-user-pattern.test.js",
@@ -5225,7 +5281,7 @@
       "source_file": "test\\p1-critical-path\\kisi-user-pattern.test.js",
       "source_location": "L1",
       "id": "kisi_user_pattern_test",
-      "community": 161
+      "community": 163
     },
     {
       "label": "member-cancels-loses-access.test.js",
@@ -5233,7 +5289,7 @@
       "source_file": "test\\p1-critical-path\\member-cancels-loses-access.test.js",
       "source_location": "L1",
       "id": "member_cancels_loses_access_test",
-      "community": 116
+      "community": 118
     },
     {
       "label": "mockClientApiKey()",
@@ -5241,7 +5297,7 @@
       "source_file": "test\\p1-critical-path\\member-cancels-loses-access.test.js",
       "source_location": "L53",
       "id": "member_cancels_loses_access_test_mockclientapikey",
-      "community": 116
+      "community": 118
     },
     {
       "label": "member-pays-gets-access.test.js",
@@ -5249,7 +5305,7 @@
       "source_file": "test\\p1-critical-path\\member-pays-gets-access.test.js",
       "source_location": "L1",
       "id": "member_pays_gets_access_test",
-      "community": 162
+      "community": 164
     },
     {
       "label": "ob-125-source-tag-guard.test.js",
@@ -5257,7 +5313,7 @@
       "source_file": "test\\p1-critical-path\\ob-125-source-tag-guard.test.js",
       "source_location": "L1",
       "id": "ob_125_source_tag_guard_test",
-      "community": 117
+      "community": 119
     },
     {
       "label": "mockSourceTagLookup()",
@@ -5265,7 +5321,7 @@
       "source_file": "test\\p1-critical-path\\ob-125-source-tag-guard.test.js",
       "source_location": "L73",
       "id": "ob_125_source_tag_guard_test_mocksourcetaglookup",
-      "community": 117
+      "community": 119
     },
     {
       "label": "ob-244-revoke-finds-removing-status.test.js",
@@ -5273,7 +5329,7 @@
       "source_file": "test\\p1-critical-path\\ob-244-revoke-finds-removing-status.test.js",
       "source_location": "L1",
       "id": "ob_244_revoke_finds_removing_status_test",
-      "community": 163
+      "community": 165
     },
     {
       "label": "ob-248-finalize-revoke.test.js",
@@ -5281,7 +5337,7 @@
       "source_file": "test\\p1-critical-path\\ob-248-finalize-revoke.test.js",
       "source_location": "L1",
       "id": "ob_248_finalize_revoke_test",
-      "community": 164
+      "community": 166
     },
     {
       "label": "ob-89-two-gate.test.js",
@@ -5289,7 +5345,7 @@
       "source_file": "test\\p1-critical-path\\ob-89-two-gate.test.js",
       "source_location": "L1",
       "id": "ob_89_two_gate_test",
-      "community": 165
+      "community": 167
     },
     {
       "label": "queue-worker-coordination.test.js",
@@ -5297,7 +5353,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
       "source_location": "L1",
       "id": "queue_worker_coordination_test",
-      "community": 87
+      "community": 88
     },
     {
       "label": "constructor()",
@@ -5305,7 +5361,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
       "source_location": "L21",
       "id": "queue_worker_coordination_test_constructor",
-      "community": 87
+      "community": 88
     },
     {
       "label": "makeJob()",
@@ -5313,7 +5369,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-coordination.test.js",
       "source_location": "L87",
       "id": "queue_worker_coordination_test_makejob",
-      "community": 87
+      "community": 88
     },
     {
       "label": "queue-worker-failure-modes.test.js",
@@ -5321,7 +5377,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-failure-modes.test.js",
       "source_location": "L1",
       "id": "queue_worker_failure_modes_test",
-      "community": 88
+      "community": 89
     },
     {
       "label": "constructor()",
@@ -5329,7 +5385,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-failure-modes.test.js",
       "source_location": "L42",
       "id": "queue_worker_failure_modes_test_constructor",
-      "community": 88
+      "community": 89
     },
     {
       "label": "makeJob()",
@@ -5337,7 +5393,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-failure-modes.test.js",
       "source_location": "L77",
       "id": "queue_worker_failure_modes_test_makejob",
-      "community": 88
+      "community": 89
     },
     {
       "label": "queue-worker-new-schema.test.js",
@@ -5345,7 +5401,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-new-schema.test.js",
       "source_location": "L1",
       "id": "queue_worker_new_schema_test",
-      "community": 118
+      "community": 120
     },
     {
       "label": "constructor()",
@@ -5353,7 +5409,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-new-schema.test.js",
       "source_location": "L22",
       "id": "queue_worker_new_schema_test_constructor",
-      "community": 118
+      "community": 120
     },
     {
       "label": "queue-worker-trace.test.js",
@@ -5361,7 +5417,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-trace.test.js",
       "source_location": "L1",
       "id": "queue_worker_trace_test",
-      "community": 89
+      "community": 90
     },
     {
       "label": "constructor()",
@@ -5369,7 +5425,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-trace.test.js",
       "source_location": "L45",
       "id": "queue_worker_trace_test_constructor",
-      "community": 89
+      "community": 90
     },
     {
       "label": "makeJob()",
@@ -5377,7 +5433,7 @@
       "source_file": "test\\p1-critical-path\\queue-worker-trace.test.js",
       "source_location": "L80",
       "id": "queue_worker_trace_test_makejob",
-      "community": 89
+      "community": 90
     },
     {
       "label": "standard-adapter-l3-primitives.test.js",
@@ -5385,7 +5441,7 @@
       "source_file": "test\\p1-critical-path\\standard-adapter-l3-primitives.test.js",
       "source_location": "L1",
       "id": "standard_adapter_l3_primitives_test",
-      "community": 90
+      "community": 91
     },
     {
       "label": "capturedQueries()",
@@ -5393,7 +5449,7 @@
       "source_file": "test\\p1-critical-path\\standard-adapter-l3-primitives.test.js",
       "source_location": "L64",
       "id": "standard_adapter_l3_primitives_test_capturedqueries",
-      "community": 90
+      "community": 91
     },
     {
       "label": "mockDraftHappyPath()",
@@ -5401,7 +5457,7 @@
       "source_file": "test\\p1-critical-path\\standard-adapter-l3-primitives.test.js",
       "source_location": "L225",
       "id": "standard_adapter_l3_primitives_test_mockdrafthappypath",
-      "community": 90
+      "community": 91
     },
     {
       "label": "standard-adapter-new-schema.test.js",
@@ -5409,7 +5465,7 @@
       "source_file": "test\\p1-critical-path\\standard-adapter-new-schema.test.js",
       "source_location": "L1",
       "id": "standard_adapter_new_schema_test",
-      "community": 119
+      "community": 121
     },
     {
       "label": "makeDbClient()",
@@ -5417,7 +5473,7 @@
       "source_file": "test\\p1-critical-path\\standard-adapter-new-schema.test.js",
       "source_location": "L78",
       "id": "standard_adapter_new_schema_test_makedbclient",
-      "community": 119
+      "community": 121
     },
     {
       "label": "admin-panel-clients-route.test.js",
@@ -5457,7 +5513,7 @@
       "source_file": "test\\p2-onboarding\\admin-routes-new-schema.test.js",
       "source_location": "L1",
       "id": "admin_routes_new_schema_test",
-      "community": 91
+      "community": 92
     },
     {
       "label": "makeApp()",
@@ -5465,7 +5521,7 @@
       "source_file": "test\\p2-onboarding\\admin-routes-new-schema.test.js",
       "source_location": "L100",
       "id": "admin_routes_new_schema_test_makeapp",
-      "community": 91
+      "community": 92
     },
     {
       "label": "capturedQueries()",
@@ -5473,7 +5529,7 @@
       "source_file": "test\\p2-onboarding\\admin-routes-new-schema.test.js",
       "source_location": "L113",
       "id": "admin_routes_new_schema_test_capturedqueries",
-      "community": 91
+      "community": 92
     },
     {
       "label": "api-key-encryption.test.js",
@@ -5481,7 +5537,7 @@
       "source_file": "test\\p2-onboarding\\api-key-encryption.test.js",
       "source_location": "L1",
       "id": "api_key_encryption_test",
-      "community": 166
+      "community": 168
     },
     {
       "label": "clients-kisi-user-pattern.test.js",
@@ -5489,7 +5545,7 @@
       "source_file": "test\\p2-onboarding\\clients-kisi-user-pattern.test.js",
       "source_location": "L1",
       "id": "clients_kisi_user_pattern_test",
-      "community": 120
+      "community": 122
     },
     {
       "label": "mockDbForPattern()",
@@ -5497,7 +5553,7 @@
       "source_file": "test\\p2-onboarding\\clients-kisi-user-pattern.test.js",
       "source_location": "L39",
       "id": "clients_kisi_user_pattern_test_mockdbforpattern",
-      "community": 120
+      "community": 122
     },
     {
       "label": "middleware-actor-edge-cases.test.js",
@@ -5505,7 +5561,7 @@
       "source_file": "test\\p2-onboarding\\middleware-actor-edge-cases.test.js",
       "source_location": "L1",
       "id": "middleware_actor_edge_cases_test",
-      "community": 121
+      "community": 123
     },
     {
       "label": "runMiddleware()",
@@ -5513,7 +5569,7 @@
       "source_file": "test\\p2-onboarding\\middleware-actor-edge-cases.test.js",
       "source_location": "L147",
       "id": "middleware_actor_edge_cases_test_runmiddleware",
-      "community": 121
+      "community": 123
     },
     {
       "label": "plan-mapping-resolver-new-schema.test.js",
@@ -5521,7 +5577,7 @@
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver-new-schema.test.js",
       "source_location": "L1",
       "id": "plan_mapping_resolver_new_schema_test",
-      "community": 122
+      "community": 124
     },
     {
       "label": "mockConnectorRow()",
@@ -5529,7 +5585,7 @@
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver-new-schema.test.js",
       "source_location": "L44",
       "id": "plan_mapping_resolver_new_schema_test_mockconnectorrow",
-      "community": 122
+      "community": 124
     },
     {
       "label": "plan-mapping-resolver.test.js",
@@ -5537,7 +5593,7 @@
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
       "source_location": "L1",
       "id": "plan_mapping_resolver_test",
-      "community": 123
+      "community": 125
     },
     {
       "label": "mockMappingRow()",
@@ -5545,7 +5601,7 @@
       "source_file": "test\\p2-onboarding\\plan-mapping-resolver.test.js",
       "source_location": "L37",
       "id": "plan_mapping_resolver_test_mockmappingrow",
-      "community": 123
+      "community": 125
     },
     {
       "label": "setup-hub-route.test.js",
@@ -5553,7 +5609,7 @@
       "source_file": "test\\p2-onboarding\\setup-hub-route.test.js",
       "source_location": "L1",
       "id": "setup_hub_route_test",
-      "community": 92
+      "community": 93
     },
     {
       "label": "findRouteHandler()",
@@ -5561,7 +5617,7 @@
       "source_file": "test\\p2-onboarding\\setup-hub-route.test.js",
       "source_location": "L146",
       "id": "setup_hub_route_test_findroutehandler",
-      "community": 92
+      "community": 93
     },
     {
       "label": "mockRes()",
@@ -5569,7 +5625,7 @@
       "source_file": "test\\p2-onboarding\\setup-hub-route.test.js",
       "source_location": "L155",
       "id": "setup_hub_route_test_mockres",
-      "community": 92
+      "community": 93
     },
     {
       "label": "setup-telemetry.test.js",
@@ -5577,7 +5633,7 @@
       "source_file": "test\\p2-onboarding\\setup-telemetry.test.js",
       "source_location": "L1",
       "id": "setup_telemetry_test",
-      "community": 93
+      "community": 94
     },
     {
       "label": "findRouteHandler()",
@@ -5585,7 +5641,7 @@
       "source_file": "test\\p2-onboarding\\setup-telemetry.test.js",
       "source_location": "L74",
       "id": "setup_telemetry_test_findroutehandler",
-      "community": 93
+      "community": 94
     },
     {
       "label": "mockRes()",
@@ -5593,7 +5649,7 @@
       "source_file": "test\\p2-onboarding\\setup-telemetry.test.js",
       "source_location": "L83",
       "id": "setup_telemetry_test_mockres",
-      "community": 93
+      "community": 94
     },
     {
       "label": "source-retry-probe.test.js",
@@ -5601,7 +5657,7 @@
       "source_file": "test\\p2-onboarding\\source-retry-probe.test.js",
       "source_location": "L1",
       "id": "source_retry_probe_test",
-      "community": 124
+      "community": 126
     },
     {
       "label": "candidateRow()",
@@ -5609,7 +5665,7 @@
       "source_file": "test\\p2-onboarding\\source-retry-probe.test.js",
       "source_location": "L61",
       "id": "source_retry_probe_test_candidaterow",
-      "community": 124
+      "community": 126
     },
     {
       "label": "system-health-endpoint.test.js",
@@ -5617,7 +5673,7 @@
       "source_file": "test\\p2-onboarding\\system-health-endpoint.test.js",
       "source_location": "L1",
       "id": "system_health_endpoint_test",
-      "community": 94
+      "community": 95
     },
     {
       "label": "makeApp()",
@@ -5625,7 +5681,7 @@
       "source_file": "test\\p2-onboarding\\system-health-endpoint.test.js",
       "source_location": "L37",
       "id": "system_health_endpoint_test_makeapp",
-      "community": 94
+      "community": 95
     },
     {
       "label": "mockHealthy()",
@@ -5633,7 +5689,7 @@
       "source_file": "test\\p2-onboarding\\system-health-endpoint.test.js",
       "source_location": "L62",
       "id": "system_health_endpoint_test_mockhealthy",
-      "community": 94
+      "community": 95
     },
     {
       "label": "trace-middleware.test.js",
@@ -5673,7 +5729,7 @@
       "source_file": "test\\p2-onboarding\\wix-app-market-stub.test.js",
       "source_location": "L1",
       "id": "wix_app_market_stub_test",
-      "community": 125
+      "community": 127
     },
     {
       "label": "mockRes()",
@@ -5681,7 +5737,7 @@
       "source_file": "test\\p2-onboarding\\wix-app-market-stub.test.js",
       "source_location": "L34",
       "id": "wix_app_market_stub_test_mockres",
-      "community": 125
+      "community": 127
     },
     {
       "label": "billing-snapshot.test.js",
@@ -5689,7 +5745,7 @@
       "source_file": "test\\p3-data-integrity\\billing-snapshot.test.js",
       "source_location": "L1",
       "id": "billing_snapshot_test",
-      "community": 167
+      "community": 169
     },
     {
       "label": "billing-subscriptions-wix-app-market-columns.test.js",
@@ -5697,7 +5753,7 @@
       "source_file": "test\\p3-data-integrity\\billing-subscriptions-wix-app-market-columns.test.js",
       "source_location": "L1",
       "id": "billing_subscriptions_wix_app_market_columns_test",
-      "community": 168
+      "community": 170
     },
     {
       "label": "cron-trace.test.js",
@@ -5705,7 +5761,7 @@
       "source_file": "test\\p3-data-integrity\\cron-trace.test.js",
       "source_location": "L1",
       "id": "cron_trace_test",
-      "community": 169
+      "community": 171
     },
     {
       "label": "diagnostic-log-db-sync.test.js",
@@ -5713,7 +5769,7 @@
       "source_file": "test\\p3-data-integrity\\diagnostic-log-db-sync.test.js",
       "source_location": "L1",
       "id": "diagnostic_log_db_sync_test",
-      "community": 126
+      "community": 128
     },
     {
       "label": "flushImmediate()",
@@ -5721,7 +5777,31 @@
       "source_file": "test\\p3-data-integrity\\diagnostic-log-db-sync.test.js",
       "source_location": "L52",
       "id": "diagnostic_log_db_sync_test_flushimmediate",
-      "community": 126
+      "community": 128
+    },
+    {
+      "label": "dr-023-boundary-ratchet.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\dr-023-boundary-ratchet.test.js",
+      "source_location": "L1",
+      "id": "dr_023_boundary_ratchet_test",
+      "community": 96
+    },
+    {
+      "label": "walkJsFiles()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\dr-023-boundary-ratchet.test.js",
+      "source_location": "L70",
+      "id": "dr_023_boundary_ratchet_test_walkjsfiles",
+      "community": 96
+    },
+    {
+      "label": "scan()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\dr-023-boundary-ratchet.test.js",
+      "source_location": "L83",
+      "id": "dr_023_boundary_ratchet_test_scan",
+      "community": 96
     },
     {
       "label": "event-registry-sync.test.js",
@@ -5729,7 +5809,7 @@
       "source_file": "test\\p3-data-integrity\\event-registry-sync.test.js",
       "source_location": "L1",
       "id": "event_registry_sync_test",
-      "community": 127
+      "community": 129
     },
     {
       "label": "extractMarkdownEvents()",
@@ -5737,7 +5817,7 @@
       "source_file": "test\\p3-data-integrity\\event-registry-sync.test.js",
       "source_location": "L45",
       "id": "event_registry_sync_test_extractmarkdownevents",
-      "community": 127
+      "community": 129
     },
     {
       "label": "kisi-user-explicit-flags.test.js",
@@ -5745,7 +5825,7 @@
       "source_file": "test\\p3-data-integrity\\kisi-user-explicit-flags.test.js",
       "source_location": "L1",
       "id": "kisi_user_explicit_flags_test",
-      "community": 170
+      "community": 172
     },
     {
       "label": "log-table-trace-id.test.js",
@@ -5753,7 +5833,7 @@
       "source_file": "test\\p3-data-integrity\\log-table-trace-id.test.js",
       "source_location": "L1",
       "id": "log_table_trace_id_test",
-      "community": 95
+      "community": 97
     },
     {
       "label": "collectJsFiles()",
@@ -5761,7 +5841,7 @@
       "source_file": "test\\p3-data-integrity\\log-table-trace-id.test.js",
       "source_location": "L57",
       "id": "log_table_trace_id_test_collectjsfiles",
-      "community": 95
+      "community": 97
     },
     {
       "label": "findOffenders()",
@@ -5769,7 +5849,7 @@
       "source_file": "test\\p3-data-integrity\\log-table-trace-id.test.js",
       "source_location": "L80",
       "id": "log_table_trace_id_test_findoffenders",
-      "community": 95
+      "community": 97
     },
     {
       "label": "logger-context-redaction.test.js",
@@ -5777,7 +5857,7 @@
       "source_file": "test\\p3-data-integrity\\logger-context-redaction.test.js",
       "source_location": "L1",
       "id": "logger_context_redaction_test",
-      "community": 171
+      "community": 173
     },
     {
       "label": "logger-message-field.test.js",
@@ -5785,7 +5865,7 @@
       "source_file": "test\\p3-data-integrity\\logger-message-field.test.js",
       "source_location": "L1",
       "id": "logger_message_field_test",
-      "community": 172
+      "community": 174
     },
     {
       "label": "member-access-sources-unique-constraint.test.js",
@@ -5793,7 +5873,7 @@
       "source_file": "test\\p3-data-integrity\\member-access-sources-unique-constraint.test.js",
       "source_location": "L1",
       "id": "member_access_sources_unique_constraint_test",
-      "community": 173
+      "community": 175
     },
     {
       "label": "member-billing-cycle-transition.test.js",
@@ -5801,7 +5881,7 @@
       "source_file": "test\\p3-data-integrity\\member-billing-cycle-transition.test.js",
       "source_location": "L1",
       "id": "member_billing_cycle_transition_test",
-      "community": 174
+      "community": 176
     },
     {
       "label": "member-sync-api-billing-conflation.test.js",
@@ -5809,7 +5889,7 @@
       "source_file": "test\\p3-data-integrity\\member-sync-api-billing-conflation.test.js",
       "source_location": "L1",
       "id": "member_sync_api_billing_conflation_test",
-      "community": 175
+      "community": 177
     },
     {
       "label": "member-table-client-id.test.js",
@@ -5817,7 +5897,7 @@
       "source_file": "test\\p3-data-integrity\\member-table-client-id.test.js",
       "source_location": "L1",
       "id": "member_table_client_id_test",
-      "community": 96
+      "community": 98
     },
     {
       "label": "collectJsFiles()",
@@ -5825,7 +5905,7 @@
       "source_file": "test\\p3-data-integrity\\member-table-client-id.test.js",
       "source_location": "L53",
       "id": "member_table_client_id_test_collectjsfiles",
-      "community": 96
+      "community": 98
     },
     {
       "label": "findOffenders()",
@@ -5833,7 +5913,7 @@
       "source_file": "test\\p3-data-integrity\\member-table-client-id.test.js",
       "source_location": "L75",
       "id": "member_table_client_id_test_findoffenders",
-      "community": 96
+      "community": 98
     },
     {
       "label": "members-bridge-billing.test.js",
@@ -5889,7 +5969,7 @@
       "source_file": "test\\p3-data-integrity\\multi-member-new-schema.test.js",
       "source_location": "L1",
       "id": "multi_member_new_schema_test",
-      "community": 97
+      "community": 99
     },
     {
       "label": "makeApp()",
@@ -5897,7 +5977,7 @@
       "source_file": "test\\p3-data-integrity\\multi-member-new-schema.test.js",
       "source_location": "L48",
       "id": "multi_member_new_schema_test_makeapp",
-      "community": 97
+      "community": 99
     },
     {
       "label": "capturedQueries()",
@@ -5905,7 +5985,7 @@
       "source_file": "test\\p3-data-integrity\\multi-member-new-schema.test.js",
       "source_location": "L62",
       "id": "multi_member_new_schema_test_capturedqueries",
-      "community": 97
+      "community": 99
     },
     {
       "label": "multi-member-synthetic-origin-actor.test.js",
@@ -5953,7 +6033,7 @@
       "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
       "source_location": "L1",
       "id": "no_raw_console_test",
-      "community": 98
+      "community": 100
     },
     {
       "label": "collectJsFiles()",
@@ -5961,7 +6041,7 @@
       "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
       "source_location": "L34",
       "id": "no_raw_console_test_collectjsfiles",
-      "community": 98
+      "community": 100
     },
     {
       "label": "findOffenders()",
@@ -5969,7 +6049,7 @@
       "source_file": "test\\p3-data-integrity\\no-raw-console.test.js",
       "source_location": "L57",
       "id": "no_raw_console_test_findoffenders",
-      "community": 98
+      "community": 100
     },
     {
       "label": "ob-240-migration.test.js",
@@ -5977,7 +6057,7 @@
       "source_file": "test\\p3-data-integrity\\ob-240-migration.test.js",
       "source_location": "L1",
       "id": "ob_240_migration_test",
-      "community": 176
+      "community": 178
     },
     {
       "label": "ob-244-member-access-status-enum.test.js",
@@ -5985,7 +6065,7 @@
       "source_file": "test\\p3-data-integrity\\ob-244-member-access-status-enum.test.js",
       "source_location": "L1",
       "id": "ob_244_member_access_status_enum_test",
-      "community": 177
+      "community": 179
     },
     {
       "label": "ob-247-pass-1-5-holder-lapse.test.js",
@@ -5993,7 +6073,7 @@
       "source_file": "test\\p3-data-integrity\\ob-247-pass-1-5-holder-lapse.test.js",
       "source_location": "L1",
       "id": "ob_247_pass_1_5_holder_lapse_test",
-      "community": 178
+      "community": 180
     },
     {
       "label": "ob-249-pass-3-operator-delete-drift.test.js",
@@ -6001,7 +6081,7 @@
       "source_file": "test\\p3-data-integrity\\ob-249-pass-3-operator-delete-drift.test.js",
       "source_location": "L1",
       "id": "ob_249_pass_3_operator_delete_drift_test",
-      "community": 179
+      "community": 181
     },
     {
       "label": "operator-members-disambiguation.test.js",
@@ -6009,7 +6089,7 @@
       "source_file": "test\\p3-data-integrity\\operator-members-disambiguation.test.js",
       "source_location": "L1",
       "id": "operator_members_disambiguation_test",
-      "community": 128
+      "community": 130
     },
     {
       "label": "makeApp()",
@@ -6017,7 +6097,39 @@
       "source_file": "test\\p3-data-integrity\\operator-members-disambiguation.test.js",
       "source_location": "L100",
       "id": "operator_members_disambiguation_test_makeapp",
-      "community": 128
+      "community": 130
+    },
+    {
+      "label": "operator-members-query-shape.test.js",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\operator-members-query-shape.test.js",
+      "source_location": "L1",
+      "id": "operator_members_query_shape_test",
+      "community": 67
+    },
+    {
+      "label": "makeApp()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\operator-members-query-shape.test.js",
+      "source_location": "L98",
+      "id": "operator_members_query_shape_test_makeapp",
+      "community": 67
+    },
+    {
+      "label": "mockMembersQueries()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\operator-members-query-shape.test.js",
+      "source_location": "L109",
+      "id": "operator_members_query_shape_test_mockmembersqueries",
+      "community": 67
+    },
+    {
+      "label": "countOccurrences()",
+      "file_type": "code",
+      "source_file": "test\\p3-data-integrity\\operator-members-query-shape.test.js",
+      "source_location": "L116",
+      "id": "operator_members_query_shape_test_countoccurrences",
+      "community": 67
     },
     {
       "label": "rate-limiter.test.js",
@@ -6025,7 +6137,7 @@
       "source_file": "test\\p3-data-integrity\\rate-limiter.test.js",
       "source_location": "L1",
       "id": "rate_limiter_test",
-      "community": 180
+      "community": 182
     },
     {
       "label": "recon-traceid-guard.test.js",
@@ -6033,7 +6145,7 @@
       "source_file": "test\\p3-data-integrity\\recon-traceid-guard.test.js",
       "source_location": "L1",
       "id": "recon_traceid_guard_test",
-      "community": 181
+      "community": 183
     },
     {
       "label": "reconcile-trigger-source.test.js",
@@ -6041,7 +6153,7 @@
       "source_file": "test\\p3-data-integrity\\reconcile-trigger-source.test.js",
       "source_location": "L1",
       "id": "reconcile_trigger_source_test",
-      "community": 182
+      "community": 184
     },
     {
       "label": "reconciliation-new-schema.test.js",
@@ -6049,7 +6161,7 @@
       "source_file": "test\\p3-data-integrity\\reconciliation-new-schema.test.js",
       "source_location": "L1",
       "id": "reconciliation_new_schema_test",
-      "community": 183
+      "community": 185
     },
     {
       "label": "reconciliation-pass2-source-lookup.test.js",
@@ -6057,7 +6169,7 @@
       "source_file": "test\\p3-data-integrity\\reconciliation-pass2-source-lookup.test.js",
       "source_location": "L1",
       "id": "reconciliation_pass2_source_lookup_test",
-      "community": 184
+      "community": 186
     },
     {
       "label": "redaction-edge-cases.test.js",
@@ -6065,7 +6177,7 @@
       "source_file": "test\\p3-data-integrity\\redaction-edge-cases.test.js",
       "source_location": "L1",
       "id": "redaction_edge_cases_test",
-      "community": 185
+      "community": 187
     },
     {
       "label": "schema-concepts-new.test.js",
@@ -6073,7 +6185,7 @@
       "source_file": "test\\p3-data-integrity\\schema-concepts-new.test.js",
       "source_location": "L1",
       "id": "schema_concepts_new_test",
-      "community": 186
+      "community": 188
     },
     {
       "label": "snippet-registry.test.js",
@@ -6081,7 +6193,7 @@
       "source_file": "test\\p3-data-integrity\\snippet-registry.test.js",
       "source_location": "L1",
       "id": "snippet_registry_test",
-      "community": 187
+      "community": 189
     },
     {
       "label": "trace-context-unhappy.test.js",
@@ -6089,7 +6201,7 @@
       "source_file": "test\\p3-data-integrity\\trace-context-unhappy.test.js",
       "source_location": "L1",
       "id": "trace_context_unhappy_test",
-      "community": 188
+      "community": 190
     },
     {
       "label": "trace-propagation.test.js",
@@ -6097,7 +6209,7 @@
       "source_file": "test\\p3-data-integrity\\trace-propagation.test.js",
       "source_location": "L1",
       "id": "trace_propagation_test",
-      "community": 189
+      "community": 191
     },
     {
       "label": "wix-adapter-parsing.test.js",
@@ -6105,7 +6217,7 @@
       "source_file": "test\\p3-data-integrity\\wix-adapter-parsing.test.js",
       "source_location": "L1",
       "id": "wix_adapter_parsing_test",
-      "community": 190
+      "community": 192
     },
     {
       "label": "wix-adapter-payment-guard.test.js",
@@ -6113,7 +6225,7 @@
       "source_file": "test\\p3-data-integrity\\wix-adapter-payment-guard.test.js",
       "source_location": "L1",
       "id": "wix_adapter_payment_guard_test",
-      "community": 129
+      "community": 131
     },
     {
       "label": "makeOrder()",
@@ -6121,7 +6233,7 @@
       "source_file": "test\\p3-data-integrity\\wix-adapter-payment-guard.test.js",
       "source_location": "L34",
       "id": "wix_adapter_payment_guard_test_makeorder",
-      "community": 129
+      "community": 131
     },
     {
       "label": "wix-members-api-normalization.test.js",
@@ -6169,7 +6281,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L1",
       "id": "business_risk_reporter",
-      "community": 22
+      "community": 23
     },
     {
       "label": "getTierForPath()",
@@ -6177,7 +6289,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L26",
       "id": "business_risk_reporter_gettierforpath",
-      "community": 22
+      "community": 23
     },
     {
       "label": "formatDivider()",
@@ -6185,7 +6297,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L31",
       "id": "business_risk_reporter_formatdivider",
-      "community": 22
+      "community": 23
     },
     {
       "label": "BusinessRiskReporter",
@@ -6193,7 +6305,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L35",
       "id": "business_risk_reporter_businessriskreporter",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".constructor()",
@@ -6201,7 +6313,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L36",
       "id": "business_risk_reporter_businessriskreporter_constructor",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".onTestResult()",
@@ -6209,7 +6321,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L44",
       "id": "business_risk_reporter_businessriskreporter_ontestresult",
-      "community": 22
+      "community": 23
     },
     {
       "label": ".onRunComplete()",
@@ -6217,7 +6329,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L61",
       "id": "business_risk_reporter_businessriskreporter_onruncomplete",
-      "community": 22
+      "community": 23
     },
     {
       "label": "._printSuiteLoadFailures()",
@@ -6225,7 +6337,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L132",
       "id": "business_risk_reporter_businessriskreporter_printsuiteloadfailures",
-      "community": 22
+      "community": 23
     },
     {
       "label": "._printAllClear()",
@@ -6233,7 +6345,7 @@
       "source_file": "test\\reporters\\business-risk-reporter.js",
       "source_location": "L156",
       "id": "business_risk_reporter_businessriskreporter_printallclear",
-      "community": 22
+      "community": 23
     }
   ],
   "links": [
@@ -7141,7 +7253,55 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L666",
+      "source_location": "L438",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter",
+      "_tgt": "standard_adapter_standardadapter_resolvemasterforgrant",
+      "source": "standard_adapter_standardadapter",
+      "target": "standard_adapter_standardadapter_resolvemasterforgrant",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L510",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter",
+      "_tgt": "standard_adapter_standardadapter_writebillingcycle",
+      "source": "standard_adapter_standardadapter",
+      "target": "standard_adapter_standardadapter_writebillingcycle",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L625",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter",
+      "_tgt": "standard_adapter_standardadapter_resolveholderseated",
+      "source": "standard_adapter_standardadapter",
+      "target": "standard_adapter_standardadapter_resolveholderseated",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L644",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter",
+      "_tgt": "standard_adapter_standardadapter_upsertsourcerow",
+      "source": "standard_adapter_standardadapter",
+      "target": "standard_adapter_standardadapter_upsertsourcerow",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L719",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_createsubmemberdraft",
@@ -7153,7 +7313,31 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L722",
+      "source_location": "L777",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter",
+      "_tgt": "standard_adapter_standardadapter_updatesubmemberdraftpii",
+      "source": "standard_adapter_standardadapter",
+      "target": "standard_adapter_standardadapter_updatesubmemberdraftpii",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L802",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter",
+      "_tgt": "standard_adapter_standardadapter_harddeletesubmember",
+      "source": "standard_adapter_standardadapter",
+      "target": "standard_adapter_standardadapter_harddeletesubmember",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L821",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_marksubmemberremoving",
@@ -7165,7 +7349,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L738",
+      "source_location": "L837",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_rollupaccessstatusbyplatformmember",
@@ -7177,7 +7361,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L757",
+      "source_location": "L856",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_rollupaccessstatus",
@@ -7189,7 +7373,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L797",
+      "source_location": "L896",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_maybefirefirstgrantemail",
@@ -7201,7 +7385,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L873",
+      "source_location": "L972",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_completerevoke",
@@ -7213,7 +7397,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L976",
+      "source_location": "L1075",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_finalizerevoke",
@@ -7225,7 +7409,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1105",
+      "source_location": "L1204",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_alertoperatorfinalizerefused",
@@ -7237,7 +7421,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1149",
+      "source_location": "L1248",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_releaselock",
@@ -7249,7 +7433,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1200",
+      "source_location": "L1299",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_releasestalelocks",
@@ -7261,7 +7445,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1217",
+      "source_location": "L1316",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_markrecoverypending",
@@ -7273,7 +7457,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1234",
+      "source_location": "L1333",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_markkisiuserobservation",
@@ -7285,7 +7469,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1266",
+      "source_location": "L1365",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_parkpendingstart",
@@ -7297,7 +7481,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1329",
+      "source_location": "L1428",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_parkpendinghardware",
@@ -7309,7 +7493,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1374",
+      "source_location": "L1473",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -7321,7 +7505,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1393",
+      "source_location": "L1492",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_callhardwaretoresolveidentity",
@@ -7333,7 +7517,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1433",
+      "source_location": "L1532",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_recovermissingemail",
@@ -7345,7 +7529,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1536",
+      "source_location": "L1635",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter",
       "_tgt": "standard_adapter_standardadapter_parkpendingidentity",
@@ -7405,7 +7589,55 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L605",
+      "source_location": "L375",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter_completegrant",
+      "_tgt": "standard_adapter_standardadapter_resolvemasterforgrant",
+      "source": "standard_adapter_standardadapter_completegrant",
+      "target": "standard_adapter_standardadapter_resolvemasterforgrant",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L397",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter_completegrant",
+      "_tgt": "standard_adapter_standardadapter_writebillingcycle",
+      "source": "standard_adapter_standardadapter_completegrant",
+      "target": "standard_adapter_standardadapter_writebillingcycle",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L401",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter_completegrant",
+      "_tgt": "standard_adapter_standardadapter_resolveholderseated",
+      "source": "standard_adapter_standardadapter_completegrant",
+      "target": "standard_adapter_standardadapter_resolveholderseated",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L410",
+      "weight": 1.0,
+      "_src": "standard_adapter_standardadapter_completegrant",
+      "_tgt": "standard_adapter_standardadapter_upsertsourcerow",
+      "source": "standard_adapter_standardadapter_completegrant",
+      "target": "standard_adapter_standardadapter_upsertsourcerow",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "adapters\\standard-adapter.js",
+      "source_location": "L417",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completegrant",
       "_tgt": "standard_adapter_standardadapter_rollupaccessstatus",
@@ -7417,7 +7649,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L610",
+      "source_location": "L422",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completegrant",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -7429,7 +7661,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L614",
+      "source_location": "L426",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completegrant",
       "_tgt": "standard_adapter_standardadapter_maybefirefirstgrantemail",
@@ -7441,7 +7673,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L924",
+      "source_location": "L1023",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completerevoke",
       "_tgt": "standard_adapter_standardadapter_rollupaccessstatus",
@@ -7453,7 +7685,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1303",
+      "source_location": "L1402",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_parkpendingstart",
       "_tgt": "standard_adapter_standardadapter_rollupaccessstatus",
@@ -7465,7 +7697,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1361",
+      "source_location": "L1460",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_parkpendinghardware",
       "_tgt": "standard_adapter_standardadapter_rollupaccessstatus",
@@ -7477,7 +7709,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L934",
+      "source_location": "L1033",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_completerevoke",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -7489,7 +7721,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1031",
+      "source_location": "L1130",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_finalizerevoke",
       "_tgt": "standard_adapter_standardadapter_alertoperatorfinalizerefused",
@@ -7501,7 +7733,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1182",
+      "source_location": "L1281",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_releaselock",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -7513,7 +7745,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "adapters\\standard-adapter.js",
-      "source_location": "L1307",
+      "source_location": "L1406",
       "weight": 1.0,
       "_src": "standard_adapter_standardadapter_parkpendingstart",
       "_tgt": "standard_adapter_standardadapter_incrementactivity",
@@ -11293,7 +11525,19 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "admin\\routes\\operator.js",
-      "source_location": "L2386",
+      "source_location": "L2132",
+      "weight": 1.0,
+      "_src": "operator",
+      "_tgt": "operator_holderfallback",
+      "source": "operator",
+      "target": "operator_holderfallback",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "admin\\routes\\operator.js",
+      "source_location": "L2366",
       "weight": 1.0,
       "_src": "operator",
       "_tgt": "operator_basenamefor",
@@ -12721,7 +12965,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L65",
+      "source_location": "L66",
       "weight": 1.0,
       "_src": "source_retry_probe",
       "_tgt": "source_retry_probe_runprobe",
@@ -12733,7 +12977,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L73",
+      "source_location": "L74",
       "weight": 1.0,
       "_src": "source_retry_probe",
       "_tgt": "source_retry_probe_runprobebody",
@@ -12745,7 +12989,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L161",
+      "source_location": "L162",
       "weight": 1.0,
       "_src": "source_retry_probe",
       "_tgt": "source_retry_probe_retryone",
@@ -12757,7 +13001,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L204",
+      "source_location": "L205",
       "weight": 1.0,
       "_src": "source_retry_probe",
       "_tgt": "source_retry_probe_recordsuccess",
@@ -12769,7 +13013,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L260",
+      "source_location": "L258",
       "weight": 1.0,
       "_src": "source_retry_probe",
       "_tgt": "source_retry_probe_recordfailure",
@@ -12781,7 +13025,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L131",
+      "source_location": "L132",
       "weight": 1.0,
       "_src": "source_retry_probe_runprobebody",
       "_tgt": "source_retry_probe_retryone",
@@ -12793,7 +13037,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L178",
+      "source_location": "L179",
       "weight": 1.0,
       "_src": "source_retry_probe_retryone",
       "_tgt": "source_retry_probe_recordfailure",
@@ -12805,7 +13049,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "core\\source-retry-probe.js",
-      "source_location": "L192",
+      "source_location": "L193",
       "weight": 1.0,
       "_src": "source_retry_probe_retryone",
       "_tgt": "source_retry_probe_recordsuccess",
@@ -16056,6 +16300,42 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\dr-023-boundary-ratchet.test.js",
+      "source_location": "L70",
+      "weight": 1.0,
+      "_src": "dr_023_boundary_ratchet_test",
+      "_tgt": "dr_023_boundary_ratchet_test_walkjsfiles",
+      "source": "dr_023_boundary_ratchet_test",
+      "target": "dr_023_boundary_ratchet_test_walkjsfiles",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\dr-023-boundary-ratchet.test.js",
+      "source_location": "L83",
+      "weight": 1.0,
+      "_src": "dr_023_boundary_ratchet_test",
+      "_tgt": "dr_023_boundary_ratchet_test_scan",
+      "source": "dr_023_boundary_ratchet_test",
+      "target": "dr_023_boundary_ratchet_test_scan",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\dr-023-boundary-ratchet.test.js",
+      "source_location": "L86",
+      "weight": 1.0,
+      "_src": "dr_023_boundary_ratchet_test_scan",
+      "_tgt": "dr_023_boundary_ratchet_test_walkjsfiles",
+      "source": "dr_023_boundary_ratchet_test_walkjsfiles",
+      "target": "dr_023_boundary_ratchet_test_scan",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "test\\p3-data-integrity\\event-registry-sync.test.js",
       "source_location": "L45",
       "weight": 1.0,
@@ -16327,6 +16607,42 @@
       "_tgt": "operator_members_disambiguation_test_makeapp",
       "source": "operator_members_disambiguation_test",
       "target": "operator_members_disambiguation_test_makeapp",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\operator-members-query-shape.test.js",
+      "source_location": "L98",
+      "weight": 1.0,
+      "_src": "operator_members_query_shape_test",
+      "_tgt": "operator_members_query_shape_test_makeapp",
+      "source": "operator_members_query_shape_test",
+      "target": "operator_members_query_shape_test_makeapp",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\operator-members-query-shape.test.js",
+      "source_location": "L109",
+      "weight": 1.0,
+      "_src": "operator_members_query_shape_test",
+      "_tgt": "operator_members_query_shape_test_mockmembersqueries",
+      "source": "operator_members_query_shape_test",
+      "target": "operator_members_query_shape_test_mockmembersqueries",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "test\\p3-data-integrity\\operator-members-query-shape.test.js",
+      "source_location": "L116",
+      "weight": 1.0,
+      "_src": "operator_members_query_shape_test",
+      "_tgt": "operator_members_query_shape_test_countoccurrences",
+      "source": "operator_members_query_shape_test",
+      "target": "operator_members_query_shape_test_countoccurrences",
       "confidence_score": 1.0
     },
     {
