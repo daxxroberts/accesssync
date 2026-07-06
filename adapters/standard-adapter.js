@@ -633,6 +633,34 @@ class StandardAdapter {
    *        behavior preserved).
    * @param {string|null} [opts.hardwarePlatform]  only read when stampProvisioned
    */
+  /**
+   * DR-023 / OB-185 Pass 1: status rollup for one platform member, resolved
+   * via member_master join — reconciliation does not hold access_id at the
+   * point it calls this. Same rollup rule as rollupAccessStatus(); the join
+   * key is the only difference. SQL moved verbatim from reconciliation.js.
+   *
+   * @param {string} clientId
+   * @param {string} platformMemberId  member_master.platform_member_id
+   */
+  async rollupAccessStatusByPlatformMember(clientId, platformMemberId) {
+    await db.query(
+      `UPDATE member_access ma
+       SET status = CASE
+                      WHEN EXISTS (
+                        SELECT 1 FROM member_access_sources mas
+                        WHERE mas.access_id = ma.id AND mas.status = 'active'
+                      ) THEN 'active'
+                      ELSE 'inactive'
+                    END,
+           updated_at = NOW()
+       FROM member_master mm
+       WHERE ma.member_master_id = mm.id
+         AND ma.client_id = $1
+         AND mm.platform_member_id = $2`,
+      [clientId, platformMemberId]
+    );
+  }
+
   async rollupAccessStatus(memberId, { dbClient = null, stampProvisioned = false, hardwarePlatform = null } = {}) {
     const q = dbClient || db;
     if (stampProvisioned) {

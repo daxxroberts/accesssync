@@ -818,23 +818,9 @@ class NightlyReconciliation {
 
       // ── Roll up access status from sources for every member we touched this iteration.
       // Single rollup per member, after all per-plan promotion+insert work is done.
+      // DR-023: member_access write routed through L3.
       try {
-        await db.query(
-          `UPDATE member_access ma
-           SET status = CASE
-                          WHEN EXISTS (
-                            SELECT 1 FROM member_access_sources mas
-                            WHERE mas.access_id = ma.id AND mas.status = 'active'
-                          ) THEN 'active'
-                          ELSE 'inactive'
-                        END,
-               updated_at = NOW()
-           FROM member_master mm
-           WHERE ma.member_master_id = mm.id
-             AND ma.client_id = $1
-             AND mm.platform_member_id = $2`,
-          [client.id, memberId]
-        );
+        await standardAdapter.rollupAccessStatusByPlatformMember(client.id, memberId);
       } catch (err) {
         log.error('reconciliation.access_rollup_failed', {
           clientId: client.id, platformMemberId: memberId,
