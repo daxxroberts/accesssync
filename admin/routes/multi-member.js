@@ -444,17 +444,19 @@ router.put('/api/multi-member/members/:subId', async (req, res) => {
       return res.status(404).json({ error: 'Draft sub-member not found (only draft members can be edited)' });
     }
 
-    const masterResult = await db.query(
-      `UPDATE member_master
-       SET first_name = $1, last_name = $2, email = $3, phone = $4, updated_at = NOW()
-       WHERE id = $5
-       RETURNING id, first_name, last_name, email, phone`,
-      [firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim(),
-       accessCheck.rows[0].member_master_id]
+    // DR-023: member_master write routed through L3.
+    const updated = await standardAdapter.updateSubMemberDraftPII(
+      accessCheck.rows[0].member_master_id,
+      {
+        firstName: firstName.trim(),
+        lastName:  lastName.trim(),
+        email:     email.trim().toLowerCase(),
+        phone:     phone.trim(),
+      }
     );
 
     log.info('admin.sub_member_updated', { subId });
-    res.json({ ok: true, subMember: masterResult.rows[0] });
+    res.json({ ok: true, subMember: updated });
   } catch (err) {
     log.error('admin.multi_member_update_error', {}, err);
     res.status(500).json({ error: 'Internal server error' });

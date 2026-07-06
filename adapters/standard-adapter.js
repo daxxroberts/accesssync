@@ -766,6 +766,26 @@ class StandardAdapter {
   }
 
   /**
+   * DR-023 / DR-032: PII edit for a DRAFT sub-member (pre-submit only — the
+   * route enforces draft-only via its source-status check). Caller normalizes
+   * inputs (trim / lowercase email) before calling.
+   *
+   * @param {string} memberMasterId  member_master.id
+   * @param {Object} p               { firstName, lastName, email, phone }
+   * @returns {Promise<Object>} the updated row { id, first_name, last_name, email, phone }
+   */
+  async updateSubMemberDraftPII(memberMasterId, { firstName, lastName, email, phone }) {
+    const result = await db.query(
+      `UPDATE member_master
+       SET first_name = $1, last_name = $2, email = $3, phone = $4, updated_at = NOW()
+       WHERE id = $5
+       RETURNING id, first_name, last_name, email, phone`,
+      [firstName, lastName, email, phone, memberMasterId]
+    );
+    return result.rows[0];
+  }
+
+  /**
    * DR-023 / DR-044: hard delete of a sub-member that never reached hardware —
    * the two pre-provisioning exits of the DR-044 state machine:
    *   draft            → includeSources: true  (explicit 'draft' source rows to clean)

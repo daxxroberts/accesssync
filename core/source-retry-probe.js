@@ -5,11 +5,11 @@
  * @schedule scheduled via Railway Cron — recommended every 5 minutes
  * @reads member_access_sources, member_access, member_master, connector_subscriptions
  * @writes member_access_sources (status, role_assignment_id, retry_count, last_retry_at, failure_reason),
- *         member_access (status rollup),
+ *         member_access (status rollup — via standardAdapter.rollupAccessStatus),
  *         error_queue (on retry_count == 3)
- * @calls hardware-adapter.assignRole, crypto-utils.decryptApiKey
+ * @calls hardware-adapter.assignRole, standard-adapter.rollupAccessStatus, crypto-utils.decryptApiKey
  * @exports runProbe
- * @dr DR-023 (carve-out — recovery primitive; see UPDATE comment below)
+ * @dr DR-023 (rollup routed through L3 as of 2026-07-06; former carve-out retired)
  * @ob OB-240
  *
  * source-retry-probe.js
@@ -54,6 +54,7 @@
 
 const db = require('../db');
 const hardwareAdapter = require('../adapters/hardware-adapter');
+const standardAdapter = require('../adapters/standard-adapter');
 const { decryptApiKey } = require('./crypto-utils');
 const { log } = require('./logger');
 const { runWith, mintTraceId, getTraceId, getActor } = require('./trace-context');
@@ -232,13 +233,10 @@ async function _recordSuccess(row, roleAssignmentId) {
   const activeCount = (remainingActive.rows[0] && remainingActive.rows[0].n) || 0;
   const newParentStatus = activeCount > 0 ? 'active' : 'inactive';
 
-  await db.query(
-    `UPDATE member_access
-        SET status = $2,
-            updated_at = NOW()
-      WHERE id = $1`,
-    [row.access_id, newParentStatus]
-  );
+  // DR-023: the status write goes through L3's canonical rollup (the SELECT
+  // above stays — it feeds the parentStatus log field). This retires the
+  // former DR-023 carve-out: the primitive didn't exist when this was written.
+  await standardAdapter.rollupAccessStatus(row.access_id);
 
   log.info('source_retry.success', {
     sourceId: row.source_id,

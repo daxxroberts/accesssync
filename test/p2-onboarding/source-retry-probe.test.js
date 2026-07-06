@@ -132,10 +132,13 @@ describe('[P2] OB-240 — success path', () => {
     expect(successUpdate[0]).toMatch(/failure_reason\s*=\s*NULL/i);
     expect(successUpdate[1]).toEqual([SOURCE_ID_A, 'kisi-ra-99']);
 
-    // Parent rollup recompute
+    // Parent rollup recompute — DR-023: routed through standardAdapter.rollupAccessStatus,
+    // which derives the status in SQL (CASE on active-source existence) instead of
+    // taking a JS-computed value. Params carry only the access id.
     const rollupUpdate = db.query.mock.calls[3];
     expect(rollupUpdate[0]).toMatch(/UPDATE\s+member_access/i);
-    expect(rollupUpdate[1]).toEqual([ACCESS_ID, 'active']);
+    expect(rollupUpdate[0]).toMatch(/SET status = CASE/);
+    expect(rollupUpdate[1]).toEqual([ACCESS_ID]);
 
     expect(log.info).toHaveBeenCalledWith(
       'source_retry.success',
@@ -153,7 +156,14 @@ describe('[P2] OB-240 — success path', () => {
 
     await runProbe();
 
-    expect(db.query.mock.calls[3][1]).toEqual([ACCESS_ID, 'inactive']);
+    // DR-023: the status itself is derived inside the L3 rollup's CASE — the DB
+    // decides, not JS. The sibling count still drives the parentStatus log field,
+    // which is where the 'inactive' outcome is observable in this harness.
+    expect(db.query.mock.calls[3][1]).toEqual([ACCESS_ID]);
+    expect(log.info).toHaveBeenCalledWith(
+      'source_retry.success',
+      expect.objectContaining({ parentStatus: 'inactive' })
+    );
   });
 });
 
