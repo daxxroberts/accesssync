@@ -634,6 +634,85 @@ class StandardAdapter {
    * @param {string|null} [opts.hardwarePlatform]  only read when stampProvisioned
    */
   /**
+   * DR-023 / DR-044 / DR-032: creates the 3-row draft for a sub-member —
+   * member_master (PII anchor) + member_access (sub_master_id link,
+   * status='pending_identity') + member_access_sources (status='draft').
+   *
+   * Deliberately NOT transactional — preserves pre-refactor semantics: the
+   * caller's 23505 retry loop treats the member_master INSERT as the
+   * collision point and regenerates the DR-029 suffix per attempt. Throws
+   * raw pg errors so the caller's e.code === '23505' handling keeps working.
+   * Known pre-existing nuance (candidate follow-up, do not "fix" silently):
+   * a 23505 on the access or source INSERT leaves an orphan member_master row.
+   *
+   * Caller normalizes PII inputs (trim / lowercase email) before calling.
+   *
+   * @param {Object} p
+   * @param {string} p.clientId
+   * @param {string} p.sourcePlatform        holder's member_master.source_platform
+   * @param {string} p.hardwarePlatform      holder's member_access.hardware_platform
+   * @param {string} p.holderMasterId        holder's member_master.id → member_access.sub_master_id
+   * @param {string} p.subPlatformMemberId   DR-029 '{holderId}###as{6hex}' (caller generates per attempt)
+   * @param {string} p.firstName
+   * @param {string} p.lastName
+   * @param {string} p.email
+   * @param {string} p.phone
+   * @param {string} p.planMappingId
+   * @param {string|null} p.sourcePlanId
+   * @param {string|null} p.hardwareGroupId
+   * @returns {Promise<{memberMasterId, platformMemberId, firstName, lastName,
+   *                    email, phone, accessId, accessStatus}>}
+   */
+  async createSubMemberDraft({
+    clientId, sourcePlatform, hardwarePlatform, holderMasterId,
+    subPlatformMemberId, firstName, lastName, email, phone,
+    planMappingId, sourcePlanId, hardwareGroupId,
+  }) {
+    // Row 1: PII anchor
+    const masterResult = await db.query(
+      `INSERT INTO member_master
+         (client_id, source_platform, platform_member_id, first_name, last_name,
+          email, phone, source_tag)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'accesssync')
+       RETURNING id, platform_member_id, first_name, last_name, email, phone`,
+      [clientId, sourcePlatform, subPlatformMemberId,
+       firstName, lastName, email, phone]
+    );
+    // Row 2: access/role record (S-11: no plan_mapping_id column; status='pending_identity'
+    // since no source row is active yet — submit flow flips this when grant lands)
+    const accessResult = await db.query(
+      `INSERT INTO member_access
+         (member_master_id, client_id, source_platform, platform_member_id,
+          hardware_platform, sub_master_id, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending_identity')
+       RETURNING id, status`,
+      [masterResult.rows[0].id, clientId, sourcePlatform,
+       subPlatformMemberId, hardwarePlatform, holderMasterId]
+    );
+    // Row 3: source row in 'draft' status — per-plan state per DR-046
+    await db.query(
+      `INSERT INTO member_access_sources
+         (client_id, access_id, source_type, source_plan_id, hardware_group_id,
+          mapping_id, status)
+       VALUES ($1, $2, 'plan', $3, $4, $5, 'draft')`,
+      [clientId, accessResult.rows[0].id,
+       sourcePlanId || null, hardwareGroupId || null,
+       planMappingId]
+    );
+
+    return {
+      memberMasterId:   masterResult.rows[0].id,
+      platformMemberId: masterResult.rows[0].platform_member_id,
+      firstName:        masterResult.rows[0].first_name,
+      lastName:         masterResult.rows[0].last_name,
+      email:            masterResult.rows[0].email,
+      phone:            masterResult.rows[0].phone,
+      accessId:         accessResult.rows[0].id,
+      accessStatus:     accessResult.rows[0].status,
+    };
+  }
+
+  /**
    * DR-023 / DR-044: sub-member removal entry state. 'removing' is the
    * DR-044 state-machine entry written before the revoke job is queued;
    * OB-248 finalizeRevoke later flips 'removing' → 'deleted'.

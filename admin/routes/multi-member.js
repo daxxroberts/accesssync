@@ -329,43 +329,29 @@ router.post('/api/multi-member/members', async (req, res) => {
     //   member_master            — PII anchor
     //   member_access            — sub_master_id=holderId, status='pending_identity' until submitted
     //   member_access_sources    — mapping_id=planMappingId, status='draft', no role_assignment_id yet
-    let masterResult, accessResult;
+    let draft;
     let subPlatformMemberId;
     for (let attempt = 0; attempt < 5; attempt++) {
       const suffix = crypto.randomBytes(4).toString('hex').slice(0, 6);
       subPlatformMemberId = `${holderId_str}###as${suffix}`;
       try {
-        // Row 1: PII anchor
-        masterResult = await db.query(
-          `INSERT INTO member_master
-             (client_id, source_platform, platform_member_id, first_name, last_name,
-              email, phone, source_tag)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'accesssync')
-           RETURNING id, platform_member_id, first_name, last_name, email, phone`,
-          [clientId, holderRow.source_platform, subPlatformMemberId,
-           firstName.trim(), lastName.trim(), email.trim().toLowerCase(), phone.trim()]
-        );
-        // Row 2: access/role record (S-11: no plan_mapping_id column; status='pending_identity'
-        // since no source row is active yet — submit flow flips this when grant lands)
-        accessResult = await db.query(
-          `INSERT INTO member_access
-             (member_master_id, client_id, source_platform, platform_member_id,
-              hardware_platform, sub_master_id, status)
-           VALUES ($1, $2, $3, $4, $5, $6, 'pending_identity')
-           RETURNING id, status`,
-          [masterResult.rows[0].id, clientId, holderRow.source_platform,
-           subPlatformMemberId, holderRow.hardware_platform, holderId]
-        );
-        // Row 3: source row in 'draft' status — per-plan state per DR-046
-        await db.query(
-          `INSERT INTO member_access_sources
-             (client_id, access_id, source_type, source_plan_id, hardware_group_id,
-              mapping_id, status)
-           VALUES ($1, $2, 'plan', $3, $4, $5, 'draft')`,
-          [clientId, accessResult.rows[0].id,
-           planRow.source_plan_id || null, planRow.hardware_group_id || null,
-           planMappingId]
-        );
+        // DR-023: the 3-row draft INSERT (member_master + member_access +
+        // member_access_sources) lives in L3. Raw 23505 errors propagate so
+        // this retry loop can regenerate the DR-029 suffix.
+        draft = await standardAdapter.createSubMemberDraft({
+          clientId,
+          sourcePlatform:   holderRow.source_platform,
+          hardwarePlatform: holderRow.hardware_platform,
+          holderMasterId:   holderId,
+          subPlatformMemberId,
+          firstName:        firstName.trim(),
+          lastName:         lastName.trim(),
+          email:            email.trim().toLowerCase(),
+          phone:            phone.trim(),
+          planMappingId,
+          sourcePlanId:     planRow.source_plan_id || null,
+          hardwareGroupId:  planRow.hardware_group_id || null,
+        });
         break;
       } catch (e) {
         if (e.code === '23505' && attempt < 4) continue;
@@ -377,14 +363,14 @@ router.post('/api/multi-member/members', async (req, res) => {
     res.status(201).json({
       ok: true,
       subMember: {
-        id:               accessResult.rows[0].id,
-        memberMasterId:   masterResult.rows[0].id,
-        platformMemberId: masterResult.rows[0].platform_member_id,
-        firstName:        masterResult.rows[0].first_name,
-        lastName:         masterResult.rows[0].last_name,
-        email:            masterResult.rows[0].email,
-        phone:            masterResult.rows[0].phone,
-        status:           accessResult.rows[0].status,
+        id:               draft.accessId,
+        memberMasterId:   draft.memberMasterId,
+        platformMemberId: draft.platformMemberId,
+        firstName:        draft.firstName,
+        lastName:         draft.lastName,
+        email:            draft.email,
+        phone:            draft.phone,
+        status:           draft.accessStatus,
       },
     });
   } catch (err) {
@@ -504,6 +490,9 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
     // Hard delete is safe — no Kisi role assignment to clean up.
     if (member.source_status === 'draft') {
       // Hard delete source rows + access + member_master
+      // DR-023 TODO: these hard-DELETEs touch L3-owned tables directly. Left in
+      // place during the 2026-07-06 boundary refactor (out of scope); candidate
+      // L3 primitive for the whole-repo sweep.
       await db.query('DELETE FROM member_access_sources WHERE access_id = $1', [subId]);
       await db.query('DELETE FROM member_access WHERE id = $1', [subId]);
       await db.query(
@@ -543,6 +532,8 @@ router.delete('/api/multi-member/members/:subId', async (req, res) => {
       log.info('admin.sub_member_revoke_queued', { platformMemberId: member.platform_member_id, jobId, subId });
     } else {
       // Never provisioned to hardware — safe to delete immediately
+      // DR-023 TODO: direct DELETE on L3-owned table — see note on the draft
+      // hard-delete path above; candidate L3 primitive for the whole-repo sweep.
       await db.query('DELETE FROM member_access WHERE id = $1', [subId]);
       await db.query(
         `DELETE FROM member_master WHERE id = $1
