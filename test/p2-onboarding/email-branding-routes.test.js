@@ -69,7 +69,7 @@ const CLIENT = 'client-uuid-052';
 let app;
 
 beforeAll(() => {
-  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
+  process.env.SUPABASE_SECRET_KEY = 'test-service-key';
   const operatorRouter = require('../../admin/routes/operator');
   app = express();
   app.use(express.json());
@@ -136,11 +136,11 @@ describe('[P2] DR-052 PUT /operator/clients/:id/email-branding', () => {
 
 describe('[P2] DR-052 POST /operator/clients/:id/email-branding/logo', () => {
   test('503 with clear message when service key missing', async () => {
-    const saved = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const saved = process.env.SUPABASE_SECRET_KEY;
+    delete process.env.SUPABASE_SECRET_KEY;
     const res = await request(app).post(`/operator/clients/${CLIENT}/email-branding/logo`)
       .attach('logo', Buffer.from([0x89, 0x50]), { filename: 'l.png', contentType: 'image/png' });
-    process.env.SUPABASE_SERVICE_ROLE_KEY = saved;
+    process.env.SUPABASE_SECRET_KEY = saved;
     expect(res.status).toBe(503);
   });
   test('400 on non-image mime', async () => {
@@ -171,7 +171,10 @@ describe('[P2] DR-052 POST /operator/clients/:id/email-branding/logo', () => {
     const [url, opts] = global.fetch.mock.calls[0];
     expect(url).toContain(`/storage/v1/object/email-assets/${CLIENT}/logo.png`);
     expect(opts.headers['x-upsert']).toBe('true');
-    expect(opts.headers['Authorization']).toContain('test-service-key');
+    // 2026 Supabase secret keys go on `apikey` only — Authorization must be absent,
+    // or the platform tries to parse the opaque sb_secret_ value as a JWT and 401s.
+    expect(opts.headers['apikey']).toBe('test-service-key');
+    expect(opts.headers['Authorization']).toBeUndefined();
 
     const updateCall = db.query.mock.calls[1];
     expect(updateCall[0]).toContain('email_logo_url');

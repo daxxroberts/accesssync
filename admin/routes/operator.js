@@ -1170,9 +1170,9 @@ function logoUploadMiddleware(req, res, next) {
 router.post('/clients/:clientId/email-branding/logo', logoUploadMiddleware, async (req, res) => {
   const { clientId } = req.params;
   try {
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!process.env.SUPABASE_SECRET_KEY) {
       log.warn('operator.email_branding.logo_no_service_key', { clientId });
-      return res.status(503).json({ error: 'Logo storage is not configured yet (SUPABASE_SERVICE_ROLE_KEY missing). Ask your AccessSync admin.' });
+      return res.status(503).json({ error: 'Logo storage is not configured yet (SUPABASE_SECRET_KEY missing). Ask your AccessSync admin.' });
     }
     const file = req.file;
     if (!file || !file.buffer || !file.buffer.length) {
@@ -1187,10 +1187,13 @@ router.post('/clients/:clientId/email-branding/logo', logoUploadMiddleware, asyn
     if (!clientCheck.rows.length) return res.status(404).json({ error: 'Client not found' });
 
     const objectPath = `${clientId}/logo.${ext}`;
+    // 2026 Supabase API keys (sb_secret_...): send ONLY on the `apikey` header. Sending
+    // it as `Authorization: Bearer` too makes the platform try to parse it as a JWT and
+    // reject the request with 401 "Invalid JWT" — Authorization must be omitted entirely.
     const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/email-assets/${objectPath}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        'apikey': process.env.SUPABASE_SECRET_KEY,
         'Content-Type': file.mimetype,
         'x-upsert': 'true',
       },
