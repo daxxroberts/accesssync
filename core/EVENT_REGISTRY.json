@@ -6,7 +6,8 @@
     "locked_at": "2026-05-26",
     "ruled_by": "Builder Q7-Q10 ruling 2026-05-25",
     "amendments": [
-      "2026-05-27: Operator-action visibility pass. Added all admin.* + operator.* mutation events to overrides so Builder can see plan-mapping saves, API-key rotations, location/client lifecycle, and sub-member workflow in the trace timeline. Closes the OB-176 default-suppress operator-visibility gap surfaced in Builder feedback 2026-05-27."
+      "2026-05-27: Operator-action visibility pass. Added all admin.* + operator.* mutation events to overrides so Builder can see plan-mapping saves, API-key rotations, location/client lifecycle, and sub-member workflow in the trace timeline. Closes the OB-176 default-suppress operator-visibility gap surfaced in Builder feedback 2026-05-27.",
+      "2026-07-09: DR-052 member-email visibility. Added the three info-level email.member.* events (sent/suppressed/skipped_disabled) so branded member-email send attempts show up in the trace timeline — without this override they default-suppress like any other info event (email.member.failed is warn-level and already persists by default). Found while diagnosing a silent test-send failure."
     ]
   },
   "overrides": {
@@ -61,6 +62,9 @@
     "admin.sub_member_grant_queued":      { "persist": true },
     "admin.sub_members_submitted":        { "persist": true },
     "admin.holder_claim_slot_queued":     { "persist": true },
-    "admin.holder_release_slot_queued":   { "persist": true }
+    "admin.holder_release_slot_queued":   { "persist": true },
+    "email.member.sent":                  { "persist": true },
+    "email.member.suppressed":            { "persist": true },
+    "email.member.skipped_disabled":      { "persist": true }
   }
 }
