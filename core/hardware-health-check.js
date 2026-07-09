@@ -275,8 +275,8 @@ async function _notifyOrphanedGroups(loc, orphans, platform) {
 
     const totalAffected = orphans.reduce((sum, o) => sum + (o.affectedMembers || 0), 0);
 
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io',
+    const result = await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
       to: toEmail,
       subject: `[AccessSync] ${orphans.length} access group(s) no longer found in ${platform}`,
       text: [
@@ -298,6 +298,10 @@ async function _notifyOrphanedGroups(loc, orphans, platform) {
         'To fix this: log in to AccessSync → Plan Mapping → remap or remove the affected groups.',
       ].join('\n'),
     });
+    if (result && result.error) {
+      log.error('health.orphan_alert_failed', { toEmail, reason: result.error.message || String(result.error) });
+      return;
+    }
     log.info('health.orphan_alert_sent', { toEmail });
   } catch (err) {
     log.error('health.orphan_alert_failed', { toEmail }, err);
@@ -411,8 +415,8 @@ async function _notifyArchivedPlans(loc, archivedPlans) {
       return `  - ${p.plan_name || p.source_plan_id} — ${memberNote}`;
     }).join('\n');
 
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io',
+    const result = await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
       to: toEmail,
       subject: `[AccessSync] ${archivedPlans.length} plan(s) archived on Wix`,
       text: [
@@ -430,6 +434,10 @@ async function _notifyArchivedPlans(loc, archivedPlans) {
         'You can view affected plans in AccessSync → Plan Mapping.',
       ].join('\n'),
     });
+    if (result && result.error) {
+      log.error('health.archived_plan_alert_failed', { toEmail, reason: result.error.message || String(result.error) });
+      return;
+    }
     log.info('health.archived_plan_alert_sent', { toEmail });
   } catch (err) {
     log.error('health.archived_plan_alert_failed', { toEmail }, err);
@@ -475,8 +483,8 @@ async function _notifyFailure(loc, locName, errorType, message) {
         ? '[AccessSync] Action required: API key permissions issue'
         : '[AccessSync] Hardware API key check failed';
 
-    await resend.emails.send({
-      from:    process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io',
+    const result = await resend.emails.send({
+      from:    process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
       to:      toEmail,
       subject,
       text: [
@@ -492,6 +500,10 @@ async function _notifyFailure(loc, locName, errorType, message) {
         'Members will not lose existing access, but new signups will not provision until the key is corrected.',
       ].join('\n'),
     });
+    if (result && result.error) {
+      log.error('health.alert_send_failed', { toEmail, location: loc.location_name, reason: result.error.message || String(result.error) });
+      return;
+    }
     log.info('health.alert_sent', { toEmail, location: loc.location_name });
   } catch (err) {
     log.error('health.alert_send_failed', { toEmail, location: loc.location_name }, err);

@@ -78,8 +78,8 @@ async function _sendAlert(count, clientHint, clientId) {
   try {
     const { Resend } = require('resend');
     const resend = new Resend(process.env.RESEND_API_KEY);
-    await resend.emails.send({
-      from:    process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io',
+    const result = await resend.emails.send({
+      from:    process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
       to:      toEmail,
       subject: '[AccessSync] ⚠ HMAC failure spike detected',
       text: [
@@ -98,6 +98,10 @@ async function _sendAlert(count, clientHint, clientId) {
         'If the secret is correct and failures continue, check Railway logs for source IPs.',
       ].join('\n'),
     });
+    if (result && result.error) {
+      log.error('hmac.alert.send_failed', { clientId, clientHint, toEmail, reason: result.error.message || String(result.error) });
+      return;
+    }
     log.info('hmac.alert.sent', { toEmail, count, clientHint });
   } catch (err) {
     log.error('hmac.alert.send_failed', { clientId, clientHint, toEmail }, err);

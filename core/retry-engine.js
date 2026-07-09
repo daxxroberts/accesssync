@@ -200,12 +200,16 @@ class RetryEngine {
         'Log in to your AccessSync dashboard to retry or dismiss this error.',
       ].filter(l => l !== undefined);
 
-      await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io',
+      const result = await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
         to: toEmail,
         subject,
         text: bodyLines.join('\n'),
       });
+
+      if (result && result.error) {
+        throw new Error(result.error.message || String(result.error));
+      }
 
       log.info('retry.notify.sent', { tenantId, to: toEmail });
     } catch (notifyErr) {

@@ -952,8 +952,8 @@ class StandardAdapter {
     try {
       const { Resend } = require('resend');
       const resend = new Resend(process.env.RESEND_API_KEY);
-      await resend.emails.send({
-        from:    process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io',
+      const sendResult = await resend.emails.send({
+        from:    process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
         to:      toEmail,
         subject: '[AccessSync] 🎉 First member access granted',
         text: [
@@ -967,6 +967,10 @@ class StandardAdapter {
           'You can view member status and access history in the AccessSync dashboard.',
         ].join('\n'),
       });
+      if (sendResult && sendResult.error) {
+        log.error('adapter.first_grant_email_error', { toEmail, clientName, reason: sendResult.error.message || String(sendResult.error) });
+        return;
+      }
       log.info('adapter.first_grant_email_sent', { toEmail, clientName });
     } catch (err) {
       log.error('adapter.first_grant_email_error', {}, err);

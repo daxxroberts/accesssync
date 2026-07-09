@@ -1667,12 +1667,16 @@ class NightlyReconciliation {
         `Failed Jobs (in error_queue): ${digest.failedJobs.length}`,
         ...digest.failedJobs.map(j => `  - [${j.event_type}] member: ${j.member_id} | ${j.error_reason}`),
       ];
-      await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io',
+      const result = await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
         to: toEmail,
         subject: '[AccessSync] Nightly digest',
         text: lines.join('\n'),
       });
+      if (result && result.error) {
+        sweepLogger.error('reconciliation.digest_send_failed', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'failed', reason: result.error.message || String(result.error) });
+        return;
+      }
       sweepLogger.info('reconciliation.digest_sent', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'success' });
     } catch (err) {
       sweepLogger.error('reconciliation.digest_send_failed', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'failed' }, err);
