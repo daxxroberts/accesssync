@@ -134,6 +134,53 @@
     @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
     .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--brand); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 10px; }
 
+    /* ── Info button + modal (DR-052 "what emails go out" explainer) ── */
+    .info-btn {
+      width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border2);
+      background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 700;
+      font-family: inherit; line-height: 1; cursor: pointer; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: all 0.15s;
+    }
+    .info-btn:hover { background: var(--brand-dim); color: var(--brand); border-color: var(--brand); }
+    .info-modal-overlay {
+      display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(26,33,48,0.4); z-index: 1000;
+      align-items: center; justify-content: center; padding: 16px;
+    }
+    .info-modal-overlay.visible { display: flex; }
+    .info-modal {
+      background: var(--card); border-radius: 16px; box-shadow: var(--shadow-md);
+      max-width: 640px; width: 100%; max-height: 88vh; overflow-y: auto; padding: 24px 28px;
+    }
+    .info-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+    .info-modal-title { font-size: 16px; font-weight: 700; color: var(--text); }
+    .info-modal-close {
+      border: none; background: none; color: var(--muted); font-size: 20px; line-height: 1;
+      cursor: pointer; padding: 2px 4px; flex-shrink: 0;
+    }
+    .info-modal-close:hover { color: var(--text); }
+    .info-modal-intro { font-size: 12.5px; color: var(--text2); line-height: 1.5; margin: 6px 0 18px; }
+    .info-email-card {
+      border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px;
+    }
+    .info-email-name { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+    .info-email-what { font-size: 12px; color: var(--text2); line-height: 1.5; margin-bottom: 10px; }
+    .info-email-rule { font-size: 11.5px; line-height: 1.5; margin-bottom: 3px; }
+    .info-email-rule b { color: var(--text2); font-weight: 600; }
+    .info-email-rule.sent   b { color: var(--sage-dark); }
+    .info-email-rule.notsent b { color: var(--red); }
+    .info-preview-link {
+      display: inline-flex; align-items: center; gap: 4px; margin-top: 10px;
+      font-size: 12px; font-weight: 600; color: var(--brand); background: none; border: none;
+      cursor: pointer; padding: 0; font-family: inherit;
+    }
+    .info-preview-link:hover { color: var(--brand-dark); text-decoration: underline; }
+    .info-demo-pane { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .info-demo-label { font-size: 11.5px; color: var(--muted); margin-bottom: 8px; }
+    .info-demo-label b { color: var(--text2); }
+    #info-demo-frame { width: 100%; height: 340px; border: 1px solid var(--border); border-radius: 10px; background: #f4f4f4; }
+
     /* ── Toast (page variant — stacked bottom-right) ── */
     .toast-wrap { position: fixed; bottom: 20px; right: 20px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
     .toast-loc { padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; color: #fff; box-shadow: var(--shadow-md); animation: slideIn 0.2s ease; }
@@ -360,7 +407,10 @@
     <div class="org-key-card" style="margin-bottom:16px;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
         <div>
-          <div class="org-key-title" style="margin-bottom:2px;">Member Emails</div>
+          <div class="org-key-title" style="margin-bottom:2px;display:flex;align-items:center;gap:6px;">
+            Member Emails
+            <button type="button" class="info-btn" onclick="ebOpenInfo()" title="What emails go out, and when" aria-label="What emails go out, and when">i</button>
+          </div>
           <div style="font-size:12px;color:var(--muted);">Brand the emails your members receive — logo, two colors, done. Replies go to your rollup email.</div>
         </div>
         <span class="config-row-status" id="eb-enabled-status">Loading…</span>
@@ -463,6 +513,49 @@
     </div><!-- /section-setup -->
 
   </main>
+
+  <!-- ══ Member Emails info modal (DR-052) ═══════════════════════════ -->
+  <div class="info-modal-overlay" id="eb-info-overlay" onclick="if (event.target === this) ebCloseInfo();">
+    <div class="info-modal">
+      <div class="info-modal-header">
+        <div class="info-modal-title">What members receive</div>
+        <button type="button" class="info-modal-close" onclick="ebCloseInfo()" aria-label="Close">&times;</button>
+      </div>
+      <div class="info-modal-intro">
+        Three emails go out today, branded with your logo and colors. Click "Preview this email"
+        on any of them to see a live demo below, filled in with sample names.
+      </div>
+
+      <div class="info-email-card">
+        <div class="info-email-name">Access ready</div>
+        <div class="info-email-what">Lets a member know their door access is live — which plan, which door.</div>
+        <div class="info-email-rule sent"><b>Sent:</b> the moment their access is provisioned (a new signup, a renewal that adds access, a plan holder adding themself).</div>
+        <div class="info-email-rule notsent"><b>Not sent:</b> for background syncs that re-confirm access you already have — only real, new access triggers it.</div>
+        <button type="button" class="info-preview-link" onclick="ebPreviewDemo('access_ready', 'Access ready')">Preview this email &rarr;</button>
+      </div>
+
+      <div class="info-email-card">
+        <div class="info-email-name">Access removed</div>
+        <div class="info-email-what">Lets a member know a plan's access has ended.</div>
+        <div class="info-email-rule sent"><b>Sent:</b> when a plan is genuinely cancelled and its door access is turned off.</div>
+        <div class="info-email-rule notsent"><b>Not sent:</b> when a member chooses "Leave this plan" themself (they already know), when a plan holder removes someone else in the Member Hub (that person gets their own email instead — see below), or for background syncs.</div>
+        <button type="button" class="info-preview-link" onclick="ebPreviewDemo('access_removed', 'Access removed')">Preview this email &rarr;</button>
+      </div>
+
+      <div class="info-email-card">
+        <div class="info-email-name">Added to a plan</div>
+        <div class="info-email-what">Lets someone know a plan holder added them (e.g. to a Family or Couples plan) and their access is on the way.</div>
+        <div class="info-email-rule sent"><b>Sent:</b> the moment a plan holder adds a new person to their multi-member plan.</div>
+        <div class="info-email-rule notsent"><b>Not sent:</b> for the plan holder's own access — they get the "Access ready" email above instead.</div>
+        <button type="button" class="info-preview-link" onclick="ebPreviewDemo('sub_member_invite', 'Added to a plan')">Preview this email &rarr;</button>
+      </div>
+
+      <div class="info-demo-pane" id="info-demo-pane" style="display:none;">
+        <div class="info-demo-label">Now showing: <b id="info-demo-label-text"></b> — with your current logo and colors</div>
+        <iframe id="info-demo-frame" sandbox="" title="Email demo"></iframe>
+      </div>
+    </div>
+  </div>
 
   <div class="toast-wrap" id="toastWrap"></div>
 
@@ -703,6 +796,40 @@
           else toast(data.error || 'Test send failed', 'error');
         })
         .catch(function() { toast('Test send failed — network error', 'error'); });
+    }
+
+    // ── "What emails go out" info modal (DR-052) ────────────────────────
+    function ebOpenInfo() {
+      document.getElementById('eb-info-overlay').classList.add('visible');
+      document.addEventListener('keydown', ebInfoEscapeHandler);
+    }
+    function ebCloseInfo() {
+      document.getElementById('eb-info-overlay').classList.remove('visible');
+      document.removeEventListener('keydown', ebInfoEscapeHandler);
+      // Reset the demo pane so reopening the modal starts clean, not mid-demo.
+      document.getElementById('info-demo-pane').style.display = 'none';
+      document.getElementById('info-demo-frame').srcdoc = '';
+    }
+    function ebInfoEscapeHandler(e) { if (e.key === 'Escape') ebCloseInfo(); }
+
+    // Demo uses whatever's currently in the color/logo inputs (saved or not) so the
+    // preview always matches what the operator is looking at in the branding card —
+    // same real-template render path as the live preview pane, just a different
+    // sample email type.
+    function ebPreviewDemo(type, label) {
+      var p = document.getElementById('eb-primary').value;
+      var s = document.getElementById('eb-secondary').value;
+      var url = '/operator/clients/' + clientId + '/email-branding/preview' +
+        '?type=' + encodeURIComponent(type) +
+        '&primary=' + encodeURIComponent(p) + '&secondary=' + encodeURIComponent(s) +
+        (ebState.logoUrl ? '&logo=' + encodeURIComponent(ebState.logoUrl) : '') +
+        '&_t=' + Date.now();
+      document.getElementById('info-demo-label-text').textContent = label;
+      document.getElementById('info-demo-pane').style.display = '';
+      apiFetch(url)
+        .then(function(res) { return res.text(); })
+        .then(function(html) { document.getElementById('info-demo-frame').srcdoc = html; })
+        .catch(function() { toast('Could not load the demo', 'error'); });
     }
 
     // ── Wix API key ───────────────────────────────────────────────────

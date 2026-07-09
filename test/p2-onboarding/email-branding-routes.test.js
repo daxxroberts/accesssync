@@ -182,10 +182,10 @@ describe('[P2] DR-052 POST /operator/clients/:id/email-branding/logo', () => {
 });
 
 describe('[P2] DR-052 GET /operator/clients/:id/email-branding/preview', () => {
+  const BASE_ROW = { name: 'House of Gains', notification_email: 'chad@hog.com', email_logo_url: null, email_primary_color: '#000000', email_secondary_color: '#000000' };
+
   test('renders the REAL template as text/html with query overrides applied', async () => {
-    db.query.mockResolvedValueOnce({
-      rows: [{ name: 'House of Gains', notification_email: 'chad@hog.com', email_logo_url: null, email_primary_color: '#000000', email_secondary_color: '#000000' }],
-    });
+    db.query.mockResolvedValueOnce({ rows: [BASE_ROW] });
     const res = await request(app)
       .get(`/operator/clients/${CLIENT}/email-branding/preview`)
       .query({ primary: '#aabbcc', secondary: '#ddeeff' });
@@ -194,6 +194,41 @@ describe('[P2] DR-052 GET /operator/clients/:id/email-branding/preview', () => {
     expect(res.text).toContain('background-color:#aabbcc');   // unsaved override applied
     expect(res.text).toContain('House of Gains');
     expect(res.text).toContain('Powered by AccessSync');
+  });
+
+  test('defaults to the access-ready demo when no type is given', async () => {
+    db.query.mockResolvedValueOnce({ rows: [BASE_ROW] });
+    const res = await request(app).get(`/operator/clients/${CLIENT}/email-branding/preview`);
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/access is ready/i);
+  });
+
+  test('type=access_removed renders the access-removed demo', async () => {
+    db.query.mockResolvedValueOnce({ rows: [BASE_ROW] });
+    const res = await request(app)
+      .get(`/operator/clients/${CLIENT}/email-branding/preview`)
+      .query({ type: 'access_removed' });
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/access has ended/i);
+  });
+
+  test('type=sub_member_invite renders the sub-member-invite demo with sample holder name', async () => {
+    db.query.mockResolvedValueOnce({ rows: [BASE_ROW] });
+    const res = await request(app)
+      .get(`/operator/clients/${CLIENT}/email-branding/preview`)
+      .query({ type: 'sub_member_invite' });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Daxx Roberts');
+    expect(res.text).toContain('Family Plan');
+  });
+
+  test('unknown type falls back to the access-ready demo rather than erroring', async () => {
+    db.query.mockResolvedValueOnce({ rows: [BASE_ROW] });
+    const res = await request(app)
+      .get(`/operator/clients/${CLIENT}/email-branding/preview`)
+      .query({ type: 'not_a_real_type' });
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/access is ready/i);
   });
 });
 

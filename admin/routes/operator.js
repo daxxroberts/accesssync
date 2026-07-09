@@ -1224,9 +1224,29 @@ router.post('/clients/:clientId/email-branding/logo', logoUploadMiddleware, asyn
 });
 
 // ── GET /operator/clients/:clientId/email-branding/preview ─────
-// Renders the REAL access-ready template with sample data — what the operator sees
-// in the preview iframe is byte-for-byte what members receive. Query params override
-// saved values so the preview tracks unsaved edits live.
+// Renders a REAL template with sample data — what the operator sees in an iframe is
+// byte-for-byte what members receive. Query params override saved branding so the
+// live-edit preview tracks unsaved changes. `type` selects which of the three Phase 1
+// member emails to demo (defaults to access_ready — the original live-preview pane's
+// behavior is unchanged); the info-modal "Preview this email" links use the other two.
+const PREVIEW_DEMOS = {
+  access_ready: (branding) => emailTemplates.renderAccessReady({
+    branding,
+    member: { firstName: 'Jane' },
+    plans: [{ planName: 'Monthly Membership', doorName: 'Front Door' }],
+  }),
+  access_removed: (branding) => emailTemplates.renderAccessRemoved({
+    branding,
+    member: { firstName: 'Jane' },
+    planName: 'Monthly Membership',
+  }),
+  sub_member_invite: (branding) => emailTemplates.renderSubMemberInvite({
+    branding,
+    member: { firstName: 'Jane' },
+    holderName: 'Daxx Roberts',
+    planName: 'Family Plan',
+  }),
+};
 router.get('/clients/:clientId/email-branding/preview', async (req, res) => {
   const { clientId } = req.params;
   try {
@@ -1242,11 +1262,8 @@ router.get('/clients/:clientId/email-branding/preview', async (req, res) => {
     if (typeof req.query.logo === 'string' && /^https:\/\//.test(req.query.logo)) row.email_logo_url = req.query.logo;
 
     const branding = emailTemplates.brandingFromClientRow(row);
-    const { html } = emailTemplates.renderAccessReady({
-      branding,
-      member: { firstName: 'Jane' },
-      plans: [{ planName: 'Monthly Membership', doorName: 'Front Door' }],
-    });
+    const demoFn = PREVIEW_DEMOS[req.query.type] || PREVIEW_DEMOS.access_ready;
+    const { html } = demoFn(branding);
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.set('Cache-Control', 'no-store');
     res.send(html);
