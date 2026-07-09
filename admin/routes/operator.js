@@ -1263,9 +1263,13 @@ router.get('/clients/:clientId/email-branding/preview', async (req, res) => {
 
     const branding = emailTemplates.brandingFromClientRow(row);
     const demoFn = PREVIEW_DEMOS[req.query.type] || PREVIEW_DEMOS.access_ready;
-    const { html } = demoFn(branding);
+    const { html, subject } = demoFn(branding);
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.set('Cache-Control', 'no-store');
+    // Carried as a header, not the body — the body stays plain HTML so it keeps working
+    // unchanged as an iframe srcdoc source. encodeURIComponent because HTTP headers
+    // can't carry raw non-ASCII (a gym name can contain accented/unicode characters).
+    res.set('X-Preview-Subject', encodeURIComponent(subject));
     res.send(html);
   } catch (err) {
     log.error('operator.email_branding.preview_failed', { clientId }, err);

@@ -222,6 +222,16 @@ describe('[P2] DR-052 GET /operator/clients/:id/email-branding/preview', () => {
     expect(res.text).toContain('Family Plan');
   });
 
+  test('carries the resolved subject on X-Preview-Subject (URL-encoded, body stays plain HTML)', async () => {
+    db.query.mockResolvedValueOnce({ rows: [BASE_ROW] });
+    const res = await request(app)
+      .get(`/operator/clients/${CLIENT}/email-branding/preview`)
+      .query({ type: 'access_removed' });
+    expect(res.status).toBe(200);
+    expect(decodeURIComponent(res.headers['x-preview-subject'])).toBe('Your Monthly Membership access at House of Gains has ended');
+    expect(res.text).not.toContain('X-Preview-Subject'); // header only, never leaks into the body
+  });
+
   test('unknown type falls back to the access-ready demo rather than erroring', async () => {
     db.query.mockResolvedValueOnce({ rows: [BASE_ROW] });
     const res = await request(app)

@@ -113,6 +113,21 @@ describe('[P1] DR-052 sendMemberEmail', () => {
     expect(typeof payload.text).toBe('string');
   });
 
+  // 2026-07-09: confirmed live against Resend that accesssync.io is NOT a verified
+  // sending domain (403 "domain is not verified") — RESEND_FROM_EMAIL was never even
+  // set as an env var, so every send fell back to a bare-quoted 'alerts@accesssync.io'
+  // and was silently rejected. With neither env var set, the fallback must be Resend's
+  // own onboarding sender — needs no domain verification — not the unverified domain.
+  test('with no FROM env vars set, falls back to onboarding@resend.dev (not the unverified accesssync.io domain)', async () => {
+    delete process.env.RESEND_MEMBER_FROM_EMAIL;
+    delete process.env.RESEND_FROM_EMAIL;
+    mockDb({});
+    await mailer.sendMemberEmail(baseArgs);
+    const payload = mockResendSend.mock.calls[0][0];
+    expect(payload.from).toBe('House of Gains <onboarding@resend.dev>');
+    expect(payload.from).not.toContain('accesssync.io');
+  });
+
   test('Resend result.error → sent:false + delivery_status flipped, never throws', async () => {
     mockDb({});
     mockResendSend.mockResolvedValueOnce({ data: null, error: { message: 'quota' } });

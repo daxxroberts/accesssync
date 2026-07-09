@@ -108,6 +108,20 @@ describe('[P2] DR-052 content renderers — escaping, subjects, text part', () =
     expect(out.subject).toContain('is ready');
   });
 
+  // 2026-07-08: iOS/Android links verified live against the App Store / Play Store
+  // (Android package id is de.kisi.android — a Gmail-extraction encoding artifact had
+  // previously mangled this; see MEMBER_EMAILS_SPEC.md section 3).
+  test('renderAccessReady: includes the verified iOS + Android Kisi app links, in both parts', () => {
+    const out = t.renderAccessReady({
+      branding: BRANDING, member: { firstName: 'Jane' },
+      plans: [{ planName: 'Monthly', doorName: 'Front Door' }],
+    });
+    expect(out.html).toContain('https://apps.apple.com/us/app/kisi/id687291321');
+    expect(out.html).toContain('https://play.google.com/store/apps/details?id=de.kisi.android');
+    expect(out.text).toContain('https://apps.apple.com/us/app/kisi/id687291321');
+    expect(out.text).toContain('https://play.google.com/store/apps/details?id=de.kisi.android');
+  });
+
   test('renderAccessRemoved: names plan + gym, text part present', () => {
     const out = t.renderAccessRemoved({ branding: BRANDING, member: { firstName: 'Daxx' }, planName: 'Couples' });
     expect(out.subject).toBe('Your Couples access at House of Gains has ended');

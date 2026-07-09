@@ -175,7 +175,8 @@
     .info-email-card:hover   { border-color: var(--border2); }
     .info-email-card.active { border-color: var(--brand); background: var(--brand-dim); }
     .info-email-name { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
-    .info-email-what { font-size: 12px; color: var(--text2); line-height: 1.5; margin-bottom: 10px; }
+    .info-email-what { font-size: 12px; color: var(--text2); line-height: 1.5; margin-bottom: 6px; }
+    .info-email-subject { font-size: 11px; color: var(--muted); font-style: italic; margin-bottom: 10px; }
     .info-email-rule { font-size: 11.5px; line-height: 1.5; margin-bottom: 3px; }
     .info-email-rule b { color: var(--text2); font-weight: 600; }
     .info-email-rule.sent   b { color: var(--sage-dark); }
@@ -463,7 +464,8 @@
         </div>
         <!-- Live preview — renders the REAL template server-side -->
         <div style="flex:1.2;min-width:280px;">
-          <div class="key-input-hint" style="margin-bottom:6px;">Live preview — exactly what members receive:</div>
+          <div class="key-input-hint" style="margin-bottom:2px;">Live preview — exactly what members receive:</div>
+          <div class="key-input-hint" style="margin-bottom:6px;">Subject: <b id="eb-preview-subject" style="color:var(--text2);font-style:italic;">&mdash;</b></div>
           <iframe id="eb-preview" sandbox="" title="Email preview" style="width:100%;height:360px;border:1px solid var(--border);border-radius:10px;background:#f4f4f4;"></iframe>
         </div>
       </div>
@@ -531,39 +533,44 @@
         <button type="button" class="info-modal-close" onclick="ebCloseInfo()" aria-label="Close">&times;</button>
       </div>
       <div class="info-modal-intro">
-        Three emails go out today, branded with your logo and colors. Click any of them to see a
-        live demo on the right, filled in with sample names.
+        Three emails go out to members today — pick one to see it on the right.
       </div>
 
       <div class="info-modal-body">
         <div class="info-modal-list">
           <div class="info-email-card" id="info-card-access_ready" onclick="ebPreviewDemo('access_ready', 'Access ready')">
             <div class="info-email-name">Access ready</div>
-            <div class="info-email-what">Lets a member know their door access is live — which plan, which door.</div>
-            <div class="info-email-rule sent"><b>Sent:</b> the moment their access is provisioned (a new signup, a renewal that adds access, a plan holder adding themself).</div>
-            <div class="info-email-rule notsent"><b>Not sent:</b> for background syncs that re-confirm access you already have — only real, new access triggers it.</div>
+            <div class="info-email-what">Tells them their door access is live — plan and door included, with the iPhone and Android app links.</div>
+            <div class="info-email-subject">Subject: "Your access at {gym} is ready"</div>
+            <div class="info-email-rule sent"><b>Sent:</b> the moment access is granted — a new signup, a renewal, or someone claiming their own seat on a shared plan.</div>
+            <div class="info-email-rule notsent"><b>Not sent:</b> background syncs that just re-confirm access you already have.</div>
             <button type="button" class="info-preview-link" onclick="event.stopPropagation(); ebPreviewDemo('access_ready', 'Access ready')">Preview this email &rarr;</button>
           </div>
 
           <div class="info-email-card" id="info-card-access_removed" onclick="ebPreviewDemo('access_removed', 'Access removed')">
             <div class="info-email-name">Access removed</div>
-            <div class="info-email-what">Lets a member know a plan's access has ended.</div>
-            <div class="info-email-rule sent"><b>Sent:</b> when a plan is genuinely cancelled and its door access is turned off.</div>
-            <div class="info-email-rule notsent"><b>Not sent:</b> when a member chooses "Leave this plan" themself (they already know), when a plan holder removes someone else in the Member Hub (that person gets their own email instead — see below), or for background syncs.</div>
+            <div class="info-email-what">Tells them a plan's access has ended.</div>
+            <div class="info-email-subject">Subject: "Your {plan} access at {gym} has ended"</div>
+            <div class="info-email-rule sent"><b>Sent:</b> a plan is genuinely cancelled — including when a holder removes someone else from a shared plan.</div>
+            <div class="info-email-rule notsent"><b>Not sent:</b> someone leaves a plan themselves (they already know), or it's a background sync.</div>
             <button type="button" class="info-preview-link" onclick="event.stopPropagation(); ebPreviewDemo('access_removed', 'Access removed')">Preview this email &rarr;</button>
           </div>
 
           <div class="info-email-card" id="info-card-sub_member_invite" onclick="ebPreviewDemo('sub_member_invite', 'Added to a plan')">
             <div class="info-email-name">Added to a plan</div>
-            <div class="info-email-what">Lets someone know a plan holder added them (e.g. to a Family or Couples plan) and their access is on the way.</div>
-            <div class="info-email-rule sent"><b>Sent:</b> the moment a plan holder adds a new person to their multi-member plan.</div>
-            <div class="info-email-rule notsent"><b>Not sent:</b> for the plan holder's own access — they get the "Access ready" email above instead.</div>
+            <div class="info-email-what">Tells someone a plan holder just added them — say, to a Family or Couples plan.</div>
+            <div class="info-email-subject">Subject: "{holder} added you to {plan} at {gym}"</div>
+            <div class="info-email-rule sent"><b>Sent:</b> the moment a holder adds a new person to their plan.</div>
+            <div class="info-email-rule notsent"><b>Not sent:</b> the holder's own access — they get Access ready instead.</div>
             <button type="button" class="info-preview-link" onclick="event.stopPropagation(); ebPreviewDemo('sub_member_invite', 'Added to a plan')">Preview this email &rarr;</button>
           </div>
         </div>
 
         <div class="info-modal-preview">
-          <div class="info-demo-label">Now showing: <b id="info-demo-label-text">Access ready</b> — with your current logo and colors</div>
+          <div class="info-demo-label">
+            Subject: <b id="info-demo-subject-text">&mdash;</b>
+            <div style="margin-top:2px;">Now showing: <span id="info-demo-label-text">Access ready</span>, with your current logo and colors.</div>
+          </div>
           <iframe id="info-demo-frame" sandbox="" title="Email demo"></iframe>
         </div>
       </div>
@@ -730,7 +737,12 @@
         var url = '/operator/clients/' + clientId + '/email-branding/preview' +
           '?primary=' + encodeURIComponent(p) + '&secondary=' + encodeURIComponent(s) + '&_t=' + Date.now();
         apiFetch(url)
-          .then(function(res) { return res.text(); })
+          .then(function(res) {
+            var subjHeader = res.headers.get('X-Preview-Subject');
+            document.getElementById('eb-preview-subject').textContent =
+              subjHeader ? decodeURIComponent(subjHeader) : '—';
+            return res.text();
+          })
           .then(function(html) { document.getElementById('eb-preview').srcdoc = html; })
           .catch(function() {});
       }, 250);
@@ -843,7 +855,12 @@
         document.getElementById('info-card-' + t).classList.toggle('active', t === type);
       });
       apiFetch(url)
-        .then(function(res) { return res.text(); })
+        .then(function(res) {
+          var subjHeader = res.headers.get('X-Preview-Subject');
+          document.getElementById('info-demo-subject-text').textContent =
+            subjHeader ? decodeURIComponent(subjHeader) : '—';
+          return res.text();
+        })
         .then(function(html) { document.getElementById('info-demo-frame').srcdoc = html; })
         .catch(function() { toast('Could not load the demo', 'error'); });
     }

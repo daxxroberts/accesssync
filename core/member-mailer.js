@@ -16,6 +16,18 @@
  * "{Gym Name}" <RESEND_MEMBER_FROM_EMAIL || RESEND_FROM_EMAIL> with Reply-To set
  * to the gym's admin contact (clients.notification_email). Per-client verified
  * domains are a deliberate later phase.
+ *
+ * LAST-RESORT FALLBACK (2026-07-09): confirmed live against the real Resend API that
+ * `accesssync.io` is NOT a verified sending domain — Resend rejects any send from it
+ * with a 403 ("domain is not verified"). Builder does not yet own/want to commit to a
+ * domain, so the bare fallback (when NEITHER env var is set) is Resend's own
+ * `onboarding@resend.dev` sender, which needs no domain verification at all. IMPORTANT
+ * LIMIT: Resend restricts that sender to delivering only to the Resend account's own
+ * verified address — fine for test-sends and operator alerts (always the operator's own
+ * inbox), but it CANNOT reach a real member's email. Real member delivery is blocked on
+ * a verified domain regardless of this fallback; `member_emails_enabled` defaults false
+ * everywhere so this has no live-member impact today. Once a domain is verified, set
+ * RESEND_MEMBER_FROM_EMAIL (or RESEND_FROM_EMAIL) and this fallback is never reached.
  */
 
 'use strict';
@@ -86,7 +98,7 @@ async function sendMemberEmail(p) {
     const branding = brandingFromClientRow(client);
     const { subject, html, text } = p.render(Object.assign({ branding }, p.renderArgs || {}));
 
-    const fromAddress = process.env.RESEND_MEMBER_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || 'alerts@accesssync.io';
+    const fromAddress = process.env.RESEND_MEMBER_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
     const { Resend } = require('resend');
     const resend = new Resend(process.env.RESEND_API_KEY);
     const sendPayload = {

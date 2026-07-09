@@ -21,6 +21,15 @@
 
 const NEUTRAL_TEXT = '#333333';
 
+// Verified 2026-07-08 directly against the live App Store / Play Store listings (the
+// Gmail-extracted copy of Kisi's own invite email mangled the Android package id into
+// an unreadable character — see MEMBER_EMAILS_SPEC.md section 3). Kisi Inc / KISI
+// Incorporated, both confirmed live and actively maintained.
+const KISI_APP_LINKS = {
+  ios:     'https://apps.apple.com/us/app/kisi/id687291321',
+  android: 'https://play.google.com/store/apps/details?id=de.kisi.android',
+};
+
 function escapeHtml(value) {
   if (value === null || value === undefined) return '';
   return String(value)
@@ -142,13 +151,19 @@ function renderAccessReady({ branding, member, plans }) {
     '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
     '<p style="margin:0 0 12px 0;">Your door access at <strong>' + escapeHtml(gym) + '</strong> is set up and ready to use.</p>' +
     planHtml +
-    '<p style="margin:12px 0 0 0;">Use the Kisi app on your phone to tap in at the door.</p>';
+    '<p style="margin:12px 0 6px 0;">Use the Kisi app on your phone to tap in at the door.</p>' +
+    '<p style="margin:0;">' +
+      '<a href="' + KISI_APP_LINKS.ios + '" target="_blank">Download for iPhone</a> &nbsp;&middot;&nbsp; ' +
+      '<a href="' + KISI_APP_LINKS.android + '" target="_blank">Download for Android</a>' +
+    '</p>';
 
   const bodyText =
     'Hi ' + (first || 'there') + ',\n\n' +
     'Your door access at ' + gym + ' is set up and ready to use.\n' +
     (planText ? '\n' + planText + '\n' : '') +
-    '\nUse the Kisi app on your phone to tap in at the door.';
+    '\nUse the Kisi app on your phone to tap in at the door.\n' +
+    'iPhone: ' + KISI_APP_LINKS.ios + '\n' +
+    'Android: ' + KISI_APP_LINKS.android;
 
   const { html, text } = renderLayout({ branding, heading: 'Your access is ready', bodyHtml, bodyText });
   return { subject: 'Your access at ' + gym + ' is ready', html, text };
