@@ -2739,6 +2739,33 @@ router.get('/:clientId/alerts', async (req, res) => {
   }
 });
 
+// ── POST /operator/:clientId/alerts/:alertId/dismiss ────────────
+// config_alert_log has no status/dismiss_note columns (unlike error_queue) —
+// resolved_at is the sole resolution marker. Without this route nothing in the
+// codebase ever wrote it, so every alert ever logged (including stale ones from
+// since-fixed root causes, e.g. a since-corrected missing RESEND_API_KEY) kept
+// reappearing in every nightly digest forever (found 2026-07-15).
+router.post('/:clientId/alerts/:alertId/dismiss', async (req, res) => {
+  const { clientId, alertId } = req.params;
+  try {
+    const result = await db.query(
+      `UPDATE config_alert_log
+       SET resolved_at = NOW()
+       WHERE id = $1 AND client_id = $2
+       RETURNING id, resolved_at`,
+      [alertId, clientId]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Alert not found' });
+    }
+    recordActivity(req, 'alert.dismissed', { clientId, alertId });
+    res.json(result.rows[0]);
+  } catch (err) {
+    log.error('operator.alert.dismiss_failed', { clientId, alertId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── GET /operator/:clientId/errors ───────────────────────────────
 // Error queue summary for operator view — recent failed jobs.
 router.get('/:clientId/errors', async (req, res) => {
