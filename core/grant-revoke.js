@@ -29,6 +29,25 @@ const { log } = require('./logger');
 const { getTraceId, getActor } = require('./trace-context');
 const { logMemberAccessEvent } = require('./member-access-log');
 
+// DR-050 — which synthetic revoke sources represent the Wix plan itself ending, vs a
+// seat/hardware-assignment change with the plan still active on Wix. Allow-list (not
+// exclude-list) matches the defensive pattern already used by member-mailer.js's
+// GRANT/REVOKE_ALLOWED_SYNTHETIC: an unrecognized future synthetic source defaults to
+// NOT genuine, so member_billing.status is never wrongly flipped to 'cancelled' by a
+// source nobody has reviewed yet. A real (non-synthetic) Wix webhook is always genuine.
+//
+// 'reconciliation.reconcile_member' is included because reconcileMember() only queues
+// this synthetic revoke after confirming zero active Wix subscriptions for the member
+// (see core/reconciliation.js case 7b) — it is a verified cancellation the webhook
+// missed, not a self-heal. 'multi-member.holder_release' / '.remove_sub' are excluded —
+// those are seat changes; the plan holder's Wix subscription is still active.
+const BILLING_CANCEL_ALLOWED_SYNTHETIC = new Set(['reconciliation.reconcile_member']);
+
+function _isGenuineBillingCancellation(wixEvent) {
+  if (!wixEvent || !wixEvent.synthetic) return true;
+  return BILLING_CANCEL_ALLOWED_SYNTHETIC.has(wixEvent.syntheticSource);
+}
+
 class GrantRevokeLogic {
 
   /**
@@ -344,6 +363,22 @@ class GrantRevokeLogic {
           return 'inactive';
         }
 
+        // DR-050 — capture the billing row(s) this specific plan-cancellation touches
+        // BEFORE the source rows are deleted below. Scoped identically to the DELETE
+        // (source_type + source_plan_id) so a cancel on one plan never flips billing
+        // status for the person's other, still-active plans.
+        const billingRowsResult = await db.query(
+          `SELECT DISTINCT mas.billing_id
+           FROM member_access_sources mas
+           WHERE mas.access_id = $1
+             AND mas.source_type = $2
+             AND COALESCE(mas.source_plan_id, '') = COALESCE($3, '')
+             AND mas.client_id = $4
+             AND mas.billing_id IS NOT NULL`,
+          [memberId, sourceType, planId, tenantId]
+        );
+        const billingIds = billingRowsResult.rows.map(r => r.billing_id);
+
         for (const { role_assignment_id: raId, hardware_group_id: groupId } of raWithGroups.rows) {
           // OB-201: defense-in-depth client_id filter (A9 hardening — client_id NOT NULL FK CASCADE).
           await db.query(
@@ -396,6 +431,35 @@ class GrantRevokeLogic {
             eventType: 'revoked',
             mappingId: _firstRa.mapping_id || null,
             hardwareGroupId: _firstRa.hardware_group_id || null,
+          });
+        }
+
+        // DR-050 — billing honest on a real cancellation. Orthogonal to DR-051's
+        // holder_seated (seated?): status here answers "still paying, per Wix?". Only
+        // flips on a genuine plan/booking end (real webhook, or reconcileMember's
+        // Wix-verified zero-active-subs case) — never on a holder self-release or
+        // sub-member removal, where the plan is still active on Wix.
+        if (billingIds.length > 0 && _isGenuineBillingCancellation(wixEvent)) {
+          const updateResult = await db.query(
+            `UPDATE member_billing
+             SET status = 'cancelled', updated_at = NOW()
+             WHERE id = ANY($1) AND client_id = $2 AND status <> 'cancelled'
+             RETURNING id`,
+            [billingIds, tenantId]
+          );
+          if (updateResult.rows.length > 0) {
+            log.info('revoke.billing_cancelled', {
+              clientId: tenantId, memberId, planId,
+              billingIds: updateResult.rows.map(r => r.id),
+              syntheticSource: wixEvent.syntheticSource || null,
+              stage: 'revoke', result: 'success',
+            });
+          }
+        } else if (billingIds.length > 0) {
+          log.info('revoke.billing_status_preserved', {
+            clientId: tenantId, memberId, planId,
+            reason: wixEvent.synthetic ? 'seat_change_not_cancellation' : 'no_billing_rows',
+            syntheticSource: wixEvent.syntheticSource || null,
           });
         }
 

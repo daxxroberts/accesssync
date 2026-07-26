@@ -148,6 +148,8 @@ describe('[P3] Revoke guard: hardware removeRole fires when no remaining sources
       .mockResolvedValueOnce({ rows: [
         { role_assignment_id: KISI_ROLE_ASSIGNMENT_ID, hardware_group_id: KISI_GROUP_ID, mapping_id: 'pm-1' },
       ]})
+      // DR-050: billing_id lookup — no billing rows in this fixture
+      .mockResolvedValueOnce({ rows: [] })
       // DELETE member_access_sources
       .mockResolvedValueOnce({ rowCount: 1 })
       // SELECT COUNT(*) remaining → 0 → removeRole must fire
@@ -188,6 +190,8 @@ describe('[P3] Revoke guard: hardware removeRole is suppressed when other billin
       .mockResolvedValueOnce({ rows: [
         { role_assignment_id: KISI_ROLE_ASSIGNMENT_ID, hardware_group_id: KISI_GROUP_ID, mapping_id: 'pm-1' },
       ]})
+      // DR-050: billing_id lookup — no billing rows in this fixture
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rowCount: 1 })
       // Count = 2 → another active source still present → removeRole skipped
       .mockResolvedValueOnce({ rows: [{ cnt: '2' }] })

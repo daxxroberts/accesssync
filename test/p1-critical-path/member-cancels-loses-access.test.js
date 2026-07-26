@@ -83,6 +83,8 @@ describe('[P1] Member cancels plan → all door access revoked', () => {
         { role_assignment_id: KISI_ROLE_ASSIGNMENT_ID, hardware_group_id: 'kisi-group-front', mapping_id: 'pm-1' },
         { role_assignment_id: 'role-assignment-gym-floor', hardware_group_id: 'kisi-group-gym', mapping_id: 'pm-1' },
       ]})
+      // DR-050: billing_id lookup (scoped to this plan) — no billing rows in this fixture
+      .mockResolvedValueOnce({ rows: [] })
       // DELETE member_access_sources (group 1)
       .mockResolvedValueOnce({ rowCount: 1 })
       // SELECT COUNT(*) remaining (group 1) → 0 → removeRole fires
@@ -117,6 +119,8 @@ describe('[P1] Member cancels plan → all door access revoked', () => {
       .mockResolvedValueOnce({ rows: [
         { role_assignment_id: KISI_ROLE_ASSIGNMENT_ID, hardware_group_id: 'kisi-group-all', mapping_id: 'pm-1' },
       ]})
+      // DR-050: billing_id lookup — no billing rows in this fixture
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rowCount: 1 })
       .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })
       .mockResolvedValueOnce({ rowCount: 0 })

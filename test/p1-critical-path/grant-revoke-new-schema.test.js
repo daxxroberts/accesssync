@@ -125,6 +125,8 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
       .mockResolvedValueOnce({ rows: [{ hardware_api_key: null }] })
       // raWithGroups SELECT (new schema: FROM member_access_sources WHERE access_id = $1)
       .mockResolvedValueOnce({ rows: [{ role_assignment_id: RA_ID, hardware_group_id: GROUP_ID, mapping_id: MAPPING_ID }] })
+      // DR-050: billing_id lookup (scoped to this plan) — no billing rows in this fixture
+      .mockResolvedValueOnce({ rows: [] })
       // DELETE (access_id = $1)
       .mockResolvedValueOnce({ rowCount: 1 })
       // COUNT remaining (access_id = $1) → 0
@@ -152,13 +154,13 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
     expect(selectCall[0]).not.toMatch(/member_role_assignments/);
 
     // Verify DELETE uses access_id
-    const deleteCall = db.query.mock.calls[2];
+    const deleteCall = db.query.mock.calls[3];
     expect(deleteCall[0]).toMatch(/DELETE FROM member_access_sources/);
     expect(deleteCall[0]).toMatch(/access_id\s*=\s*\$1/);
     expect(deleteCall[1][0]).toBe(MEMBER_ID);
 
     // Verify COUNT uses access_id
-    const countCall = db.query.mock.calls[3];
+    const countCall = db.query.mock.calls[4];
     expect(countCall[0]).toMatch(/COUNT\(\*\)/);
     expect(countCall[0]).toMatch(/access_id\s*=\s*\$1/);
     expect(countCall[1][0]).toBe(MEMBER_ID);
@@ -173,6 +175,7 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
     db.query
       .mockResolvedValueOnce({ rows: [{ hardware_api_key: null }] })
       .mockResolvedValueOnce({ rows: [{ role_assignment_id: RA_ID, hardware_group_id: GROUP_ID, mapping_id: MAPPING_ID }] })
+      .mockResolvedValueOnce({ rows: [] })                // DR-050: billing_id lookup — none in this fixture
       .mockResolvedValueOnce({ rowCount: 1 })             // DELETE — removes the 1 cancelled plan's source row
       .mockResolvedValueOnce({ rows: [{ cnt: '4' }] })    // COUNT → 4 other plans still active on this group
       .mockResolvedValueOnce({ rowCount: 1 })             // member_access_log INSERT
