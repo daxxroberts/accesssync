@@ -108,7 +108,6 @@ describe('[P3] OB-225 — Pass 2 source-lookup type-safe varchar matching', () =
     db.query.mockResolvedValueOnce({ rows: [{ id: 'mas-row-drew', status: 'active' }] });
 
     // Remainder of sweep
-    db.query.mockResolvedValueOnce({ rows: [] });            // multiMemberPlans
     db.query.mockResolvedValueOnce({ rowCount: 1 });         // last_active_member_count
     db.query.mockResolvedValueOnce({ rowCount: 1 });         // close reconciliation_run
     db.query.mockResolvedValueOnce({ rowCount: 0 });         // stale in_flight
@@ -172,7 +171,6 @@ describe('[P3] OB-225 — Pass 2 source-lookup type-safe varchar matching', () =
     // Pass 2 source-check: row EXISTS — A11 must NOT log
     db.query.mockResolvedValueOnce({ rows: [{ id: 'mas-row-drew', status: 'active' }] });
 
-    db.query.mockResolvedValueOnce({ rows: [] });            // multiMemberPlans
     db.query.mockResolvedValueOnce({ rowCount: 1 });         // last_active_member_count
     db.query.mockResolvedValueOnce({ rowCount: 1 });         // close reconciliation_run
     db.query.mockResolvedValueOnce({ rowCount: 0 });

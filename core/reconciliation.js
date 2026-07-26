@@ -169,7 +169,9 @@ class NightlyReconciliation {
 
   /**
    * Diff a single client's Wix active members against live Kisi state, queue corrections.
-   * Returns { granted, revoked, skippedHolderOptin, runId } so callers (manual sync endpoint) can surface the counts.
+   * Returns { granted, revoked, skippedHolderOptin, runId } so callers (manual sync endpoint) can
+   * surface the counts. skippedHolderOptin is always 0 as of DR-049 (2026-07-26) — kept in the
+   * return shape only so existing callers (admin/routes/operator.js) destructuring it don't break.
    *
    * Sources of truth:
    *   Wix  — who should have access (active orders + confirmed bookings)
@@ -181,8 +183,6 @@ class NightlyReconciliation {
    *
    * Hardening (2026-04-28):
    *  - Opens a reconciliation_run audit row at start, closes at end with full counts
-   *  - Respects opt-in holder rule (DR-040): does NOT auto-grant a multi-member plan holder
-   *    who has not claimed a seat. Holder slot must be claimed via the Member Hub.
    *  - Mass-revoke sanity gate: if would-be revoke count >= 25% of yesterday's active count,
    *    waits 30s, re-fetches Wix, aborts revoke phase if drop persists. Grants always proceed.
    */
@@ -642,13 +642,6 @@ class NightlyReconciliation {
             continue;
           }
 
-          // Note on multi-member opt-in (DR-040): the grant-queue path below (3A) skips
-          // synthetic grants for would-be holders. The backfill INSERT here writes a source
-          // row for what Wix says they HAVE — it's not a new grant, it's a record sync.
-          // The hardware-side opt-in question (does the holder get a Kisi role assignment?)
-          // is answered by Pass 2: if Kisi has the assignment, backfill RA; if not, the
-          // grant-queue path handles it under opt-in rules. Backfill INSERT here is safe.
-
           // OB-187 — backfill member_billing once per (member × plan) for legacy
           // members who came in via reconcile, not webhook. Wrapped in the rawOrder
           // shape extractBillingSnapshot expects ({ data: { entity: <order> } }).
@@ -968,21 +961,20 @@ class NightlyReconciliation {
       log.error('reconciliation.pass_1_5_failed', { clientId: client.id }, err);
     }
 
-    // 3A. In Wix, not in Kisi → paid but not provisioned → queue grant
-    //     EXCEPT: opt-in holder rule (DR-040). If a Wix order is for a multi-member plan
-    //     and the buyer is the would-be plan holder, do NOT auto-grant. The holder must
-    //     claim a seat explicitly via the Member Hub.
+    // 3A. In Wix, not in Kisi → paid but not provisioned → queue grant.
     //
-    //     Detection: pull all active multi-member plan_mappings for this client.
-    //     A Wix order whose planId maps to one of these is a "holder situation."
-    //     Skip the grant — the holder will claim through the UI when they want a seat.
-    const multiMemberPlans = await db.query(
-      `SELECT source_plan_id FROM plan_mappings
-       WHERE client_id = $1 AND status = 'active' AND allow_multiple = true`,
-      [client.id]
-    ).catch(() => ({ rows: [] }));
-    const multiMemberPlanIds = new Set(multiMemberPlans.rows.map(r => r.source_plan_id));
-
+    //     DR-049 (2026-07-26): multi-member plan holders auto-receive their own door-access
+    //     seat, matching every other plan type and matching the real-time Wix webhook path
+    //     (queue-worker.js → grant-revoke.js processGrant), which has never had an opt-in
+    //     check. This sweep previously invented its own "opt-in holder rule" here — code
+    //     comments misattributed it to "DR-040," but DR-040 is a schema/quota decision, not
+    //     a behavioral one; no decision record ever locked an opt-in requirement. That left
+    //     a silent inconsistency: a member's real-time purchase granted them a seat
+    //     immediately, but if that same grant needed backfilling via this nightly/manual
+    //     sweep (e.g. the original webhook failed), the sweep would refuse to restore it.
+    //     Holders can still self-serve leave a specific plan without losing others
+    //     (holder-release-slot, DR-048) and rejoin (holder-claim-slot) — this only removes
+    //     the sweep's own invented default, it does not touch that self-serve flow.
     for (const [memberId, wixData] of wixMembers) {
       if (kisiMembers.has(memberId)) continue;
 
@@ -996,18 +988,6 @@ class NightlyReconciliation {
       // gets correctly provisioned to its mapped hardware group.
       for (const plan of wixData.plans) {
         if (!plan.planId) continue;
-
-        // Opt-in guard: skip grant for would-be holders on multi-member plans
-        if (multiMemberPlanIds.has(plan.planId)) {
-          log.info('reconciliation.grant_skipped_optin', {
-            clientId: client.id, platformMemberId: memberId,
-            planId: plan.planId, traceId: this._sweepTraceId,
-            reason: 'multi_member_plan_holder_must_claim',
-            sourceType: 'cron', stage: 'cron', result: 'skipped',
-          });
-          skippedHolderOptin++;
-          continue;
-        }
 
         const recoEventId = `recon-${client.id}-${memberId}-${plan.planId}-${Date.now()}`;
         const traceId = this._sweepTraceId || crypto.randomUUID();

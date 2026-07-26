@@ -56,6 +56,7 @@ const wixPlansApi         = require('../../adapters/wix/wix-plans-api');
 const planMappingResolver = require('../../core/plan-mapping-resolver');
 const { eventQueue }      = require('../../core/webhook-processor');
 const reconciliation      = require('../../core/reconciliation');
+const { log }             = require('../../core/logger');
 
 const CLIENT_ID  = 'client-hog-001';
 const MEMBER_ID  = 'ma-uuid-001';           // member_access.id
@@ -285,9 +286,6 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
     // A11 observation: member_access_sources check → NO matching row
     db.query.mockResolvedValueOnce({ rows: [] });
 
-    // multiMemberPlans (3A opt-in guard — wixMembers empty so loop is a no-op, but query still runs)
-    db.query.mockResolvedValueOnce({ rows: [] });
-
     // update last_active_member_count
     db.query.mockResolvedValueOnce({ rowCount: 1 });
     // close reconciliation_run
@@ -338,7 +336,6 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
 
     db.query.mockResolvedValueOnce({ rows: [] }); // kisiUserIds identity lookup
     db.query.mockResolvedValueOnce({ rows: [{ hardware_group_id: 'kisi-group-managed' }] }); // A12 universe — staff group NOT in set
-    db.query.mockResolvedValueOnce({ rows: [] }); // multiMemberPlans
     db.query.mockResolvedValueOnce({ rowCount: 1 }); // update last_active_member_count
     db.query.mockResolvedValueOnce({ rowCount: 1 }); // close reconciliation_run
     db.query.mockResolvedValueOnce({ rowCount: 0 }); // stale in_flight
@@ -390,11 +387,8 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
       rows: [{ platform_member_id: PLATFORM_MEMBER_ID, sub_master_id: null }],
     });
 
-    // OB-74: member_access_sources check → row EXISTS → no orphan (runs before multiMemberPlans)
+    // OB-74: member_access_sources check → row EXISTS → no orphan
     db.query.mockResolvedValueOnce({ rows: [{ id: 'mas-row-001' }] });
-
-    // multiMemberPlans (3A opt-in guard)
-    db.query.mockResolvedValueOnce({ rows: [] });
 
     // update last_active_member_count
     db.query.mockResolvedValueOnce({ rowCount: 1 });
@@ -416,6 +410,104 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
       c => c[0] === 'revoke' && c[1]?.standardEvent?.syntheticSource === 'reconciliation.kisi_orphan'
     );
     expect(revokeCall).toBeUndefined();
+  });
+});
+
+// ─── DR-049 — multi-member holders auto-grant on nightly/manual sync ────────
+// Removes the sweep's own invented "opt-in" skip (misattributed to "DR-040" in code
+// comments — DR-040 is a schema/quota decision, not behavioral). The real-time Wix
+// webhook path has never had an opt-in check; this closes the divergence so a member
+// whose original webhook grant failed gets it correctly restored by this sweep too.
+
+describe('[P3] DR-049 — multi-member plan holder auto-grants via nightly/manual sync', () => {
+
+  test('a Wix order for a multi-member-eligible plan queues a grant, not a skip', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] }); // gate
+
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        id: CLIENT_ID,
+        source_site_id: 'wix-site-001',
+        source_api_key: 'enc-wix',
+        hardware_api_key: 'enc-hw',
+        hardware_platform: 'kisi',
+        last_active_member_count: 10,
+      }],
+    }); // _syncTrueSources
+
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'run-001' }] }); // reconciliation_run INSERT
+
+    // A brand-new buyer of a multi-member-eligible plan — in Wix, not yet in Kisi.
+    wixPlansApi.listActiveOrders.mockResolvedValue([
+      { memberId: 'wix-member-new-buyer', planId: 'wix-plan-family', email: 'buyer@test.com', name: 'New Buyer' },
+    ]);
+    wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
+
+    // Nobody in Kisi yet — kisiUserIds.length===0 skips the identity lookup query,
+    // and the empty kisiAssignments loop skips the A11 source-check query too.
+    hardwareAdapter.getManagedRoleAssignments.mockResolvedValue([]);
+
+    db.query.mockResolvedValueOnce({ rows: [] }); // A12 universe filter (accessSyncGroupsResult) — always runs
+
+    // update last_active_member_count
+    db.query.mockResolvedValueOnce({ rowCount: 1 });
+    // close reconciliation_run
+    db.query.mockResolvedValueOnce({ rowCount: 1 });
+
+    db.query.mockResolvedValueOnce({ rowCount: 0 }); // stale in_flight
+    db.query.mockResolvedValueOnce({ rows: [] });    // lockdown
+    db.query.mockResolvedValueOnce({ rows: [] });    // actionable
+    db.query.mockResolvedValueOnce({ rows: [] });    // digest config
+    db.query.mockResolvedValueOnce({ rows: [] });    // digest jobs
+    db.query.mockResolvedValueOnce({ rowCount: 1 }); // last_sync_at
+
+    eventQueue.add.mockResolvedValue();
+
+    await reconciliation.runNightlySweep();
+
+    const grantCall = eventQueue.add.mock.calls.find(
+      c => c[0] === 'grant' && c[1]?.standardEvent?.planId === 'wix-plan-family'
+    );
+    expect(grantCall).toBeDefined();
+    expect(grantCall[1].standardEvent.platformMemberId).toBe('wix-member-new-buyer');
+    expect(grantCall[1].standardEvent.syntheticSource).toBe('reconciliation.true_source_sync');
+
+    // The removed opt-in skip must never fire again.
+    expect(log.info).not.toHaveBeenCalledWith('reconciliation.grant_skipped_optin', expect.anything());
+  });
+
+  test('skippedHolderOptin is always 0 in the return shape (kept for caller compatibility)', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        id: CLIENT_ID,
+        source_site_id: 'wix-site-001',
+        source_api_key: 'enc-wix',
+        hardware_api_key: 'enc-hw',
+        hardware_platform: 'kisi',
+        last_active_member_count: 10,
+      }],
+    });
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'run-001' }] });
+
+    wixPlansApi.listActiveOrders.mockResolvedValue([
+      { memberId: 'wix-member-new-buyer-2', planId: 'wix-plan-family', email: 'buyer2@test.com', name: 'Buyer Two' },
+    ]);
+    wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
+    hardwareAdapter.getManagedRoleAssignments.mockResolvedValue([]);
+
+    db.query.mockResolvedValueOnce({ rows: [] }); // A12 universe filter
+    db.query.mockResolvedValue({ rowCount: 1 });  // last_active_member_count + anything after (no runId, so no reconciliation_run close)
+
+    eventQueue.add.mockResolvedValue();
+
+    const result = await reconciliation._syncClient(
+      { id: CLIENT_ID, source_site_id: 'wix-site-001', source_api_key: 'enc-wix',
+        hardware_api_key: 'enc-hw', hardware_platform: 'kisi', last_active_member_count: 10 },
+      { triggeredBy: 'manual', triggeredByActor: { type: 'operator', id: 'test' } }
+    );
+
+    expect(result.skippedHolderOptin).toBe(0);
+    expect(result.granted).toBeGreaterThan(0);
   });
 });
 
