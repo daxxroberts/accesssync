@@ -19,6 +19,8 @@
 const db = require('../db');
 const { log } = require('./logger');
 const { getTraceId, getActor } = require('./trace-context');
+const { sendOperatorEmail } = require('./operator-mailer');
+const { renderMemberFailureAlert } = require('./operator-email-templates');
 
 class RetryEngine {
   constructor() {
@@ -182,33 +184,22 @@ class RetryEngine {
         return;
       }
 
-      const { Resend } = require('resend');
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      const subject = error.code
-        ? `[AccessSync] A member didn't get access — ${error.code}`
-        : '[AccessSync] A member provisioning failed — action may be required';
-
-      const bodyLines = [
-        error.userMessage || error.message,
-        '',
-        error.action ? `What to do: ${error.action}` : '',
-        '',
-        `Member ID: ${platformMemberId || 'unknown'}`,
-        `Event: ${eventType || 'unknown'}`,
-        `Gym: ${tenantId}`,
-        '',
-        'Log in to your AccessSync dashboard to retry or dismiss this error.',
-      ].filter(l => l !== undefined);
-
-      const result = await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
-        to: toEmail,
-        subject,
-        text: bodyLines.join('\n'),
+      // Raw IDs (member/event/tenant) deliberately stay out of the email body — they mean
+      // nothing to a gym owner and are already on the error_queue row the CTA links to.
+      const { sent, reason } = await sendOperatorEmail({
+        toEmail,
+        render: renderMemberFailureAlert,
+        renderArgs: {
+          userMessage: error.userMessage || null,
+          actionText: error.action || null,
+          memberName: null,
+          planName: null,
+        },
+        logContext: { alert: 'member_failure', tenantId, eventType, errorCode: error.code || null },
       });
 
-      if (result && result.error) {
-        throw new Error(result.error.message || String(result.error));
+      if (!sent) {
+        throw new Error(reason || 'operator email not sent');
       }
 
       log.info('retry.notify.sent', { tenantId, to: toEmail });

@@ -24,6 +24,8 @@
 
 const { getRedisConnection } = require('./redis-utils');
 const { log } = require('./logger');
+const { sendOperatorEmail } = require('./operator-mailer');
+const { renderHmacAlert } = require('./operator-email-templates');
 
 const WINDOW_SECONDS    = 300;  // 5-minute sliding window
 const FAILURE_THRESHOLD = 3;
@@ -75,37 +77,18 @@ async function _sendAlert(count, clientHint, clientId) {
     log.warn('hmac.alert.no_email', { clientId, clientHint, count });
     return;
   }
-  try {
-    const { Resend } = require('resend');
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    const result = await resend.emails.send({
-      from:    process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
-      to:      toEmail,
-      subject: '[AccessSync] ⚠ HMAC failure spike detected',
-      text: [
-        `AccessSync Security Alert — ${new Date().toISOString()}`,
-        '',
-        `${count} webhook HMAC signature failures detected in the last 5 minutes.`,
-        '',
-        'This may indicate:',
-        '  - A misconfigured webhook secret in Wix Secrets Manager',
-        '  - An external system sending requests to your webhook URL',
-        '  - A replay attack attempt',
-        '',
-        `Client hint: ${clientHint}`,
-        '',
-        'Action: Check your Wix Secrets Manager → accesssync_webhook_secret.',
-        'If the secret is correct and failures continue, check Railway logs for source IPs.',
-      ].join('\n'),
-    });
-    if (result && result.error) {
-      log.error('hmac.alert.send_failed', { clientId, clientHint, toEmail, reason: result.error.message || String(result.error) });
-      return;
-    }
-    log.info('hmac.alert.sent', { toEmail, count, clientHint });
-  } catch (err) {
-    log.error('hmac.alert.send_failed', { clientId, clientHint, toEmail }, err);
-  }
+
+  // Audience split: the operator is a gym owner, not a security engineer. The email says
+  // what happened and whether they need to act; the failure count, client hint, and
+  // signature details stay in diagnostic_log (logged above) for whoever debugs it.
+  const { sent, reason } = await sendOperatorEmail({
+    toEmail,
+    render: renderHmacAlert,
+    logContext: { alert: 'hmac_spike', clientId, clientHint, count },
+  });
+
+  if (sent) log.info('hmac.alert.sent', { toEmail, count, clientHint });
+  else log.error('hmac.alert.send_failed', { clientId, clientHint, toEmail, reason });
 }
 
 module.exports = { recordFailure };

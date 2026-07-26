@@ -7,7 +7,8 @@
     "ruled_by": "Builder Q7-Q10 ruling 2026-05-25",
     "amendments": [
       "2026-05-27: Operator-action visibility pass. Added all admin.* + operator.* mutation events to overrides so Builder can see plan-mapping saves, API-key rotations, location/client lifecycle, and sub-member workflow in the trace timeline. Closes the OB-176 default-suppress operator-visibility gap surfaced in Builder feedback 2026-05-27.",
-      "2026-07-09: DR-052 member-email visibility. Added the three info-level email.member.* events (sent/suppressed/skipped_disabled) so branded member-email send attempts show up in the trace timeline — without this override they default-suppress like any other info event (email.member.failed is warn-level and already persists by default). Found while diagnosing a silent test-send failure."
+      "2026-07-09: DR-052 member-email visibility. Added the three info-level email.member.* events (sent/suppressed/skipped_disabled) so branded member-email send attempts show up in the trace timeline — without this override they default-suppress like any other info event (email.member.failed is warn-level and already persists by default). Found while diagnosing a silent test-send failure.",
+      "2026-07-25: Operator-alert email redesign. Added email.operator.sent (the shared send path all six operator alerts now route through, via core/operator-mailer.js) and health.alert_suppressed (fires when the escalate-then-cool-down rule holds back a repeat hardware-key alert). Both are info-level, so without these overrides the Builder could not see which alerts were sent versus deliberately withheld. email.operator.failed is error-level and already persists by default."
     ]
   },
   "overrides": {
@@ -65,6 +66,8 @@
     "admin.holder_release_slot_queued":   { "persist": true },
     "email.member.sent":                  { "persist": true },
     "email.member.suppressed":            { "persist": true },
-    "email.member.skipped_disabled":      { "persist": true }
+    "email.member.skipped_disabled":      { "persist": true },
+    "email.operator.sent":                { "persist": true },
+    "health.alert_suppressed":            { "persist": true }
   }
 }

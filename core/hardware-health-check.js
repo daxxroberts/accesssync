@@ -4,7 +4,7 @@
  * @role cron-6hr
  * @schedule every 6 hours via Railway Cron
  * @reads locations, clients, connector_subscriptions, plan_mappings, plan_mapping_groups
- * @writes connector_subscriptions.key_last_verified, connector_subscriptions.key_last_error, plan_mapping_groups.health_status, plan_mapping_groups.door_name, plan_mappings.door_name, plan_mappings.source_status
+ * @writes connector_subscriptions.key_last_verified, connector_subscriptions.key_last_error, connector_subscriptions.key_first_failed_at, connector_subscriptions.key_last_alerted_at, plan_mapping_groups.health_status, plan_mapping_groups.door_name, plan_mappings.door_name, plan_mappings.source_status
  * @calls hardware-adapter (getLocks, getGroups), wix-plans-api (listPricingPlans), resend (alerts)
  * @exports runHealthCheck
  * @dr DR-028, DR-037
@@ -34,6 +34,15 @@ const hardwareAdapter = require('../adapters/hardware-adapter');
 const { decryptApiKey } = require('./crypto-utils');
 const { log } = require('./logger');
 const { runWith, mintTraceId } = require('./trace-context');
+const { sendOperatorEmail } = require('./operator-mailer');
+const {
+  renderHardwareKeyAlert,
+  renderOrphanedGroupsAlert,
+  renderArchivedPlansAlert,
+} = require('./operator-email-templates');
+
+const HOUR_MS = 60 * 60 * 1000;
+const ESCALATION_WINDOW_MS = 24 * HOUR_MS;
 
 async function runHealthCheck() {
   const traceId = mintTraceId();
@@ -51,6 +60,7 @@ async function _runHealthCheckBody() {
   const locationsResult = await db.query(
     `SELECT l.id AS location_id, l.name AS location_name, l.client_id,
             cs.hardware_api_key, cs.hardware_platform, cs.id AS connector_id,
+            cs.key_first_failed_at, cs.key_last_alerted_at,
             COALESCE(l.notification_email, c.notification_email) AS notification_email,
             c.name AS client_name
      FROM locations l
@@ -72,10 +82,10 @@ async function _checkLocation(loc) {
 
   const encKey = loc.hardware_api_key;
   if (!encKey) {
-    const msg = 'No hardware API key configured. Set your API key in the AccessSync dashboard under this location.';
+    const msg = 'There’s no access key saved for this location yet, so AccessSync can’t talk to your door hardware.';
     log.warn('health.no_key', { clientId: loc.client_id, location: loc.location_name });
-    await _notifyFailure(loc, null, 'no_key', msg);
     await _updateLocationVerification(loc.connector_id, null, msg);
+    await _maybeNotifyFailure(loc, 'no_key', msg, platform);
     return;
   }
 
@@ -110,7 +120,7 @@ async function _checkLocation(loc) {
 
   // Notify only on actionable errors (skip transient network issues)
   if (errorType && errorType !== 'network_error') {
-    await _notifyFailure(loc, errorType, errorType, errorMsg);
+    await _maybeNotifyFailure(loc, errorType, errorMsg, platform);
   }
 
   // If key check passed, reconcile mapped groups against live groups
@@ -262,50 +272,23 @@ async function _notifyOrphanedGroups(loc, orphans, platform) {
   const toEmail = loc.notification_email || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
   if (!toEmail) return;
 
-  try {
-    const { Resend } = require('resend');
-    const resend = new Resend(process.env.RESEND_API_KEY);
+  const { sent, reason } = await sendOperatorEmail({
+    toEmail,
+    render: renderOrphanedGroupsAlert,
+    renderArgs: {
+      locationName: loc.location_name,
+      clientName: loc.client_name,
+      platform,
+      groups: orphans.map(o => ({
+        planName: o.plan_name,
+        affectedMembers: o.affectedMembers,
+      })),
+    },
+    logContext: { alert: 'orphaned_groups', clientId: loc.client_id },
+  });
 
-    const groupList = orphans.map(o => {
-      const memberNote = o.affectedMembers > 0
-        ? ` — ${o.affectedMembers} member(s) affected`
-        : ' — no members currently assigned';
-      return `  - ${o.plan_name || 'Unknown plan'}: Group ${o.hardware_group_id}${memberNote}`;
-    }).join('\n');
-
-    const totalAffected = orphans.reduce((sum, o) => sum + (o.affectedMembers || 0), 0);
-
-    const result = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
-      to: toEmail,
-      subject: `[AccessSync] ${orphans.length} access group(s) no longer found in ${platform}`,
-      text: [
-        `AccessSync Group Alert — ${new Date().toISOString()}`,
-        '',
-        `Client: ${loc.client_name}`,
-        `Location: ${loc.location_name}`,
-        '',
-        `The following ${platform} group(s) are mapped in AccessSync but no longer exist in ${platform}:`,
-        '',
-        groupList,
-        '',
-        totalAffected > 0
-          ? `${totalAffected} member(s) may have lost access and will need to be remapped to a new group.`
-          : 'No members are currently affected.',
-        '',
-        'These groups have been flagged in your dashboard. Other groups on the same plan continue to work normally.',
-        '',
-        'To fix this: log in to AccessSync → Plan Mapping → remap or remove the affected groups.',
-      ].join('\n'),
-    });
-    if (result && result.error) {
-      log.error('health.orphan_alert_failed', { toEmail, reason: result.error.message || String(result.error) });
-      return;
-    }
-    log.info('health.orphan_alert_sent', { toEmail });
-  } catch (err) {
-    log.error('health.orphan_alert_failed', { toEmail }, err);
-  }
+  if (sent) log.info('health.orphan_alert_sent', { toEmail });
+  else log.error('health.orphan_alert_failed', { toEmail, reason });
 }
 
 /**
@@ -404,110 +387,109 @@ async function _notifyArchivedPlans(loc, archivedPlans) {
   const toEmail = loc.notification_email || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
   if (!toEmail) return;
 
-  try {
-    const { Resend } = require('resend');
-    const resend = new Resend(process.env.RESEND_API_KEY);
+  const { sent, reason } = await sendOperatorEmail({
+    toEmail,
+    render: renderArchivedPlansAlert,
+    renderArgs: {
+      locationName: loc.location_name,
+      clientName: loc.client_name,
+      plans: archivedPlans.map(p => ({
+        planName: p.plan_name || p.source_plan_id,
+        affectedMembers: p.affectedMembers,
+      })),
+    },
+    logContext: { alert: 'archived_plans', clientId: loc.client_id },
+  });
 
-    const planList = archivedPlans.map(p => {
-      const memberNote = p.affectedMembers > 0
-        ? `${p.affectedMembers} member(s) still have active access`
-        : 'no members currently assigned';
-      return `  - ${p.plan_name || p.source_plan_id} — ${memberNote}`;
-    }).join('\n');
-
-    const result = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
-      to: toEmail,
-      subject: `[AccessSync] ${archivedPlans.length} plan(s) archived on Wix`,
-      text: [
-        `AccessSync Plan Status Update — ${new Date().toISOString()}`,
-        '',
-        `Client: ${loc.client_name}`,
-        `Location: ${loc.location_name}`,
-        '',
-        'The following Wix plan(s) have been archived:',
-        '',
-        planList,
-        '',
-        'This is informational. Members with active subscriptions keep their access until their billing cycle ends naturally. No action is needed unless you want to remap these members to a different plan.',
-        '',
-        'You can view affected plans in AccessSync → Plan Mapping.',
-      ].join('\n'),
-    });
-    if (result && result.error) {
-      log.error('health.archived_plan_alert_failed', { toEmail, reason: result.error.message || String(result.error) });
-      return;
-    }
-    log.info('health.archived_plan_alert_sent', { toEmail });
-  } catch (err) {
-    log.error('health.archived_plan_alert_failed', { toEmail }, err);
-  }
+  if (sent) log.info('health.archived_plan_alert_sent', { toEmail });
+  else log.error('health.archived_plan_alert_failed', { toEmail, reason });
 }
 
 function _diagnose(errorType, platform) {
   switch (errorType) {
     case 'invalid_key':
-      return `Your ${platform} API key was rejected (401 Unauthorized). The key may have been rotated or deleted. Generate a new key in your ${platform} account and update it in the AccessSync dashboard under Locations.`;
+      return `Your ${platform} account rejected the key AccessSync has on file. It was probably changed or deleted on the ${platform} side. Generate a new key in ${platform} and paste it into AccessSync.`;
     case 'insufficient_permissions':
-      return `Your ${platform} API key authenticated but lacks required permissions (403 Forbidden). Confirm your account is on the Pro tier — the API key must have access to locks, groups, and role assignments.`;
+      return `The ${platform} key works, but it isn’t allowed to do everything AccessSync needs. Check that your ${platform} account is on the Pro tier and that the key can manage doors, groups, and member access.`;
     case 'network_error':
-      return `AccessSync could not reach the ${platform} API. This is likely a temporary connectivity issue and will resolve automatically.`;
+      return `AccessSync couldn’t reach ${platform} just now. This is usually temporary and clears up on its own.`;
     default:
-      return `Unknown error communicating with ${platform}.`;
+      return `AccessSync ran into a problem talking to ${platform}.`;
   }
 }
 
 async function _updateLocationVerification(connectorId, verifiedAt, errorMsg) {
+  // On success, clear the failure-tracking fields so the next failure starts a fresh
+  // escalation window. On failure, COALESCE preserves the original first-failure time.
   await db.query(
     `UPDATE connector_subscriptions
-     SET key_last_verified = $1,
-         key_last_error    = $2
+     SET key_last_verified   = $1,
+         key_last_error      = $2,
+         key_first_failed_at = CASE WHEN $2::text IS NULL THEN NULL ELSE COALESCE(key_first_failed_at, NOW()) END,
+         key_last_alerted_at = CASE WHEN $2::text IS NULL THEN NULL ELSE key_last_alerted_at END
      WHERE id = $3`,
     [verifiedAt, errorMsg, connectorId]
   ).catch(e => log.error('health.connector_update_failed', { connectorId }, e));
 }
 
-async function _notifyFailure(loc, locName, errorType, message) {
+/**
+ * Escalate-then-cool-down (Builder ruling 2026-07-25).
+ *
+ * This cron runs every 6 hours and used to email on every single run, so a key that
+ * stayed broken for a week produced ~28 identical "action required" emails. A broken
+ * key does block new signups, though, so silence isn't right either. The compromise:
+ * alert on every run for the first 24 hours of a failure, then once a day after that.
+ *
+ * Reads the pre-run snapshot from the locations query, so it must be called after
+ * _updateLocationVerification has stamped this run's first-failure time.
+ */
+function _shouldSendKeyAlert(loc, now = Date.now()) {
+  const firstFailed = loc.key_first_failed_at ? new Date(loc.key_first_failed_at).getTime() : null;
+  if (!firstFailed) return true; // new failure
+
+  if (now - firstFailed < ESCALATION_WINDOW_MS) return true; // still escalating
+
+  const lastAlerted = loc.key_last_alerted_at ? new Date(loc.key_last_alerted_at).getTime() : null;
+  return !lastAlerted || (now - lastAlerted) >= ESCALATION_WINDOW_MS;
+}
+
+async function _maybeNotifyFailure(loc, errorType, message, platform) {
+  if (!_shouldSendKeyAlert(loc)) {
+    log.info('health.alert_suppressed', {
+      clientId: loc.client_id, location: loc.location_name, errorType,
+    });
+    return;
+  }
+
   const toEmail = loc.notification_email || process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
   if (!toEmail) {
     log.warn('health.no_notification_email', { clientId: loc.client_id, location: loc.location_name });
     return;
   }
 
-  try {
-    const { Resend } = require('resend');
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    const subject = errorType === 'invalid_key'
-      ? '[AccessSync] Action required: hardware API key rejected'
-      : errorType === 'insufficient_permissions'
-        ? '[AccessSync] Action required: API key permissions issue'
-        : '[AccessSync] Hardware API key check failed';
+  const { sent, reason } = await sendOperatorEmail({
+    toEmail,
+    render: renderHardwareKeyAlert,
+    renderArgs: {
+      locationName: loc.location_name,
+      clientName: loc.client_name,
+      platform,
+      diagnosis: message,
+      errorType,
+    },
+    logContext: { alert: 'hardware_key', clientId: loc.client_id, errorType },
+  });
 
-    const result = await resend.emails.send({
-      from:    process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
-      to:      toEmail,
-      subject,
-      text: [
-        `AccessSync Hardware Key Alert — ${new Date().toISOString()}`,
-        '',
-        `Client: ${loc.client_name}`,
-        `Location: ${loc.location_name}`,
-        '',
-        message,
-        '',
-        'To fix this: log in to the AccessSync dashboard → System Config → Update the API key for this location.',
-        '',
-        'Members will not lose existing access, but new signups will not provision until the key is corrected.',
-      ].join('\n'),
-    });
-    if (result && result.error) {
-      log.error('health.alert_send_failed', { toEmail, location: loc.location_name, reason: result.error.message || String(result.error) });
-      return;
-    }
-    log.info('health.alert_sent', { toEmail, location: loc.location_name });
-  } catch (err) {
-    log.error('health.alert_send_failed', { toEmail, location: loc.location_name }, err);
+  if (!sent) {
+    log.error('health.alert_send_failed', { toEmail, location: loc.location_name, reason });
+    return;
   }
+
+  log.info('health.alert_sent', { toEmail, location: loc.location_name });
+  await db.query(
+    `UPDATE connector_subscriptions SET key_last_alerted_at = NOW() WHERE id = $1`,
+    [loc.connector_id]
+  ).catch(e => log.error('health.connector_update_failed', { connectorId: loc.connector_id }, e));
 }
 
 // Executable entry point for Railway Cron
@@ -517,4 +499,4 @@ if (require.main === module) {
     .catch(err => { log.critical('health.fatal', {}, err); process.exit(1); });
 }
 
-module.exports = { runHealthCheck };
+module.exports = { runHealthCheck, _shouldSendKeyAlert };

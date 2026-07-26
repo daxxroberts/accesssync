@@ -382,6 +382,19 @@ Send outcomes are auditable in `member_email_log`; these events cover the decisi
 | `email.member.skipped_disabled` | info | Send skipped — client's member_emails_enabled toggle is off, or no recipient address |
 | `email.member.failed` | warn | Send attempt failed (Resend error / exception) — grant/revoke job unaffected |
 
+## Operator Alert Email Events (2026-07-25)
+
+AccessSync-branded operator alerts (`core/operator-mailer.js`). All six alert types —
+hardware key, orphaned groups, archived plans, blocked traffic, member failure, and the
+nightly digest — route through this one send path.
+
+| Event | Level | Description |
+|---|---|---|
+| `email.operator.sent` | info | Operator alert handed to Resend |
+| `email.operator.failed` | error | Send attempt failed (Resend error / exception) — never fails the caller |
+| `email.operator.no_recipient` | warn | No notification email resolved for this client or owner fallback |
+| `health.alert_suppressed` | info | Repeat hardware-key alert withheld by the escalate-then-cool-down rule (every run for the first 24h of a failure, then once per day) |
+
 ## Email Branding Activity Events (DR-052)
 
 | Event | Level | Description |

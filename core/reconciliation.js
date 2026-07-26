@@ -31,6 +31,8 @@ const { extractBillingSnapshot } = require('./billing-snapshot');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { log, withTrace } = require('./logger');
 const { runWith, mintTraceId, getTraceId, getActor } = require('./trace-context');
+const { sendOperatorEmail } = require('./operator-mailer');
+const { renderNightlyDigest } = require('./operator-email-templates');
 
 class NightlyReconciliation {
 
@@ -1620,19 +1622,29 @@ class NightlyReconciliation {
     const sweepLogger = this._sweepLogger || log;
     const sweepTraceId = this._sweepTraceId || null;
 
-    // Query both failure categories — operator needs both (NOVA spec)
+    // Query both failure categories — operator needs both (NOVA spec).
+    // Location/client names come along so the digest can name the place in plain English
+    // instead of printing a client_id.
     const configAlertsResult = await db.query(
-      `SELECT client_id, alert_type, hardware_ref, created_at
-       FROM config_alert_log
-       WHERE resolved_at IS NULL
-       ORDER BY client_id, created_at DESC`
+      `SELECT cal.client_id, cal.alert_type, cal.hardware_ref, cal.created_at,
+              c.name AS client_name
+       FROM config_alert_log cal
+       LEFT JOIN clients c ON c.id = cal.client_id
+       WHERE cal.resolved_at IS NULL
+       ORDER BY cal.client_id, cal.created_at DESC`
     );
 
+    // user_message / action_text are written at throw time by the connectors and
+    // queue-worker. Preferring them is what turns "[null] member: null | CODE" into a
+    // sentence; the older rows that predate them fall back to the event_type map.
     const failedJobsResult = await db.query(
-      `SELECT client_id, member_id, event_type, error_reason, created_at
-       FROM error_queue
-       WHERE status = 'failed'
-       ORDER BY client_id, created_at DESC`
+      `SELECT eq.client_id, eq.member_id, eq.event_type, eq.error_reason, eq.created_at,
+              eq.user_message, eq.action_text, eq.resolution, eq.plan_name, eq.door_name,
+              mm.first_name, mm.last_name
+       FROM error_queue eq
+       LEFT JOIN member_master mm ON mm.id = eq.member_id
+       WHERE eq.status = 'failed'
+       ORDER BY eq.client_id, eq.created_at DESC`
     );
 
     const digest = {
@@ -1655,32 +1667,31 @@ class NightlyReconciliation {
       return;
     }
 
-    try {
-      const { Resend } = require('resend');
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      const lines = [
-        `AccessSync Nightly Digest — ${digest.generatedAt}`,
-        '',
-        `Config Alerts (unresolved): ${digest.configAlerts.length}`,
-        ...digest.configAlerts.map(a => `  - [${a.alert_type}] ref: ${a.hardware_ref}`),
-        '',
-        `Failed Jobs (in error_queue): ${digest.failedJobs.length}`,
-        ...digest.failedJobs.map(j => `  - [${j.event_type}] member: ${j.member_id} | ${j.error_reason}`),
-      ];
-      const result = await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
-        to: toEmail,
-        subject: '[AccessSync] Nightly digest',
-        text: lines.join('\n'),
-      });
-      if (result && result.error) {
-        sweepLogger.error('reconciliation.digest_send_failed', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'failed', reason: result.error.message || String(result.error) });
-        return;
-      }
-      sweepLogger.info('reconciliation.digest_sent', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'success' });
-    } catch (err) {
-      sweepLogger.error('reconciliation.digest_send_failed', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'failed' }, err);
+    const { sent, reason } = await sendOperatorEmail({
+      toEmail,
+      render: renderNightlyDigest,
+      renderArgs: {
+        configAlerts: digest.configAlerts.map(a => ({
+          alert_type: a.alert_type,
+          locationName: a.client_name || null,
+          doorName: a.hardware_ref || null,
+        })),
+        failedJobs: digest.failedJobs.map(j => ({
+          event_type: j.event_type,
+          user_message: j.user_message,
+          action_text: j.action_text,
+          plan_name: j.plan_name,
+          memberName: [j.first_name, j.last_name].filter(Boolean).join(' ') || null,
+        })),
+      },
+      logContext: { alert: 'nightly_digest', traceId: sweepTraceId },
+    });
+
+    if (!sent) {
+      sweepLogger.error('reconciliation.digest_send_failed', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'failed', reason });
+      return;
     }
+    sweepLogger.info('reconciliation.digest_sent', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'success' });
   }
 
   _sleep(ms) {
