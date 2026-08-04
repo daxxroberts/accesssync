@@ -363,12 +363,17 @@ class StandardAdapter {
   async completeGrant(memberId, tenantId, assignments, sharedBillingSnapshot = null) {
     // Write hardware_platform from first assignment so the revoke path can read it back.
     const resolvedHardwarePlatform = assignments[0]?.hardwarePlatform || null;
+    // Wix's own currentCycle.index, carried on every assignment since grant-revoke.js —
+    // lets an operator tell a first purchase from a recurring auto-renewal at a glance.
+    const resolvedCycleIndex = assignments[0]?.cycleIndex || null;
 
     // DIAG: warn-level so it lands in diagnostic_log.
     log.warn('adapter.complete_grant.entry', {
       memberId, tenantId,
       assignmentCount: assignments.length,
       hardwarePlatform: resolvedHardwarePlatform,
+      cycleIndex: resolvedCycleIndex,
+      isRenewal: resolvedCycleIndex != null ? resolvedCycleIndex > 1 : null,
       stage: 'grant', result: 'start',
     });
 

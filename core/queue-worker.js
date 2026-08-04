@@ -378,6 +378,11 @@ async function _processJobBody(job, traceId) {
         platformMemberId: standardEvent.platformMemberId,
         assignments: assignments.length,
         durationMs: Date.now() - jobStart,
+        // Wix's own currentCycle.index off the order webhook (wix-adapter.js) — lets an
+        // operator tell a first purchase (cycleIndex 1/null) from a recurring auto-renewal
+        // (cycleIndex > 1) without cross-referencing member_billing.
+        cycleIndex: standardEvent.cycleIndex || null,
+        isRenewal: standardEvent.cycleIndex != null ? standardEvent.cycleIndex > 1 : null,
         stage: 'grant', result: 'success',
       });
 
