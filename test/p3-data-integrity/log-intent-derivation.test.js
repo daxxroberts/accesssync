@@ -28,13 +28,45 @@
 
 global.window = {};
 require('../../admin/public/humanize.js');
-const { deriveIntent } = global.window.AccessSyncHumanize;
+const { deriveIntent, humanize } = global.window.AccessSyncHumanize;
 
 function ev(source, event, extra = {}) {
   return { source, event, result: 'success', detail: null, ts: '2026-08-04T00:00:00.000Z', ...extra };
 }
 
+describe('[P3] humanize — client.synced', () => {
+  // Before this fix, client.synced had no translation and fell through to
+  // "client.synced — (plain English not yet defined)" whenever it happened
+  // to win the header race described in the deriveIntent tests below.
+  test('translates to a plain-English sentence, not the raw event name', () => {
+    const text = humanize(ev('activity', 'client.synced', { client_name: 'House of Gains' }));
+    expect(text).not.toContain('plain English not yet defined');
+    expect(text).toContain('sync');
+  });
+});
+
 describe('[P3] deriveIntent — Trace Timeline header intent label', () => {
+  // 2026-08-04: Overview page "Sync" buttons all hit the same POST
+  // /operator/sync/run, which writes an `operator.sync.manual_run` diagnostic
+  // AND a `client.synced` activity row in the same request/trace. Both are
+  // independent fire-and-forget INSERTs with no explicit timestamp, so which
+  // one lands first in Postgres is a race — the old header (picking "first
+  // event, humanized") showed two different labels for the same button click
+  // depending on which write won. Both orderings must resolve to one label.
+  test('diagnostic operator.sync.manual_run wins the race → Manual sync / info', () => {
+    expect(deriveIntent([
+      ev('diagnostic', 'operator.sync.manual_run'),
+      ev('activity', 'client.synced'),
+    ])).toEqual({ label: 'Manual sync', tone: 'info' });
+  });
+
+  test('activity client.synced wins the race → same Manual sync / info label', () => {
+    expect(deriveIntent([
+      ev('activity', 'client.synced'),
+      ev('diagnostic', 'operator.sync.manual_run'),
+    ])).toEqual({ label: 'Manual sync', tone: 'info' });
+  });
+
   test('payment.failed webhook → Payment failed / error', () => {
     expect(deriveIntent([ev('webhook', 'payment.failed')]))
       .toEqual({ label: 'Payment failed', tone: 'error' });

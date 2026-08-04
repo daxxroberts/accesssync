@@ -166,6 +166,7 @@
     if (e === 'location.suspended')     return (who || 'An operator') + ' suspended a location' + at + '.';
     if (e === 'location.activated')     return (who || 'An operator') + ' reactivated a location' + at + '.';
     if (e === 'member.synced')          return (who || 'An operator') + ' ran a per-member sync' + at + '.';
+    if (e === 'client.synced')          return (who || 'An operator') + ' ran a full sync' + at + '.';
     if (e === 'error.retried')          return (who || 'An operator') + ' retried a failed job' + at + '.';
     if (e === 'client_deleted')         return (who || 'An owner') + ' deleted client ' + (c.client || '') + '.';
     // Passive voice: `who` (member_name) on these events is the SUB-MEMBER being
@@ -552,6 +553,18 @@
    */
   function deriveIntent(events) {
     if (!events || !events.length) return null;
+
+    // Manual sync (Overview page "Sync" buttons, all of which hit the same
+    // POST /operator/sync/run — admin/routes/operator.js) writes two rows in
+    // the same request: an `operator.sync.manual_run` diagnostic and a
+    // `client.synced` activity event. Both are independent fire-and-forget
+    // INSERTs with no explicit timestamp, so which one lands first in
+    // Postgres is a few-ms race — the OLD header (picking "first event,
+    // humanized") flipped between two different-looking labels for the
+    // exact same button click. One fixed label regardless of race outcome.
+    if (findEvent(events, 'diagnostic', { 'operator.sync.manual_run': true })
+        || findEvent(events, 'activity', { 'client.synced': true }))
+      return { label: 'Manual sync', tone: 'info' };
 
     if (findEvent(events, 'webhook', { 'payment.failed': true }))
       return { label: 'Payment failed', tone: 'error' };
