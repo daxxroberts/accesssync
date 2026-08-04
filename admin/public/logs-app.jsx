@@ -41,8 +41,30 @@ const ALL_SOURCES = Object.keys(SOURCES);
 // Imported from /humanize.js (shared with member-incident-drawer.js).
 // window.AccessSyncHumanize is loaded as a plain <script> before this
 // file in both index.html and logs.ejs.
-const humanize    = window.AccessSyncHumanize.humanize;
-const severityOf  = window.AccessSyncHumanize.severityOf;
+const humanize     = window.AccessSyncHumanize.humanize;
+const severityOf   = window.AccessSyncHumanize.severityOf;
+const deriveIntent = window.AccessSyncHumanize.deriveIntent;
+
+const INTENT_TONE_COLOR = {
+  error:   'var(--red)',
+  warn:    'var(--amber)',
+  success: 'var(--sage-dark)',
+  info:    'var(--brand)',
+};
+
+function IntentBadge({ intent }) {
+  if (!intent) return null;
+  const color = INTENT_TONE_COLOR[intent.tone] || 'var(--muted)';
+  return (
+    <span style={{
+      fontSize: 10.5, fontWeight: 700, color, background: color + '1a',
+      border: `1px solid ${color}55`, borderRadius: 4, padding: '1px 6px',
+      flexShrink: 0, whiteSpace: 'nowrap',
+    }}>
+      {intent.label}
+    </span>
+  );
+}
 
 function fmtClock(iso) {
   const d = new Date(iso);
@@ -199,7 +221,8 @@ function App() {
                 : sevs.includes('warn')  ? 'warn'
                 : sevs.includes('success') ? 'success'
                 : 'info';
-      return { id, events: sorted, sev, last: sorted[sorted.length-1].ts, first: sorted[0].ts, top: sorted[0] };
+      const intent = deriveIntent(sorted);
+      return { id, events: sorted, sev, last: sorted[sorted.length-1].ts, first: sorted[0].ts, top: sorted[0], intent };
     }).sort((a,b) => new Date(b.last) - new Date(a.last));
   }, [filtered]);
 
@@ -410,14 +433,18 @@ function App() {
                   : g.sev === 'success' ? 'var(--sage-dark)'
                   : 'var(--border2)'}}/>
                 {plain ? (
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:11.5, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
-                      {humanize(g.top)}
+                  <div style={{flex:1,minWidth:0, display:'flex', alignItems:'center', gap:7}}>
+                    <IntentBadge intent={g.intent} />
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:11.5, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                        {humanize(g.top)}
+                      </div>
+                      <div style={{fontSize:10, color:'var(--muted)', marginTop:2}}>{fmtRel(g.first)} · {g.events.length} steps</div>
                     </div>
-                    <div style={{fontSize:10, color:'var(--muted)', marginTop:2}}>{fmtRel(g.first)} · {g.events.length} steps</div>
                   </div>
                 ) : (
                   <>
+                    <IntentBadge intent={g.intent} />
                     <span className="mono" style={{fontSize:11,fontWeight:600}}>{g.id.slice(0,8)}</span>
                     <span style={{fontSize:11,color:'var(--text2)'}}>· {g.top.client_name || '(no client)'} · {g.top.member_name || g.top.member_email || '—'}</span>
                     <div style={{flex:1}}/>

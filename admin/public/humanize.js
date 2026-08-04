@@ -516,9 +516,101 @@
     config_alert:  { short: 'alerts',      plain: 'Alerts',            color: '#EC4899' },
   };
 
+  // ── Intent — one-line "what actually happened" summary for a trace group ──
+  // Trace Timeline groups by trace_id but the header only ever showed WHO
+  // (client/member), never WHAT (new signup vs. renewal vs. cancellation vs.
+  // failure) — an operator had to expand the group and read every row to
+  // find out. deriveIntent() picks the single most operationally meaningful
+  // signal out of a trace's own events; no new columns, no migration — every
+  // field read here is already returned by GET /admin/logs/trace/:trace_id
+  // and GET /admin/logs/events (v_trace_timeline).
+  //
+  // Rule order matters: most specific / most actionable wins. A trace with
+  // both a grant AND a later cancellation (e.g. a fast opt-out) should read
+  // "Plan cancelled", not "New signup" — so cancellation/failure rules run
+  // before the grant rule.
+  var MEMBER_ACCESS_CANCEL_EVENTS = {
+    cancelled_by_member: true, cancelled_expired: true,
+    cancelled_booking:   true, cancelled_by_system: true,
+  };
+
+  function findEvent(events, source, names) {
+    for (var i = 0; i < events.length; i++) {
+      var e = events[i];
+      if (source && e.source !== source) continue;
+      if (names[e.event]) return e;
+    }
+    return null;
+  }
+
+  /**
+   * @param {Array} events — one trace group's events (any order)
+   * @returns {{label: string, tone: 'success'|'warn'|'error'|'info'}|null}
+   *   null when nothing in the taxonomy matches — caller falls back to its
+   *   existing "first event, humanized" behavior rather than showing a
+   *   guessed label.
+   */
+  function deriveIntent(events) {
+    if (!events || !events.length) return null;
+
+    if (findEvent(events, 'webhook', { 'payment.failed': true }))
+      return { label: 'Payment failed', tone: 'error' };
+
+    if (findEvent(events, 'member_access', { revoked: true, deleted: true }))
+      return { label: 'Access revoked', tone: 'error' };
+
+    if (findEvent(events, 'member_access', { disabled: true }))
+      return { label: 'Access suspended', tone: 'warn' };
+
+    if (findEvent(events, 'webhook', { 'payment.recovered': true }))
+      return { label: 'Payment recovered', tone: 'success' };
+
+    if (findEvent(events, 'webhook', { 'plan.cancelled': true, 'booking.cancelled': true })
+        || findEvent(events, 'member_access', MEMBER_ACCESS_CANCEL_EVENTS))
+      return { label: 'Plan cancelled', tone: 'warn' };
+
+    if (findEvent(events, 'diagnostic', {
+          'admin.sub_member_removed': true, 'admin.sub_member_revoke_queued': true,
+          'admin.sub_member_deleted': true,
+        }))
+      return { label: 'Sub-member removed', tone: 'warn' };
+
+    if (findEvent(events, 'diagnostic', { 'admin.holder_release_slot_queued': true }))
+      return { label: 'Seat released', tone: 'warn' };
+
+    if (findEvent(events, 'diagnostic', {
+          'admin.sub_member_added': true, 'admin.sub_members_submitted': true,
+          'admin.sub_member_grant_queued': true,
+        }))
+      return { label: 'Sub-member added', tone: 'success' };
+
+    if (findEvent(events, 'diagnostic', { 'admin.holder_claim_slot_queued': true }))
+      return { label: 'Seat claimed', tone: 'success' };
+
+    if (findEvent(events, 'webhook', { 'plan.purchased': true, 'booking.confirmed': true })) {
+      // cycleIndex/isRenewal (added on queue.grant.complete / adapter.complete_grant.entry,
+      // see core/queue-worker.js + adapters/standard-adapter.js) lives in the diagnostic
+      // row's `detail` jsonb, not a first-class column — scan for it.
+      var grantDiag = null;
+      for (var i = 0; i < events.length; i++) {
+        var e = events[i];
+        if (e.source === 'diagnostic' && e.detail && typeof e.detail.isRenewal === 'boolean') {
+          grantDiag = e;
+          break;
+        }
+      }
+      if (grantDiag && grantDiag.detail.isRenewal === true)
+        return { label: 'Recurring renewal', tone: 'info' };
+      return { label: 'New signup', tone: 'success' };
+    }
+
+    return null;
+  }
+
   window.AccessSyncHumanize = {
     humanize: humanize,
     severityOf: severityOf,
+    deriveIntent: deriveIntent,
     SOURCE_LABELS: SOURCE_LABELS,
   };
 })();
