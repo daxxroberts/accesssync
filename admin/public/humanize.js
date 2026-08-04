@@ -182,14 +182,24 @@
       return (who || 'A plan holder') + ' released their access slot' + onPlan + at + '.';
     // DR-052 — member-facing branded email pipeline. `who` is the MEMBER the email
     // is about (recipient), never the sender — passive/system voice keeps it honest.
-    if (e === 'email.member.sent')
+    if (e === 'email.member.sent' || e === 'EMAIL_MEMBER_SENT')
       return 'A branded email was sent to ' + who + at + '.';
-    if (e === 'email.member.suppressed')
+    if (e === 'email.member.suppressed' || e === 'EMAIL_MEMBER_SUPPRESSED')
       return 'A member email was skipped — already sent for this event (or a background sync, which never emails members).';
-    if (e === 'email.member.skipped_disabled')
+    if (e === 'email.member.skipped_disabled' || e === 'EMAIL_MEMBER_SKIPPED_DISABLED')
       return 'A member email was skipped — member emails are turned off for this gym (or no address on file).';
-    if (e === 'email.member.failed')
+    if (e === 'email.member.failed' || e === 'EMAIL_MEMBER_FAILED')
       return "A member email failed to send — access itself is unaffected.";
+    // DR-053 — AccessSync-branded operator alert emails (hardware key failure, orphaned
+    // groups, archived plans, HMAC spike, nightly digest, retry-engine). `who` here would
+    // resolve to the sender/actor context, not meaningful for a system-to-operator alert —
+    // omitted deliberately.
+    if (e === 'email.operator.sent' || e === 'EMAIL_OPERATOR_SENT')
+      return 'An AccessSync alert email was sent' + at + '.';
+    if (e === 'email.operator.failed' || e === 'EMAIL_OPERATOR_FAILED')
+      return 'An AccessSync alert email failed to send' + at + '.';
+    if (e === 'email.operator.no_recipient' || e === 'EMAIL_OPERATOR_NO_RECIPIENT')
+      return 'An AccessSync alert was skipped — no notification email on file' + at + '.';
     if (e === 'email_branding.updated')
       return (who || 'An operator') + ' updated the member-email branding' + at + '.';
     if (e === 'email_branding.logo_uploaded')
