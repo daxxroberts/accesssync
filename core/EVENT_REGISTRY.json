@@ -8,7 +8,8 @@
     "amendments": [
       "2026-05-27: Operator-action visibility pass. Added all admin.* + operator.* mutation events to overrides so Builder can see plan-mapping saves, API-key rotations, location/client lifecycle, and sub-member workflow in the trace timeline. Closes the OB-176 default-suppress operator-visibility gap surfaced in Builder feedback 2026-05-27.",
       "2026-07-09: DR-052 member-email visibility. Added the three info-level email.member.* events (sent/suppressed/skipped_disabled) so branded member-email send attempts show up in the trace timeline — without this override they default-suppress like any other info event (email.member.failed is warn-level and already persists by default). Found while diagnosing a silent test-send failure.",
-      "2026-07-25: Operator-alert email redesign. Added email.operator.sent (the shared send path all six operator alerts now route through, via core/operator-mailer.js) and health.alert_suppressed (fires when the escalate-then-cool-down rule holds back a repeat hardware-key alert). Both are info-level, so without these overrides the Builder could not see which alerts were sent versus deliberately withheld. email.operator.failed is error-level and already persists by default."
+      "2026-07-25: Operator-alert email redesign. Added email.operator.sent (the shared send path all six operator alerts now route through, via core/operator-mailer.js) and health.alert_suppressed (fires when the escalate-then-cool-down rule holds back a repeat hardware-key alert). Both are info-level, so without these overrides the Builder could not see which alerts were sent versus deliberately withheld. email.operator.failed is error-level and already persists by default.",
+      "2026-08-04 (DR-054): Unregistered-event sweep. Audited all 28 info-level events emitted by production code that had no registry entry. The defect was not that they were suppressed — it was that an absent entry cannot distinguish 'deliberately noise' from 'nobody ever decided', so a load-bearing event could go missing without anyone noticing (which is exactly how DR-050's revoke.billing_cancelled was lost). Every one of the 28 now has an explicit entry: 12 promoted to persist because they answer 'why did or didn't this member get through the door', and 16 pinned to persist:false because they are per-job progress breadcrumbs. The persist:false entries are load-bearing in their own right — they silence the [logger] unregistered warning AND record the decision. A P3 test now fails if any production event name is missing from this file."
     ]
   },
   "overrides": {
@@ -68,6 +69,36 @@
     "email.member.suppressed":            { "persist": true },
     "email.member.skipped_disabled":      { "persist": true },
     "email.operator.sent":                { "persist": true },
-    "health.alert_suppressed":            { "persist": true }
+    "health.alert_suppressed":            { "persist": true },
+
+    "queue.grant.parked.no_mapping":      { "persist": true },
+    "queue.grant.parked.no_api_key":      { "persist": true },
+    "adapter.identity.parked":            { "persist": true },
+    "adapter.identity.gate2_recovered":   { "persist": true },
+    "revoke.billing_cancelled":           { "persist": true },
+    "revoke.billing_status_preserved":    { "persist": true },
+    "revoke.group.skipped":               { "persist": true },
+    "grant.role.source_exists":           { "persist": true },
+    "grant.role.reused":                  { "persist": true },
+    "kisi.user.created":                  { "persist": true },
+    "kisi.user.deleted":                  { "persist": true },
+    "kisi.user.delete_skipped_already_gone": { "persist": true },
+
+    "queue.job.start":                    { "persist": false },
+    "queue.grant.lock_acquired":          { "persist": false },
+    "queue.grant.identity_resolved":      { "persist": false },
+    "queue.grant.mappings_resolved":      { "persist": false },
+    "queue.grant.hardware_calls_complete":{ "persist": false },
+    "grant.role.assigning":               { "persist": false },
+    "grant.log.skipped_duplicate":        { "persist": false },
+    "revoke.start":                       { "persist": false },
+    "kisi.user.deleting":                 { "persist": false },
+    "kisi.user.delete_guard_check":       { "persist": false },
+    "adapter.identity_found":             { "persist": false },
+    "adapter.identity_creating":          { "persist": false },
+    "wix.member.resolved":                { "persist": false },
+    "wix.parse.event_type_normalized":    { "persist": false },
+    "reconciliation.sweep_start":         { "persist": false },
+    "reconciliation.requeued":            { "persist": false }
   }
 }

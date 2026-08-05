@@ -144,6 +144,39 @@
     if (e === 'DB_SLOW_QUERY')                    return 'A database query took longer than the threshold.';
     if (e === 'ADAPTER_NO_IDENTITY')              return 'Revoke skipped — no identity record for this member.';
     if (e === 'QUEUE_REVOKE_NO_IDENTITY')         return 'Cancel arrived for a member we never provisioned.';
+
+    // DR-054 — info events promoted to persist. These MUST sit above the generic
+    // 'grant.' / 'revoke.' prefix fallbacks below, or those swallow them and render
+    // "Grant step: role reused." instead of a real sentence. Both name forms are
+    // matched: diagnostic_log surfaces events as UPPERCASE_UNDERSCORE.
+    //
+    // Voice: these answer "why did or didn't this member get in", so they lead with
+    // the outcome, not the mechanism.
+    if (e === 'queue.grant.parked.no_mapping' || e === 'QUEUE_GRANT_PARKED_NO_MAPPING')
+      return who + ' paid' + onPlan + ' but that plan isn\'t mapped to a door yet — no access granted' + at + '.';
+    if (e === 'queue.grant.parked.no_api_key' || e === 'QUEUE_GRANT_PARKED_NO_API_KEY')
+      return who + ' paid' + onPlan + ' but there\'s no hardware key saved' + at + ' — no access granted.';
+    if (e === 'adapter.identity.parked' || e === 'ADAPTER_IDENTITY_PARKED')
+      return "Couldn't confirm who this member is — parked until their details resolve. No access yet.";
+    if (e === 'adapter.identity.gate2_recovered' || e === 'ADAPTER_IDENTITY_GATE2_RECOVERED')
+      return "Recovered a missing email from Wix — " + who + "'s grant carried on normally.";
+    if (e === 'revoke.billing_cancelled' || e === 'REVOKE_BILLING_CANCELLED')
+      return 'Marked ' + who + "'s billing" + onPlan + ' as cancelled.';
+    if (e === 'revoke.billing_status_preserved' || e === 'REVOKE_BILLING_STATUS_PRESERVED')
+      return 'Left billing active for ' + who + ' — a seat changed, but the plan is still running on Wix.';
+    if (e === 'revoke.group.skipped' || e === 'REVOKE_GROUP_SKIPPED')
+      return 'Kept ' + who + "'s door access" + door + ' — another active plan still needs this door.';
+    if (e === 'grant.role.source_exists' || e === 'GRANT_ROLE_SOURCE_EXISTS')
+      return who + ' already had access to this door' + door + ' — no new hardware call needed.';
+    if (e === 'grant.role.reused' || e === 'GRANT_ROLE_REUSED')
+      return "Reused " + who + "'s existing door assignment" + door + ' instead of creating a new one.';
+    if (e === 'kisi.user.created' || e === 'KISI_USER_CREATED')
+      return 'Created ' + who + ' in Kisi.';
+    if (e === 'kisi.user.deleted' || e === 'KISI_USER_DELETED')
+      return "Deleted " + who + "'s Kisi user.";
+    if (e === 'kisi.user.delete_skipped_already_gone' || e === 'KISI_USER_DELETE_SKIPPED_ALREADY_GONE')
+      return who + "'s Kisi user was already gone — nothing to delete.";
+
     if (e.indexOf('grant.') === 0)                return 'Grant step: ' + e.replace('grant.', '').replace(/_/g, ' ') + '.';
     if (e.indexOf('revoke.') === 0)               return 'Revoke step: ' + e.replace('revoke.', '').replace(/_/g, ' ') + '.';
     if (e.indexOf('hmac.') === 0)                 return 'Webhook signature: ' + e.replace('hmac.', '').replace(/_/g, ' ') + '.';

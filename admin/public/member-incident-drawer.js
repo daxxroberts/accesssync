@@ -430,13 +430,26 @@
     if (dismissBtn) dismissBtn.onclick = onDismiss;
     if (reconBtn)   reconBtn.onclick   = onReconcile;
 
-    // Footer — owner-only deep-link to Trace Timeline
+    // Footer — deep-link to Trace Timeline.
+    //
+    // DR-054: was owner-only, which was inconsistent — operators already reach the
+    // Trace Timeline through the Logs tab (operator-nav.js renders it for every role).
+    // Hiding only the shortcut meant an operator staring at an error had to go find
+    // its trace by hand. Safe to show: admin/routes/logs.js scopedClientId() pins any
+    // operator request to their own client_id server-side and ignores a supplied one,
+    // so an operator following this link sees their own gym's trace or nothing.
+    //
+    // Owners keep /OwnerDashboard (cross-client view); operators go to /logs, which
+    // is the route their nav already points at. Both read the same ?openTrace= param.
     if (foot) {
-      if (state.traceId && isOwner()) {
+      if (state.traceId) {
+        var owner    = isOwner();
+        var traceUrl = (owner ? '/OwnerDashboard' : '/logs') +
+                       '?openTrace=' + encodeURIComponent(state.traceId);
         foot.style.display = 'flex';
         foot.innerHTML =
-          '<span style="color:var(--muted,#8896A8)">Owner only:</span> ' +
-          '<a href="/OwnerDashboard?openTrace=' + encodeURIComponent(state.traceId) + '" target="_blank" rel="noopener">Open in Trace Timeline →</a>';
+          (owner ? '<span style="color:var(--muted,#8896A8)">Owner only:</span> ' : '') +
+          '<a href="' + traceUrl + '" target="_blank" rel="noopener">Open in Trace Timeline →</a>';
       } else {
         foot.style.display = 'none';
         foot.innerHTML = '';

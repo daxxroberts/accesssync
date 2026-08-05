@@ -49,6 +49,8 @@ New events require an entry before shipping. Events without entries are flagged 
 | `revoke.group.skipped` | info | Revoke for this group skipped — other active sources still hold access |
 | `revoke.legacy_fallback` | warn | No member_role_assignments rows — falling back to legacy role_assignment_id from member_access_state |
 | `revoke.unknown_event_type` | error | Unrecognised eventType on revoke path |
+| `revoke.billing_cancelled` | info | **PERSISTED (DR-054).** DR-050: member_billing.status flipped to 'cancelled' on a genuine Wix plan/booking end. Money-state change — must be auditable. |
+| `revoke.billing_status_preserved` | info | **PERSISTED (DR-054).** DR-050: billing deliberately left active because the revoke was a seat change (holder release / sub-member removal), not a real cancellation. Explains "why does billing still say active". |
 
 ---
 
@@ -66,6 +68,12 @@ New events require an entry before shipping. Events without entries are flagged 
 | `queue.grant.pending_start` | info | Grant parked as pending_start — plan has future start date |
 | `queue.revoke.skip.no_identity` | info | Revoke skipped — member has no identity record |
 | `queue.unknown_job_name` | warn | Job name not in known set (grant/revoke) |
+| `queue.grant.parked.no_mapping` | info | **PERSISTED (DR-054).** Member paid but their plan isn't mapped to any hardware group — parked, **no access granted**. One of the two "paid but locked out" outcomes. |
+| `queue.grant.parked.no_api_key` | info | **PERSISTED (DR-054).** Member paid but the client has no hardware API key saved — parked, **no access granted**. The other "paid but locked out" outcome. |
+| `queue.grant.lock_acquired` | info | Suppressed (DR-054) — per-job breadcrumb: in_flight lock taken |
+| `queue.grant.identity_resolved` | info | Suppressed (DR-054) — per-job breadcrumb: hardware user identity resolved |
+| `queue.grant.mappings_resolved` | info | Suppressed (DR-054) — per-job breadcrumb: plan mappings looked up |
+| `queue.grant.hardware_calls_complete` | info | Suppressed (DR-054) — per-job breadcrumb: all hardware calls finished, about to write state |
 
 ---
 
@@ -119,6 +127,8 @@ New events require an entry before shipping. Events without entries are flagged 
 | `webhook.received` | info | Inbound webhook received and parsed |
 | `webhook.dedup.skipped` | info | Event already processed — idempotency check passed |
 | `webhook.enqueued` | info | Event enqueued to BullMQ |
+| `wix.member.resolved` | info | Suppressed (DR-054) — Wix Members API returned an identity during the resolve ladder. Per-lookup breadcrumb; the parked/recovered outcomes carry the signal. |
+| `wix.parse.event_type_normalized` | info | Suppressed (DR-054) — Layer 2 mapped a raw Wix event name onto a standard eventType. Fires on every inbound webhook. |
 
 ---
 
@@ -156,6 +166,8 @@ New events require an entry before shipping. Events without entries are flagged 
 | `kisi.user.enabling` / `kisi.user.enabled` / `kisi.user.enable_failed` | info / info / error | enableAccess lifecycle (payment.recovered flow) |
 | `kisi.user.deleting` / `kisi.user.deleted` / `kisi.user.delete_failed` | info / info / error | deleteUser lifecycle (member.deleted flow). Caller-side OB-125 source_tag guard required before invocation. |
 | `kisi.user.delete_skipped_foreign` | warn | OB-125: deleteUser skipped because `member_identity.source_tag` is not `'accesssync'` — Kisi user identity may be shared with admin/staff or non-AccessSync grants and must not be deleted. AccessSync-side cleanup still proceeds (audit log + config_alert_log written). |
+| `kisi.user.delete_skipped_already_gone` | info | **PERSISTED (DR-054).** Kisi user already absent at delete time — idempotent no-op. Explains a delete that appears to have done nothing. |
+| `kisi.user.delete_guard_check` | info | Suppressed (DR-054) — per-call breadcrumb: DR-045 delete guard evaluating before a deleteUser |
 | `kisi.role.assigning` / `kisi.role.assigned` / `kisi.role.assign_failed` | info / info / error | assignRole lifecycle (grant flow) |
 | `kisi.role.already_exists` | info | 409 on assignRole — idempotent success, existing assignment fetched |
 | `kisi.role.recovery_succeeded` | info | **PERSISTED via EVENT_REGISTRY.json override.** Pairs with `already_exists` — fires once the existing role assignment ID is in hand. Closes the recovery story in the trace timeline. |
@@ -205,6 +217,8 @@ Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='rev
 | `reconcile.member.no_identity` | info | No identity record — reconcile skipped |
 | `reconcile.integrity.alert` | warn | Integrity issue detected — alert written to config_alert_log |
 | `reconciliation.stale_reset` | warn | Stale `in_flight` member_access lock (>10 min) reset to `status='recovery_pending'`. Next reconcile sweep picks it up via `_fetchActionableRecords` and re-attempts the grant. Context: `{ stage, result, newStatus: 'recovery_pending' }`. (OB-202) |
+| `reconciliation.sweep_start` | info | Suppressed (DR-054) — nightly sweep began. One per run; the per-client outcome events carry the useful signal. |
+| `reconciliation.requeued` | info | Suppressed (DR-054) — sweep re-queued a member for reprocessing. Can fire in volume during a large sweep. Promote if a real diagnosis ever needs it. |
 | `source_retry.run_start` | info | OB-240 source-retry-probe cron started — picking up `pending_hardware`/`pending_start` source rows for re-grant |
 | `source_retry.run_complete` | info | OB-240 source-retry-probe cron complete — summary counts (candidates/succeeded/failed/exhausted/skipped) |
 | `source_retry.candidate_found` | info | OB-240 probe selected a source row for retry — one log per candidate row, includes sourceId/clientId/accessId/hardwareGroupId/retryCount |
