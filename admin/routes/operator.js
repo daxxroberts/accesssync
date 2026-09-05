@@ -1246,6 +1246,16 @@ const PREVIEW_DEMOS = {
     holderName: 'Daxx Roberts',
     planName: 'Family Plan',
   }),
+  access_suspended: (branding) => emailTemplates.renderAccessSuspended({
+    branding,
+    member: { firstName: 'Jane' },
+    planName: 'Monthly Membership',
+  }),
+  access_restored: (branding) => emailTemplates.renderAccessRestored({
+    branding,
+    member: { firstName: 'Jane' },
+    planName: 'Monthly Membership',
+  }),
 };
 router.get('/clients/:clientId/email-branding/preview', async (req, res) => {
   const { clientId } = req.params;

@@ -564,6 +564,24 @@
             <div class="info-email-rule notsent"><b>Not sent:</b> the holder's own access — they get Access ready instead.</div>
             <button type="button" class="info-preview-link" onclick="event.stopPropagation(); ebPreviewDemo('sub_member_invite', 'Added to a plan')">Preview this email &rarr;</button>
           </div>
+
+          <div class="info-email-card" id="info-card-access_suspended" onclick="ebPreviewDemo('access_suspended', 'Access paused')">
+            <div class="info-email-name">Access paused</div>
+            <div class="info-email-what">Tells them a failed payment paused their door access — expected to be temporary.</div>
+            <div class="info-email-subject">Subject: "Your {plan} access at {gym} is paused"</div>
+            <div class="info-email-rule sent"><b>Sent:</b> a payment fails and access is suspended.</div>
+            <div class="info-email-rule notsent"><b>Not sent:</b> a genuine cancellation (they get Access removed instead).</div>
+            <button type="button" class="info-preview-link" onclick="event.stopPropagation(); ebPreviewDemo('access_suspended', 'Access paused')">Preview this email &rarr;</button>
+          </div>
+
+          <div class="info-email-card" id="info-card-access_restored" onclick="ebPreviewDemo('access_restored', 'Access restored')">
+            <div class="info-email-name">Access restored</div>
+            <div class="info-email-what">Tells them a fixed payment turned their door access back on.</div>
+            <div class="info-email-subject">Subject: "Your {plan} access at {gym} is back"</div>
+            <div class="info-email-rule sent"><b>Sent:</b> payment recovers after a suspension.</div>
+            <div class="info-email-rule notsent"><b>Not sent:</b> a first-time signup (they get Access ready instead).</div>
+            <button type="button" class="info-preview-link" onclick="event.stopPropagation(); ebPreviewDemo('access_restored', 'Access restored')">Preview this email &rarr;</button>
+          </div>
         </div>
 
         <div class="info-modal-preview">
@@ -851,7 +869,7 @@
         (ebState.logoUrl ? '&logo=' + encodeURIComponent(ebState.logoUrl) : '') +
         '&_t=' + Date.now();
       document.getElementById('info-demo-label-text').textContent = label;
-      ['access_ready', 'access_removed', 'sub_member_invite'].forEach(function(t) {
+      ['access_ready', 'access_removed', 'sub_member_invite', 'access_suspended', 'access_restored'].forEach(function(t) {
         document.getElementById('info-card-' + t).classList.toggle('active', t === type);
       });
       apiFetch(url)

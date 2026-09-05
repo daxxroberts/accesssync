@@ -139,10 +139,49 @@ describe('[P2] DR-052 content renderers — escaping, subjects, text part', () =
     expect(out.text).toContain('added you to their Family plan');
   });
 
+  // M4/M5 — added 2026-09-05: a member's card fails or recovers with NO email at
+  // all today, from Kisi or AccessSync. Kisi has no equivalent of either moment.
+  test('renderAccessSuspended: names plan + gym, frames it as temporary, text part present', () => {
+    const out = t.renderAccessSuspended({ branding: BRANDING, member: { firstName: 'Daxx' }, planName: 'Couples' });
+    expect(out.subject).toBe('Your Couples access at House of Gains is paused');
+    expect(out.html).toContain('Couples');
+    expect(out.html).toContain('paused');
+    expect(out.html).toContain('automatically');
+    expect(out.text).toContain('paused');
+  });
+
+  test('renderAccessRestored: names plan + gym, text part present', () => {
+    const out = t.renderAccessRestored({ branding: BRANDING, member: { firstName: 'Daxx' }, planName: 'Couples' });
+    expect(out.subject).toBe('Your Couples access at House of Gains is back');
+    expect(out.html).toContain('Couples');
+    expect(out.html).toContain('back on');
+    expect(out.text).toContain('back on');
+  });
+
+  test('renderAccessSuspended and renderAccessRestored: hostile gym/plan names are escaped', () => {
+    const suspended = t.renderAccessSuspended({
+      branding: HOSTILE, member: { firstName: '<b>Jane</b>' }, planName: '<svg/onload=x>Couples',
+    });
+    expect(suspended.html).not.toContain('<img src=x');
+    expect(suspended.html).not.toContain('<svg');
+    expect(suspended.html).not.toContain('<b>Jane</b>');
+    expect(suspended.html).toContain('&lt;svg/onload=x&gt;Couples');
+
+    const restored = t.renderAccessRestored({
+      branding: HOSTILE, member: { firstName: '<b>Jane</b>' }, planName: '<svg/onload=x>Couples',
+    });
+    expect(restored.html).not.toContain('<img src=x');
+    expect(restored.html).not.toContain('<svg');
+    expect(restored.html).not.toContain('<b>Jane</b>');
+    expect(restored.html).toContain('&lt;svg/onload=x&gt;Couples');
+  });
+
   test('every renderer always emits a non-empty text part (deliverability)', () => {
     for (const out of [
       t.renderAccessReady({ branding: BRANDING, member: {}, plans: [] }),
       t.renderAccessRemoved({ branding: BRANDING, member: {}, planName: null }),
+      t.renderAccessSuspended({ branding: BRANDING, member: {}, planName: null }),
+      t.renderAccessRestored({ branding: BRANDING, member: {}, planName: null }),
       t.renderSubMemberInvite({ branding: BRANDING, member: {}, holderName: null, planName: null }),
     ]) {
       expect(typeof out.text).toBe('string');

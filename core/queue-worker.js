@@ -132,6 +132,11 @@ async function _processJobBody(job, traceId) {
         await standardAdapter.completeRevoke(memberId, tenantId, 'active');
         // OB-162: enrich trace_context on payment.recovered path (no mapping context available)
         setTraceContext(traceId, { clientId, memberId });
+        // DR-052 — M5 access-restored email. No PII-deletion race on this path
+        // (finalizeRevoke never runs for a recovery), so fire-and-forget is safe.
+        memberMailer.maybeSendAccessRestoredEmail({
+          clientId: tenantId, accessId: memberId, standardEvent, eventKey: eventId || job.id,
+        }).catch(() => {});
         logger.info('queue.grant.recovered.complete', {
           clientId, memberId, eventId,
           platformMemberId: standardEvent.platformMemberId,
@@ -489,6 +494,13 @@ async function _processJobBody(job, traceId) {
             context: removedCtx, eventKey: eventId || job.id,
           }).catch(() => {});
         }
+      } else if (targetStatus === 'disabled') {
+        // DR-052 — M4 access-suspended email (payment.failed). Source rows are
+        // preserved on suspend (fast recovery), so unlike M2 there's no PII-
+        // deletion race — no separate capture step needed.
+        memberMailer.maybeSendAccessSuspendedEmail({
+          clientId: tenantId, accessId: memberId, standardEvent, eventKey: eventId || job.id,
+        }).catch(() => {});
       }
 
       // Step 4 (OB-248): DR-044 finalize — delete Kisi user + NULL PII + mark

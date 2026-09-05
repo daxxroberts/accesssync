@@ -193,6 +193,54 @@ function renderAccessRemoved({ branding, member, planName }) {
 }
 
 /**
+ * M4 — Access suspended (payment.failed). Source rows are preserved on suspend
+ * (fast recovery once payment clears), unlike M2's true cancellation — copy
+ * reflects that this is expected to be temporary, not a plan ending.
+ */
+function renderAccessSuspended({ branding, member, planName }) {
+  const first = (member && member.firstName) ? member.firstName : null;
+  const gym   = branding.gymName;
+  const plan  = planName || 'membership';
+
+  const bodyHtml =
+    '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
+    '<p style="margin:0 0 12px 0;">We weren&rsquo;t able to process payment for your <strong>' + escapeHtml(plan) + '</strong> plan at <strong>' + escapeHtml(gym) + '</strong>, so your door access has been paused.</p>' +
+    '<p style="margin:0;">Update your payment method and your access will turn back on automatically &mdash; no need to sign up again.</p>';
+
+  const bodyText =
+    'Hi ' + (first || 'there') + ',\n\n' +
+    'We weren\'t able to process payment for your ' + plan + ' plan at ' + gym + ', so your door access has been paused.\n\n' +
+    'Update your payment method and your access will turn back on automatically - no need to sign up again.';
+
+  const { html, text } = renderLayout({ branding, heading: 'Your access is paused', bodyHtml, bodyText });
+  return { subject: 'Your ' + plan + ' access at ' + gym + ' is paused', html, text };
+}
+
+/**
+ * M5 — Access restored (payment.recovered). Mirrors M4 — same suspend/restore
+ * pair, opposite direction. No plan/door list needed since nothing changed
+ * about what they have access to, only whether it's currently live.
+ */
+function renderAccessRestored({ branding, member, planName }) {
+  const first = (member && member.firstName) ? member.firstName : null;
+  const gym   = branding.gymName;
+  const plan  = planName || 'membership';
+
+  const bodyHtml =
+    '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
+    '<p style="margin:0 0 12px 0;">Your payment went through &mdash; your <strong>' + escapeHtml(plan) + '</strong> access at <strong>' + escapeHtml(gym) + '</strong> is back on.</p>' +
+    '<p style="margin:0;">Use the Kisi app on your phone to tap in at the door, same as before.</p>';
+
+  const bodyText =
+    'Hi ' + (first || 'there') + ',\n\n' +
+    'Your payment went through - your ' + plan + ' access at ' + gym + ' is back on.\n\n' +
+    'Use the Kisi app on your phone to tap in at the door, same as before.';
+
+  const { html, text } = renderLayout({ branding, heading: 'Your access is back', bodyHtml, bodyText });
+  return { subject: 'Your ' + plan + ' access at ' + gym + ' is back', html, text };
+}
+
+/**
  * M3 — Sub-member invited. Same completeGrant hook as M1 but differentiated copy
  * when the grant originated from a multi-member submit (syntheticSource).
  */
@@ -223,5 +271,7 @@ module.exports = {
   renderLayout,
   renderAccessReady,
   renderAccessRemoved,
+  renderAccessSuspended,
+  renderAccessRestored,
   renderSubMemberInvite,
 };

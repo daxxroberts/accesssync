@@ -41,7 +41,8 @@ const { brandingFromClientRow } = require('./email-templates');
  * @param {Object} p
  * @param {string} p.clientId          tenant UUID
  * @param {string|null} p.memberMasterId  member_master.id (audit linkage; nullable)
- * @param {string} p.emailType         'access_ready' | 'access_removed' | 'sub_member_invite' | 'test'
+ * @param {string} p.emailType         'access_ready' | 'access_removed' | 'access_suspended' |
+ *                                     'access_restored' | 'sub_member_invite' | 'test'
  * @param {string} p.dedupKey          uniqueness key within (client, emailType)
  * @param {string} p.recipient         destination email address
  * @param {Function} p.render          template fn (renderAccessReady etc.) — called with
@@ -170,6 +171,47 @@ function _revokeEmailAllowed(standardEvent) {
   return REVOKE_ALLOWED_SYNTHETIC.has(e.syntheticSource);
 }
 
+// M4/M5 — payment.failed / payment.recovered never originate as multi-member
+// synthetics today (no allowed-synthetic set defined for either), so both
+// gates simply require the real, non-synthetic event type. Kept as functions
+// (not inlined) so a future synthetic source can be added the same way
+// GRANT_ALLOWED_SYNTHETIC / REVOKE_ALLOWED_SYNTHETIC were.
+function _suspendEmailAllowed(standardEvent) {
+  const e = standardEvent || {};
+  return e.eventType === 'payment.failed' && !e.synthetic;
+}
+
+function _restoreEmailAllowed(standardEvent) {
+  const e = standardEvent || {};
+  return e.eventType === 'payment.recovered' && !e.synthetic;
+}
+
+/**
+ * M4/M5 shared lookup — recipient + plan name. Unlike M2's captureAccessRemovedContext,
+ * suspend/restore never NULL member PII (DR-044 finalize only runs on targetStatus=
+ * 'inactive', a true cancellation) so there's no race to beat — a plain lookup is safe.
+ */
+async function _lookupRecipientAndPlan(accessId, standardEvent, clientId) {
+  const memberRes = await db.query(
+    `SELECT mm.id AS member_master_id, mm.email, mm.first_name
+     FROM member_access ma JOIN member_master mm ON mm.id = ma.member_master_id
+     WHERE ma.id = $1`,
+    [accessId]
+  );
+  const m = memberRes.rows[0];
+  if (!m || !m.email) return null;
+
+  let planName = null;
+  if (standardEvent && standardEvent.planId) {
+    const pmRes = await db.query(
+      `SELECT plan_name FROM plan_mappings WHERE source_plan_id = $1 AND client_id = $2 LIMIT 1`,
+      [standardEvent.planId, clientId]
+    ).catch(() => ({ rows: [] }));
+    planName = (pmRes.rows[0] && pmRes.rows[0].plan_name) || null;
+  }
+  return { memberMasterId: m.member_master_id, email: m.email, firstName: m.first_name, planName };
+}
+
 /**
  * M1/M3 — fire the access-ready (holder) or sub-member-invite email after a
  * successful grant. Fire-and-forget from queue-worker; never throws.
@@ -295,9 +337,69 @@ async function maybeSendAccessRemovedEmail({ clientId, accessId, standardEvent, 
   });
 }
 
+/**
+ * M4 — access suspended (payment.failed). Fires after completeRevoke(memberId,
+ * tenantId, 'disabled'). No PII-deletion race (see _lookupRecipientAndPlan) so
+ * this is a single fire-and-forget call, same shape as maybeSendGrantEmail.
+ */
+async function maybeSendAccessSuspendedEmail({ clientId, accessId, standardEvent, eventKey }) {
+  try {
+    if (!_suspendEmailAllowed(standardEvent)) {
+      log.info('email.member.suppressed', { clientId, emailType: 'access_suspended', reason: 'not_allowed' });
+      return { sent: false, reason: 'not_allowed' };
+    }
+    const ctx = await _lookupRecipientAndPlan(accessId, standardEvent, clientId);
+    if (!ctx) {
+      log.info('email.member.skipped_disabled', { clientId, emailType: 'access_suspended', reason: 'no_recipient' });
+      return { sent: false, reason: 'no_recipient' };
+    }
+    const planId = (standardEvent && standardEvent.planId) || 'all';
+    return await sendMemberEmail({
+      clientId, memberMasterId: ctx.memberMasterId,
+      emailType: 'access_suspended',
+      dedupKey: `${accessId}:${planId}:${eventKey || 'noevent'}`,
+      recipient: ctx.email,
+      render: templates.renderAccessSuspended,
+      renderArgs: { member: { firstName: ctx.firstName }, planName: ctx.planName },
+    });
+  } catch (err) {
+    log.warn('email.member.failed', { clientId, emailType: 'access_suspended' }, err);
+    return { sent: false, reason: 'exception' };
+  }
+}
+
+/** M5 — access restored (payment.recovered). Mirrors M4. */
+async function maybeSendAccessRestoredEmail({ clientId, accessId, standardEvent, eventKey }) {
+  try {
+    if (!_restoreEmailAllowed(standardEvent)) {
+      log.info('email.member.suppressed', { clientId, emailType: 'access_restored', reason: 'not_allowed' });
+      return { sent: false, reason: 'not_allowed' };
+    }
+    const ctx = await _lookupRecipientAndPlan(accessId, standardEvent, clientId);
+    if (!ctx) {
+      log.info('email.member.skipped_disabled', { clientId, emailType: 'access_restored', reason: 'no_recipient' });
+      return { sent: false, reason: 'no_recipient' };
+    }
+    const planId = (standardEvent && standardEvent.planId) || 'all';
+    return await sendMemberEmail({
+      clientId, memberMasterId: ctx.memberMasterId,
+      emailType: 'access_restored',
+      dedupKey: `${accessId}:${planId}:${eventKey || 'noevent'}`,
+      recipient: ctx.email,
+      render: templates.renderAccessRestored,
+      renderArgs: { member: { firstName: ctx.firstName }, planName: ctx.planName },
+    });
+  } catch (err) {
+    log.warn('email.member.failed', { clientId, emailType: 'access_restored' }, err);
+    return { sent: false, reason: 'exception' };
+  }
+}
+
 module.exports = {
   sendMemberEmail,
   maybeSendGrantEmail,
   captureAccessRemovedContext,
   maybeSendAccessRemovedEmail,
+  maybeSendAccessSuspendedEmail,
+  maybeSendAccessRestoredEmail,
 };

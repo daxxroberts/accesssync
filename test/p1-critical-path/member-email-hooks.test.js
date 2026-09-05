@@ -266,6 +266,80 @@ describe('[P1] DR-052 access-removed capture — suppression matrix', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// maybeSendAccessSuspendedEmail / maybeSendAccessRestoredEmail — M4/M5
+// ════════════════════════════════════════════════════════════════════════════
+describe('[P1] DR-052 M4/M5 — access-suspended / access-restored', () => {
+  const MEMBER = { member_master_id: 'mm-1', email: 'member@x.com', first_name: 'Jane' };
+
+  test('payment.failed → access_suspended email sent', async () => {
+    mockDb({ memberRow: MEMBER, planRows: [{ plan_name: 'Couples' }] });
+    const r = await mailer.maybeSendAccessSuspendedEmail({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'payment.failed', planId: 'sp-1' },
+      eventKey: 'evt-1',
+    });
+    expect(r.sent).toBe(true);
+    const insert = db.query.mock.calls.find(c => /INSERT INTO member_email_log/.test(c[0]));
+    expect(insert[1][2]).toBe('access_suspended');
+    const payload = mockResendSend.mock.calls[0][0];
+    expect(payload.subject).toBe('Your Couples access at House of Gains is paused');
+  });
+
+  test('payment.recovered → access_restored email sent', async () => {
+    mockDb({ memberRow: MEMBER, planRows: [{ plan_name: 'Couples' }] });
+    const r = await mailer.maybeSendAccessRestoredEmail({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'payment.recovered', planId: 'sp-1' },
+      eventKey: 'evt-2',
+    });
+    expect(r.sent).toBe(true);
+    const insert = db.query.mock.calls.find(c => /INSERT INTO member_email_log/.test(c[0]));
+    expect(insert[1][2]).toBe('access_restored');
+    const payload = mockResendSend.mock.calls[0][0];
+    expect(payload.subject).toBe('Your Couples access at House of Gains is back');
+  });
+
+  test('wrong eventType on the suspend hook → suppressed, no lookup at all', async () => {
+    mockDb({ memberRow: MEMBER });
+    const r = await mailer.maybeSendAccessSuspendedEmail({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'plan.cancelled' },
+    });
+    expect(r).toEqual({ sent: false, reason: 'not_allowed' });
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
+  test('wrong eventType on the restore hook → suppressed, no lookup at all', async () => {
+    mockDb({ memberRow: MEMBER });
+    const r = await mailer.maybeSendAccessRestoredEmail({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'plan.purchased' },
+    });
+    expect(r).toEqual({ sent: false, reason: 'not_allowed' });
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
+  test('synthetic payment.failed → suppressed (no allowed-synthetic source defined yet)', async () => {
+    mockDb({ memberRow: MEMBER });
+    const r = await mailer.maybeSendAccessSuspendedEmail({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'payment.failed', synthetic: true, syntheticSource: 'reconciliation.true_source_sync' },
+    });
+    expect(r).toEqual({ sent: false, reason: 'not_allowed' });
+    expect(mockResendSend).not.toHaveBeenCalled();
+  });
+
+  test('no recipient (member has no email) → skipped, never throws', async () => {
+    mockDb({ memberRow: { member_master_id: 'mm-1', email: null, first_name: 'Jane' } });
+    const r = await mailer.maybeSendAccessSuspendedEmail({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'payment.failed', planId: 'sp-1' },
+    });
+    expect(r).toEqual({ sent: false, reason: 'no_recipient' });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // Static ordering guards — the seams in queue-worker.js
 // ════════════════════════════════════════════════════════════════════════════
 describe('[P1] DR-052 queue-worker seams — PII-purge ordering (static scan)', () => {
@@ -294,6 +368,15 @@ describe('[P1] DR-052 queue-worker seams — PII-purge ordering (static scan)', 
     expect(matches.length).toBeGreaterThanOrEqual(2); // main grant + plan.started
     const catches = src.match(/memberMailer\.maybeSendGrantEmail\([\s\S]*?\)\.catch\(\(\) => \{\}\)/g) || [];
     expect(catches.length).toBe(matches.length);
+  });
+
+  test('M4/M5 access-suspended/restored hooks exist, are fire-and-forget, and sit on the right branch', () => {
+    // M4 — suspend fires on the revoke path's targetStatus==='disabled' branch,
+    // a sibling of the existing targetStatus==='inactive' (M2) branch.
+    expect(src).toMatch(/targetStatus === 'disabled'[\s\S]{0,400}memberMailer\.maybeSendAccessSuspendedEmail\([\s\S]*?\)\.catch\(\(\) => \{\}\)/);
+    // M5 — restore fires on the payment.recovered early-exit grant branch, after
+    // completeRevoke(memberId, tenantId, 'active').
+    expect(src).toMatch(/completeRevoke\(memberId, tenantId, 'active'\)[\s\S]{0,600}memberMailer\.maybeSendAccessRestoredEmail\([\s\S]*?\)\.catch\(\(\) => \{\}\)/);
   });
 });
 
