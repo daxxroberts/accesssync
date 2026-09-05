@@ -454,6 +454,8 @@
     }
     if (e === 'operator.member_sync.run' || e === 'OPERATOR_MEMBER_SYNC_RUN')
       return 'Operator triggered per-member reconcile for ' + who + '.';
+    if (e === 'operator.member.welcome_email_resent' || e === 'OPERATOR_MEMBER_WELCOME_EMAIL_RESENT')
+      return 'Operator resent the welcome email to ' + who + '.';
     if (e === 'operator.setup.bypass_accepted' || e === 'OPERATOR_SETUP_BYPASS_ACCEPTED')
       return 'Operator bypass during onboarding accepted (owner PIN flow).';
 

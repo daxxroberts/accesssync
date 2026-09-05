@@ -56,6 +56,10 @@ const ActionsMenu = ({ open, onClose, onAction, member }) => {
           <div className="menu-sep"/>
         </>
       )}
+      <button className="menu-item" onClick={() => onAction("resend_welcome")}>
+        <Icon name="mail" />Resend welcome email
+      </button>
+      <div className="menu-sep"/>
       <button className="menu-item danger" onClick={() => onAction("remove")}>
         <Icon name="trash" />Remove member
       </button>

@@ -3249,6 +3249,63 @@ router.post('/:clientId/members/:memberId/sync', async (req, res) => {
   }
 });
 
+// ── POST /:clientId/members/:memberId/resend-welcome-email ─────────
+// Manual "let them know again how to get in" resend — Members page kebab
+// menu action. Always the access_ready template (the one with the Kisi
+// app download links), regardless of holder/sub-member status: the ask
+// this serves is literally "how do I get the app," which is the same
+// question for anyone with active access.
+//
+// bypassEnabledGate: true — same precedent as the email-branding test-send
+// button (line ~1298 above): the operator is explicitly asking for this
+// send right now, so the DR-052 ship-dark gate doesn't apply. A fresh,
+// timestamped dedupKey is required (not the grant's own dedup key) or
+// sendMemberEmail's atomic dedup would silently no-op every resend after
+// the first as a "duplicate" of the original grant email.
+router.post('/:clientId/members/:memberId/resend-welcome-email', async (req, res) => {
+  const { clientId, memberId } = req.params;
+  if (!clientId || !memberId) return res.status(400).json({ error: 'clientId and memberId required' });
+  try {
+    const memberRes = await db.query(
+      `SELECT mm.id AS member_master_id, mm.email, mm.first_name
+       FROM member_access ma JOIN member_master mm ON mm.id = ma.member_master_id
+       WHERE ma.id = $1 AND ma.client_id = $2`,
+      [memberId, clientId]
+    );
+    if (!memberRes.rows.length) return res.status(404).json({ error: 'Member not found' });
+    const m = memberRes.rows[0];
+    if (!m.email) return res.status(400).json({ error: 'This member has no email on file' });
+
+    const planRes = await db.query(
+      `SELECT DISTINCT pm.plan_name, pm.door_name
+       FROM member_access_sources mas
+       JOIN plan_mappings pm ON pm.id = mas.mapping_id
+       WHERE mas.access_id = $1 AND mas.status = 'active'`,
+      [memberId]
+    );
+    const plans = planRes.rows.map(r => ({ planName: r.plan_name, doorName: r.door_name }));
+
+    const sendResult = await memberMailer.sendMemberEmail({
+      clientId, memberMasterId: m.member_master_id,
+      emailType: 'access_ready',
+      dedupKey: `resend:${memberId}:${Date.now()}`,
+      recipient: m.email,
+      bypassEnabledGate: true,
+      render: emailTemplates.renderAccessReady,
+      renderArgs: { member: { firstName: m.first_name }, plans },
+    });
+    if (!sendResult.sent) {
+      return res.status(502).json({ error: 'Resend failed (' + (sendResult.reason || 'unknown') + ')' });
+    }
+    log.info('operator.member.welcome_email_resent', { clientId, memberId });
+    recordActivity(req, 'member.welcome_email_resent', { clientId, memberId });
+    res.json({ ok: true, recipient: m.email });
+  } catch (err) {
+    log.error('operator.member.resend_welcome_email_failed', { clientId, memberId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /sync/run ─────────────────────────────────────────────────
 // Manual sync trigger from the dashboard Sync button.
 // Runs _syncClient() for the logged-in client only — bypasses the

@@ -41,6 +41,7 @@
     "operator.location.apikey_set":       { "persist": true },
     "operator.member.unlock":             { "persist": true },
     "operator.member_sync.run":           { "persist": true },
+    "operator.member.welcome_email_resent": { "persist": true },
     "operator.sync.manual_run":           { "persist": true },
 
     "admin.activate_location_done":       { "persist": true },

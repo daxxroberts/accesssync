@@ -122,6 +122,19 @@ describe('[P2] DR-052 content renderers — escaping, subjects, text part', () =
     expect(out.text).toContain('https://play.google.com/store/apps/details?id=de.kisi.android');
   });
 
+  // 2026-09-05: Builder ruling — Kisi's app icon only (a stable URL we host, pulled
+  // from their live App Store listing), never a screenshot of Kisi's own app UI or
+  // store listing — see the KISI_APP_ICON_URL comment in email-templates.js.
+  test('renderAccessReady: includes the Kisi app icon, hosted by us (not hot-linked from Apple)', () => {
+    const out = t.renderAccessReady({
+      branding: BRANDING, member: { firstName: 'Jane' },
+      plans: [{ planName: 'Monthly', doorName: 'Front Door' }],
+    });
+    expect(out.html).toContain('<img src="https://accesssync-admin.up.railway.app/kisi-app-icon.jpg"');
+    expect(out.html).not.toContain('mzstatic.com');
+    expect(out.html).not.toContain('apps.apple.com/assets');
+  });
+
   test('renderAccessRemoved: names plan + gym, text part present', () => {
     const out = t.renderAccessRemoved({ branding: BRANDING, member: { firstName: 'Daxx' }, planName: 'Couples' });
     expect(out.subject).toBe('Your Couples access at House of Gains has ended');

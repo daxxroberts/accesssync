@@ -21,6 +21,11 @@ function App() {
   const [openError, setOpenError] = useState(null);
   const [removeTarget, setRemoveTarget] = useState(null);
   const [drawerId, setDrawerId] = useState(null);
+  // Resend-welcome-email feedback, keyed by member id — 'sending' | 'sent' | 'error'.
+  // Self-contained (not the shared toast() helper — see spawn_task note: that helper
+  // isn't actually loaded on every operator page today) so this action's feedback
+  // can't silently disappear the way an undefined global would.
+  const [resendStatus, setResendStatus] = useState({});
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 8;
 
@@ -98,6 +103,31 @@ function App() {
   const handleRemove = (m) => {
     setRemoveTarget(null);
     // In a real app, you'd POST to an API. Here we just close.
+  };
+
+  const handleResendWelcomeEmail = (m) => {
+    const clientId = window.__CLIENT_ID;
+    if (!clientId) return;
+    setResendStatus(s => ({ ...s, [m.id]: "sending" }));
+    apiFetch(`/operator/${encodeURIComponent(clientId)}/members/${encodeURIComponent(m.id)}/resend-welcome-email`, {
+      method: "POST",
+    })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        setResendStatus(s => ({ ...s, [m.id]: ok && data.ok ? "sent" : "error" }));
+      })
+      .catch(() => {
+        setResendStatus(s => ({ ...s, [m.id]: "error" }));
+      })
+      .finally(() => {
+        setTimeout(() => {
+          setResendStatus(s => {
+            const next = { ...s };
+            delete next[m.id];
+            return next;
+          });
+        }, 3000);
+      });
   };
 
   const togglePlan = (id) => {
@@ -294,7 +324,17 @@ function App() {
                   </td>
                   <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{m.since}</td>
                   <td style={{textAlign:"right"}}>
-                    <div className={`row-actions ${openMenu === m.id || openError === m.id ? "open" : ""}`}>
+                    <div className={`row-actions ${openMenu === m.id || openError === m.id ? "open" : ""}`} style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}>
+                      {resendStatus[m.id] && (
+                        <span style={{
+                          fontSize: 11, whiteSpace: "nowrap",
+                          color: resendStatus[m.id] === "error" ? "var(--red)" : "var(--muted)",
+                        }}>
+                          {resendStatus[m.id] === "sending" && "Sending…"}
+                          {resendStatus[m.id] === "sent" && "✓ Sent"}
+                          {resendStatus[m.id] === "error" && "✗ Failed"}
+                        </span>
+                      )}
                       {m.error && (
                         <div className="menu-anchor">
                           <button
@@ -321,6 +361,7 @@ function App() {
                             setOpenMenu(null);
                             if (a === "error") setOpenError(m.id);
                             if (a === "remove") setRemoveTarget(m);
+                            if (a === "resend_welcome") handleResendWelcomeEmail(m);
                           }}
                           member={m}
                         />

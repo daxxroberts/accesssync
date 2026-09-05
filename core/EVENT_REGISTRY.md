@@ -354,6 +354,8 @@ Operator-portal (per-client operator scope) mutation events. All persisted-by-ov
 | `operator.notification.updated` | info | Operator updated `notification_email` |
 | `operator.member.unlock` | info | Operator unlocked a stuck `in_flight` member back to `recovery_pending` (OB-202 path) |
 | `operator.member_sync.run` | info | Operator triggered per-member reconcile |
+| `operator.member.welcome_email_resent` | info | Operator manually resent the access_ready email to one member (Members page kebab menu) |
+| `operator.member.resend_welcome_email_failed` | error | Manual welcome-email resend threw (DB error, template error) — distinct from a Resend delivery failure, which `sendMemberEmail` already logs as `email.member.failed` |
 
 ---
 

@@ -261,3 +261,59 @@ describe('[P2] DR-052 POST /operator/clients/:id/email-branding/test-send', () =
     expect(arg.emailType).toBe('test');
   });
 });
+
+// ── 2026-09-05: Members page "Resend welcome email" kebab action ─────────────
+describe('[P2] DR-052 POST /operator/:clientId/members/:memberId/resend-welcome-email', () => {
+  const MEMBER_ID = 'access-uuid-resend';
+
+  test('404 when member not found', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+    const res = await request(app).post(`/operator/${CLIENT}/members/${MEMBER_ID}/resend-welcome-email`);
+    expect(res.status).toBe(404);
+    expect(memberMailer.sendMemberEmail).not.toHaveBeenCalled();
+  });
+
+  test('400 when member has no email on file', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ member_master_id: 'mm-1', email: null, first_name: 'Drew' }] });
+    const res = await request(app).post(`/operator/${CLIENT}/members/${MEMBER_ID}/resend-welcome-email`);
+    expect(res.status).toBe(400);
+    expect(memberMailer.sendMemberEmail).not.toHaveBeenCalled();
+  });
+
+  test('sends access_ready (never sub_member_invite) with a fresh dedupKey, bypassing the ship-dark gate', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm-1', email: 'drew@example.com', first_name: 'Drew' }] })
+      .mockResolvedValueOnce({ rows: [{ plan_name: 'Couples', door_name: 'Front Door' }] });
+    memberMailer.sendMemberEmail.mockResolvedValueOnce({ sent: true });
+    const res = await request(app).post(`/operator/${CLIENT}/members/${MEMBER_ID}/resend-welcome-email`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, recipient: 'drew@example.com' });
+    const arg = memberMailer.sendMemberEmail.mock.calls[0][0];
+    expect(arg.recipient).toBe('drew@example.com');
+    expect(arg.bypassEnabledGate).toBe(true);
+    expect(arg.emailType).toBe('access_ready');
+    expect(arg.render).toBe(require('../../core/email-templates').renderAccessReady);
+    expect(arg.dedupKey).toMatch(new RegExp(`^resend:${MEMBER_ID}:\\d+$`));
+    expect(arg.renderArgs.plans).toEqual([{ planName: 'Couples', doorName: 'Front Door' }]);
+  });
+
+  test('resending twice produces two DIFFERENT dedup keys (never suppressed as a duplicate of itself)', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValueOnce(1000).mockReturnValueOnce(2000);
+    db.query.mockResolvedValue({ rows: [{ member_master_id: 'mm-1', email: 'drew@example.com', first_name: 'Drew' }] });
+    memberMailer.sendMemberEmail.mockResolvedValue({ sent: true });
+    await request(app).post(`/operator/${CLIENT}/members/${MEMBER_ID}/resend-welcome-email`);
+    await request(app).post(`/operator/${CLIENT}/members/${MEMBER_ID}/resend-welcome-email`);
+    const [call1, call2] = memberMailer.sendMemberEmail.mock.calls;
+    expect(call1[0].dedupKey).not.toBe(call2[0].dedupKey);
+    nowSpy.mockRestore();
+  });
+
+  test('502 when the mailer reports a failed send', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm-1', email: 'drew@example.com', first_name: 'Drew' }] })
+      .mockResolvedValueOnce({ rows: [] });
+    memberMailer.sendMemberEmail.mockResolvedValueOnce({ sent: false, reason: 'resend_error' });
+    const res = await request(app).post(`/operator/${CLIENT}/members/${MEMBER_ID}/resend-welcome-email`);
+    expect(res.status).toBe(502);
+  });
+});

@@ -30,6 +30,16 @@ const KISI_APP_LINKS = {
   android: 'https://play.google.com/store/apps/details?id=de.kisi.android',
 };
 
+// Kisi's own app icon, pulled from its live App Store listing (2026-09-05) and
+// hosted from admin/public (served statically by admin/server.js) rather than
+// hot-linked from Apple's CDN — a stable URL under our control, not dependent
+// on Apple's asset paths staying put. Used purely to help a member visually
+// recognize the app when they search for it — nominative use, not implying
+// Kisi endorses AccessSync. Not a screenshot of Kisi's app UI (Builder ruling
+// 2026-09-05): the icon identifies the app; a UI screenshot would read as
+// repackaging Kisi's own product marketing as ours.
+const KISI_APP_ICON_URL = 'https://accesssync-admin.up.railway.app/kisi-app-icon.jpg';
+
 function escapeHtml(value) {
   if (value === null || value === undefined) return '';
   return String(value)
@@ -152,6 +162,7 @@ function renderAccessReady({ branding, member, plans }) {
     '<p style="margin:0 0 12px 0;">Your door access at <strong>' + escapeHtml(gym) + '</strong> is set up and ready to use.</p>' +
     planHtml +
     '<p style="margin:12px 0 6px 0;">Use the Kisi app on your phone to tap in at the door.</p>' +
+    '<p style="margin:0 0 8px 0;"><img src="' + KISI_APP_ICON_URL + '" width="44" height="44" alt="Kisi app icon" style="display:block;border-radius:10px;border:0;"></p>' +
     '<p style="margin:0;">' +
       '<a href="' + KISI_APP_LINKS.ios + '" target="_blank">Download for iPhone</a> &nbsp;&middot;&nbsp; ' +
       '<a href="' + KISI_APP_LINKS.android + '" target="_blank">Download for Android</a>' +
