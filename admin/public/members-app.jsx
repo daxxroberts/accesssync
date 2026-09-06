@@ -324,7 +324,11 @@ function App() {
                   </td>
                   <td className="tabular" style={{color:"var(--muted)",fontSize:12.5}}>{m.since}</td>
                   <td style={{textAlign:"right"}}>
-                    <div className={`row-actions ${openMenu === m.id || openError === m.id ? "open" : ""}`} style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}>
+                    {/* .row-actions is opacity:0 except on row-hover or with the .open class
+                        (members.ejs:436-437) — the menu closes (setOpenMenu(null)) the instant
+                        an action fires, so the resend status has to force .open itself or it
+                        renders correctly but invisibly the moment the mouse isn't on the row. */}
+                    <div className={`row-actions ${openMenu === m.id || openError === m.id || resendStatus[m.id] ? "open" : ""}`} style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}>
                       {resendStatus[m.id] && (
                         <span style={{
                           fontSize: 11, whiteSpace: "nowrap",
