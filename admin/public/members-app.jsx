@@ -106,8 +106,29 @@ function App() {
   };
 
   const handleResendWelcomeEmail = (m) => {
-    const clientId = window.__CLIENT_ID;
-    if (!clientId) return;
+    // Auto-clear the status after 3s. Defined up front so EVERY exit path —
+    // including the no-clientId one — schedules it: this action must never
+    // produce zero feedback.
+    const clearLater = () => setTimeout(() => {
+      setResendStatus(s => {
+        const next = { ...s };
+        delete next[m.id];
+        return next;
+      });
+    }, 3000);
+
+    // pageContext.clientId is the value the member list was actually loaded
+    // with (members-bridge.js resolves it with a 4-step fallback, ending in the
+    // URL ?clientId= param). window.__CLIENT_ID alone is NOT enough — the
+    // server renders it as "" for owner sessions (admin/server.js /members
+    // route: req.admin?.clientId || ''), which is exactly why the first version
+    // of this handler bailed silently for Daxx (2026-09-06).
+    const clientId = (pageContext && pageContext.clientId) || window.__CLIENT_ID;
+    if (!clientId) {
+      setResendStatus(s => ({ ...s, [m.id]: "error" }));
+      clearLater();
+      return;
+    }
     setResendStatus(s => ({ ...s, [m.id]: "sending" }));
     apiFetch(`/operator/${encodeURIComponent(clientId)}/members/${encodeURIComponent(m.id)}/resend-welcome-email`, {
       method: "POST",
@@ -119,15 +140,7 @@ function App() {
       .catch(() => {
         setResendStatus(s => ({ ...s, [m.id]: "error" }));
       })
-      .finally(() => {
-        setTimeout(() => {
-          setResendStatus(s => {
-            const next = { ...s };
-            delete next[m.id];
-            return next;
-          });
-        }, 3000);
-      });
+      .finally(clearLater);
   };
 
   const togglePlan = (id) => {

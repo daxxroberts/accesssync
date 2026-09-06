@@ -478,6 +478,14 @@
 
     window.MEMBERS = nested;
     window.__MEMBERS_CONTEXT = {
+      // The resolved clientId this list was actually loaded with — the single
+      // source of truth for any per-member action the React app fires. NOT
+      // window.__CLIENT_ID: admin/server.js renders that as "" for OWNER
+      // sessions (req.admin.clientId is only set for operator tokens), and the
+      // owner path only works because resolveClientId() above falls through to
+      // the URL ?clientId= param. 2026-09-06: the first "Resend welcome email"
+      // handler read window.__CLIENT_ID directly, got "", and bailed silently.
+      clientId: clientId,
       clientName: clientName,
       lastSyncedLabel: lastSyncedLabel,
       planTypeCount: planSet.size,
