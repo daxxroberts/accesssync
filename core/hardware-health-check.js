@@ -283,6 +283,7 @@ async function _notifyOrphanedGroups(loc, orphans, platform) {
         planName: o.plan_name,
         affectedMembers: o.affectedMembers,
       })),
+      clientId: loc.client_id,
     },
     logContext: { alert: 'orphaned_groups', clientId: loc.client_id },
   });
@@ -397,6 +398,7 @@ async function _notifyArchivedPlans(loc, archivedPlans) {
         planName: p.plan_name || p.source_plan_id,
         affectedMembers: p.affectedMembers,
       })),
+      clientId: loc.client_id,
     },
     logContext: { alert: 'archived_plans', clientId: loc.client_id },
   });
@@ -476,6 +478,7 @@ async function _maybeNotifyFailure(loc, errorType, message, platform) {
       platform,
       diagnosis: message,
       errorType,
+      clientId: loc.client_id,
     },
     logContext: { alert: 'hardware_key', clientId: loc.client_id, errorType },
   });

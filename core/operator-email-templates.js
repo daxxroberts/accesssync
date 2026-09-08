@@ -42,8 +42,19 @@ function adminHubUrl() {
   return ADMIN_HUB_FALLBACK;
 }
 
-function hubLink(path) {
-  return adminHubUrl() + path;
+/**
+ * Admin Hub deep link. Every operator page under /admin (plan-mapping, locations,
+ * errors) reads clientId client-side via URLSearchParams — without it an owner
+ * session (which carries no default client scope, unlike a scoped operator session)
+ * has nothing to render against and the page falls back to the owner hub. Omit
+ * clientId only for genuinely cross-tenant destinations (nightly digest, HMAC spike
+ * when no tenant could be resolved).
+ */
+function hubLink(path, clientId) {
+  const base = adminHubUrl() + path;
+  if (!clientId) return base;
+  const sep = path.includes('?') ? '&' : '?';
+  return base + sep + 'clientId=' + encodeURIComponent(clientId);
 }
 
 function escapeHtml(value) {
@@ -138,7 +149,7 @@ function renderLayout({ heading, bodyHtml, bodyText, actionNeeded, ctaText, ctaU
  * O1 — Hardware key failure (core/hardware-health-check.js)
  * ------------------------------------------------------------------ */
 
-function renderHardwareKeyAlert({ locationName, clientName, platform, diagnosis, errorType }) {
+function renderHardwareKeyAlert({ locationName, clientName, platform, diagnosis, errorType, clientId }) {
   const loc  = locationName || 'your location';
   const plat = platform || 'your access hardware';
 
@@ -168,7 +179,7 @@ function renderHardwareKeyAlert({ locationName, clientName, platform, diagnosis,
     bodyText,
     actionNeeded: true,
     ctaText: 'Update your access key',
-    ctaUrl: hubLink('/locations'),
+    ctaUrl: hubLink('/locations', clientId),
   });
 
   const subject = errorType === 'no_key'
@@ -182,7 +193,7 @@ function renderHardwareKeyAlert({ locationName, clientName, platform, diagnosis,
  * O2 — Orphaned hardware groups (core/hardware-health-check.js)
  * ------------------------------------------------------------------ */
 
-function renderOrphanedGroupsAlert({ locationName, clientName, platform, groups }) {
+function renderOrphanedGroupsAlert({ locationName, clientName, platform, groups, clientId }) {
   const loc  = locationName || 'your location';
   const plat = platform || 'your access system';
   const list = Array.isArray(groups) ? groups : [];
@@ -224,7 +235,7 @@ function renderOrphanedGroupsAlert({ locationName, clientName, platform, groups 
     bodyText,
     actionNeeded: true,
     ctaText: 'Fix your plan mapping',
-    ctaUrl: hubLink('/plan-mapping'),
+    ctaUrl: hubLink('/plan-mapping', clientId),
     footerNote: clientName ? 'Location: ' + loc + ' (' + clientName + ')' : 'Location: ' + loc,
   });
 
@@ -240,7 +251,7 @@ function renderOrphanedGroupsAlert({ locationName, clientName, platform, groups 
  * Informational by design — the Builder confirmed this one already reads fine.
  * ------------------------------------------------------------------ */
 
-function renderArchivedPlansAlert({ locationName, clientName, plans }) {
+function renderArchivedPlansAlert({ locationName, clientName, plans, clientId }) {
   const loc  = locationName || 'your location';
   const list = Array.isArray(plans) ? plans : [];
 
@@ -277,7 +288,7 @@ function renderArchivedPlansAlert({ locationName, clientName, plans }) {
     bodyText,
     actionNeeded: false,
     ctaText: 'View your plans',
-    ctaUrl: hubLink('/plan-mapping'),
+    ctaUrl: hubLink('/plan-mapping', clientId),
     footerNote: clientName ? 'Location: ' + loc + ' (' + clientName + ')' : 'Location: ' + loc,
   });
 
@@ -294,7 +305,7 @@ function renderArchivedPlansAlert({ locationName, clientName, plans }) {
  * technical detail (source, counts, signatures) stays in diagnostic_log.
  * ------------------------------------------------------------------ */
 
-function renderHmacAlert() {
+function renderHmacAlert({ clientId } = {}) {
   const bodyHtml =
     '<p style="margin:0 0 12px 0;">AccessSync caught and blocked some suspicious traffic aimed at your account. Nothing got through, and no member access was affected.</p>' +
     '<p style="margin:0;">You don’t need to do anything. If you keep getting this email over the next few days, reply to it and we’ll look into where it’s coming from.</p>';
@@ -309,7 +320,7 @@ function renderHmacAlert() {
     bodyText,
     actionNeeded: false,
     ctaText: 'View your activity log',
-    ctaUrl: hubLink('/errors'),
+    ctaUrl: hubLink('/errors', clientId),
   });
 
   return { subject: '[AccessSync] We blocked some suspicious traffic', html, text };
@@ -319,7 +330,7 @@ function renderHmacAlert() {
  * O5 — A single member's access failed (core/retry-engine.js)
  * ------------------------------------------------------------------ */
 
-function renderMemberFailureAlert({ userMessage, actionText, memberName, planName }) {
+function renderMemberFailureAlert({ userMessage, actionText, memberName, planName, clientId }) {
   const who  = memberName || 'A member';
   const plan = planName ? ' on ' + planName : '';
 
@@ -338,7 +349,7 @@ function renderMemberFailureAlert({ userMessage, actionText, memberName, planNam
     bodyText,
     actionNeeded: true,
     ctaText: 'Retry or dismiss',
-    ctaUrl: hubLink('/errors'),
+    ctaUrl: hubLink('/errors', clientId),
   });
 
   return { subject: '[AccessSync] Action needed: ' + who + ' didn’t get access', html, text };
@@ -480,7 +491,10 @@ function renderNightlyDigest({ configAlerts, failedJobs }) {
     bodyText,
     actionNeeded: true,
     ctaText: 'Review and dismiss',
-    ctaUrl: hubLink('/errors'),
+    // Cross-tenant by nature (spans every client with an open alert or failed job) —
+    // no single clientId applies, so this points at the owner's cross-tenant view
+    // instead of the per-client /errors page (which renders nothing without one).
+    ctaUrl: hubLink('/admin-errors'),
   });
 
   const subject = total === 1

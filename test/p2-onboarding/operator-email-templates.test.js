@@ -87,13 +87,100 @@ describe('[P2] operator-email-templates — shared contract', () => {
 
   test.each(Object.keys(renders))('%s links to a real Admin Hub page', (name) => {
     const r = renders[name]();
-    expect(r.text).toMatch(/https:\/\/accesssync-admin\.up\.railway\.app\/(locations|plan-mapping|errors)/);
+    // digest is cross-tenant (spans every client with an open issue) and links to
+    // /admin-errors, the owner's cross-tenant view — every other alert is scoped to
+    // one client and links to /locations, /plan-mapping, or /errors with ?clientId=.
+    expect(r.text).toMatch(/https:\/\/accesssync-admin\.up\.railway\.app\/(locations|plan-mapping|errors|admin-errors)/);
     // The prose-navigation pattern this replaced
     expect(r.text).not.toMatch(/log in to.*dashboard.*→/i);
   });
 
   test.each(Object.keys(renders))('%s contains no machine-shaped values', (name) => {
     assertHumanReadable(renders[name]());
+  });
+});
+
+/**
+ * Builder complaint 2026-09-07: clicking "View your plans" in an archived-plans
+ * alert landed on the owner hub instead of the client's plan-mapping page. Root
+ * cause — the CTA link never carried clientId, and every operator page under
+ * /admin reads it client-side via URLSearchParams; with none in the URL an owner
+ * session (unlike a scoped operator session) has no client context to render
+ * against. Fixed by threading clientId through to hubLink(). This block pins that
+ * fix so a future edit can't silently drop the query param again.
+ */
+describe('[P2] operator-email-templates — clientId deep links (2026-09-07 fix)', () => {
+  const CLIENT_ID = '15962eac-c767-46ad-8056-094f35a4a193';
+
+  test('renderHardwareKeyAlert carries clientId to /locations', () => {
+    const r = T.renderHardwareKeyAlert({
+      locationName: 'Main Gym', clientName: 'House of Gains',
+      platform: 'Kisi', diagnosis: 'Your key was rejected.', errorType: 'invalid_key',
+      clientId: CLIENT_ID,
+    });
+    expect(r.text).toContain('/locations?clientId=' + CLIENT_ID);
+  });
+
+  test('renderOrphanedGroupsAlert carries clientId to /plan-mapping', () => {
+    const r = T.renderOrphanedGroupsAlert({
+      locationName: 'Main Gym', clientName: 'House of Gains', platform: 'Kisi',
+      groups: [{ planName: 'Family', affectedMembers: 3 }],
+      clientId: CLIENT_ID,
+    });
+    expect(r.text).toContain('/plan-mapping?clientId=' + CLIENT_ID);
+  });
+
+  test('renderArchivedPlansAlert carries clientId to /plan-mapping — the exact bug reported', () => {
+    const r = T.renderArchivedPlansAlert({
+      locationName: 'Main Gym', clientName: 'House of Gains',
+      plans: [{ planName: 'Student', affectedMembers: 1 }],
+      clientId: CLIENT_ID,
+    });
+    expect(r.text).toContain('/plan-mapping?clientId=' + CLIENT_ID);
+  });
+
+  test('renderMemberFailureAlert carries clientId to /errors', () => {
+    const r = T.renderMemberFailureAlert({
+      userMessage: 'Drew didn’t get their door access.', actionText: 'Retry it.',
+      memberName: 'Drew', planName: 'Family',
+      clientId: CLIENT_ID,
+    });
+    expect(r.text).toContain('/errors?clientId=' + CLIENT_ID);
+  });
+
+  test('renderHmacAlert carries clientId to /errors when a tenant was resolved', () => {
+    const r = T.renderHmacAlert({ clientId: CLIENT_ID });
+    expect(r.text).toContain('/errors?clientId=' + CLIENT_ID);
+  });
+
+  test('renderHmacAlert falls back to the bare /errors link when no tenant could be resolved', () => {
+    // hmac-monitor.js passes clientId=null for failures that predate tenant resolution —
+    // must not throw and must not emit "clientId=null" in the URL.
+    const r = T.renderHmacAlert({ clientId: null });
+    expect(r.text).toContain('/errors');
+    expect(r.text).not.toContain('clientId=null');
+  });
+
+  test('renderNightlyDigest always links to /admin-errors — cross-tenant, no single clientId applies', () => {
+    const r = T.renderNightlyDigest({
+      configAlerts: [{ alert_type: 'group_not_found', locationName: 'Main Gym', doorName: 'Front Door' }],
+      failedJobs: [],
+    });
+    expect(r.text).toContain('/admin-errors');
+    expect(r.text).not.toContain('/admin-errors?clientId=');
+  });
+
+  test('omitting clientId falls back to the bare route rather than throwing', () => {
+    expect(() => T.renderArchivedPlansAlert({
+      locationName: 'Main Gym', clientName: 'House of Gains',
+      plans: [{ planName: 'Student', affectedMembers: 1 }],
+    })).not.toThrow();
+    const r = T.renderArchivedPlansAlert({
+      locationName: 'Main Gym', clientName: 'House of Gains',
+      plans: [{ planName: 'Student', affectedMembers: 1 }],
+    });
+    expect(r.text).toContain('/plan-mapping');
+    expect(r.text).not.toContain('clientId=');
   });
 });
 

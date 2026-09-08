@@ -84,6 +84,7 @@ async function _sendAlert(count, clientHint, clientId) {
   const { sent, reason } = await sendOperatorEmail({
     toEmail,
     render: renderHmacAlert,
+    renderArgs: { clientId },
     logContext: { alert: 'hmac_spike', clientId, clientHint, count },
   });
 

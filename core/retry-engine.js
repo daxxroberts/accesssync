@@ -194,6 +194,7 @@ class RetryEngine {
           actionText: error.action || null,
           memberName: null,
           planName: null,
+          clientId: tenantId,
         },
         logContext: { alert: 'member_failure', tenantId, eventType, errorCode: error.code || null },
       });
