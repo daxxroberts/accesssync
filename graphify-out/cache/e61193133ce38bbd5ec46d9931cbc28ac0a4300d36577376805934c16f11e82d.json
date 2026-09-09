@@ -1,0 +1,1 @@
+{"nodes": [{"id": "lightbox", "label": "lightbox.js", "file_type": "code", "source_file": "handoff\\velo\\lightbox.js", "source_location": "L1"}], "edges": [{"source": "lightbox", "target": "wix_window", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "handoff\\velo\\lightbox.js", "source_location": "L11", "weight": 1.0}]}

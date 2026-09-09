@@ -14,17 +14,23 @@ async function getDbStats(clientId) {
   //   active_members   = COUNT(DISTINCT member_master_id) WHERE status='active'
   //   error_count      = COUNT(*) WHERE status='failed'
   //   pending_hardware = COUNT(*) WHERE status='pending_hardware'
-  const [active, total, errors, pending] = await Promise.all([
+  const [active, total, errors, pending, syncedM, managedM] = await Promise.all([
     db.queryOne(`SELECT COUNT(DISTINCT member_master_id)::int AS cnt FROM member_access WHERE client_id = $1 AND status = 'active'`, [clientId]),
     db.queryOne(`SELECT COUNT(*)::int AS cnt FROM member_master WHERE client_id = $1`, [clientId]),
     db.queryOne(`SELECT COUNT(*)::int AS cnt FROM error_queue WHERE client_id = $1 AND status = 'failed'`, [clientId]),
-    db.queryOne(`SELECT COUNT(*)::int AS cnt FROM member_access WHERE client_id = $1 AND status = 'pending_hardware'`, [clientId]),
+    // S-11/DR-046: pending_hardware is a source-row state, not an access-row state.
+    // Mirrors the API's own query so the two can be compared.
+    db.queryOne(`SELECT COUNT(DISTINCT ma.id)::int AS cnt FROM member_access ma JOIN member_access_sources mas ON mas.access_id = ma.id WHERE ma.client_id = $1 AND mas.status = 'pending_hardware'`, [clientId]),
+    db.queryOne(`SELECT COUNT(DISTINCT ma.member_master_id)::int AS cnt FROM member_access ma WHERE ma.client_id = $1 AND ma.status = 'active' AND NOT EXISTS (SELECT 1 FROM member_access ma2 JOIN member_access_sources mas ON mas.access_id = ma2.id WHERE ma2.member_master_id = ma.member_master_id AND ma2.client_id = ma.client_id AND mas.status IN ('pending_hardware','pending_start','failed'))`, [clientId]),
+    db.queryOne(`SELECT COUNT(DISTINCT member_master_id)::int AS cnt FROM member_access WHERE client_id = $1 AND status IN ('active','in_flight','pending_identity','recovery_pending')`, [clientId]),
   ]);
   return {
     active_members:   active.cnt,
     total_members:    total.cnt,
     error_count:      errors.cnt,
     pending_hardware: pending.cnt,
+    synced_members:   syncedM.cnt,
+    managed_members:  managedM.cnt,
   };
 }
 
@@ -54,12 +60,28 @@ test.describe('Admin Operator Overview — HOG stats match DB', () => {
     expect(Math.abs(apiCount - stats.active_members)).toBeLessThanOrEqual(3);
   });
 
-  test('total_members stat card displays correct value', async ({ page, context }) => {
+  // The Synced/Total tile deliberately does NOT show total_members. That field is the
+  // lifetime member_master count, so churned members inflated it and the tile reported
+  // them as "pending". The tile divides synced_members by managed_members instead.
+  test('synced/managed stat card displays correct value', async ({ page, context }) => {
     await auth.setAdminCookieOnContext(context);
     await page.goto(`/operator/${seed.HOG_CLIENT_ID}`);
     await page.waitForLoadState('networkidle');
     const content = await page.content();
-    expect(content).toContain(String(stats.total_members));
+    expect(content).toContain(`${stats.synced_members} / ${stats.managed_members}`);
+  });
+
+  test('Synced/Total tile never labels churned members as pending', async ({ page, context }) => {
+    await auth.setAdminCookieOnContext(context);
+    await page.goto(`/operator/${seed.HOG_CLIENT_ID}`);
+    await page.waitForLoadState('networkidle');
+    const content = await page.content();
+    const churnGap = stats.total_members - stats.active_members;
+    // Regression guard: with churn present, the old code rendered "<churnGap> pending".
+    if (churnGap > 0 && stats.synced_members === stats.managed_members) {
+      expect(content).not.toContain(`${churnGap} pending`);
+      expect(content).toContain('All synced');
+    }
   });
 
   test('error_count stat card displays correct value', async ({ page, context }) => {
@@ -201,18 +223,23 @@ test.describe('Admin Operator Overview — Cross-verification API vs Browser', (
     expect(content).toContain(String(apiCount));
   });
 
-  test('API total_members = browser displayed count (HOG)', async ({ page, context }) => {
+  test('API synced/managed = browser displayed count (HOG)', async ({ page, context }) => {
     const cookie = await auth.getAdminCookie();
     const apiRes = await fetch(`${process.env.ADMIN_BASE_URL || 'http://localhost:3001'}/operator/${seed.HOG_CLIENT_ID}`, {
       headers: { Cookie: cookie },
     });
     const apiJson = await apiRes.json();
-    const apiCount = Number(apiJson?.total_members ?? apiJson?.stats?.total_members ?? 0);
+    const apiSynced  = Number(apiJson?.stats?.synced_members ?? apiJson?.synced_members ?? 0);
+    const apiManaged = Number(apiJson?.stats?.managed_members ?? apiJson?.managed_members ?? 0);
+    // pending is derived server-side; it must never exceed the managed population.
+    const apiPending = Number(apiJson?.stats?.pending_members ?? apiJson?.pending_members ?? 0);
+    expect(apiPending).toBe(apiManaged - apiSynced);
+    expect(apiPending).toBeGreaterThanOrEqual(0);
 
     await auth.setAdminCookieOnContext(context);
     await page.goto(`/operator/${seed.HOG_CLIENT_ID}`);
     await page.waitForLoadState('networkidle');
     const content = await page.content();
-    expect(content).toContain(String(apiCount));
+    expect(content).toContain(`${apiSynced} / ${apiManaged}`);
   });
 });

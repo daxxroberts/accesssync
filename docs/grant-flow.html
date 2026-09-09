@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessSync — Grant Flow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    padding: 40px 32px;
+    min-height: 100vh;
+  }
+
+  h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #f8fafc;
+    margin-bottom: 6px;
+    letter-spacing: -0.2px;
+  }
+  .subtitle {
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 40px;
+  }
+
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-width: 760px;
+  }
+
+  /* ── section labels ── */
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #475569;
+    padding: 0 0 10px 4px;
+    margin-top: 32px;
+  }
+  .section-label:first-child { margin-top: 0; }
+
+  /* ── connector line ── */
+  .connector {
+    width: 2px;
+    height: 20px;
+    background: #1e293b;
+    margin-left: 23px;
+  }
+  .connector.branch { height: 12px; }
+
+  /* ── nodes ── */
+  .node {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .node-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-top: 5px;
+    flex-shrink: 0;
+  }
+  .dot.entry    { background: #4F6EF7; box-shadow: 0 0 0 3px rgba(79,110,247,.2); }
+  .dot.check    { background: #f59e0b; }
+  .dot.park     { background: #94a3b8; }
+  .dot.action   { background: #4F6EF7; }
+  .dot.success  { background: #4ADE80; box-shadow: 0 0 0 3px rgba(74,222,128,.15); }
+  .dot.error    { background: #f87171; }
+  .dot.skip     { background: #475569; }
+
+  .node-body {
+    flex: 1;
+    padding-bottom: 4px;
+  }
+
+  .node-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #f1f5f9;
+    line-height: 1.4;
+  }
+  .node-title .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+    letter-spacing: 0.3px;
+    position: relative;
+    top: -1px;
+  }
+  .badge.layer   { background: #1e293b; color: #94a3b8; }
+  .badge.kisi    { background: #1e2d4a; color: #60a5fa; }
+  .badge.db      { background: #1a2e1a; color: #4ADE80; }
+  .badge.warn    { background: #2d1f0e; color: #fbbf24; }
+
+  .node-detail {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 3px;
+    line-height: 1.5;
+  }
+  .node-detail code {
+    font-family: 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 11px;
+    background: #1e293b;
+    color: #93c5fd;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ── branch block (for the parallel mapping loop) ── */
+  .branch-container {
+    margin-left: 24px;
+    border-left: 2px solid #1e293b;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* ── outcome row ── */
+  .outcomes {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    margin-left: 24px;
+    margin-bottom: 4px;
+  }
+  .outcome {
+    font-size: 11.5px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+  .outcome.ok      { background: #0f2e1a; color: #4ADE80; border: 1px solid #14532d; }
+  .outcome.park    { background: #1e2535; color: #94a3b8; border: 1px solid #2d3748; }
+  .outcome.dead    { background: #2d1515; color: #f87171; border: 1px solid #7f1d1d; }
+  .outcome.skip    { background: #1a1f2e; color: #6b7280; border: 1px solid #2d3748; }
+
+  /* ── loop box ── */
+  .loop-box {
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin-left: 24px;
+    background: #0d1520;
+  }
+  .loop-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #334155;
+    margin-bottom: 14px;
+  }
+
+  hr.divider {
+    border: none;
+    border-top: 1px solid #1e293b;
+    margin: 28px 0;
+  }
+
+  .legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid #1e293b;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11.5px;
+    color: #64748b;
+  }
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>AccessSync — Grant Flow</h1>
+<p class="subtitle">Full decision path from webhook receipt to Kisi group assignment · queue-worker → grant-revoke → kisi-adapter</p>
+
+<div class="flow">
+
+  <!-- ══ ENTRY ══ -->
+  <div class="section-label">Entry</div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot entry"></div></div>
+    <div class="node-body">
+      <div class="node-title">Webhook received <span class="badge layer">L1 wix-connector</span></div>
+      <div class="node-detail">HMAC verified → <code>parseEvent()</code> → standard event object → dedup check → BullMQ <code>grant</code> job enqueued</div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot check"></div></div>
+    <div class="node-body">
+      <div class="node-title">Event type branch <span class="badge layer">L4 queue-worker</span></div>
+      <div class="node-detail">Three fast-exit paths before the main grant sequence runs</div>
+    </div>
+  </div>
+
+  <div class="outcomes">
+    <div class="outcome ok">payment.recovered → enableAccess only, no new role</div>
+    <div class="outcome ok">plan.started → skip to identity resolve (user already exists)</div>
+    <div class="outcome ok">everything else → main grant sequence ↓</div>
+  </div>
+
+  <!-- ══ MAIN GRANT SEQUENCE ══ -->
+  <div class="section-label">Step 1 — Plan Mapping</div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot check"></div></div>
+    <div class="node-body">
+      <div class="node-title">Resolve plan mappings <span class="badge layer">L4 plan-mapping-resolver</span></div>
+      <div class="node-detail"><code>source_plan_id</code> → all active mappings[] with <code>hardwareGroupId</code>, <code>apiKey</code>, <code>accessType</code></div>
+    </div>
+  </div>
+
+  <div class="outcomes">
+    <div class="outcome dead">null → plan unknown → error_queue + operator alert → exit</div>
+    <div class="outcome park">[] empty → plan mapped but no group yet → park pending_hardware → exit</div>
+    <div class="outcome ok">mappings[] returned → continue ↓</div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ══ STEP 2 ══ -->
+  <div class="section-label">Step 2 — Identity &amp; Lock</div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot action"></div></div>
+    <div class="node-body">
+      <div class="node-title">resolveAndLock() <span class="badge layer">L3 standard-adapter</span> <span class="badge db">DB</span></div>
+      <div class="node-detail">UPSERT <code>member_identity</code> → check <code>member_access_state</code> → set <code>status = in_flight</code> (atomic transaction)</div>
+    </div>
+  </div>
+
+  <div class="outcomes">
+    <div class="outcome dead">in_flight already set → IN_FLIGHT_LOCK → BullMQ retries → exit</div>
+    <div class="outcome ok">lock acquired → memberId returned → continue ↓</div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ══ STEP 3 ══ -->
+  <div class="section-label">Step 3 — Hardware API Key</div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot check"></div></div>
+    <div class="node-body">
+      <div class="node-title">Fetch + decrypt API key <span class="badge layer">L4 queue-worker</span> <span class="badge db">DB</span></div>
+      <div class="node-detail">Client-level <code>hardware_api_key</code> — AES-256-GCM decrypt (DR-028)</div>
+    </div>
+  </div>
+
+  <div class="outcomes">
+    <div class="outcome park">no key → park pending_hardware → exit</div>
+    <div class="outcome ok">key present → continue ↓</div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ══ STEP 4 ══ -->
+  <div class="section-label">Step 4 — Kisi User Identity</div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot check"></div></div>
+    <div class="node-body">
+      <div class="node-title">resolveIdentity() <span class="badge layer">L3 standard-adapter</span></div>
+      <div class="node-detail">DB cache check first — if <code>hardware_user_id</code> already stored, return immediately</div>
+    </div>
+  </div>
+
+  <div class="connector branch"></div>
+
+  <div class="branch-container">
+
+    <div class="node">
+      <div class="node-left"><div class="dot action"></div></div>
+      <div class="node-body">
+        <div class="node-title">GET /users?query=email <span class="badge kisi">Kisi API</span></div>
+        <div class="node-detail">Find existing Kisi user by email</div>
+      </div>
+    </div>
+
+    <div class="connector branch"></div>
+
+    <div class="outcomes">
+      <div class="outcome ok">found → return kisiUserId → skip createUser</div>
+      <div class="outcome ok">not found → POST /users ↓</div>
+    </div>
+
+    <div class="connector branch"></div>
+
+    <div class="node">
+      <div class="node-left"><div class="dot action"></div></div>
+      <div class="node-body">
+        <div class="node-title">POST /users <span class="badge kisi">Kisi API</span></div>
+        <div class="node-detail"><code>{ email, name, send_emails: true, confirm: true }</code> — pattern per <code>clients.kisi_user_pattern</code> (DR-043)<br>HOG default: <code>invited</code> → <code>send_emails: true</code></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot check"></div></div>
+    <div class="node-body">
+      <div class="node-title">Email missing? Gate 2 recovery <span class="badge warn">OB-89</span></div>
+      <div class="node-detail">Ladder: Wix Members API lookup → DB cache → park pending_identity</div>
+    </div>
+  </div>
+
+  <div class="outcomes">
+    <div class="outcome park">email unrecoverable → park pending_identity → exit</div>
+    <div class="outcome ok">hardwareUserId resolved → continue ↓</div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ══ STEP 4.5 ══ -->
+  <div class="section-label">Step 4.5 — Delayed Start Check</div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot check"></div></div>
+    <div class="node-body">
+      <div class="node-title">startDate in future? <span class="badge layer">L4 queue-worker</span></div>
+      <div class="node-detail">If plan startDate &gt; now + 60s — user created in Kisi, group assignment deferred</div>
+    </div>
+  </div>
+
+  <div class="outcomes">
+    <div class="outcome park">future start → park pending_start → wait for orderStarted event → exit</div>
+    <div class="outcome ok">start now → continue ↓</div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ══ STEP 5 — THE LOOP ══ -->
+  <div class="section-label">Step 5 — Hardware Grant Loop</div>
+
+  <div class="loop-box">
+    <div class="loop-label">For each mapping in mappings[] — one iteration per Kisi group</div>
+
+    <div class="node">
+      <div class="node-left"><div class="dot check"></div></div>
+      <div class="node-body">
+        <div class="node-title">Source check (OB-47 / DR-034) <span class="badge db">DB</span></div>
+        <div class="node-detail">Query <code>member_access_sources JOIN member_role_assignments</code> for existing permanent row on this group</div>
+      </div>
+    </div>
+
+    <div class="outcomes">
+      <div class="outcome skip">permanent row exists → reuse prior roleAssignmentId → skip hardware call → record source row only</div>
+      <div class="outcome ok">no prior source → check member_role_assignments ↓</div>
+    </div>
+
+    <div class="connector branch"></div>
+
+    <div class="node">
+      <div class="node-left"><div class="dot check"></div></div>
+      <div class="node-body">
+        <div class="node-title">Existing role assignment check <span class="badge db">DB</span></div>
+        <div class="node-detail">Query <code>member_role_assignments</code> for prior role assignment on this <code>(member_id, hardware_group_id)</code></div>
+      </div>
+    </div>
+
+    <div class="outcomes">
+      <div class="outcome skip">found (retry or shared group) → reuse roleAssignmentId → skip hardware call</div>
+      <div class="outcome ok">none found → POST /role_assignments ↓</div>
+    </div>
+
+    <div class="connector branch"></div>
+
+    <div class="node">
+      <div class="node-left"><div class="dot action"></div></div>
+      <div class="node-body">
+        <div class="node-title">POST /role_assignments <span class="badge kisi">Kisi API</span></div>
+        <div class="node-detail"><code>{ user_id, role_id: "group_basic", group_id }</code> + optional <code>valid_until</code> for time-limited access</div>
+      </div>
+    </div>
+
+    <div class="outcomes">
+      <div class="outcome ok">200 → roleAssignmentId stored → newHardwareCallMade = true</div>
+      <div class="outcome skip">409 conflict → fetch existing roleAssignmentId → idempotent success</div>
+      <div class="outcome dead">404 group not found → flag group health_status = not_found → config_alert_log → continue loop (other groups still run)</div>
+      <div class="outcome dead">4xx other → UnrecoverableError → dead-letter immediately</div>
+      <div class="outcome dead">429 / 5xx → retry with backoff (up to 3×) → BullMQ retry queue</div>
+    </div>
+
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot check"></div></div>
+    <div class="node-body">
+      <div class="node-title">All groups failed?</div>
+      <div class="node-detail">If every group in the loop errored and assignments[] is empty</div>
+    </div>
+  </div>
+
+  <div class="outcomes">
+    <div class="outcome dead">all failed → throw first error → retry engine → error_queue + operator alert</div>
+    <div class="outcome ok">at least one succeeded → partial or full success → continue ↓</div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ══ STEP 6 ══ -->
+  <div class="section-label">Step 6 — Record Success</div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot action"></div></div>
+    <div class="node-body">
+      <div class="node-title">completeGrant() <span class="badge layer">L3 standard-adapter</span> <span class="badge db">DB</span></div>
+      <div class="node-detail">
+        For each assignment:<br>
+        · UPSERT <code>member_role_assignments</code> (ON CONFLICT updates billing_snapshot)<br>
+        · INSERT <code>member_access_sources</code> (ON CONFLICT DO NOTHING — idempotent)<br>
+        · UPDATE <code>member_access_state</code> → <code>status = active</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot check"></div></div>
+    <div class="node-body">
+      <div class="node-title">Write member_access_log?</div>
+      <div class="node-detail">Only when <code>newHardwareCallMade = true</code> — prevents duplicate <code>provisioned</code> entries from Wix triple-fire purchase events</div>
+    </div>
+  </div>
+
+  <div class="outcomes">
+    <div class="outcome skip">all assignments reused → log skipped (grant.log.skipped_duplicate)</div>
+    <div class="outcome ok">real hardware call made → INSERT member_access_log event = 'provisioned'</div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ══ TERMINAL ══ -->
+  <div class="section-label">Terminal</div>
+
+  <div class="node">
+    <div class="node-left"><div class="dot success"></div></div>
+    <div class="node-body">
+      <div class="node-title">Grant complete</div>
+      <div class="node-detail">
+        Member is active in Kisi group · <code>member_access_state.status = active</code> · role assignment ID stored<br>
+        First grant: welcome email fired via Resend (<code>clients.first_grant_sent</code> atomic flag)
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ LEGEND ══ -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#4F6EF7"></div> Action / API call</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div> Decision / check</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#4ADE80"></div> Success terminal</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div> Error / dead-letter</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#94a3b8"></div> Parked state (retry later)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#475569"></div> Skipped (idempotent)</div>
+</div>
+
+</body>
+</html>

@@ -29,3 +29,7 @@ admin/public/dist/
 # from the apply pipeline — regenerable from the final products.
 migrations/supabase-data-chunks/
 migrations/supabase-sections/
+
+# Playwright run output — regenerated on every `npm run test:e2e`
+e2e-report/
+test-results/

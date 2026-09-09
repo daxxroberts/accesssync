@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  MEMBER HUB — Design Canvas
+  ─────────────────────────────────────────────────────────────────
+  Hand this single file to Claude Design.
+  No repo access needed — everything is self-contained.
+
+  WHAT TO BUILD:
+  A single-page tabbed member hub combining three screens:
+    • Tab 1  — My Access (always visible, default)
+    • Tab 2  — Manage Members (hidden until allowMultiple confirmed)
+    • Overlay — Access Status (hidden tab, triggered by ?tab=status
+                or active syncing; auto-dismisses to My Access on resolve)
+
+  THEME: Light (LIGHT palette below). Do NOT use the dark palette.
+  FONT:  Sora (Google Fonts, weights 300–800)
+  OUTPUT: One self-contained HTML file — mock data OK for design phase.
+           Real API wiring happens in VS Code after design is approved.
+
+  BEHAVIORAL RULES:
+  1. Manage Members tab must not flash — gate visibility before first render
+  2. Status polling pauses when overlay is not visible
+  3. Status overlay auto-dismisses (~1.5s after resolve) → lands on My Access
+  4. notifyHeight() after every tab switch and content change
+  5. memberId + clientId parsed once at shell level, shared across all sections
+
+  WHAT NOT TO BUILD:
+  • No operator UI  • No auth  • No dark palette  • No external JS deps
+  ─────────────────────────────────────────────────────────────────
+-->
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Member Hub — AccessSync</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+/* ── Reset ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── LIGHT palette ───────────────────────────────────────────── */
+:root {
+  --brand:       #4F6EF7;
+  --brand-dark:  #3D5BD4;
+  --brand-dim:   rgba(79,110,247,0.10);
+  --brand-glow:  rgba(79,110,247,0.20);
+  --green:       #16A34A;
+  --green-dim:   rgba(22,163,74,0.10);
+  --green-glow:  rgba(22,163,74,0.25);
+  --amber:       #D97706;
+  --amber-dim:   rgba(217,119,6,0.10);
+  --red:         #DC2626;
+  --red-dim:     rgba(220,38,38,0.07);
+  --bg:          #FAFAF7;
+  --card:        #FFFFFF;
+  --card2:       #F5F4F0;
+  --border:      rgba(28,22,16,0.06);
+  --border2:     rgba(28,22,16,0.10);
+  --text:        #1F1B16;
+  --text2:       #6E6358;
+  --muted:       #9A8F82;
+  --row-bg:      rgba(28,22,16,0.02);
+  --input-bg:    rgba(28,22,16,0.025);
+  --input-bg-hi: rgba(28,22,16,0.04);
+  --shadow:      0 1px 3px rgba(28,22,16,0.06);
+}
+
+html, body {
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Sora', -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+/* ── Shell ───────────────────────────────────────────────────── */
+.hub {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ── Header ──────────────────────────────────────────────────── */
+.hub-header {
+  padding: 16px 18px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.logo-text { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+.logo-text .brand { color: var(--brand); }
+.logo-text .dim   { color: var(--text2); }
+.member-chip {
+  font-size: 11px; color: var(--text2); font-weight: 500;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--brand-dim);
+  border: 1px solid rgba(79,110,247,0.18);
+  border-radius: 20px;
+  padding: 4px 10px 4px 8px;
+}
+.member-chip-dot {
+  width: 6px; height: 6px; border-radius: 3px;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  flex-shrink: 0;
+}
+
+/* ── Tab bar ─────────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  padding: 14px 18px 0;
+  flex-shrink: 0;
+}
+.tab-btn {
+  appearance: none; border: none;
+  background: transparent;
+  font-family: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--text2);
+  padding: 7px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+  white-space: nowrap;
+}
+.tab-btn:hover { background: var(--card2); color: var(--text); }
+.tab-btn.active {
+  background: var(--card);
+  color: var(--brand);
+  box-shadow: 0 1px 4px rgba(28,22,16,0.08), inset 0 0 0 1px var(--border2);
+}
+.tab-bar-divider {
+  height: 1px;
+  background: var(--border2);
+  margin: 10px 18px 0;
+}
+
+/* ── Tab content ─────────────────────────────────────────────── */
+.tab-panel { display: none; flex: 1; }
+.tab-panel.active { display: block; }
+
+/* ── Status overlay ──────────────────────────────────────────── */
+/* Covers full content area, hides tab bar context */
+.status-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  z-index: 10;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  text-align: center;
+}
+.status-overlay.active { display: flex; }
+
+/* ── BG orbs (shared) ────────────────────────────────────────── */
+.bg-orb {
+  position: fixed; border-radius: 50%;
+  filter: blur(80px); pointer-events: none; z-index: 0;
+}
+.bg-orb-1 {
+  width: min(400px,100vw); height: min(400px,100vw);
+  background: radial-gradient(circle, var(--brand-dim) 0%, transparent 70%);
+  top: -100px; left: -100px;
+  animation: orb-drift-1 18s ease-in-out infinite alternate;
+}
+.bg-orb-2 {
+  width: min(300px,90vw); height: min(300px,90vw);
+  background: radial-gradient(circle, rgba(22,163,74,0.05) 0%, transparent 70%);
+  bottom: -80px; right: -60px;
+  animation: orb-drift-2 22s ease-in-out infinite alternate;
+}
+@keyframes orb-drift-1 { from{transform:translate(0,0)} to{transform:translate(50px,30px)} }
+@keyframes orb-drift-2 { from{transform:translate(0,0)} to{transform:translate(-30px,-50px)} }
+
+/* ══════════════════════════════════════════════════════════════
+   TAB 1 — MY ACCESS
+   ══════════════════════════════════════════════════════════════ */
+.access-content {
+  padding: 20px 18px 32px;
+}
+.page-header { margin-bottom: 20px; }
+.page-title {
+  font-size: 20px; font-weight: 800;
+  color: var(--text); letter-spacing: -0.4px; margin-bottom: 4px;
+}
+.page-subtitle { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+
+/* Status banner */
+.status-banner {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; border-radius: 12px; border: 1px solid;
+  margin-bottom: 20px;
+  animation: fade-up .3s ease;
+}
+.status-banner.s-active  { background: rgba(22,163,74,0.06);  border-color: rgba(22,163,74,0.22); }
+.status-banner.s-syncing { background: rgba(79,110,247,0.06); border-color: rgba(79,110,247,0.22); }
+.status-banner.s-error   { background: rgba(220,38,38,0.06);  border-color: rgba(220,38,38,0.22); }
+.status-banner.s-pending { background: rgba(217,119,6,0.06);  border-color: rgba(217,119,6,0.22); }
+.status-banner.s-revoked { background: rgba(100,100,120,0.06); border-color: rgba(100,100,120,0.22); }
+.banner-icon {
+  width: 38px; height: 38px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.status-banner.s-active  .banner-icon { background: var(--green-dim); }
+.status-banner.s-syncing .banner-icon { background: var(--brand-dim); }
+.status-banner.s-error   .banner-icon { background: var(--red-dim); }
+.status-banner.s-pending .banner-icon { background: var(--amber-dim); }
+.status-banner.s-revoked .banner-icon { background: rgba(100,100,120,0.10); }
+.banner-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+.status-banner.s-active  .banner-title { color: var(--green); }
+.status-banner.s-syncing .banner-title { color: var(--brand); }
+.status-banner.s-error   .banner-title { color: var(--red); }
+.status-banner.s-pending .banner-title { color: var(--amber); }
+.status-banner.s-revoked .banner-title { color: var(--muted); }
+.banner-sub { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+/* Section */
+.section { margin-bottom: 18px; }
+.section-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--muted); margin-bottom: 8px;
+}
+
+/* Card */
+.a-card {
+  background: var(--card); border: 1px solid var(--border2);
+  border-radius: 12px; box-shadow: var(--shadow); overflow: hidden;
+}
+.card-empty { padding: 18px 16px; font-size: 12.5px; color: var(--muted); text-align: center; }
+
+/* Plan row */
+.plan-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 15px; border-bottom: 1px solid var(--border);
+}
+.plan-row:last-child { border-bottom: none; }
+.plan-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--brand-dim);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.plan-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.plan-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.plan-badge {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 10px; font-weight: 700;
+  padding: 3px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.4px;
+}
+.plan-badge.active  { background: var(--green-dim); color: var(--green); }
+.plan-badge.pending { background: var(--amber-dim); color: var(--amber); }
+
+/* Door row */
+.door-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 15px; border-bottom: 1px solid var(--border);
+}
+.door-row:last-child { border-bottom: none; }
+.door-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--green-dim);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.door-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.door-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.door-status {
+  margin-left: auto; flex-shrink: 0;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 6px var(--green-glow);
+}
+
+/* Footer strip */
+.footer-strip {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-top: 20px;
+}
+.last-synced {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--muted);
+}
+.sync-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); flex-shrink: 0;
+}
+.sync-dot.stale { background: var(--amber); }
+.btn-check {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--brand); color: #fff;
+  font-family: inherit; font-size: 12px; font-weight: 600;
+  padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer;
+  transition: background .15s;
+  box-shadow: 0 2px 8px rgba(79,110,247,0.25);
+}
+.btn-check:hover { background: var(--brand-dark); }
+
+/* ══════════════════════════════════════════════════════════════
+   STATUS OVERLAY — SYNC STATUS
+   (hidden tab, always in DOM, triggered by ?tab=status or syncing)
+   ══════════════════════════════════════════════════════════════ */
+
+/* Icon area */
+.so-icon-wrap {
+  width: 80px; height: 80px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 24px; position: relative;
+  transition: background .5s, box-shadow .5s;
+}
+.so-icon-wrap.syncing {
+  background: var(--brand-dim);
+  box-shadow: 0 0 0 12px rgba(79,110,247,0.06), 0 0 40px rgba(79,110,247,0.10);
+}
+.so-icon-wrap.resolved-ok {
+  background: var(--green-dim);
+  box-shadow: 0 0 0 12px rgba(22,163,74,0.07), 0 0 40px var(--green-glow);
+}
+.so-icon-wrap.resolved-err {
+  background: var(--red-dim);
+  box-shadow: 0 0 0 12px rgba(220,38,38,0.05);
+}
+
+/* Pulse rings */
+@keyframes pulse-ring {
+  0%   { transform: scale(1);    opacity: .5; }
+  70%  { transform: scale(1.55); opacity: 0; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+.pulse-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid rgba(79,110,247,0.30);
+  animation: pulse-ring 2.2s ease-out infinite;
+  pointer-events: none;
+}
+.pulse-ring-2 { animation-delay: 1.1s; }
+
+/* Spinning sync icon */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin .9s linear infinite; display: block; }
+
+/* Checkmark draw */
+@keyframes draw-check {
+  from { stroke-dashoffset: 40; }
+  to   { stroke-dashoffset: 0; }
+}
+.check-path {
+  stroke-dasharray: 40; stroke-dashoffset: 40;
+  animation: draw-check .55s cubic-bezier(.22,1,.36,1) .1s forwards;
+}
+
+/* Pipeline */
+.so-pipeline {
+  width: 100%; max-width: 360px;
+  display: flex; flex-direction: column; gap: 0;
+  text-align: left; margin: 28px auto 0;
+}
+.so-step {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 12px 0; position: relative;
+}
+.so-step + .so-step::before {
+  content: '';
+  position: absolute; left: 15px; top: 0;
+  width: 2px; height: 12px;
+  background: var(--border2);
+  transform: translateX(-50%);
+}
+.step-bullet {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  border: 2px solid var(--border2);
+  background: var(--card2); color: var(--muted);
+  transition: background .4s, border-color .4s, box-shadow .4s;
+  position: relative;
+}
+.step-bullet.done {
+  background: var(--green-dim); border-color: var(--green); color: var(--green);
+  box-shadow: 0 0 10px rgba(22,163,74,0.15);
+}
+.step-bullet.active-step {
+  background: var(--brand-dim); border-color: var(--brand); color: var(--brand);
+  box-shadow: 0 0 12px var(--brand-glow);
+}
+.step-bullet.active-step::after {
+  content: '';
+  position: absolute; inset: -5px; border-radius: 50%;
+  border: 1.5px solid rgba(79,110,247,0.2);
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+.step-body { flex: 1; padding-top: 5px; }
+.step-label {
+  font-size: 12.5px; font-weight: 600; color: var(--text2);
+  transition: color .3s; line-height: 1; margin-bottom: 3px;
+}
+.step-label.active-step { color: var(--text); }
+.step-label.done        { color: var(--green); }
+.step-sub {
+  font-size: 11px; color: var(--muted); line-height: 1.5; min-height: 16px;
+}
+.step-sub.active-step { color: var(--text2); }
+
+@keyframes scan {
+  0%   { left: 0%;   width: 0%; }
+  40%  { left: 0%;   width: 55%; }
+  60%  { left: 35%;  width: 55%; }
+  100% { left: 100%; width: 0%; }
+}
+.scan-bar-wrap {
+  height: 3px; background: var(--border); border-radius: 2px;
+  overflow: hidden; margin-top: 6px; position: relative;
+}
+.scan-bar {
+  position: absolute; height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--brand), transparent);
+  animation: scan 1.6s ease-in-out infinite;
+}
+.done-bar {
+  height: 3px; background: var(--green); border-radius: 2px;
+  margin-top: 6px; width: 100%; opacity: .45;
+}
+
+.so-title {
+  font-size: 20px; font-weight: 800; color: var(--text);
+  letter-spacing: -0.4px; margin-bottom: 8px;
+}
+.so-sub {
+  font-size: 13px; color: var(--text2); line-height: 1.6; max-width: 300px; margin: 0 auto;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TAB 2 — MANAGE MEMBERS
+   ══════════════════════════════════════════════════════════════ */
+.mm-content { padding: 20px 18px 40px; }
+
+/* Hero card */
+.hero {
+  position: relative; padding: 18px;
+  background: linear-gradient(180deg, var(--brand-dim) 0%, rgba(79,110,247,0.02) 100%);
+  border: 1px solid var(--border2); border-radius: 16px;
+  display: flex; align-items: center; gap: 14px; overflow: hidden;
+  margin-bottom: 22px;
+}
+.hero-glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(600px circle at 0% 0%, var(--brand-dim), transparent 50%);
+  opacity: .5;
+}
+.hero-ring { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+.hero-ring svg { transform: rotate(-90deg); }
+.hero-ring-center {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; line-height: 1;
+}
+.hero-ring-num  { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+.hero-ring-of   { font-size: 9px; color: var(--text2); font-weight: 500; margin-top: 2px; letter-spacing: .5px; }
+.hero-info      { flex: 1; min-width: 0; position: relative; }
+.hero-eyebrow   { font-size: 10px; font-weight: 600; color: var(--brand); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+.hero-plan-name { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hero-meta      { font-size: 11.5px; color: var(--text2); margin-bottom: 10px; }
+.spot-pips      { display: inline-flex; gap: 5px; align-items: center; }
+.spot-pip { height: 6px; border-radius: 3px; transition: background .25s; }
+.spot-pip.filled { background: var(--brand); box-shadow: 0 0 10px var(--brand-glow); }
+.spot-pip.empty  { background: rgba(28,22,16,0.08); box-shadow: inset 0 0 0 1px var(--border2); }
+
+/* Section row */
+.section-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.section-title  { font-size: 13.5px; font-weight: 600; color: var(--text); letter-spacing: -0.1px; }
+.section-sub    { font-size: 11.5px; color: var(--text2); margin-top: 2px; }
+.draft-chip {
+  font-size: 11px; color: var(--amber); font-weight: 600;
+  padding: 3px 9px; border-radius: 999px;
+  background: var(--amber-dim);
+  box-shadow: inset 0 0 0 1px rgba(217,119,6,0.28);
+  white-space: nowrap;
+}
+
+/* Member list */
+.member-list    { display: flex; flex-direction: column; gap: 10px; }
+.member-row {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 15px; border-radius: 14px;
+  border: 1px solid var(--border); background: var(--row-bg);
+  animation: fade-up .3s ease;
+}
+.member-row.draft { background: rgba(217,119,6,0.05); border-color: rgba(217,119,6,0.20); }
+.member-avatar {
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: 11px;
+  background: var(--brand); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px;
+}
+.member-avatar.green { background: var(--green-dim);  color: var(--green); box-shadow: inset 0 0 0 1px rgba(22,163,74,0.30); }
+.member-avatar.amber { background: var(--amber-dim);  color: var(--amber); box-shadow: inset 0 0 0 1px rgba(217,119,6,0.30); }
+.member-avatar.red   { background: var(--red-dim);    color: var(--red);   box-shadow: inset 0 0 0 1px rgba(220,38,38,0.30); }
+.member-body    { flex: 1; min-width: 0; }
+.member-name    { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.member-detail  { font-size: 12px; color: var(--text2); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.member-actions { display: flex; gap: 6px; flex-shrink: 0; align-self: center; }
+
+/* Badge */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px 3px 6px; border-radius: 999px;
+  font-size: 10px; font-weight: 600; letter-spacing: .2px; white-space: nowrap;
+}
+.badge-green { background: var(--green-dim); color: var(--green); box-shadow: inset 0 0 0 1px rgba(22,163,74,0.25); }
+.badge-amber { background: var(--amber-dim); color: var(--amber); box-shadow: inset 0 0 0 1px rgba(217,119,6,0.28); }
+.badge-brand { background: var(--brand-dim); color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand-glow); }
+.badge-red   { background: var(--red-dim);   color: var(--red);   box-shadow: inset 0 0 0 1px rgba(220,38,38,0.30); }
+.badge-dot   { width: 5px; height: 5px; border-radius: 3px; background: currentColor; }
+
+/* Icon buttons */
+.icon-btn {
+  width: 28px; height: 28px; padding: 0; border: none; border-radius: 8px;
+  background: transparent; color: var(--text2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background .12s, color .12s;
+}
+.icon-btn:hover { background: rgba(28,22,16,0.05); color: var(--text); }
+.icon-btn.danger:hover { background: var(--red-dim); color: var(--red); box-shadow: inset 0 0 0 1px rgba(220,38,38,0.30); }
+
+/* Add trigger */
+.add-trigger {
+  margin-top: 12px; appearance: none; border: none;
+  width: 100%; height: 46px; border-radius: 12px;
+  background: transparent; color: var(--text2);
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: inset 0 0 0 1px var(--border2);
+  transition: background .12s, color .12s;
+}
+.add-trigger:hover { background: var(--brand-dim); color: var(--brand); }
+
+/* Submit CTA */
+.submit-area { margin-top: 22px; }
+.btn-primary {
+  appearance: none; border: none;
+  background: var(--brand); color: #fff;
+  height: 44px; border-radius: 12px; width: 100%;
+  font-family: inherit; font-weight: 600; font-size: 14px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: 0 4px 14px rgba(79,110,247,0.30);
+  transition: background .15s;
+}
+.btn-primary:hover { background: var(--brand-dark); }
+.submit-note { text-align: center; margin-top: 10px; font-size: 11.5px; color: var(--text2); }
+
+/* Empty state */
+.empty-state {
+  padding: 32px 20px; border-radius: 14px;
+  border: 1px dashed var(--border2); text-align: center; background: var(--row-bg);
+}
+.empty-icon {
+  width: 44px; height: 44px; margin: 0 auto 12px; border-radius: 12px;
+  background: var(--brand-dim);
+  display: flex; align-items: center; justify-content: center; color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand-glow);
+}
+.empty-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.empty-sub   { font-size: 12px; color: var(--text2); margin-bottom: 16px; line-height: 1.5; }
+.btn-primary-sm {
+  appearance: none; border: none;
+  background: var(--brand); color: #fff;
+  height: 36px; padding: 0 16px; border-radius: 10px;
+  font-family: inherit; font-weight: 600; font-size: 13px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+  box-shadow: 0 3px 10px rgba(79,110,247,0.30);
+}
+
+/* ── Shared animations ───────────────────────────────────────── */
+@keyframes fade-up { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+@keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ── Skeleton ────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--border2) 25%, var(--card2) 50%, var(--border2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite; border-radius: 6px; height: 13px;
+}
+@keyframes shimmer { from{background-position:200% 0} to{background-position:-200% 0} }
+.skeleton-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 15px; border-bottom: 1px solid var(--border);
+}
+.skeleton-row:last-child { border-bottom: none; }
+.skeleton-circle { width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; }
+.skeleton-body { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+
+<div class="hub" id="hub">
+
+  <!-- ── Header ───────────────────────────────────────────────── -->
+  <div class="hub-header">
+    <span class="logo-text"><span class="brand">Access</span><span class="dim">Sync</span></span>
+    <div class="member-chip" id="member-chip">
+      <span class="member-chip-dot"></span>
+      <span id="member-label">Member</span>
+    </div>
+  </div>
+
+  <!-- ── Tab bar ───────────────────────────────────────────────── -->
+  <div class="tab-bar" id="tab-bar">
+    <button class="tab-btn active" data-tab="access" onclick="switchTab('access')">My Access</button>
+    <button class="tab-btn hidden" data-tab="members" id="tab-members-btn" onclick="switchTab('members')">Manage Members</button>
+  </div>
+  <div class="tab-bar-divider"></div>
+
+  <!-- ── Status overlay (hidden tab — always in DOM) ──────────── -->
+  <div class="status-overlay" id="status-overlay">
+    <div class="so-icon-wrap syncing" id="so-icon-wrap">
+      <div class="pulse-ring"></div>
+      <div class="pulse-ring pulse-ring-2"></div>
+      <!-- Syncing icon -->
+      <svg id="so-icon-syncing" width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <path class="spin" d="M16 6C10.477 6 6 10.477 6 16" stroke="#4F6EF7" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M16 26c5.523 0 10-4.477 10-10" stroke="rgba(79,110,247,0.3)" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M13 4l3 2-3 2" stroke="#4F6EF7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <!-- Active icon (hidden until resolved) -->
+      <svg id="so-icon-ok" class="hidden" width="36" height="36" viewBox="0 0 36 36" fill="none">
+        <path class="check-path" d="M9 18l7 7L27 11" stroke="#16A34A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <!-- Error icon -->
+      <svg id="so-icon-err" class="hidden" width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="12" stroke="#DC2626" stroke-width="2.5"/>
+        <path d="M16 11v6M16 20.5v.5" stroke="#DC2626" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    <div class="so-title" id="so-title">Getting you set up</div>
+    <div class="so-sub" id="so-sub">Hang tight — we're activating your access right now. This only takes a moment.</div>
+
+    <div class="so-pipeline" id="so-pipeline">
+      <div class="so-step">
+        <div class="step-bullet" id="pb-1">1</div>
+        <div class="step-body">
+          <div class="step-label" id="pl-1">Order received</div>
+          <div class="step-sub" id="psub-1">Your purchase is confirmed</div>
+        </div>
+      </div>
+      <div class="so-step">
+        <div class="step-bullet" id="pb-2">2</div>
+        <div class="step-body">
+          <div class="step-label" id="pl-2">Account located</div>
+          <div class="step-sub" id="psub-2">Finding your membership record</div>
+        </div>
+      </div>
+      <div class="so-step">
+        <div class="step-bullet" id="pb-3">3</div>
+        <div class="step-body">
+          <div class="step-label" id="pl-3">Access rules applied</div>
+          <div class="step-sub" id="psub-3">Matching your plan to the right doors</div>
+        </div>
+      </div>
+      <div class="so-step">
+        <div class="step-bullet" id="pb-4">4</div>
+        <div class="step-body">
+          <div class="step-label" id="pl-4">Door access granted</div>
+          <div class="step-sub" id="psub-4">Activating your credential now</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab 1: My Access ──────────────────────────────────────── -->
+  <div class="tab-panel active" id="panel-access">
+    <div class="access-content">
+
+      <div class="page-header">
+        <div class="page-title">My Access</div>
+        <div class="page-subtitle">Your current gym access and active plans.</div>
+      </div>
+
+      <!-- Status banners (one visible at a time) -->
+      <div id="banner-active" class="status-banner s-active hidden">
+        <div class="banner-icon">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M4 10l4 4 8-8" stroke="#16A34A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div><div class="banner-title">Access Active</div><div class="banner-sub">Your doors are open. Come on in.</div></div>
+      </div>
+
+      <div id="banner-syncing" class="status-banner s-syncing">
+        <div class="banner-icon">
+          <svg class="spin" width="18" height="18" viewBox="0 0 20 20" fill="none">
+            <path d="M10 3C6.13 3 3 6.13 3 10" stroke="#4F6EF7" stroke-width="2" stroke-linecap="round"/>
+            <path d="M10 17c3.87 0 7-3.13 7-7" stroke="rgba(79,110,247,0.3)" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div><div class="banner-title">Syncing Your Access</div><div class="banner-sub">We're setting things up — this only takes a moment.</div></div>
+      </div>
+
+      <div id="banner-error" class="status-banner s-error hidden">
+        <div class="banner-icon">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="#DC2626" stroke-width="1.8"/><path d="M10 7v4M10 13.5v.5" stroke="#DC2626" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <div><div class="banner-title">Access Issue</div><div class="banner-sub" id="banner-error-sub">Something went wrong. Your gym has been notified.</div></div>
+      </div>
+
+      <div id="banner-pending" class="status-banner s-pending hidden">
+        <div class="banner-icon">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="#D97706" stroke-width="1.8" stroke-dasharray="3 2"/><path d="M10 7v3.5l2 1.5" stroke="#D97706" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div><div class="banner-title">Pending Setup</div><div class="banner-sub">No active plan yet — if you just signed up, give it a minute.</div></div>
+      </div>
+
+      <div id="banner-revoked" class="status-banner s-revoked hidden">
+        <div class="banner-icon">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="#9A8F82" stroke-width="1.8"/><path d="M7 10h6" stroke="#9A8F82" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <div><div class="banner-title">No Active Membership</div><div class="banner-sub">Pick up a plan and your access will be ready to go.</div></div>
+      </div>
+
+      <!-- Plans -->
+      <div class="section">
+        <div class="section-label">Your Plans</div>
+        <div class="a-card" id="plans-card">
+          <div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div class="skeleton-body"><div class="skeleton" style="width:55%"></div><div class="skeleton" style="width:30%"></div></div></div>
+        </div>
+      </div>
+
+      <!-- Doors -->
+      <div class="section">
+        <div class="section-label">Door Access</div>
+        <div class="a-card" id="doors-card">
+          <div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div class="skeleton-body"><div class="skeleton" style="width:50%"></div><div class="skeleton" style="width:35%"></div></div></div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer-strip">
+        <div class="last-synced">
+          <div class="sync-dot" id="sync-dot"></div>
+          <span id="last-synced-text">Checking…</span>
+        </div>
+        <button class="btn-check" id="btn-check">
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 2C4.24 2 2 4.24 2 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M7 12c2.76 0 5-2.24 5-5" stroke="rgba(255,255,255,0.4)" stroke-width="1.6" stroke-linecap="round"/><path d="M5.5 1l1.5 1-1.5 1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Check Status
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Tab 2: Manage Members ─────────────────────────────────── -->
+  <div class="tab-panel" id="panel-members">
+    <div class="mm-content">
+
+      <!-- Hero -->
+      <div class="hero">
+        <div class="hero-glow"></div>
+        <div class="hero-ring">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="26" fill="none" stroke="var(--border2)" stroke-width="4"/>
+            <circle id="ring-progress" cx="32" cy="32" r="26" fill="none"
+              stroke="var(--brand)" stroke-width="4"
+              stroke-dasharray="81.7 163.4" stroke-linecap="round"
+              style="filter:drop-shadow(0 0 6px var(--brand-glow))"/>
+          </svg>
+          <div class="hero-ring-center">
+            <span class="hero-ring-num" id="ring-used">2</span>
+            <span class="hero-ring-of" id="ring-of">of 4</span>
+          </div>
+        </div>
+        <div class="hero-info">
+          <div class="hero-eyebrow">Your plan</div>
+          <div class="hero-plan-name" id="hero-plan-name">Family Pro</div>
+          <div class="hero-meta" id="hero-meta">Main Entrance · 2 spots left</div>
+          <div class="spot-pips" id="spot-pips">
+            <span class="spot-pip filled" style="width:24px"></span>
+            <span class="spot-pip filled" style="width:24px"></span>
+            <span class="spot-pip empty"  style="width:24px"></span>
+            <span class="spot-pip empty"  style="width:24px"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section header -->
+      <div class="section-row">
+        <div>
+          <div class="section-title">Additional members</div>
+          <div class="section-sub">2 of 4 spots used</div>
+        </div>
+        <span class="draft-chip">1 draft</span>
+      </div>
+
+      <!-- Member list (mock) -->
+      <div class="member-list">
+
+        <div class="member-row">
+          <div class="member-avatar green">JR</div>
+          <div class="member-body">
+            <div class="member-name">Jamie Roberts</div>
+            <div class="member-detail">
+              <span class="badge badge-green"><span class="badge-dot"></span>Active</span>
+              <span>jamie@email.com</span>
+            </div>
+          </div>
+          <div class="member-actions">
+            <button class="icon-btn danger" title="Remove">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.2a1 1 0 001 .8h4.6a1 1 0 001-.8L12 4M6.5 7v4M9.5 7v4"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="member-row draft">
+          <div class="member-avatar amber">SR</div>
+          <div class="member-body">
+            <div class="member-name">Sam Roberts</div>
+            <div class="member-detail">
+              <span class="badge badge-amber"><span class="badge-dot"></span>Draft</span>
+              <span>sam@email.com</span>
+            </div>
+          </div>
+          <div class="member-actions">
+            <button class="icon-btn" title="Edit">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L5 13l-3 .5.5-3 9-8z"/></svg>
+            </button>
+            <button class="icon-btn danger" title="Discard">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.2a1 1 0 001 .8h4.6a1 1 0 001-.8L12 4M6.5 7v4M9.5 7v4"/></svg>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Add trigger -->
+      <button class="add-trigger">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+        Add member
+      </button>
+
+      <!-- Submit CTA -->
+      <div class="submit-area">
+        <button class="btn-primary">Grant access to 1 member</button>
+        <div class="submit-note">We'll email them an invite to set up their pass.</div>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /hub -->
+
+<script>
+'use strict';
+
+// ── URL params ──────────────────────────────────────────────────
+const params   = new URLSearchParams(window.location.search);
+const memberId = params.get('memberId') || 'demo-member';
+const clientId = params.get('clientId') || 'demo-client';
+const tabParam = params.get('tab');
+
+// ── iframe resize ───────────────────────────────────────────────
+function notifyHeight() {
+  window.parent.postMessage({ type: 'resize', height: document.body.scrollHeight }, '*');
+}
+
+// ── Tab switching ───────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+  document.querySelector('[data-tab="' + tab + '"]').classList.add('active');
+  notifyHeight();
+}
+
+// ── Status overlay ──────────────────────────────────────────────
+const STEPS = [
+  { label: 'Order received',       sub: 'Your purchase is confirmed',          doneSub: 'Purchase confirmed' },
+  { label: 'Account located',      sub: 'Finding your membership record',      doneSub: 'Membership found' },
+  { label: 'Access rules applied', sub: 'Matching your plan to the right doors', doneSub: 'Doors matched' },
+  { label: 'Door access granted',  sub: 'Activating your credential now',      doneSub: 'Access activated' },
+];
+const STEP_DURATIONS = [1200, 2000, 2400, null];
+let stepTimers = [];
+let pipelineActive = false;
+
+function activateStep(n) {
+  STEPS.forEach((step, i) => {
+    const idx  = i + 1;
+    const bull = document.getElementById('pb-' + idx);
+    const lbl  = document.getElementById('pl-' + idx);
+    const sub  = document.getElementById('psub-' + idx);
+    if (!bull) return;
+    if (idx < n) {
+      bull.className = 'step-bullet done';
+      bull.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#16A34A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      lbl.className = 'step-label done';
+      sub.textContent = step.doneSub;
+      const ex = sub.nextElementSibling;
+      if (ex && ex.classList.contains('scan-bar-wrap')) ex.remove();
+      if (!sub.nextElementSibling) { const b = document.createElement('div'); b.className = 'done-bar'; sub.after(b); }
+    } else if (idx === n) {
+      bull.className = 'step-bullet active-step';
+      bull.innerHTML = idx;
+      lbl.className = 'step-label active-step';
+      sub.className = 'step-sub active-step';
+      sub.textContent = step.sub;
+      const ex = sub.nextElementSibling; if (ex) ex.remove();
+      const w = document.createElement('div'); w.className = 'scan-bar-wrap';
+      w.innerHTML = '<div class="scan-bar"></div>'; sub.after(w);
+    } else {
+      bull.className = 'step-bullet'; bull.innerHTML = idx;
+      lbl.className = 'step-label'; sub.className = 'step-sub'; sub.textContent = step.sub;
+      const ex = sub.nextElementSibling; if (ex) ex.remove();
+    }
+  });
+  notifyHeight();
+}
+
+function startPipeline() {
+  if (pipelineActive) return;
+  pipelineActive = true;
+  activateStep(1);
+  let elapsed = 0;
+  STEP_DURATIONS.forEach((dur, i) => {
+    if (dur === null) return;
+    elapsed += dur;
+    const t = setTimeout(() => activateStep(i + 2), elapsed);
+    stepTimers.push(t);
+  });
+}
+
+function showStatusOverlay() {
+  document.getElementById('status-overlay').classList.add('active');
+  document.getElementById('tab-bar').style.visibility = 'hidden';
+  startPipeline();
+  notifyHeight();
+}
+
+function dismissStatusOverlay() {
+  document.getElementById('status-overlay').classList.remove('active');
+  document.getElementById('tab-bar').style.visibility = '';
+  switchTab('access');
+}
+
+// ── Boot with mock data (design canvas) ────────────────────────
+// In production: replace with real API calls
+function bootMock() {
+  // Member chip
+  document.getElementById('member-label').textContent = 'Alex Johnson';
+
+  // My Access tab — show active banner
+  ['active','syncing','error','pending','revoked'].forEach(s =>
+    document.getElementById('banner-' + s).classList.toggle('hidden', s !== 'active')
+  );
+  document.getElementById('sync-dot').className = 'sync-dot';
+  document.getElementById('last-synced-text').textContent = 'Last synced: just now';
+
+  // Plans
+  document.getElementById('plans-card').innerHTML = `
+    <div class="plan-row">
+      <div class="plan-icon"><svg width="15" height="15" viewBox="0 0 20 20" fill="none"><rect x="3" y="8" width="14" height="10" rx="2" stroke="var(--brand)" stroke-width="1.5"/><path d="M7 8V6a3 3 0 016 0v2" stroke="var(--brand)" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></div>
+      <div><div class="plan-name">Family Pro</div><div class="plan-meta">4 members included</div></div>
+      <span class="plan-badge active">Active</span>
+    </div>`;
+
+  // Doors
+  document.getElementById('doors-card').innerHTML = `
+    <div class="door-row">
+      <div class="door-icon"><svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2zm-6 7c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-7H8.9V6c0-1.71 1.39-3.1 3.1-3.1h.02c1.71 0 3.1 1.39 3.1 3.1v2z" fill="#16A34A"/></svg></div>
+      <div><div class="door-name">Main Entrance</div><div class="door-meta">Family Pro · House of Gains</div></div>
+      <div class="door-status"></div>
+    </div>`;
+
+  // Show Manage Members tab (mock: allowMultiple = true)
+  document.getElementById('tab-members-btn').classList.remove('hidden');
+
+  // Fire status overlay if ?tab=status
+  if (tabParam === 'status') {
+    showStatusOverlay();
+    // Demo: auto-dismiss after 6s to show the flow
+    setTimeout(() => {
+      stepTimers.forEach(clearTimeout); stepTimers = [];
+      document.getElementById('so-icon-syncing').classList.add('hidden');
+      document.getElementById('so-icon-ok').classList.remove('hidden');
+      document.getElementById('so-icon-wrap').className = 'so-icon-wrap resolved-ok';
+      document.getElementById('so-title').textContent = "You're all set!";
+      document.getElementById('so-sub').textContent = "Your access is active and ready.";
+      document.getElementById('so-pipeline').style.display = 'none';
+      setTimeout(dismissStatusOverlay, 1500);
+    }, 6000);
+  }
+}
+
+bootMock();
+</script>
+</body>
+</html>

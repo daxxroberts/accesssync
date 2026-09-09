@@ -254,16 +254,18 @@ html, body {
 <!-- AI_CONTEXT
 type: product-overview
 status: active
-last_updated: 2026-04-01
+last_updated: 2026-05-28
+audience: gym-operators-on-kisi
+tier_focus: connect
 key_facts:
-  - AccessSync is a Wix App Market SaaS that automates gym door access via Kisi
+  - AccessSync is a Wix-integrated SaaS for gym operators using Kisi access control
+  - Velo direct install for v1; Wix App Market path planned post-launch
   - When a member buys a Wix pricing plan, AccessSync provisions them in Kisi automatically
   - When they cancel or payment fails, access is revoked automatically
   - No manual operator action required for any provisioning event
-  - Pricing: Base $30/mo/location, Pro $60/mo/location, Connect $150/mo/location
-  - First client: House of Gains (Chad), Kisi Pro tier $199/mo/location
-  - Infrastructure cost: $35/mo fixed (Railway $15 + Wix Studio $20)
-  - Unit economics: ~99% margin at scale
+  - Connect tier: $150/mo per location, 1,000 users included, $20 per additional 1,000 users
+  - Requires Kisi API tier ($200/mo per location, 2 doors included, +$10/mo per additional door) — billed by Kisi directly
+  - This page covers the Connect tier (Wix to Kisi for gyms). Base + Pro tiers target non-gym verticals on Seam smart locks and are covered separately.
 -->
 
 <div class="page">
@@ -511,60 +513,43 @@ key_facts:
     </div>
   </div>
 
-  <!-- ── Pricing Tiers ─────────────────────────────────────── -->
+  <!-- ── Pricing — Connect Tier ───────────────────────────── -->
   <div class="section">
-    <div class="section-title">AccessSync Plans</div>
-    <div class="tiers-grid">
-
-      <div class="tier-card">
-        <div class="tier-header base">
-          <div class="tier-name">Base</div>
-          <div class="tier-price"><span>$30</span> / mo per location</div>
-        </div>
-        <div class="tier-body">
-          <div class="tier-feature"><div class="tier-check">✓</div>Automated grant &amp; revoke on plan purchase and cancellation</div>
-          <div class="tier-feature"><div class="tier-check">✓</div>Single door group per Wix plan</div>
-          <div class="tier-feature"><div class="tier-check">✓</div>Operator console with member list and access log</div>
-          <div class="tier-feature"><div class="tier-check">✓</div>Nightly digest email for failed jobs</div>
-          <div class="tier-feature"><div class="tier-check">✓</div>Standard retry engine (3 attempts)</div>
-        </div>
-      </div>
-
-      <div class="tier-card">
-        <div class="tier-header pro">
-          <div class="tier-name">Pro</div>
-          <div class="tier-price"><span>$60</span> / mo per location</div>
-        </div>
-        <div class="tier-body">
-          <div class="tier-feature"><div class="tier-check">✓</div>Everything in Base</div>
-          <div class="tier-feature"><div class="tier-check">✓</div>Multi-door provisioning — one plan grants access to multiple groups</div>
-          <div class="tier-feature"><div class="tier-check">✓</div>Bookings integration — temporary access for class reservations</div>
-          <div class="tier-feature"><div class="tier-check">✓</div>Member-facing sync status page</div>
-          <div class="tier-feature"><div class="tier-check">✓</div>Priority error alerting</div>
-        </div>
-      </div>
+    <div class="section-title">AccessSync Connect — Pricing</div>
+    <div class="tiers-grid" style="grid-template-columns: 1fr;">
 
       <div class="tier-card">
         <div class="tier-header connect">
           <div class="tier-name">Connect</div>
           <div class="tier-price"><span>$150</span> / mo per location</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:6px;">For Wix-powered gyms running Kisi access control.</div>
         </div>
         <div class="tier-body">
-          <div class="tier-feature"><div class="tier-check">✓</div>Everything in Pro</div>
-          <div class="tier-feature"><div class="tier-check">✓</div>Direct Kisi integration — full API access with reseller support</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Automated grant &amp; revoke on plan purchase, cancellation, payment failure, and member deletion</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Direct Kisi integration — full REST API access with reseller support</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Multi-door provisioning — one plan can grant access to multiple Kisi groups</div>
           <div class="tier-feature"><div class="tier-check">✓</div>Multi-location management under one operator account</div>
-          <div class="tier-feature"><div class="tier-check">✓</div>Custom plan mapping configurations</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>1,000 users included per location, then <strong>$20 per additional 1,000 users / mo</strong></div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Operator console — members, access events, plan mapping, error queue</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Member-facing sync status page after checkout</div>
+          <div class="tier-feature"><div class="tier-check">✓</div>Nightly reconciliation, error retry engine, alert emails</div>
           <div class="tier-feature"><div class="tier-check">✓</div>Dedicated onboarding and setup support</div>
+        </div>
+        <div style="padding: 12px 20px 18px; border-top: 1px solid var(--border); background: var(--amber-dim); font-size: 11px; color: var(--text2); line-height: 1.55;">
+          <strong style="color: #B45309;">Kisi billed separately.</strong> Connect tier requires a Kisi <strong>API tier</strong> subscription — <strong>$200/mo per location</strong>, 2 doors included, <strong>+$10/mo per additional door</strong>, unlimited users. Operators contract directly with Kisi for hardware and platform billing. AccessSync is the automation layer between Wix and the Kisi account you own.
         </div>
       </div>
 
+    </div>
+    <div style="margin-top: 14px; font-size: 11px; color: var(--muted); text-align: center;">
+      Run a non-gym membership or booking business? <strong>Base</strong> and <strong>Pro</strong> tiers (Wix → Seam smart locks) are documented separately.
     </div>
   </div>
 
   <!-- ── Footer ─────────────────────────────────────────────── -->
   <div class="footer">
     <span>AccessSync · accesssync.io</span>
-    <span>Built for Wix App Market · Powered by Kisi · Generated 2026-04-01</span>
+    <span>Built on Wix · Powered by Kisi · Updated 2026-05-28</span>
   </div>
 
 </div>

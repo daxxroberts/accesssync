@@ -794,12 +794,17 @@
           if (activeN) activeN.textContent = s.active_members || 0;
           var locationsDelta = document.getElementById('stat-locations-delta');
           if (locationsDelta) locationsDelta.textContent = s.location_count + ' location' + (s.location_count !== 1 ? 's' : '');
-          // Synced / total
+          // Synced / total — counts only members AccessSync is currently responsible for.
+          // Previously this divided active_members by total_members, but total_members is
+          // the lifetime member_master count, so every cancelled or former member widened
+          // the gap and got labelled "pending". A gym with 5 active members and 7 churned
+          // ones read as "7 pending" while being perfectly in sync.
           var syncedN = document.getElementById('stat-synced-n');
-          if (syncedN) syncedN.textContent = (s.active_members || 0) + ' / ' + (s.total_members || 0);
+          var managed = s.managed_members || 0;
+          var pendingCount = s.pending_members || 0;
+          if (syncedN) syncedN.textContent = (s.synced_members || 0) + ' / ' + managed;
           var syncedDelta = document.getElementById('stat-synced-delta');
-          var gap = (s.total_members || 0) - (s.active_members || 0);
-          if (syncedDelta) { syncedDelta.textContent = gap > 0 ? gap + ' pending' : 'All synced'; syncedDelta.className = gap > 0 ? 'stat-delta warn' : 'stat-delta up'; }
+          if (syncedDelta) { syncedDelta.textContent = pendingCount > 0 ? pendingCount + ' pending' : 'All synced'; syncedDelta.className = pendingCount > 0 ? 'stat-delta warn' : 'stat-delta up'; }
           // Last sync
           var syncN = document.getElementById('stat-sync-n');
           if (syncN && c.last_sync_at) {
@@ -847,12 +852,14 @@
             if (!rows) return;
             var hwName = connectorPlatform ? (connectorPlatform.charAt(0).toUpperCase() + connectorPlatform.slice(1)) : 'Hardware';
             // OB-194 follow-up (Builder feedback 2026-05-27): comparison must be apples-to-apples
-            // distinct-people-count on both sides. s.active_members is COUNT(DISTINCT member_master_id)
-            // WHERE member_access.status='active' — i.e. distinct active members. s.total_members was
-            // COUNT(DISTINCT id) FROM member_master (lifetime-onboarded, including inactive) — wrong
-            // metric mislabeled as "Active plans." Use active_members on both sides.
-            var wixTotal = s.active_members || 0;
-            var synced   = s.active_members || 0;
+            // distinct-people-count on both sides. s.total_members was COUNT(DISTINCT id) FROM
+            // member_master (lifetime-onboarded, including inactive) — wrong metric mislabeled as
+            // "Active plans." That fix pinned BOTH sides to active_members, which made the bar
+            // permanently 100% and hid genuine provisioning gaps. Both sides now come from the
+            // person-scoped sync metrics: managed_members is everyone AccessSync is responsible
+            // for, synced_members is how many of them are actually live in hardware.
+            var wixTotal = s.managed_members || 0;
+            var synced   = s.synced_members || 0;
             var unmanaged = s.unmanaged_count || 0;
             var pending  = s.pending_members || 0;
             var syncedPct = wixTotal > 0 ? Math.round((synced / wixTotal) * 100) : 0;
