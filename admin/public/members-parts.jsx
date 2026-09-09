@@ -96,7 +96,7 @@ const MemberDrawer = ({ member, open, onClose }) => {
     setExpandedKey(null);
   }, [member && member.id]);
 
-  const togglePlanExpand = useCallback((key, mappingId) => {
+  const togglePlanExpand = useCallback((key, mappingId, accessId) => {
     setExpandedKey(prev => prev === key ? null : key);
     if (!mappingId) return;
     if (rosterByMapping[mappingId]) return; // already fetched
@@ -106,8 +106,12 @@ const MemberDrawer = ({ member, open, onClose }) => {
                   || new URLSearchParams(window.location.search).get("clientId");
     if (!clientId) return;
     setRosterByMapping(prev => ({ ...prev, [mappingId]: { loading: true } }));
-    fetch(`/operator/${encodeURIComponent(clientId)}/plan-mappings/${encodeURIComponent(mappingId)}/holders`,
-      { credentials: "same-origin" })
+    // accessId scopes this to the viewed member's own holder/sub-member family — otherwise
+    // this panel shows every independent person who happens to share the plan mapping (e.g.
+    // an unrelated buyer on the same plan type), mislabeled as "Holder" alongside them.
+    const url = `/operator/${encodeURIComponent(clientId)}/plan-mappings/${encodeURIComponent(mappingId)}/holders`
+              + (accessId ? `?accessId=${encodeURIComponent(accessId)}` : "");
+    fetch(url, { credentials: "same-origin" })
       .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
       .then(j => setRosterByMapping(prev => ({ ...prev, [mappingId]: { loading: false, members: j.holders || [] } })))
       .catch(e => setRosterByMapping(prev => ({ ...prev, [mappingId]: { loading: false, error: String(e) } })));
@@ -180,7 +184,7 @@ const MemberDrawer = ({ member, open, onClose }) => {
                     }}>
                       <button
                         type="button"
-                        onClick={() => canExpand && togglePlanExpand(key, mappingId)}
+                        onClick={() => canExpand && togglePlanExpand(key, mappingId, plan.accessId)}
                         aria-expanded={isExpanded}
                         disabled={!canExpand}
                         style={{

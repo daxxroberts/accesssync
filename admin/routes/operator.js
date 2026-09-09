@@ -1345,7 +1345,7 @@ router.patch('/clients/:clientId', async (req, res) => {
 router.get('/:clientId', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const [clientResult, errorCount, activeMembers, totalMembers, locationCount, pendingHardware, connectorResult, billingTierResult] = await Promise.all([
+    const [clientResult, errorCount, activeMembers, totalMembers, locationCount, pendingHardware, syncedMembers, managedMembers, unmanagedCount, connectorResult, billingTierResult] = await Promise.all([
       db.query(
         `SELECT id, name, source_site_url, source_site_name, platform,
                 last_sync_at, last_webhook_at
@@ -1379,6 +1379,55 @@ router.get('/:clientId', async (req, res) => {
          FROM member_access ma
          JOIN member_access_sources mas ON mas.access_id = ma.id
          WHERE ma.client_id = $1 AND mas.status = 'pending_hardware'`,
+        [clientId]
+      ),
+      db.query(
+        // OB-194 follow-up: "synced" = distinct people fully provisioned in hardware.
+        // A person counts as synced only when their access row is 'active' AND none of
+        // their source rows (across every access row they hold for this client) is stuck
+        // in an incomplete provisioning state. Person-level, not row-level, so a member
+        // holding two plans where one failed is correctly reported as NOT synced.
+        `SELECT COUNT(DISTINCT ma.member_master_id)::int AS count
+         FROM member_access ma
+         WHERE ma.client_id = $1 AND ma.status = 'active'
+           AND NOT EXISTS (
+             SELECT 1 FROM member_access ma2
+             JOIN member_access_sources mas ON mas.access_id = ma2.id
+             WHERE ma2.member_master_id = ma.member_master_id
+               AND ma2.client_id = ma.client_id
+               AND mas.status IN ('pending_hardware', 'pending_start', 'failed')
+           )`,
+        [clientId]
+      ),
+      db.query(
+        // "Managed" = distinct people AccessSync is currently responsible for — every
+        // non-terminal access state. Deliberately excludes 'inactive', 'removing' and
+        // 'deleted': those are former members and must never inflate the sync total.
+        // This is the denominator the dashboard's Synced/Total tile divides by.
+        `SELECT COUNT(DISTINCT member_master_id)::int AS count
+         FROM member_access
+         WHERE client_id = $1
+           AND status IN ('active', 'in_flight', 'pending_identity', 'recovery_pending')`,
+        [clientId]
+      ),
+      db.query(
+        // Hardware users inside AccessSync-managed groups with no matching DB source row
+        // (staff, contractors, operator-side grants). Reconciliation Pass 2 observes these
+        // and logs them without acting — see core/reconciliation.js. The warn repeats on
+        // every sweep, so scope to the newest reconciliation_run's trace_id: if the most
+        // recent sweep observed none, this correctly returns 0 instead of a stale count.
+        `WITH latest_run AS (
+           SELECT trace_id FROM reconciliation_run
+           WHERE client_id = $1 AND trace_id IS NOT NULL
+           ORDER BY started_at DESC
+           LIMIT 1
+         )
+         SELECT COUNT(DISTINCT dl.context->>'kisiUserId')::int AS count
+         FROM diagnostic_log dl
+         JOIN latest_run lr ON dl.trace_id = lr.trace_id
+         WHERE dl.client_id = $1
+           AND dl.error_code = 'RECONCILIATION_UNMANAGED_ASSIGNMENT_OBSERVED'
+           AND dl.resolved_at IS NULL`,
         [clientId]
       ),
       db.query(
@@ -1422,9 +1471,20 @@ router.get('/:clientId', async (req, res) => {
       stats: {
         error_count:      errorCount.rows[0].count,
         active_members:   activeMembers.rows[0].count,
+        // Lifetime member_master count — every person ever onboarded, including
+        // cancelled and former members. Retained for reporting and the metrics-vs-DB
+        // suite. NOT a sync metric: subtracting active_members from it produces a
+        // "pending" figure that is really just churn. Use synced/managed below.
         total_members:    totalMembers.rows[0].count,
         location_count:   locationCount.rows[0].count,
         pending_hardware: pendingHardware.rows[0].count,
+        synced_members:   syncedMembers.rows[0].count,
+        managed_members:  managedMembers.rows[0].count,
+        // Derived here rather than by a third query so the two figures can never
+        // disagree, and clamped so a race between the two counts cannot render
+        // a negative "pending" badge.
+        pending_members:  Math.max(0, managedMembers.rows[0].count - syncedMembers.rows[0].count),
+        unmanaged_count:  unmanagedCount.rows[0].count,
       },
     });
   } catch (err) {
@@ -2165,11 +2225,40 @@ router.get('/:clientId/plan-mappings/:mappingId/members', async (req, res) => {
 // Counts every member with a role assignment for this mapping — holder OR sub-member —
 // since the buyer (holder) only occupies a slot if they explicitly claimed one.
 // Buyers who didn't claim a slot do not appear here (correct: they have no hardware access).
+//
+// Optional ?accessId= scopes the result to ONE person's actual holder/sub-member family
+// instead of every independent person who happens to share this mapping (2026-09-09).
+// Two people can be on the exact same plan_mappings row as entirely separate individual
+// subscriptions — e.g. an operator's own test membership on the live customer plan
+// alongside a real buyer's — and without this scope they showed up as each other's
+// "Holder" in the Members page drawer, which is wrong: neither has a sub_master_id
+// pointing at the other, they just happen to share a door-group mapping. The Plan
+// Mapping page's multi-member occupancy view (Classic View, plan.isMultiMember only)
+// legitimately wants the whole roster and omits accessId, so it is unaffected.
 router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
+  // Declared outside try{} — a const declared inside try{} is not visible inside the
+  // paired catch{} block (separate block scopes), so the error logger below would
+  // itself throw ReferenceError on any real failure. Pre-existing bug, fixed in
+  // passing since this route was already being touched.
+  const { clientId, mappingId } = req.params;
   try {
-    const { clientId, mappingId } = req.params;
+    const { accessId } = req.query;
     const check = await db.query('SELECT id FROM plan_mappings WHERE id = $1 AND client_id = $2', [mappingId, clientId]);
     if (!check.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+
+    const params = [mappingId, clientId];
+    let familyFilter = '';
+    if (accessId) {
+      const familyRes = await db.query(
+        `SELECT member_master_id, sub_master_id FROM member_access WHERE id = $1 AND client_id = $2`,
+        [accessId, clientId]
+      );
+      if (familyRes.rows.length) {
+        const familyMasterId = familyRes.rows[0].sub_master_id || familyRes.rows[0].member_master_id;
+        params.push(familyMasterId);
+        familyFilter = 'AND (ma.member_master_id = $3 OR ma.sub_master_id = $3)';
+      }
+    }
 
     // S-11/DR-046: holders+subs "on this mapping" = distinct access rows with source rows
     // under this mapping. Source-row status surfaces per-plan state (active/pending_hardware/etc).
@@ -2189,8 +2278,9 @@ router.get('/:clientId/plan-mappings/:mappingId/holders', async (req, res) => {
        WHERE mas.mapping_id = $1
          AND ma.client_id = $2
          AND mas.status NOT IN ('cancelled','revoked')
+         ${familyFilter}
        ORDER BY ma.id, ma.sub_master_id NULLS FIRST, mm.platform_member_id`,
-      [mappingId, clientId]
+      params
     );
     res.json({
       holders: result.rows.map(function(r) {
