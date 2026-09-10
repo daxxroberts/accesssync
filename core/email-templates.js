@@ -19,26 +19,9 @@
 
 'use strict';
 
+const { getConnectorBranding } = require('./connector-branding');
+
 const NEUTRAL_TEXT = '#333333';
-
-// Verified 2026-07-08 directly against the live App Store / Play Store listings (the
-// Gmail-extracted copy of Kisi's own invite email mangled the Android package id into
-// an unreadable character — see MEMBER_EMAILS_SPEC.md section 3). Kisi Inc / KISI
-// Incorporated, both confirmed live and actively maintained.
-const KISI_APP_LINKS = {
-  ios:     'https://apps.apple.com/us/app/kisi/id687291321',
-  android: 'https://play.google.com/store/apps/details?id=de.kisi.android',
-};
-
-// Kisi's own app icon, pulled from its live App Store listing (2026-09-05) and
-// hosted from admin/public (served statically by admin/server.js) rather than
-// hot-linked from Apple's CDN — a stable URL under our control, not dependent
-// on Apple's asset paths staying put. Used purely to help a member visually
-// recognize the app when they search for it — nominative use, not implying
-// Kisi endorses AccessSync. Not a screenshot of Kisi's app UI (Builder ruling
-// 2026-09-05): the icon identifies the app; a UI screenshot would read as
-// repackaging Kisi's own product marketing as ours.
-const KISI_APP_ICON_URL = 'https://accesssync-admin.up.railway.app/kisi-app-icon.jpg';
 
 function escapeHtml(value) {
   if (value === null || value === undefined) return '';
@@ -138,14 +121,58 @@ function renderLayout({ branding, heading, bodyHtml, bodyText, ctaText, ctaUrl }
   return { html, text: textLines.join('\n') };
 }
 
+// 5-stage step guide — email-safe (table-based, inline styles only; no flex/grid,
+// which Outlook desktop's Word rendering engine drops). Stages 1-4 always render
+// as "done" here (this email only fires once the grant is complete); stage 5
+// ("Get the app") is the actionable one and uses the connector's icon/links.
+// Null-guards connector.iconUrl/iosLink/androidLink — a stubbed connector (e.g.
+// seam) must never render a broken image or a dead download link.
+const STEP_GUIDE_LABELS = ['Order received', 'Account located', 'Access applied', 'Door granted', 'Get the app'];
+
+function renderStepGuideTable({ connector, branding }) {
+  const doneGlyph =
+    '<div style="width:28px;height:28px;margin:0 auto 4px auto;border-radius:50%;background:' + branding.primaryColor + ';' +
+    'color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;line-height:28px;text-align:center;">&#10003;</div>';
+  const appIconHtml = connector.iconUrl
+    ? '<img src="' + escapeHtml(connector.iconUrl) + '" width="28" height="28" alt="" style="display:block;margin:0 auto 4px auto;border-radius:7px;border:0;">'
+    : doneGlyph;
+
+  const tds = STEP_GUIDE_LABELS.map((label, i) =>
+    '<td width="20%" align="center" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;color:' + branding.secondaryColor + ';padding:4px;">' +
+      (i === 4 ? appIconHtml : doneGlyph) + escapeHtml(label) +
+    '</td>'
+  ).join('');
+
+  const linkParts = [];
+  if (connector.iosLink)     linkParts.push('<a href="' + escapeHtml(connector.iosLink) + '" target="_blank" style="color:' + branding.secondaryColor + ';">Download for iPhone</a>');
+  if (connector.androidLink) linkParts.push('<a href="' + escapeHtml(connector.androidLink) + '" target="_blank" style="color:' + branding.secondaryColor + ';">Download for Android</a>');
+  const linksHtml = linkParts.length
+    ? '<p style="margin:8px 0 0 0;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:13px;">' + linkParts.join(' &nbsp;&middot;&nbsp; ') + '</p>'
+    : '<p style="margin:8px 0 0 0;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:' + NEUTRAL_TEXT + ';">Check with your gym for the app to use at the door.</p>';
+
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr>' + tds + '</tr></table>' + linksHtml;
+}
+
+function renderStepGuideText({ connector }) {
+  const stages = STEP_GUIDE_LABELS.join(' > ');
+  const linkLines = [];
+  if (connector.iosLink)     linkLines.push('iPhone: ' + connector.iosLink);
+  if (connector.androidLink) linkLines.push('Android: ' + connector.androidLink);
+  const linksText = linkLines.length ? linkLines.join('\n') : 'Check with your gym for the app to use at the door.';
+  return stages + '\n' + linksText;
+}
+
 /**
  * M1 — Access ready. Fired when a grant completes (completeGrant post-rollup).
  * plans: [{ planName, doorName }] — one or more plan/door pairs from this grant.
+ * hardwarePlatform: connector string ('kisi' | 'seam') — drives the step guide's
+ * app icon/links (defaults to 'kisi', today's only live connector).
  */
-function renderAccessReady({ branding, member, plans }) {
+function renderAccessReady({ branding, member, plans, hardwarePlatform }) {
   const first  = (member && member.firstName) ? member.firstName : null;
   const gym    = branding.gymName;
   const list   = (plans || []).filter(p => p && (p.planName || p.doorName));
+  const connector = getConnectorBranding(hardwarePlatform);
 
   const planHtml = list.length
     ? '<ul style="margin:8px 0;padding-left:20px;">' +
@@ -161,20 +188,13 @@ function renderAccessReady({ branding, member, plans }) {
     '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
     '<p style="margin:0 0 12px 0;">Your door access at <strong>' + escapeHtml(gym) + '</strong> is set up and ready to use.</p>' +
     planHtml +
-    '<p style="margin:12px 0 6px 0;">Use the Kisi app on your phone to tap in at the door.</p>' +
-    '<p style="margin:0 0 8px 0;"><img src="' + KISI_APP_ICON_URL + '" width="44" height="44" alt="Kisi app icon" style="display:block;border-radius:10px;border:0;"></p>' +
-    '<p style="margin:0;">' +
-      '<a href="' + KISI_APP_LINKS.ios + '" target="_blank">Download for iPhone</a> &nbsp;&middot;&nbsp; ' +
-      '<a href="' + KISI_APP_LINKS.android + '" target="_blank">Download for Android</a>' +
-    '</p>';
+    renderStepGuideTable({ connector, branding });
 
   const bodyText =
     'Hi ' + (first || 'there') + ',\n\n' +
     'Your door access at ' + gym + ' is set up and ready to use.\n' +
     (planText ? '\n' + planText + '\n' : '') +
-    '\nUse the Kisi app on your phone to tap in at the door.\n' +
-    'iPhone: ' + KISI_APP_LINKS.ios + '\n' +
-    'Android: ' + KISI_APP_LINKS.android;
+    '\n' + renderStepGuideText({ connector });
 
   const { html, text } = renderLayout({ branding, heading: 'Your access is ready', bodyHtml, bodyText });
   return { subject: 'Your access at ' + gym + ' is ready', html, text };
@@ -280,6 +300,8 @@ module.exports = {
   isValidHexColor,
   brandingFromClientRow,
   renderLayout,
+  renderStepGuideTable,
+  renderStepGuideText,
   renderAccessReady,
   renderAccessRemoved,
   renderAccessSuspended,

@@ -977,8 +977,7 @@ html, body {
           </p>
           <ol class="code-steps">
             <li>In Wix Editor, open the member area page where members will manage their access</li>
-            <li>Add an <strong>HTML Component</strong> to the page and set its ID to <code style="background:#F1F5F9;padding:1px 5px;border-radius:4px;font-size:12px">html1</code></li>
-            <li>Set the component's height to <strong>800px</strong> in the editor panel</li>
+            <li>Add a <strong>Button</strong> element to the page and set its ID to <code style="background:#F1F5F9;padding:1px 5px;border-radius:4px;font-size:12px">btnMyAccess</code></li>
             <li>Click the page → <strong>Page Code</strong> panel at the bottom</li>
             <li>Paste the code below and click <strong>Publish</strong></li>
           </ol>
@@ -1659,9 +1658,10 @@ $w.onReady(async function () {
     const member = await currentMember.getMember();
     if (!member?._id) return;
     wixLocationFrontend.to(
-      ACCESSSYNC_URL + '/sync-status' +
+      ACCESSSYNC_URL + '/member-hub' +
       '?memberId=' + encodeURIComponent(member._id) +
-      '&clientId=' + encodeURIComponent(CLIENT_ID)
+      '&clientId=' + encodeURIComponent(CLIENT_ID) +
+      '&tab=status'
     );
   } catch (e) {
     console.error('AccessSync redirect error:', e);
@@ -1673,22 +1673,25 @@ function _buildThankYouCode(clientId) {
 }
 
 // ── Step 5: Member Hub page ─────────────────────────────────────────
-const MEMBER_HUB_JS_TEMPLATE = `import wixUsers from 'wix-users';
+// Opens the Member Hub in a new browser tab from a Button — no iframe, no
+// manual height-setting (Wix can't resize an HTML Component from script).
+const MEMBER_HUB_JS_TEMPLATE = `import { currentMember } from 'wix-members-frontend';
 
 const ADMIN_HUB = 'https://accesssync-admin.up.railway.app';
 const CLIENT_ID = '{{CLIENT_ID}}'; // Your AccessSync client ID
 
 $w.onReady(async function () {
-  const user = wixUsers.currentUser;
-  if (!user.loggedIn) {
-    $w('#html1').hide();
+  const member = await currentMember.getMember();
+  if (!member?._id) {
+    $w('#btnMyAccess').hide();
     return;
   }
-  const memberId = user.id;
-  $w('#html1').src = ADMIN_HUB + '/member-hub' +
-    '?memberId=' + encodeURIComponent(memberId) +
+  const url = ADMIN_HUB + '/member-hub' +
+    '?memberId=' + encodeURIComponent(member._id) +
     '&clientId=' + encodeURIComponent(CLIENT_ID);
-  $w('#html1').show();
+  $w('#btnMyAccess').link = url;
+  $w('#btnMyAccess').target = '_blank';
+  $w('#btnMyAccess').show();
 });`;
 
 function _buildMemberHubCode(clientId) {

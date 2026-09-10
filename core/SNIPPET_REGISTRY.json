@@ -53,20 +53,18 @@
       "display_group": "member_access",
       "category": "required",
       "criticality": "high",
-      "description": "Member-facing self-service page showing active door access, plan details, and family-plan management. Embed as a members-only page.",
-      "wix_install_path": "Wix Editor → new members-only page 'My Access' → add HTML iFrame (id html1) → Velo Dev Mode → page code",
-      "current_version": "v2.1.0",
+      "description": "Member-facing self-service page showing active door access, plan details, and family-plan management. Opens in a new browser tab from a Button on your Wix member page — no iframe, no manual height-setting.",
+      "wix_install_path": "Wix Editor → your Member Area page → add a Button element (id btnMyAccess) → Velo Dev Mode → page code",
+      "current_version": "v3.0.0",
       "required_env_vars": ["ADMIN_HUB_URL"],
-      "verify_via": "iframe_heartbeat",
-      "verify_heartbeat_path": "/member-hub/heartbeat",
+      "verify_via": "none",
       "stale_after_days": 30,
       "instructions": [
-        "In your Wix editor, create a new members-only page called 'My Access'",
-        "Add an HTML iFrame component with the ID 'html1'",
+        "In your Wix editor, add a Button element to the member page where members should see their access (e.g. a custom 'My Access' tab), and set its ID to 'btnMyAccess'",
         "Open the Velo Dev Mode code panel for that page",
         "Paste the snippet below"
       ],
-      "template": "// AccessSync My Access (Member Hub) — version {{VERSION}}\nimport wixUsers from 'wix-users';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\nconst SNIPPET_VERSION = '{{VERSION}}';\n\n$w.onReady(async function () {\n  const user = wixUsers.currentUser;\n  if (!user.loggedIn) { $w('#html1').src = ''; return; }\n  const token = await user.getAuthToken();\n  const memberId = user.id;\n  $w('#html1').src = ADMIN_HUB + '/member-hub'\n    + '?memberId=' + encodeURIComponent(memberId)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&v=' + encodeURIComponent(SNIPPET_VERSION)\n    + '&token=' + encodeURIComponent(token);\n});\n"
+      "template": "// AccessSync My Access (Member Hub) — version {{VERSION}}\nimport { currentMember } from 'wix-members-frontend';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\nconst SNIPPET_VERSION = '{{VERSION}}';\n\n$w.onReady(async function () {\n  const member = await currentMember.getMember();\n  if (!member?._id) { $w('#btnMyAccess').hide(); return; }\n  const url = ADMIN_HUB + '/member-hub'\n    + '?memberId=' + encodeURIComponent(member._id)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&v=' + encodeURIComponent(SNIPPET_VERSION);\n  $w('#btnMyAccess').link = url;\n  $w('#btnMyAccess').target = '_blank';\n  $w('#btnMyAccess').show();\n});\n"
     },
     {
       "id": "thank_you_redirect",
@@ -74,9 +72,9 @@
       "display_group": "post_purchase_flow",
       "category": "optional",
       "criticality": "low",
-      "description": "Redirects a member to the Sync Status page automatically after they complete a plan purchase. Optional — without this, members can still reach Sync Status manually, but UX is smoother with the redirect.",
-      "wix_install_path": "Wix Editor → existing Thank You page → Velo Dev Mode → page code",
-      "current_version": "v2.0.0",
+      "description": "Redirects a member to the Access Hub's status view automatically after they complete a plan purchase — a same-tab full-page redirect (not a popup; an auto-opened new window on page load gets blocked by most browsers). Optional — without this, members can still reach their status manually via the My Access button, but UX is smoother with the redirect.",
+      "wix_install_path": "Wix Editor → existing Thank You page (and Bookings confirmation page, if used) → Velo Dev Mode → page code",
+      "current_version": "v3.0.0",
       "required_env_vars": ["ADMIN_HUB_URL"],
       "verify_via": "none",
       "stale_after_days": 60,
@@ -85,7 +83,7 @@
         "Open the Velo Dev Mode code panel for that page",
         "Paste the snippet below"
       ],
-      "template": "// AccessSync post-purchase redirect — version {{VERSION}}\nimport wixLocationFrontend from 'wix-location-frontend';\nimport { currentMember } from 'wix-members-frontend';\n\nconst ACCESSSYNC_URL = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\n\n$w.onReady(async function () {\n  try {\n    const member = await currentMember.getMember();\n    if (!member?._id) return;\n    wixLocationFrontend.to(\n      ACCESSSYNC_URL + '/sync-status'\n      + '?memberId=' + encodeURIComponent(member._id)\n      + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    );\n  } catch (e) {\n    console.error('AccessSync redirect error:', e);\n  }\n});\n"
+      "template": "// AccessSync post-purchase redirect — version {{VERSION}}\nimport wixLocationFrontend from 'wix-location-frontend';\nimport { currentMember } from 'wix-members-frontend';\n\nconst ACCESSSYNC_URL = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\n\n$w.onReady(async function () {\n  try {\n    const member = await currentMember.getMember();\n    if (!member?._id) return;\n    wixLocationFrontend.to(\n      ACCESSSYNC_URL + '/member-hub'\n      + '?memberId=' + encodeURIComponent(member._id)\n      + '&clientId=' + encodeURIComponent(CLIENT_ID)\n      + '&tab=status'\n    );\n  } catch (e) {\n    console.error('AccessSync redirect error:', e);\n  }\n});\n"
     }
   ]
 }

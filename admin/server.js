@@ -195,7 +195,39 @@ app.get('/member/access-status', async (req, res) => {
   }
 });
 app.get('/multi-member', allowMemberFrame, (req, res) => res.render('pages/multi-member'));
-app.get('/member-hub',   allowMemberFrame, (req, res) => res.render('pages/member-hub'));
+const { CONNECTORS } = require('../core/connector-branding');
+// Gym branding (name/logo/colors) for the status overlay's header band —
+// looked up server-side from req.query.clientId so the FIRST paint already
+// shows the gym's own branding on their own primary-color band (matching
+// core/email-templates.js's renderLayout header band — gyms design their
+// logo file to read against THAT band, so it has to render there, not on
+// this page's plain white body, or a light-colored logo goes invisible).
+// Same fail-soft pattern as /health above: never blocks the page on a DB
+// hiccup or a missing clientId.
+app.get('/member-hub', allowMemberFrame, async (req, res) => {
+  let branding = { gymName: null, logoUrl: null, primaryColor: null, secondaryColor: null };
+  if (req.query.clientId) {
+    try {
+      const db = require('../db');
+      const { brandingFromClientRow } = require('../core/email-templates');
+      const r = await db.query(
+        `SELECT name, email_logo_url, email_primary_color, email_secondary_color FROM clients WHERE id = $1`,
+        [req.query.clientId]
+      );
+      const b = brandingFromClientRow(r.rows[0]);
+      branding = { gymName: b.gymName, logoUrl: b.logoUrl, primaryColor: b.primaryColor, secondaryColor: b.secondaryColor };
+    } catch (err) {
+      // fall through to nulls — member-hub.ejs falls back to the AccessSync mark
+    }
+  }
+  res.render('pages/member-hub', {
+    connectorRegistryJson: JSON.stringify(CONNECTORS),
+    gymName: branding.gymName,
+    gymLogoUrl: branding.logoUrl,
+    gymPrimaryColor: branding.primaryColor,
+    gymSecondaryColor: branding.secondaryColor,
+  });
+});
 
 // ── OB-237 Phase C — Setup Hub iframe heartbeat endpoints ────────
 // Called from Wix Velo iframes (sync_status_page + my_access_page snippets)

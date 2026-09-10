@@ -282,7 +282,10 @@ async function maybeSendGrantEmail({ clientId, accessId, standardEvent, assignme
       dedupKey: `${accessId}:${planId}:${orderId}`,
       recipient: m.email,
       render: templates.renderAccessReady,
-      renderArgs: { member: { firstName: m.first_name }, plans },
+      renderArgs: {
+        member: { firstName: m.first_name }, plans,
+        hardwarePlatform: (assignments && assignments[0] && assignments[0].hardwarePlatform) || 'kisi',
+      },
     });
   } catch (err) {
     log.warn('email.member.failed', { clientId, emailType: 'access_ready' }, err);

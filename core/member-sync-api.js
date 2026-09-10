@@ -28,11 +28,33 @@ const crypto = require('crypto');
 const https  = require('https');
 const db     = require('../db');
 const { log } = require('./logger');
+const { brandingFromClientRow } = require('./email-templates');
 
 // Cache Wix public keys for 1 hour to avoid hammering their endpoint
 let _keyCache      = null;
 let _keyCacheExpiry = 0;
 const KEY_CACHE_TTL_MS = 60 * 60 * 1000;
+
+// Cache gym branding (logo/colors) per clientId, same pattern as the Wix JWK
+// cache above — branding is effectively static for a polling session, and
+// this endpoint is polled every 3s for up to 60 polls, plus hit separately by
+// the "My Access" freshness interval and legacy sync-status.ejs. Only fetched
+// at all when status === 'active' (the one state that renders it) — see below.
+const _brandingCache = new Map(); // clientId -> { data, expiry }
+const BRANDING_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function getClientBranding(clientId) {
+  const now = Date.now();
+  const cached = _brandingCache.get(clientId);
+  if (cached && now < cached.expiry) return cached.data;
+  const row = await db.query(
+    `SELECT name, email_logo_url, email_primary_color, email_secondary_color FROM clients WHERE id = $1`,
+    [clientId]
+  ).then(r => r.rows[0]).catch(() => undefined);
+  const data = brandingFromClientRow(row);
+  _brandingCache.set(clientId, { data, expiry: now + BRANDING_CACHE_TTL_MS });
+  return data;
+}
 
 class MemberSyncApi {
 
@@ -281,6 +303,14 @@ class MemberSyncApi {
         stateOrphaned = true;
       }
 
+      // Gym branding (for the web widget's "Get the app" card) is only ever
+      // rendered in the active state — fetch (cached) only then, not on every
+      // in-flight/pending poll. See getClientBranding above.
+      let branding = null;
+      if (status === 'active') {
+        branding = await getClientBranding(clientId);
+      }
+
       return res.status(200).json({
         platformMemberId,
         clientId,
@@ -298,6 +328,10 @@ class MemberSyncApi {
           createdAt:      lastEvent.created_at,
         } : null,
         access,
+        gymName:        branding ? branding.gymName : null,
+        logoUrl:        branding ? branding.logoUrl : null,
+        primaryColor:   branding ? branding.primaryColor : null,
+        secondaryColor: branding ? branding.secondaryColor : null,
       });
 
     } catch (error) {

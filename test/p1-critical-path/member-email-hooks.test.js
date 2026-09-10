@@ -195,6 +195,35 @@ describe('[P1] DR-052 maybeSendGrantEmail — allow-list suppression', () => {
     expect(r.sent).toBe(true);
   });
 
+  test('hardwarePlatform threads from assignments[0] into the rendered email (connector-branding, no new DB read)', async () => {
+    mockDb({ memberRow: MEMBER, planRows: [{ plan_name: 'Monthly', door_name: 'Front' }] });
+    const r = await mailer.maybeSendGrantEmail({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'plan.purchased', planId: 'sp-1' },
+      assignments: [Object.assign({}, ASSIGNMENTS[0], { hardwarePlatform: 'seam' })],
+      eventKey: 'evt-1',
+    });
+    expect(r.sent).toBe(true);
+    const payload = mockResendSend.mock.calls[0][0];
+    // seam is stubbed (null icon/links) — must render the neutral fallback, never Kisi's real links.
+    expect(payload.html).not.toContain('apps.apple.com');
+    expect(payload.html).not.toContain('play.google.com');
+    expect(payload.html).toContain('Check with your gym for the app');
+  });
+
+  test('hardwarePlatform omitted on the assignment → defaults to kisi', async () => {
+    mockDb({ memberRow: MEMBER, planRows: [{ plan_name: 'Monthly', door_name: 'Front' }] });
+    const r = await mailer.maybeSendGrantEmail({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'plan.purchased', planId: 'sp-1' },
+      assignments: ASSIGNMENTS, // no hardwarePlatform field
+      eventKey: 'evt-1',
+    });
+    expect(r.sent).toBe(true);
+    const payload = mockResendSend.mock.calls[0][0];
+    expect(payload.html).toContain('apps.apple.com/us/app/kisi');
+  });
+
   test('sub-member (sub_master_id set) → sub_member_invite copy with holder name', async () => {
     mockDb({
       memberRow: Object.assign({}, MEMBER, { sub_master_id: 'holder-mm' }),

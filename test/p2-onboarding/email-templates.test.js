@@ -135,6 +135,39 @@ describe('[P2] DR-052 content renderers — escaping, subjects, text part', () =
     expect(out.html).not.toContain('apps.apple.com/assets');
   });
 
+  test('renderAccessReady: includes all 5 step-guide stage labels, in both parts', () => {
+    const out = t.renderAccessReady({
+      branding: BRANDING, member: { firstName: 'Jane' },
+      plans: [{ planName: 'Monthly', doorName: 'Front Door' }],
+    });
+    for (const label of ['Order received', 'Account located', 'Access applied', 'Door granted', 'Get the app']) {
+      expect(out.html).toContain(label);
+      expect(out.text).toContain(label);
+    }
+  });
+
+  test('renderAccessReady: seam connector (stubbed, no live app) renders neutral fallback, never Kisi\'s real links', () => {
+    const out = t.renderAccessReady({
+      branding: BRANDING, member: { firstName: 'Jane' },
+      plans: [{ planName: 'Monthly', doorName: 'Front Door' }],
+      hardwarePlatform: 'seam',
+    });
+    expect(out.html).not.toContain('apps.apple.com');
+    expect(out.html).not.toContain('play.google.com');
+    expect(out.html).not.toContain('kisi-app-icon.jpg');
+    expect(out.html).toContain('Check with your gym for the app');
+    expect(out.text).toContain('Check with your gym for the app');
+  });
+
+  test('renderAccessReady: unrecognized/missing hardwarePlatform fails open to kisi', () => {
+    const out = t.renderAccessReady({
+      branding: BRANDING, member: { firstName: 'Jane' },
+      plans: [{ planName: 'Monthly', doorName: 'Front Door' }],
+      hardwarePlatform: 'not-a-real-connector',
+    });
+    expect(out.html).toContain('https://apps.apple.com/us/app/kisi/id687291321');
+  });
+
   test('renderAccessRemoved: names plan + gym, text part present', () => {
     const out = t.renderAccessRemoved({ branding: BRANDING, member: { firstName: 'Daxx' }, planName: 'Couples' });
     expect(out.subject).toBe('Your Couples access at House of Gains has ended');

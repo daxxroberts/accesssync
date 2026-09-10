@@ -308,19 +308,36 @@ body {
   background: var(--card);
   border: 1px solid var(--border2);
   border-radius: 16px;
-  padding: 32px 24px 28px;
+  overflow: hidden; /* clips .overlay-band's square top to the card's rounded corners */
   max-width: 480px; width: 100%;
   text-align: center;
   box-shadow: 0 8px 32px var(--shadow);
 }
-@media (min-width: 520px) {
-  .status-card { padding: 44px 40px 40px; }
-}
 
-/* ── Logo lockup (overlay) ────────────────────────────── */
-.overlay-logo {
+/* ── Brand band — the gym's own name/logo on THEIR primary color, exactly
+   mirroring core/email-templates.js's renderLayout header band. Gyms design
+   their logo file to read against that band (often a light/white mark on a
+   dark primary), so the logo has to sit on the same background their emails
+   already put it on, or a light logo goes invisible on this page's white
+   body. Only rendered when a gym's name/logo is actually known — the
+   AccessSync-fallback case (no clientId, or branding lookup failed) stays
+   on the plain white body, no band. */
+.overlay-band {
+  background: var(--gym-primary, var(--brand));
+  padding: 20px 24px;
   display: flex; align-items: center; justify-content: center;
-  gap: 9px; margin-bottom: 24px; opacity: .55;
+}
+@media (min-width: 520px) { .overlay-band { padding: 26px 40px; } }
+.gym-logo { height: 30px; max-width: 220px; object-fit: contain; display: block; }
+.gym-name-band { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; color: #ffffff; }
+
+.overlay-body { padding: 32px 24px 28px; }
+@media (min-width: 520px) { .overlay-body { padding: 44px 40px 40px; } }
+
+/* ── AccessSync fallback lockup (no gym branding known) ──────────────── */
+.overlay-logo.accesssync-only {
+  display: flex; align-items: center; justify-content: center;
+  gap: 9px; opacity: .55; margin-bottom: 24px;
 }
 .logo-mark {
   width: 26px; height: 26px;
@@ -329,6 +346,14 @@ body {
 }
 .logo-mark svg { width: 14px; height: 14px; }
 .logo-name { font-size: 13px; font-weight: 700; letter-spacing: -0.2px; color: var(--text2); }
+
+/* Footer note — mirrors the email's own "Powered by AccessSync" footer line,
+   same position (bottom, small, muted) now that the gym's own brand owns
+   the header band instead. */
+.powered-by {
+  font-size: 10px; font-weight: 600; letter-spacing: .03em; color: var(--muted);
+  opacity: .7; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border);
+}
 
 /* ── Overlay icon ─────────────────────────────────────── */
 .ov-icon-wrap {
@@ -401,8 +426,8 @@ body {
 @media (min-width: 520px) { .ov-title { font-size: 22px; } }
 
 /* ── Step pipeline ────────────────────────────────────── */
+/* Mobile (below 520px): stacked, vertical connector line — unchanged. */
 .pipeline { margin: 24px 0 0; display: flex; flex-direction: column; gap: 0; text-align: left; }
-@media (min-width: 520px) { .pipeline { margin-top: 32px; } }
 .pipeline-step {
   display: flex; align-items: flex-start; gap: 14px;
   padding: 13px 0; position: relative;
@@ -411,6 +436,23 @@ body {
   content: ''; position: absolute; left: 15px; top: 0;
   width: 2px; height: 13px;
   background: var(--border2); transform: translateX(-50%);
+}
+/* Desktop enhancement (DR-015 mobile-first — the only breakpoint this page
+   uses): horizontal, left-to-right, icon-over-label per stage. Sub-copy is
+   dropped at this width — 5 stages side by side don't have room for it, and
+   the stacked mobile layout below already carries the full detail. */
+@media (min-width: 520px) {
+  .pipeline { margin-top: 32px; flex-direction: row; justify-content: space-between; gap: 6px; text-align: center; }
+  .pipeline-step { flex-direction: column; align-items: center; padding: 0; flex: 1; }
+  .pipeline-step + .pipeline-step::before { display: none; }
+  .step-body { padding-top: 8px; }
+  .step-sub { display: none; }
+  /* .scan-bar-wrap / .done-bar are inserted as SIBLINGS after .step-sub
+     (see activateStep()/markAllDone() below), not children of it — hiding
+     .step-sub alone leaves them behind as stray lines, and since each
+     step's label wraps to a different number of lines, those lines land at
+     a different height under every step. Hide them here too. */
+  .scan-bar-wrap, .done-bar { display: none; }
 }
 .step-bullet {
   width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
@@ -483,6 +525,32 @@ body {
   border-radius: 9px; display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; color: var(--green);
 }
+
+/* "Get the app" branded card — uses BOTH of the gym's DR-052 email-branding
+   colors, same two-role split as the email itself (renderLayout: primary =
+   prominent band, secondary = link/CTA color): primary tints the card via a
+   solid left accent (avoids deriving an alpha-blended fill from an
+   arbitrary hex — no color-mix()/rgba-conversion risk on older mobile
+   browsers), secondary drives the download links. Both fall back to
+   --brand/--brand-dark when the gym hasn't set branding. Connector
+   icon/name/links via CONNECTOR_REGISTRY, keyed by hardwarePlatform. */
+.get-app-card {
+  margin-top: 20px; display: flex; align-items: center; gap: 12px;
+  padding: 14px 14px 14px 13px; border-radius: 12px; text-align: left;
+  background: var(--brand-dim);
+  box-shadow: inset 0 0 0 1px var(--brand-glow);
+  border-left: 3px solid var(--gym-primary, var(--brand));
+}
+.get-app-card.hidden { display: none !important; }
+.get-app-icon { width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; }
+.get-app-text { flex: 1; min-width: 0; }
+.get-app-label { font-size: 13px; font-weight: 700; color: var(--text); }
+.get-app-sub { font-size: 11px; color: var(--text2); margin-top: 1px; }
+.get-app-links { display: flex; gap: 10px; flex-shrink: 0; }
+.get-app-link {
+  color: var(--gym-secondary, var(--brand)); font-weight: 700; font-size: 12px; text-decoration: none;
+}
+.get-app-link.hidden { display: none !important; }
 
 /* ═══════════════════════════════════════════════════════
    TAB 2 — MANAGE MEMBERS
@@ -1052,19 +1120,42 @@ body {
 </div>
 
 <!-- Status Overlay (always present, triggers on ?tab=status or in-flight) -->
+<%
+  var _hasGymBrand = (typeof gymLogoUrl !== 'undefined' && gymLogoUrl) || (typeof gymName !== 'undefined' && gymName);
+  var _cardStyle = _hasGymBrand
+    ? 'style="--gym-primary:' + (gymPrimaryColor || '#333333') + ';--gym-secondary:' + (gymSecondaryColor || '#333333') + ';"'
+    : '';
+%>
 <div class="status-overlay hidden" id="status-overlay">
-  <div class="status-card">
+  <div class="status-card" <%- _cardStyle %>>
 
-    <!-- Logo -->
-    <div class="overlay-logo">
-      <div class="logo-mark">
-        <svg viewBox="0 0 20 20" fill="none">
-          <path d="M10 3L3 7v6l7 4 7-4V7L10 3z" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
-          <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" fill="white"/>
-        </svg>
+    <!-- Brand band — the gym's own name/logo on their primary color
+         (server-injected from req.query.clientId in admin/server.js's
+         /member-hub route). Only when a gym's branding is actually known;
+         the AccessSync-fallback case has no band, see .overlay-logo below. -->
+    <% if (_hasGymBrand) { %>
+      <div class="overlay-band">
+        <% if (typeof gymLogoUrl !== 'undefined' && gymLogoUrl) { %>
+          <img class="gym-logo" src="<%= gymLogoUrl %>" alt="<%= (typeof gymName !== 'undefined' && gymName) || 'Your gym' %>"/>
+        <% } else { %>
+          <span class="gym-name-band"><%= gymName %></span>
+        <% } %>
       </div>
-      <span class="logo-name">AccessSync</span>
-    </div>
+    <% } %>
+
+    <div class="overlay-body">
+
+    <% if (!_hasGymBrand) { %>
+      <div class="overlay-logo accesssync-only">
+        <div class="logo-mark">
+          <svg viewBox="0 0 20 20" fill="none">
+            <path d="M10 3L3 7v6l7 4 7-4V7L10 3z" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" fill="white"/>
+          </svg>
+        </div>
+        <span class="logo-name">AccessSync</span>
+      </div>
+    <% } %>
 
     <!-- Syncing state -->
     <div id="ov-syncing" class="ov-state">
@@ -1110,6 +1201,13 @@ body {
             <div class="step-sub" id="psub-4">Activating your credential now</div>
           </div>
         </div>
+        <div class="pipeline-step">
+          <div class="step-bullet" id="pb-5">5</div>
+          <div class="step-body">
+            <div class="step-label" id="pl-5">Get the app</div>
+            <div class="step-sub" id="psub-5">One more step once you're in</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1123,6 +1221,17 @@ body {
       <div class="ov-title">You're all set!</div>
       <div class="ov-sub">Your access is active and ready. Head to the entrance and use your app or credential to get in.</div>
       <div class="ov-access-list" id="ov-access-list"></div>
+      <div class="get-app-card hidden" id="get-app-card">
+        <img id="get-app-icon" class="get-app-icon" alt=""/>
+        <div class="get-app-text">
+          <div class="get-app-label" id="get-app-label">Get the app</div>
+          <div class="get-app-sub">Open doors from your phone</div>
+        </div>
+        <div class="get-app-links">
+          <a id="get-app-ios" class="get-app-link hidden" target="_blank" rel="noopener noreferrer">iPhone</a>
+          <a id="get-app-android" class="get-app-link hidden" target="_blank" rel="noopener noreferrer">Android</a>
+        </div>
+      </div>
     </div>
 
     <!-- Error state -->
@@ -1149,13 +1258,24 @@ body {
       <div class="ov-sub">Your payment went through and everything is on track. Your gym is putting the finishing touches on this plan — you'll be good to go very soon.</div>
     </div>
 
-  </div>
+    <% if (_hasGymBrand) { %>
+      <div class="powered-by">Powered by AccessSync</div>
+    <% } %>
+
+    </div><!-- /overlay-body -->
+  </div><!-- /status-card -->
 </div>
 
 <div id="toast" class="toast"></div>
 
 <script>
 'use strict';
+
+// Server-injected connector registry (core/connector-branding.js) — keeps the
+// web widget and the access_ready email on the exact same icon/store-link
+// values. Entries can have null iconUrl/iosLink/androidLink (e.g. the seam
+// stub) — always null-guard before rendering, see renderGetAppCard() below.
+const CONNECTOR_REGISTRY = <%- connectorRegistryJson %>;
 
 // ── URL params ──────────────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
@@ -1256,8 +1376,11 @@ const STEPS = [
   { id: 2, label: 'Account located',      sub: 'Finding your membership record',       doneSub: 'Membership found' },
   { id: 3, label: 'Access rules applied', sub: 'Matching your plan to the right doors', doneSub: 'Doors matched' },
   { id: 4, label: 'Door access granted',  sub: 'Activating your credential now',       doneSub: 'Access activated' },
+  { id: 5, label: 'Get the app',          sub: 'One more step once you\'re in',        doneSub: 'Ready to download' },
 ];
-const STEP_DURATIONS = [1200, 2000, 2400, null];
+// Stage 5 isn't timer-driven — it's marked done alongside the rest once the
+// poll confirms status === 'active' (see markAllDone() in pollAccess below).
+const STEP_DURATIONS = [1200, 2000, 2400, null, null];
 
 function showOverlay() {
   _overlayActive = true;
@@ -1379,6 +1502,33 @@ function renderOvAccess(access) {
   `).join('');
 }
 
+// Null-guards connector.iconUrl/iosLink/androidLink — a recognized-but-stubbed
+// connector (e.g. seam) has all three null, and must render a neutral state,
+// not a broken image or a dead link. Gym primaryColor/secondaryColor come from
+// the /member/access-status response (core/member-sync-api.js) and are already
+// hex-validated server-side (isValidHexColor); .setProperty is a DOM API call,
+// not string interpolation into markup, so this is safe even so.
+function renderGetAppCard(data) {
+  const connector = CONNECTOR_REGISTRY[data.hardwarePlatform] || CONNECTOR_REGISTRY.kisi;
+  const card = document.getElementById('get-app-card');
+  if (data.primaryColor)   card.style.setProperty('--gym-primary', data.primaryColor);
+  if (data.secondaryColor) card.style.setProperty('--gym-secondary', data.secondaryColor);
+
+  document.getElementById('get-app-label').textContent = 'Get the ' + connector.displayName + ' app';
+  const icon = document.getElementById('get-app-icon');
+  if (connector.iconUrl) { icon.src = connector.iconUrl; icon.style.display = ''; }
+  else { icon.style.display = 'none'; }
+
+  const ios = document.getElementById('get-app-ios');
+  const android = document.getElementById('get-app-android');
+  ios.classList.toggle('hidden', !connector.iosLink);
+  if (connector.iosLink) ios.href = connector.iosLink;
+  android.classList.toggle('hidden', !connector.androidLink);
+  if (connector.androidLink) android.href = connector.androidLink;
+
+  card.classList.remove('hidden');
+}
+
 async function pollAccess() {
   if (!_overlayActive) return;
   if (!platformMemberId || !clientId) { setOvState('error'); return; }
@@ -1404,6 +1554,7 @@ async function pollAccess() {
       setTimeout(() => {
         setOvState('active');
         renderOvAccess(data.access || []);
+        renderGetAppCard(data);
         notifyHeight();
         if (!_overlaySettled) {
           _overlaySettled = true;
