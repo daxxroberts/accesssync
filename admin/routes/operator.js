@@ -1244,7 +1244,7 @@ const PREVIEW_DEMOS = {
     branding,
     member: { firstName: 'Jane' },
     holderName: 'Daxx Roberts',
-    planName: 'Family Plan',
+    plans: [{ planName: 'Family Plan', doorName: 'Front Door' }],
   }),
   access_suspended: (branding) => emailTemplates.renderAccessSuspended({
     branding,

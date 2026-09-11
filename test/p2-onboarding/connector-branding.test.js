@@ -20,12 +20,20 @@ describe('[P2] core/connector-branding — getConnectorBranding', () => {
     expect(c.androidLink).toBe('https://play.google.com/store/apps/details?id=de.kisi.android');
   });
 
-  test('seam is a recognized key but a stub — null icon/links, not a fallback to kisi', () => {
+  test('kisi requirements name Bluetooth + "Always" location (needed for reliable door unlocks)', () => {
+    const c = getConnectorBranding('kisi');
+    expect(Array.isArray(c.requirements)).toBe(true);
+    expect(c.requirements.some(r => /bluetooth/i.test(r))).toBe(true);
+    expect(c.requirements.some(r => /location/i.test(r) && /always/i.test(r))).toBe(true);
+  });
+
+  test('seam is a recognized key but a stub — null icon/links/requirements, not a fallback to kisi', () => {
     const c = getConnectorBranding('seam');
     expect(c.displayName).toBe('Seam');
     expect(c.iconUrl).toBeNull();
     expect(c.iosLink).toBeNull();
     expect(c.androidLink).toBeNull();
+    expect(c.requirements).toBeNull();
   });
 
   test('unrecognized/undefined hardwarePlatform fails open to kisi (today\'s only live connector)', () => {

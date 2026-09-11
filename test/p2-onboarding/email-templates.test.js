@@ -177,12 +177,66 @@ describe('[P2] DR-052 content renderers — escaping, subjects, text part', () =
 
   test('renderSubMemberInvite: holder + plan + gym in subject and body', () => {
     const out = t.renderSubMemberInvite({
-      branding: BRANDING, member: { firstName: 'Jamie' }, holderName: 'Daxx Roberts', planName: 'Family',
+      branding: BRANDING, member: { firstName: 'Jamie' }, holderName: 'Daxx Roberts',
+      plans: [{ planName: 'Family', doorName: 'Front Door' }],
     });
     expect(out.subject).toBe('Daxx Roberts added you to Family at House of Gains');
     expect(out.html).toContain('Daxx Roberts');
     expect(out.html).toContain('Family');
     expect(out.text).toContain('added you to their Family plan');
+  });
+
+  // 2026-09-11: M3 used to tell sub-members to "watch for the app setup email" — but
+  // it fires on the same completeGrant hook as M1, so no separate email with real
+  // download instructions was ever coming. It must carry the same step guide M1 does.
+  test('renderSubMemberInvite: carries the real app download links directly, no "watch for another email" promise', () => {
+    const out = t.renderSubMemberInvite({
+      branding: BRANDING, member: { firstName: 'Jamie' }, holderName: 'Daxx Roberts',
+      plans: [{ planName: 'Family', doorName: 'Front Door' }],
+    });
+    expect(out.html).toContain('https://apps.apple.com/us/app/kisi/id687291321');
+    expect(out.html).toContain('https://play.google.com/store/apps/details?id=de.kisi.android');
+    expect(out.text).toContain('https://apps.apple.com/us/app/kisi/id687291321');
+    expect(out.html).not.toMatch(/watch for/i);
+    expect(out.text).not.toMatch(/watch for/i);
+  });
+
+  // 2026-09-11: Kisi needs Bluetooth + "Always" location to unlock doors reliably —
+  // this has to reach every email that tells a member to install the app, not just
+  // the holder's. Connector-driven (core/connector-branding.js) so it's dynamic per
+  // hardware platform, not hardcoded to Kisi's wording inside the template.
+  describe('[P2] DR-052 connector requirements block — every email that mentions the app install', () => {
+    test('renderAccessReady (kisi): Important requirements names Bluetooth + Always location', () => {
+      const out = t.renderAccessReady({
+        branding: BRANDING, member: { firstName: 'Jane' },
+        plans: [{ planName: 'Monthly', doorName: 'Front Door' }],
+      });
+      expect(out.html).toContain('Important requirements');
+      expect(out.html).toContain('Bluetooth');
+      expect(out.html).toMatch(/Location.*Always/);
+      expect(out.text).toContain('Important requirements');
+      expect(out.text).toContain('Bluetooth');
+    });
+
+    test('renderSubMemberInvite (kisi): same Important requirements block as the holder gets', () => {
+      const out = t.renderSubMemberInvite({
+        branding: BRANDING, member: { firstName: 'Jamie' }, holderName: 'Daxx Roberts',
+        plans: [{ planName: 'Family', doorName: 'Front Door' }],
+      });
+      expect(out.html).toContain('Important requirements');
+      expect(out.html).toContain('Bluetooth');
+      expect(out.text).toContain('Important requirements');
+    });
+
+    test('renderAccessReady (seam, stubbed): no requirements block — must not fabricate Kisi-specific instructions', () => {
+      const out = t.renderAccessReady({
+        branding: BRANDING, member: { firstName: 'Jane' },
+        plans: [{ planName: 'Monthly', doorName: 'Front Door' }],
+        hardwarePlatform: 'seam',
+      });
+      expect(out.html).not.toContain('Important requirements');
+      expect(out.text).not.toContain('Important requirements');
+    });
   });
 
   // M4/M5 — added 2026-09-05: a member's card fails or recovers with NO email at
@@ -228,7 +282,7 @@ describe('[P2] DR-052 content renderers — escaping, subjects, text part', () =
       t.renderAccessRemoved({ branding: BRANDING, member: {}, planName: null }),
       t.renderAccessSuspended({ branding: BRANDING, member: {}, planName: null }),
       t.renderAccessRestored({ branding: BRANDING, member: {}, planName: null }),
-      t.renderSubMemberInvite({ branding: BRANDING, member: {}, holderName: null, planName: null }),
+      t.renderSubMemberInvite({ branding: BRANDING, member: {}, holderName: null, plans: [] }),
     ]) {
       expect(typeof out.text).toBe('string');
       expect(out.text.trim().length).toBeGreaterThan(0);

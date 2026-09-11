@@ -150,7 +150,18 @@ function renderStepGuideTable({ connector, branding }) {
     ? '<p style="margin:8px 0 0 0;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:13px;">' + linkParts.join(' &nbsp;&middot;&nbsp; ') + '</p>'
     : '<p style="margin:8px 0 0 0;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:' + NEUTRAL_TEXT + ';">Check with your gym for the app to use at the door.</p>';
 
-  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr>' + tds + '</tr></table>' + linksHtml;
+  // Connector-specific on-device setup requirements (e.g. Kisi needs Bluetooth +
+  // "Always" location to unlock doors reliably) — null-guarded the same way as
+  // iconUrl/iosLink/androidLink above; a stubbed connector (seam) has none yet.
+  const reqList = connector.requirements || [];
+  const reqHtml = reqList.length
+    ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr><td style="background-color:#f7f7f5;border-radius:8px;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
+        '<strong>Important requirements:</strong><br/>' +
+        reqList.map(r => '&bull;&nbsp; ' + escapeHtml(r)).join('<br/>') +
+      '</td></tr></table>'
+    : '';
+
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr>' + tds + '</tr></table>' + linksHtml + reqHtml;
 }
 
 function renderStepGuideText({ connector }) {
@@ -159,7 +170,9 @@ function renderStepGuideText({ connector }) {
   if (connector.iosLink)     linkLines.push('iPhone: ' + connector.iosLink);
   if (connector.androidLink) linkLines.push('Android: ' + connector.androidLink);
   const linksText = linkLines.length ? linkLines.join('\n') : 'Check with your gym for the app to use at the door.';
-  return stages + '\n' + linksText;
+  const reqList = connector.requirements || [];
+  const reqText = reqList.length ? '\n\nImportant requirements:\n' + reqList.map(r => '- ' + r).join('\n') : '';
+  return stages + '\n' + linksText + reqText;
 }
 
 /**
@@ -272,24 +285,44 @@ function renderAccessRestored({ branding, member, planName }) {
 }
 
 /**
- * M3 — Sub-member invited. Same completeGrant hook as M1 but differentiated copy
- * when the grant originated from a multi-member submit (syntheticSource).
+ * M3 — Sub-member invited. Fires on the same completeGrant hook as M1
+ * (renderAccessReady) — by the time this sends, the sub-member's own door
+ * access is already live, not pending. Differs from M1 only in crediting the
+ * holder who added them; everything after that (plan/door list, step guide,
+ * app download links, connector requirements) is the same content M1 gives
+ * the holder. There is no separate follow-up email with the real app
+ * instructions, so this one has to carry them directly rather than telling
+ * the member to watch their inbox for another email.
  */
-function renderSubMemberInvite({ branding, member, holderName, planName }) {
+function renderSubMemberInvite({ branding, member, holderName, plans, hardwarePlatform }) {
   const first  = (member && member.firstName) ? member.firstName : null;
   const gym    = branding.gymName;
   const holder = holderName || 'The plan holder';
-  const plan   = planName || 'their plan';
+  const list   = (plans || []).filter(p => p && (p.planName || p.doorName));
+  const plan   = (list[0] && list[0].planName) || 'their plan';
+  const connector = getConnectorBranding(hardwarePlatform);
+
+  const planHtml = list.length
+    ? '<ul style="margin:8px 0;padding-left:20px;">' +
+        list.map(p =>
+          '<li>' + escapeHtml(p.planName || 'Your plan') +
+          (p.doorName ? ' &mdash; ' + escapeHtml(p.doorName) : '') + '</li>'
+        ).join('') +
+      '</ul>'
+    : '';
+  const planText = list.map(p => '  - ' + (p.planName || 'Your plan') + (p.doorName ? ' - ' + p.doorName : '')).join('\n');
 
   const bodyHtml =
     '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
-    '<p style="margin:0 0 12px 0;"><strong>' + escapeHtml(holder) + '</strong> added you to their <strong>' + escapeHtml(plan) + '</strong> plan at <strong>' + escapeHtml(gym) + '</strong>.</p>' +
-    '<p style="margin:0;">Your door access is being set up now &mdash; watch for the app setup email so you can tap in with your phone.</p>';
+    '<p style="margin:0 0 12px 0;"><strong>' + escapeHtml(holder) + '</strong> added you to their <strong>' + escapeHtml(plan) + '</strong> plan at <strong>' + escapeHtml(gym) + '</strong> &mdash; your door access is set up and ready to use.</p>' +
+    planHtml +
+    renderStepGuideTable({ connector, branding });
 
   const bodyText =
     'Hi ' + (first || 'there') + ',\n\n' +
-    holder + ' added you to their ' + plan + ' plan at ' + gym + '.\n\n' +
-    'Your door access is being set up now - watch for the app setup email so you can tap in with your phone.';
+    holder + ' added you to their ' + plan + ' plan at ' + gym + ' - your door access is set up and ready to use.\n' +
+    (planText ? '\n' + planText + '\n' : '') +
+    '\n' + renderStepGuideText({ connector });
 
   const { html, text } = renderLayout({ branding, heading: 'You’ve been added at ' + gym, bodyHtml, bodyText });
   return { subject: holder + ' added you to ' + plan + ' at ' + gym, html, text };

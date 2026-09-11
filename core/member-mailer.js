@@ -271,7 +271,8 @@ async function maybeSendGrantEmail({ clientId, accessId, standardEvent, assignme
         renderArgs: {
           member: { firstName: m.first_name },
           holderName,
-          planName: (plans[0] && plans[0].planName) || null,
+          plans,
+          hardwarePlatform: (assignments && assignments[0] && assignments[0].hardwarePlatform) || 'kisi',
         },
       });
     }
