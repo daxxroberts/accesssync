@@ -26,7 +26,7 @@ describe('core/SNIPPET_REGISTRY.json — shape', () => {
 
   test('registry has snippets array', () => {
     expect(Array.isArray(registry.snippets)).toBe(true);
-    expect(registry.snippets.length).toBeGreaterThanOrEqual(4);
+    expect(registry.snippets.length).toBeGreaterThanOrEqual(3);
   });
 
   test('every snippet has required fields', () => {
@@ -150,12 +150,12 @@ describe('core/snippet-registry.js — renderSnippet()', () => {
     expect(result.body).toContain('op-uuid-3');
   });
 
-  test('falls back ADMIN_HUB_URL → CORE_ENGINE_URL when ADMIN_HUB_URL is unset (existing behavior preserved)', () => {
+  test('ADMIN_HUB_URL is required, not substitutable by CORE_ENGINE_URL (existing behavior preserved)', () => {
     delete process.env.ADMIN_HUB_URL;
     process.env.CORE_ENGINE_URL = 'https://core.example.com';
-    const thankYou = registryModule.getSnippet('thank_you_redirect');
-    expect(thankYou.required_env_vars).toContain('ADMIN_HUB_URL');
-    const result = registryModule.renderSnippet('thank_you_redirect', { clientId: 'x' });
+    const myAccess = registryModule.getSnippet('my_access_page');
+    expect(myAccess.required_env_vars).toContain('ADMIN_HUB_URL');
+    const result = registryModule.renderSnippet('my_access_page', { clientId: 'x' });
     expect(result.error).toBe('missing_env_vars');
   });
 
@@ -179,7 +179,7 @@ describe('core/snippet-registry.js — listSnippets()', () => {
   test('returns metadata only — no template body leaked', () => {
     const list = registryModule.listSnippets();
     expect(Array.isArray(list)).toBe(true);
-    expect(list.length).toBeGreaterThanOrEqual(4);
+    expect(list.length).toBeGreaterThanOrEqual(3);
     for (const item of list) {
       expect(item.id).toBeDefined();
       expect(item.template).toBeUndefined();

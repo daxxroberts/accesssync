@@ -916,7 +916,7 @@ html, body {
       <div>
         <div class="done-section-title">Step 2 of 2 — Set up your Wix site</div>
         <p class="code-instructions">
-          Three quick pastes connect your Wix site to AccessSync. Do them in order — A is required, B and C take about a minute each.
+          Two quick pastes connect your Wix site to AccessSync. Do them in order — A is required, B takes about a minute.
         </p>
 
         <!-- ── Part A: events.js backend ── -->
@@ -946,35 +946,11 @@ html, body {
           </div>
         </div>
 
-        <!-- ── Part B: Thank You page status button ── -->
+        <!-- ── Part B: Member Hub page ── -->
         <div style="margin-top:24px">
-          <div style="font-size:13px;font-weight:600;color:var(--text1);margin-bottom:6px">B — Post-purchase status button (recommended)</div>
+          <div style="font-size:13px;font-weight:600;color:var(--text1);margin-bottom:6px">B — Member Hub page (recommended)</div>
           <p class="code-instructions" style="margin-bottom:8px">
-            After a member buys a plan, give them a button to open their access status in a new tab so they can see their door access activate in real time. Opens in a real new tab (a click, not an auto-popup) — nothing renders inside Wix.
-          </p>
-          <ol class="code-steps">
-            <li>In Wix Editor, open your <strong>Plans Thank You</strong> page</li>
-            <li>Add a <strong>Button</strong> element (e.g. labeled "View My Access Status") and set its ID to <code style="background:#F1F5F9;padding:1px 5px;border-radius:4px;font-size:12px">btnViewStatus</code></li>
-            <li>Click the page in the editor → <strong>Page Code</strong> panel at the bottom</li>
-            <li>Paste the code below and click <strong>Publish</strong></li>
-            <li>Repeat on your <strong>Bookings Confirmation</strong> page if you use Bookings</li>
-          </ol>
-          <div class="code-block-wrap">
-            <div class="code-block-header">
-              <span class="code-block-label">Page code — Thank You &amp; Confirmation pages (btnViewStatus)</span>
-              <button class="btn-copy-code" onclick="copyThankYouCode()">Copy</button>
-            </div>
-            <div class="code-scroll">
-              <pre id="thankyou-code-display"></pre>
-            </div>
-          </div>
-        </div>
-
-        <!-- ── Part C: Member Hub page ── -->
-        <div style="margin-top:24px">
-          <div style="font-size:13px;font-weight:600;color:var(--text1);margin-bottom:6px">C — Member Hub page (recommended)</div>
-          <p class="code-instructions" style="margin-bottom:8px">
-            Gives members a page to check their door access status and manage additional members on their plan.
+            Gives members a page to check their door access status and manage additional members on their plan. This one button does double duty — clicking it right after a purchase automatically shows the live setup animation (no separate Thank You page button needed); clicking it any other time just shows their current access.
           </p>
           <ol class="code-steps">
             <li>In Wix Editor, open the member area page where members will manage their access</li>
@@ -1648,32 +1624,12 @@ function _buildEventsCode(clientId) {
   return EVENTS_JS_TEMPLATE.replace('{{CLIENT_ID}}', clientId);
 }
 
-// Opens in a real new tab from a click on #btnViewStatus — not an auto-popup
-// (browsers block those) and not rendered inside Wix (no iframe/Lightbox).
-// Same pattern as the My Access button (MEMBER_HUB_JS_TEMPLATE below).
-const THANKYOU_JS_TEMPLATE = `import { currentMember } from 'wix-members-frontend';
-
-const ADMIN_HUB = 'https://accesssync-admin.up.railway.app';
-const CLIENT_ID = '{{CLIENT_ID}}'; // Your AccessSync client ID
-
-$w.onReady(async function () {
-  const member = await currentMember.getMember();
-  if (!member?._id) {
-    $w('#btnViewStatus').hide();
-    return;
-  }
-  const url = ADMIN_HUB + '/member-hub' +
-    '?memberId=' + encodeURIComponent(member._id) +
-    '&clientId=' + encodeURIComponent(CLIENT_ID) +
-    '&tab=status';
-  $w('#btnViewStatus').link = url;
-  $w('#btnViewStatus').target = '_blank';
-  $w('#btnViewStatus').show();
-});`;
-
-function _buildThankYouCode(clientId) {
-  return THANKYOU_JS_TEMPLATE.replace(/\{\{CLIENT_ID\}\}/g, clientId);
-}
+// No Thank You page snippet needed — member-hub.ejs's own data-load path
+// (see the `syncingStatuses` branch around its access-tab load function)
+// already auto-shows the same setup-animation overlay whenever it detects
+// an in-flight/pending status, with no ?tab=status param required. The My
+// Access button below is genuinely dual-purpose: same button, same code,
+// whether a member clicks it mid-purchase or a week later.
 
 // ── Step 5: Member Hub page ─────────────────────────────────────────
 // Opens the Member Hub in a new browser tab from a Button — no iframe, no
@@ -1711,7 +1667,6 @@ async function goToDone() {
 
   const code = _buildEventsCode(state.clientId);
   document.getElementById('events-code-display').textContent = code;
-  document.getElementById('thankyou-code-display').textContent = _buildThankYouCode(state.clientId);
   document.getElementById('member-hub-code-display').textContent = _buildMemberHubCode(state.clientId);
 
   if (state.locations.length) {
@@ -1860,16 +1815,6 @@ function copyEventsCode() {
   if (!code) { toast('Code not ready yet', 'error'); return; }
   navigator.clipboard.writeText(code).then(() => {
     toast('Code copied — paste it into Wix backend/events.js', 'success');
-  }).catch(() => {
-    toast('Select the code and copy it manually', 'error');
-  });
-}
-
-function copyThankYouCode() {
-  const code = document.getElementById('thankyou-code-display').textContent;
-  if (!code) { toast('Code not ready yet', 'error'); return; }
-  navigator.clipboard.writeText(code).then(() => {
-    toast('Code copied — paste it into your Thank You and Confirmation page code', 'success');
   }).catch(() => {
     toast('Select the code and copy it manually', 'error');
   });

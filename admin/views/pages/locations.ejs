@@ -1692,11 +1692,14 @@
       var el = document.getElementById('setup-snippets-list');
 
       // OB-238 followup — group snippets by display_group so paired snippets
-      // (e.g. Sync Status + Thank-You Redirect, which depend on each other)
-      // render inside one card.
+      // that depend on each other render inside one card. post_purchase_flow
+      // used to pair sync_status_page with thank_you_redirect; the latter
+      // was removed (the My Access button's own data-load path already
+      // auto-shows setup progress, no separate post-purchase snippet
+      // needed), so that group now holds one item and falls through to the
+      // single-card render below — groupTitles has no entry for it anymore.
       var groupTitles = {
         webhook: 'Webhook Forwarder',
-        post_purchase_flow: 'Post-Purchase Flow (Sync Status + Redirect)',
         member_access: 'Member Access Page',
       };
       var groups = {};

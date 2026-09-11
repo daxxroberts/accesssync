@@ -65,26 +65,6 @@
         "Paste the snippet below"
       ],
       "template": "// AccessSync My Access (Member Hub) — version {{VERSION}}\nimport { currentMember } from 'wix-members-frontend';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\nconst SNIPPET_VERSION = '{{VERSION}}';\n\n$w.onReady(async function () {\n  const member = await currentMember.getMember();\n  if (!member?._id) { $w('#btnMyAccess').hide(); return; }\n  const url = ADMIN_HUB + '/member-hub'\n    + '?memberId=' + encodeURIComponent(member._id)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&v=' + encodeURIComponent(SNIPPET_VERSION);\n  $w('#btnMyAccess').link = url;\n  $w('#btnMyAccess').target = '_blank';\n  $w('#btnMyAccess').show();\n});\n"
-    },
-    {
-      "id": "thank_you_redirect",
-      "name": "Post-Purchase Status Button",
-      "display_group": "post_purchase_flow",
-      "category": "optional",
-      "criticality": "low",
-      "description": "Adds a button to your Thank You page that opens the member's Access Hub status view in a genuine new browser tab — a real click, so it's never blocked by a popup blocker the way an auto-opened window on page load would be. Nothing renders inside Wix (no iframe, no Lightbox). Optional — without this, members can still reach their status manually via the My Access button, but this gives them a direct nudge right after checkout.",
-      "wix_install_path": "Wix Editor → existing Thank You page (and Bookings confirmation page, if used) → add a Button element (id btnViewStatus) → Velo Dev Mode → page code",
-      "current_version": "v4.0.0",
-      "required_env_vars": ["ADMIN_HUB_URL"],
-      "verify_via": "none",
-      "stale_after_days": 60,
-      "instructions": [
-        "In your Wix editor, open the Thank You page that members see after completing a plan purchase",
-        "Add a Button element to the page (e.g. labeled \"View My Access Status\") and set its ID to 'btnViewStatus'",
-        "Open the Velo Dev Mode code panel for that page",
-        "Paste the snippet below"
-      ],
-      "template": "// AccessSync post-purchase status button — version {{VERSION}}\nimport { currentMember } from 'wix-members-frontend';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\n\n$w.onReady(async function () {\n  const member = await currentMember.getMember();\n  if (!member?._id) { $w('#btnViewStatus').hide(); return; }\n  const url = ADMIN_HUB + '/member-hub'\n    + '?memberId=' + encodeURIComponent(member._id)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&tab=status';\n  $w('#btnViewStatus').link = url;\n  $w('#btnViewStatus').target = '_blank';\n  $w('#btnViewStatus').show();\n});\n"
     }
   ]
 }
