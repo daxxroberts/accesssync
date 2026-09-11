@@ -157,10 +157,10 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
          JOIN member_access_sources mas ON mas.access_id = ma.id
          WHERE ma.client_id = $1
            AND ma.status = 'active'
-           AND mas.mapping_id = $3
+           AND mas.mapping_id = $2
            AND mas.status = 'active'
            AND ma.hardware_user_id IS NOT NULL`,
-        [clientId, source_plan_id, mappingId]
+        [clientId, mappingId]
       );
       for (const m of members.rows) {
         for (const groupId of newGroupIds) {
