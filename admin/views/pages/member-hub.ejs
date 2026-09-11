@@ -720,6 +720,7 @@ body {
 .icon-btn:hover { background: rgba(28,22,16,0.05); color: var(--text); box-shadow: inset 0 0 0 1px var(--border2); }
 .icon-btn.danger:hover { background: var(--red-dim); color: var(--red); box-shadow: inset 0 0 0 1px rgba(220,38,38,0.30); }
 .icon-btn:disabled { opacity: .4; cursor: not-allowed; }
+.icon-btn.spinning svg { animation: spin .6s linear infinite; }
 
 /* ── Confirm row ──────────────────────────────────────── */
 .confirm-row {
@@ -1054,6 +1055,15 @@ body {
 
       <!-- Content -->
       <div id="mm-content" class="hidden">
+
+        <!-- Manual refresh — loads are one-time (page open, this button) rather than a
+             background poll; the only automatic re-checking is mmStartPollIfPending(),
+             armed by mmSubmitAll() and self-stopping once nothing is left pending. -->
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+          <button type="button" class="icon-btn" id="mm-btn-refresh" onclick="mmManualRefresh()" title="Refresh" aria-label="Refresh members list">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.55-3.83"/><path d="M13.5 2.3v3.9h-3.9"/></svg>
+          </button>
+        </div>
 
         <!-- One plan-group card per allow_multiple plan. Rendered by mmRender(). -->
         <div id="mm-plan-groups"></div>
@@ -1970,11 +1980,6 @@ async function mmLoadData() {
     document.getElementById('mm-content').classList.remove('hidden');
     mmRender();
     notifyHeight();
-
-    // After every successful load, kick off polling if any sub-member is in
-    // a non-terminal state (submitted/in_flight/pending_sync). Stops when all
-    // members have settled (active/failed/etc) or after MM_POLL_MAX cycles.
-    mmStartPollIfPending();
   } catch (e) {
     document.getElementById('mm-loading').classList.add('hidden');
     document.getElementById('mm-error').classList.remove('hidden');
@@ -1983,9 +1988,30 @@ async function mmLoadData() {
   }
 }
 
+// A load (page open, tab switch, or the manual refresh button) is a one-time
+// check — it does NOT arm background polling on its own. That used to cause
+// the whole list to silently re-render/flash every few seconds any time a
+// page happened to load while something was mid-flight. The only automatic
+// re-checking left is mmStartPollIfPending(), armed explicitly by
+// mmSubmitAll() right after a submit, and it stops itself once nothing is
+// pending — see mmStartPollIfPending below.
+async function mmManualRefresh() {
+  const btn = document.getElementById('mm-btn-refresh');
+  if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
+  try {
+    await mmLoadData();
+  } finally {
+    if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
+  }
+}
+
 // ── Manage Members polling ────────────────────────────────────────
 // Watches non-terminal sub-members (submitted/pending_sync/in_flight) and
 // re-fetches every MM_POLL_INTERVAL ms until they settle or MM_POLL_MAX cycles.
+// Armed ONLY by mmSubmitAll() right after a submit — a plain load/refresh
+// never starts this on its own (see mmManualRefresh above), so the list only
+// auto-refreshes for the direct aftermath of the user's own Submit, not every
+// time the page happens to load while something's mid-flight.
 // Independent of the My Access overlay's _pollTimer (different endpoint, different
 // semantics). Defensive: always clears any stale interval before starting a new
 // one so a dead timer can't keep us from running.
@@ -2020,7 +2046,12 @@ function mmStartPollIfPending() {
   _mmPollTimer = setInterval(async () => {
     _mmPollCount++;
     if (_mmPollCount > MM_POLL_MAX) { mmStopPoll(); return; }
-    try { await mmLoadData(); } catch (_) { /* keep timer alive */ }
+    try {
+      await mmLoadData();
+      // Stop the moment everything's settled (active/failed/etc) — mmLoadData
+      // itself no longer decides this, so the loop has to check after each tick.
+      if (!(MM.subMembers || []).some(mmIsSubMemberPending)) mmStopPoll();
+    } catch (_) { /* keep timer alive */ }
   }, MM_POLL_INTERVAL);
 }
 
@@ -2663,6 +2694,9 @@ async function mmSubmitAll() {
     const data = await res.json();
     if (!res.ok) { showToast(data.error || 'Submit failed.', 'error'); if (btn) btn.disabled = false; return; }
     await mmLoadData();
+    // Watch this submit through to a settled result (active/failed) — the only
+    // moment auto-refresh runs; see mmStartPollIfPending's comment above.
+    mmStartPollIfPending();
     showToast('Granting access to ' + data.submitted + ' member' + (data.submitted === 1 ? '' : 's') + '…', 'info');
   } catch (e) {
     showToast('Something went wrong. Try again.', 'error');
