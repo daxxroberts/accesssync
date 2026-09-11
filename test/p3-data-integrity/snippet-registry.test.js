@@ -26,7 +26,7 @@ describe('core/SNIPPET_REGISTRY.json — shape', () => {
 
   test('registry has snippets array', () => {
     expect(Array.isArray(registry.snippets)).toBe(true);
-    expect(registry.snippets.length).toBeGreaterThanOrEqual(3);
+    expect(registry.snippets.length).toBeGreaterThanOrEqual(4);
   });
 
   test('every snippet has required fields', () => {
@@ -86,9 +86,8 @@ describe('core/SNIPPET_REGISTRY.json — shape', () => {
     }
   });
 
-  // thank_you_button replaces the old thank_you_redirect (removed, then this
-  // gap got flagged: nothing pointed a member anywhere right after purchase).
-  // Optional/low — my_access_page alone is still enough to reach status.
+  // thank_you_button: optional — my_access_page alone is still enough to reach
+  // status even without it.
   test('thank_you_button snippet: optional, requires ADMIN_HUB_URL, opens member-hub status view in a new tab', () => {
     const btn = registry.snippets.find(s => s.id === 'thank_you_button');
     expect(btn).toBeDefined();
@@ -98,6 +97,28 @@ describe('core/SNIPPET_REGISTRY.json — shape', () => {
     expect(btn.template).toContain('/member-hub');
     expect(btn.template).toContain("tab=status");
     expect(btn.wix_install_path.toLowerCase()).not.toContain('iframe');
+  });
+
+  // thank_you_redirect: a same-tab wixLocation.to() on page load — unlike a
+  // new-tab/window open, this is never popup-blocked, so it's safe to run
+  // with no click at all. Needs no CLIENT_ID/ADMIN_HUB_URL — it's a pure
+  // Wix-side page-to-page navigation, not an AccessSync URL.
+  test('thank_you_redirect snippet: optional, no required env vars, same-tab redirect via wix-location', () => {
+    const redirect = registry.snippets.find(s => s.id === 'thank_you_redirect');
+    expect(redirect).toBeDefined();
+    expect(redirect.category).toBe('optional');
+    expect(redirect.required_env_vars).toEqual([]);
+    expect(redirect.template).toContain("from 'wix-location'");
+    expect(redirect.template).toContain('wixLocation.to(');
+    expect(redirect.template).not.toContain('target');
+    expect(redirect.wix_install_path.toLowerCase()).not.toContain('iframe');
+  });
+
+  test('thank_you_redirect and thank_you_button are grouped as a paired post-purchase flow', () => {
+    const redirect = registry.snippets.find(s => s.id === 'thank_you_redirect');
+    const btn = registry.snippets.find(s => s.id === 'thank_you_button');
+    expect(redirect.display_group).toBe('post_purchase_flow');
+    expect(btn.display_group).toBe('post_purchase_flow');
   });
 });
 
@@ -173,6 +194,17 @@ describe('core/snippet-registry.js — renderSnippet()', () => {
     expect(result.body).not.toContain('{{ADMIN_HUB_URL}}');
   });
 
+  test('renders thank_you_redirect with no env vars needed — still needs a clientId per the render contract', () => {
+    const result = registryModule.renderSnippet('thank_you_redirect', { clientId: 'op-uuid-5' });
+    expect(result.error).toBeUndefined();
+    expect(result.body).toContain("from 'wix-location'");
+    expect(result.body).toContain('REDIRECT_PATH');
+    expect(result.body).not.toContain('{{VERSION}}');
+
+    const noId = registryModule.renderSnippet('thank_you_redirect', {});
+    expect(noId.error).toBe('missing_client_id');
+  });
+
   test('ADMIN_HUB_URL is required, not substitutable by CORE_ENGINE_URL (existing behavior preserved)', () => {
     delete process.env.ADMIN_HUB_URL;
     process.env.CORE_ENGINE_URL = 'https://core.example.com';
@@ -202,7 +234,7 @@ describe('core/snippet-registry.js — listSnippets()', () => {
   test('returns metadata only — no template body leaked', () => {
     const list = registryModule.listSnippets();
     expect(Array.isArray(list)).toBe(true);
-    expect(list.length).toBeGreaterThanOrEqual(3);
+    expect(list.length).toBeGreaterThanOrEqual(4);
     for (const item of list) {
       expect(item.id).toBeDefined();
       expect(item.template).toBeUndefined();

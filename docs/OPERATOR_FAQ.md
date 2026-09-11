@@ -91,7 +91,11 @@ AccessSync provides one member-facing screen — **My Access / Manage Members** 
 
 It's a Button on your Wix member page (the onboarding wizard provides the snippet) that opens the page in a real new browser tab — not an iframe embedded in Wix.
 
-Optionally, the Setup Hub also offers a second button snippet for your Thank You (and Bookings confirmation) page — same new-tab link, but it lands the member straight on the live setup animation right after they buy, instead of them having to already know where the My Access button is.
+Optionally, the Setup Hub also offers a Post-Purchase Flow pair for your Thank You (and Bookings confirmation) page:
+1. **Auto-Redirect** — no button, no click: on page load it sends the member straight to a post-purchase info page of your own (e.g. one called "Member Door Sync Status"). A same-tab redirect like this is never blocked by a popup blocker the way an auto-opened new window would be.
+2. **Status Button** — installed on whichever page members actually land on (your Thank You page directly, or the info page the redirect sends them to) — opens the live setup animation in a new tab on click.
+
+Use either on its own, or both together if you want an info page in between.
 
 ### A member says they never got an email from Kisi after signing up. What do I tell them?
 
