@@ -49,7 +49,7 @@
 -- treated as 'off', the sweep holds removals, and grants and audit logging carry
 -- on. (In Phase 1 the sweep's removals are observation-only anyway.)
 --
--- Applied to Supabase gklgwyrnkedebyulrclv: <PENDING — Builder approval>
+-- Applied to Supabase gklgwyrnkedebyulrclv 2026-09-11.
 
 ALTER TABLE clients
   ADD COLUMN IF NOT EXISTS auto_revoke_mode VARCHAR(16) NOT NULL DEFAULT 'dry_run'

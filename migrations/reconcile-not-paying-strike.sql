@@ -31,7 +31,7 @@
 -- returns without recording, and no strike clock ever starts. A clock that never
 -- starts means the member is never eligible for automatic removal: fail safe.
 --
--- Applied to Supabase gklgwyrnkedebyulrclv: <PENDING — Builder approval>
+-- Applied to Supabase gklgwyrnkedebyulrclv 2026-09-11.
 
 ALTER TABLE member_access_sources
   ADD COLUMN IF NOT EXISTS not_paying_since        TIMESTAMP WITH TIME ZONE,

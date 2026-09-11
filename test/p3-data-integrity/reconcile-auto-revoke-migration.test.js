@@ -110,9 +110,9 @@ describe('Reconcile auto-revoke mode: clients.auto_revoke_mode', () => {
       expect(migration).toMatch(/ORDER: apply this BEFORE deploying the code/);
     });
 
-    test('header carries the house-style applied line, still pending', () => {
+    test('header records the house-style applied line (Builder-approved, applied 2026-09-11)', () => {
       expect(migration).toMatch(
-        /^-- Applied to Supabase gklgwyrnkedebyulrclv: <PENDING — Builder approval>$/m
+        /^-- Applied to Supabase gklgwyrnkedebyulrclv 2026-09-11\.$/m
       );
     });
 

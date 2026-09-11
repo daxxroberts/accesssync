@@ -31,8 +31,9 @@ const M2_ROLLBACK = path.join(MIGRATIONS_DIR, 'reconcile-proposal-log.rollback.s
 const M3_FORWARD  = path.join(MIGRATIONS_DIR, 'reconcile-not-paying-strike.sql');
 const M3_ROLLBACK = path.join(MIGRATIONS_DIR, 'reconcile-not-paying-strike.rollback.sql');
 
-const APPLIED_PENDING_LINE =
-  /^-- Applied to Supabase gklgwyrnkedebyulrclv: <PENDING — Builder approval>$/m;
+// Builder-approved and applied to production 2026-09-11.
+const APPLIED_LINE =
+  /^-- Applied to Supabase gklgwyrnkedebyulrclv 2026-09-11\.$/m;
 
 /**
  * Reduce a migration to its SQL statements: drop `--` comments, then blank out
@@ -202,7 +203,7 @@ describe('M2 reconcile-proposal-log.sql: reconciliation_proposal', () => {
     expect(migration).toMatch(/^-- /);
     expect(migration).toMatch(/ORDER: either/);
     expect(migration).toMatch(/Rollback is reconcile-proposal-log\.rollback\.sql/);
-    expect(migration).toMatch(APPLIED_PENDING_LINE);
+    expect(migration).toMatch(APPLIED_LINE);
   });
 
   describe('rollback', () => {
@@ -278,7 +279,7 @@ describe('M3 reconcile-not-paying-strike.sql: member_access_sources strike clock
     expect(migration).toMatch(/ORDER: either/);
     expect(migration).toMatch(/42703/);
     expect(migration).toMatch(/reconcile-not-paying-strike\.rollback\.sql/);
-    expect(migration).toMatch(APPLIED_PENDING_LINE);
+    expect(migration).toMatch(APPLIED_LINE);
   });
 
   describe('rollback', () => {

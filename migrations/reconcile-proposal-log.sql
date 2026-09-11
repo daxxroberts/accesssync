@@ -42,7 +42,7 @@
 -- ORDER: either. If the code ships first, the INSERT fails, the sweep logs a warning
 -- once and carries on. Nothing else depends on this table.
 --
--- Applied to Supabase gklgwyrnkedebyulrclv: <PENDING — Builder approval>
+-- Applied to Supabase gklgwyrnkedebyulrclv 2026-09-11.
 
 CREATE TABLE IF NOT EXISTS reconciliation_proposal (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
