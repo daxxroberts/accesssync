@@ -2102,6 +2102,12 @@ function mmRender() {
     const t = allDrafts.length + ' member' + (allDrafts.length === 1 ? '' : 's');
     submitLabel.textContent = t;
     stickyLabel.textContent = t;
+    // mmSubmitAll disables the button on submit but only re-enables it on
+    // failure — on the success path it stays disabled in memory (same class
+    // of bug as mm-btn-add-save above). Reset here so a later batch of
+    // drafts doesn't inherit a dead button. See DR-040 grant-access flow.
+    const submitBtn = document.getElementById('mm-btn-submit');
+    if (submitBtn) submitBtn.disabled = false;
   } else {
     submitArea.classList.add('hidden');
   }
