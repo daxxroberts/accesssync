@@ -562,11 +562,29 @@
     }
 
     // ── Actions ───────────────────────────────────────────────────
+    // Reads the JSON body whatever the status, so a refusal (422 — e.g. a
+    // door-access removal, whose retry is paused in Phase 1, or an error that
+    // can't be re-run) shows the server's own explanation instead of a false
+    // "Requeued". Mirrors admin-errors.ejs. Resolves { ok, status, body }.
+    function readJsonResponse(r) {
+      return r.json()
+        .catch(function() { return {}; })
+        .then(function(body) { return { ok: r.ok, status: r.status, body: body || {} }; });
+    }
+
     function retryOne(id, btn) {
       btn.disabled = true; btn.textContent = '…';
       apiFetch('/operator/' + _clientId + '/errors/' + id + '/retry', { method: 'POST' })
-        .then(function(r) { return r.json(); })
-        .then(function() { showToast('success', 'Requeued — AccessSync will retry provisioning'); loadErrors(); loadSummary(); })
+        .then(readJsonResponse)
+        .then(function(res) {
+          if (!res.ok) {
+            // Nothing was queued; the error stays open. Show why.
+            showToast('error', esc(res.body.error || ('Retry failed (HTTP ' + res.status + ')')));
+            btn.disabled = false; btn.textContent = 'Retry now';
+            return;
+          }
+          showToast('success', 'Requeued — AccessSync will retry provisioning'); loadErrors(); loadSummary();
+        })
         .catch(function() { showToast('error', 'Retry failed'); btn.disabled = false; btn.textContent = 'Retry now'; });
     }
 
@@ -592,9 +610,29 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: activeIds }),
       })
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-          showToast('success', 'Queued ' + (d.queued || 0) + ' for retry');
+        .then(readJsonResponse)
+        .then(function(res) {
+          var d = res.body;
+          if (!res.ok) {
+            showToast('error', esc(d.error || ('Bulk retry failed (HTTP ' + res.status + ')')));
+            loadErrors(); loadSummary();
+            return;
+          }
+          var queued  = d.queued  || 0;
+          var skipped = d.skipped || 0;
+          var failed  = d.failed  || 0;
+          var msg = 'Queued ' + queued + ' for retry';
+          // Skipped rows were refused — a door-access removal (retry paused while
+          // safety checks roll out), an error that can't be re-run, or unreadable
+          // saved details. Nothing was queued for them; they stay open below.
+          if (skipped) msg += ' · skipped ' + skipped + ' that can’t be retried right now (still open)';
+          if (failed)  msg += ' · ' + failed + ' failed';
+          var removalsSkipped = (d.skippedRows || []).some(function(s) { return s && s.reason === 'revoke_retry_disabled'; });
+          if (removalsSkipped) msg += '. Door-access removals can’t be retried yet — nothing was changed; if someone should lose access, remove them in Kisi.';
+          showToast((skipped || failed) ? 'info' : 'success', esc(msg));
+          if (skipped && d.skippedRows && d.skippedRows.length) {
+            console.warn('[errors] bulk retry skipped rows:', d.skippedRows);
+          }
           loadErrors(); loadSummary();
         })
         .catch(function() { showToast('error', 'Bulk retry failed'); })

@@ -28,6 +28,8 @@ jest.mock('../../adapters/hardware-adapter', () => ({
   suspendAccess:   jest.fn(),
   enableAccess:    jest.fn(),
   deleteUser:      jest.fn(),
+  // Phase 1 Guard D (finalizeRevoke) — L5 role-assignment lookup.
+  getRoleAssignmentsForUser: jest.fn(),
 }));
 
 jest.mock('../../core/logger', () => ({
@@ -516,11 +518,15 @@ describe('[P1] finalizeRevoke — bails out when other plans keep the member act
   it('holder with zero remaining active plans (true single-plan cancellation): proceeds to delete', async () => {
     const hardwareAdapter = require('../../adapters/hardware-adapter');
     hardwareAdapter.deleteUser.mockResolvedValueOnce(undefined);
+    // Phase 1 Guard D: Kisi user holds no other role assignments after the revoke.
+    hardwareAdapter.getRoleAssignmentsForUser.mockResolvedValueOnce([]);
 
     db.query
       .mockResolvedValueOnce({
         rows: [{ status: 'inactive', hardware_user_id: HARDWARE_USER_ID, member_master_id: MEMBER_MASTER_ID, source_tag: 'accesssync' }],
-      });
+      })
+      // Phase 1 Guard E: no other live member_access row shares this Kisi user.
+      .mockResolvedValueOnce({ rows: [] });
     const dbClient = {
       query: jest.fn().mockResolvedValue({ rows: [] }),
       release: jest.fn(),

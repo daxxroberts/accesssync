@@ -192,6 +192,62 @@ describe('[P3] Wix REST webhook format (data.entity) resolves correctly', () => 
 
 });
 
+// ─── Auto-renew hotfix (2026-09-10) ──────────────────────────────────────────
+//
+// orderAutoRenewCanceled means the member switched off auto-renew. The order
+// stays ACTIVE and PAID until its end date; Wix fires orderEnded then. It used
+// to map to plan.cancelled, which revoked a paid member's door the moment they
+// clicked "cancel renewal" — weeks before their paid time ran out.
+
+describe('[P3] orderAutoRenewCanceled is non-routable — a paid member keeps access until orderEnded', () => {
+  const { jobNameForEventType } = require('../../core/event-routing');
+
+  function autoRenewCanceledPayload() {
+    return {
+      data: {
+        entity: {
+          _id: 'order-autorenew-1',
+          status: 'ACTIVE',
+          lastPaymentStatus: 'PAID',
+          autoRenewCanceled: true,
+          planId: CONNECT_PLAN_ID,
+          buyer: { memberId: WIX_MEMBER_ID, contactId: WIX_MEMBER_ID },
+          endDate: '2026-10-01T00:00:00.000Z',
+        },
+      },
+    };
+  }
+
+  it('normalizes wixPricingPlans.orderAutoRenewCanceled → plan.autorenew_cancelled', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderAutoRenewCanceled', 'site-001', autoRenewCanceledPayload());
+    expect(result.eventType).toBe('plan.autorenew_cancelled');
+  });
+
+  it('plan.autorenew_cancelled routes to NEITHER grant nor revoke — nothing is enqueued', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderAutoRenewCanceled', 'site-001', autoRenewCanceledPayload());
+    expect(jobNameForEventType(result.eventType)).toBeNull();
+  });
+
+  it('still resolves member, plan and end date for the webhook_log audit row', () => {
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderAutoRenewCanceled', 'site-001', autoRenewCanceledPayload());
+    expect(result.platformMemberId).toBe(WIX_MEMBER_ID);
+    expect(result.planId).toBe(CONNECT_PLAN_ID);
+    expect(result.endDate).toBe('2026-10-01T00:00:00.000Z');
+  });
+
+  it.each([
+    'wixPricingPlans.orderEnded',
+    'wixPricingPlans.orderCanceled',
+    'wixPricingPlans.orderCancelled',
+    'wixPricingPlans.orderExpired',
+  ])('%s still maps to plan.cancelled and routes to revoke — access ends when the paid time does', (rawType) => {
+    const result = wixAdapter.parseEvent(rawType, 'site-001', wixRestOrderCreatedPayload);
+    expect(result.eventType).toBe('plan.cancelled');
+    expect(jobNameForEventType(result.eventType)).toBe('revoke');
+  });
+
+});
+
 // ─── Edge Cases ───────────────────────────────────────────────────────────────
 
 describe('[P3] Edge cases that could cause silent wrong-member provisioning', () => {

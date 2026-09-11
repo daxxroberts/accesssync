@@ -88,6 +88,11 @@
       return who + "'s plan started" + onPlan + at + '.';
     if (e === 'plan.cancelled' || e.indexOf('orderCanceled') !== -1 || e.indexOf('orderEnded') !== -1)
       return who + "'s plan was cancelled" + onPlan + at + '.';
+    // Auto-renew hotfix (2026-09-10): adapters/wix/wix-adapter.js normalizes
+    // orderAutoRenewCanceled to this non-routable type — nothing is queued. The
+    // order stays ACTIVE and paid until Wix fires orderEnded (→ plan.cancelled).
+    if (e === 'plan.autorenew_cancelled' || e === 'wixPricingPlans.orderAutoRenewCanceled')
+      return who + ' turned off auto-renew' + onPlan + at + ". Their plan is still paid until it ends, so their door access stays — AccessSync removes it when Wix says the plan has ended.";
     if (e === 'plan.unpaid_order')
       return 'An unpaid Wix order arrived' + onPlan + ' — dropped, no access granted.';
     if (e === 'booking.confirmed') return who + ' confirmed a booking' + at + '.';
@@ -136,7 +141,7 @@
     if (e === 'kisi.role.recovery_succeeded' || e === 'KISI_ROLE_RECOVERY_SUCCEEDED')
       return '✓ Kisi role recovery succeeded — reusing existing assignment.';
     if (e === 'kisi.role.conflict_unresolvable' || e === 'KISI_ROLE_CONFLICT_UNRESOLVABLE')
-      return "Kisi said the assignment exists but we can't find it — manual investigation needed.";
+      return "Kisi said this person already has access to a door, but AccessSync couldn't find that access record — so it didn't record it. Nothing was removed. Check their door groups in Kisi.";
     if (e === 'kisi.role.assign_failed' || e === 'KISI_ROLE_ASSIGN_FAILED')
       return 'Kisi rejected the role assignment — ' + who + ' did not receive door access.';
     if (e === 'queue.grant.complete' || e === 'QUEUE_GRANT_COMPLETE')
@@ -177,7 +182,56 @@
     if (e === 'kisi.user.delete_skipped_already_gone' || e === 'KISI_USER_DELETE_SKIPPED_ALREADY_GONE')
       return who + "'s Kisi user was already gone — nothing to delete.";
 
-    if (e.indexOf('grant.') === 0)                return 'Grant step: ' + e.replace('grant.', '').replace(/_/g, ' ') + '.';
+    // Phase 1 "stop the bleeding" (2026-09-10) — guards and hardened reads outside
+    // the sweep. The grant.* entries MUST stay above the 'grant.' prefix fallback
+    // below. Voice: a gym owner reading the timeline — say whether anyone lost access.
+    // Fix round (2026-09-10, F3/F4): each of these fails ONE door, not the whole
+    // grant — doors already recorded are kept and the rest are still tried. The
+    // job only fails if no door at all could be recorded.
+    if (e === 'grant.user_gone' || e === 'GRANT_USER_GONE')
+      return who + "'s Kisi account no longer exists, so AccessSync couldn't add their door access" + onPlan + at +
+        '. The door itself is fine and was left alone, and any door access already recorded was kept. Check ' +
+        (c.member ? 'their' : 'the member\'s') + ' account in Kisi.';
+    if (e === 'grant.not_found_ambiguous' || e === 'GRANT_NOT_FOUND_AMBIGUOUS')
+      return 'Kisi said something was missing while adding ' + who + "'s door access" + at +
+        ", and AccessSync couldn't tell whether it was the member or the door — so it didn't add that door and left the door alone. Any other doors on the plan were still tried. Check the Errors page.";
+    if (e === 'grant.role.conflict_unresolved' || e === 'GRANT_ROLE_CONFLICT_UNRESOLVED')
+      return "Couldn't record one of " + who + "'s doors" + door + at + " — Kisi says they already have access to it, but AccessSync couldn't find the matching access record, so it left it alone. Any other doors on the plan were still tried. Check " +
+        (c.member ? 'their' : 'the member\'s') + ' door groups in Kisi.';
+    if (e === 'adapter.finalize_revoke.refused_shared_user' || e === 'ADAPTER_FINALIZE_REVOKE_REFUSED_SHARED_USER')
+      return 'Kept ' + who + "'s Kisi account instead of deleting it — another member uses the same Kisi account" + at +
+        '. Nobody else lost access.';
+    if (e === 'adapter.finalize_revoke.refused_other_assignments' || e === 'ADAPTER_FINALIZE_REVOKE_REFUSED_OTHER_ASSIGNMENTS')
+      return 'Kept ' + who + "'s Kisi account instead of deleting it — it still has door access that AccessSync didn't add" + at +
+        '. That access was left alone.';
+    if (e === 'adapter.finalize_revoke.assignment_check_failed' || e === 'ADAPTER_FINALIZE_REVOKE_ASSIGNMENT_CHECK_FAILED')
+      return 'Kept ' + who + "'s Kisi account instead of deleting it — AccessSync couldn't check what other door access it has, so it didn't delete on a guess. Nothing else was removed.";
+    if (e === 'adapter.not_paying.record_failed' || e === 'ADAPTER_NOT_PAYING_RECORD_FAILED')
+      return "Couldn't note that a member wasn't paying in Wix during a sync — nothing was removed. The next sync notes it again.";
+    if (e === 'adapter.not_paying.clear_failed' || e === 'ADAPTER_NOT_PAYING_CLEAR_FAILED')
+      return "Couldn't reset a member's not-paying count after they showed as paying again — nothing was removed. The next sync tries again.";
+    if (e === 'adapter.not_paying.columns_missing' || e === 'ADAPTER_NOT_PAYING_COLUMNS_MISSING')
+      return "Not-paying tracking isn't switched on in the database yet (update pending) — so nobody can be removed for not paying.";
+    if (e === 'kisi.user.find_no_exact_match' || e === 'KISI_USER_FIND_NO_EXACT_MATCH')
+      return "Kisi had no account with exactly this member's email — AccessSync didn't reuse a near match, so door access can't land on the wrong person.";
+    if (e === 'kisi.page_integrity_failed' || e === 'KISI_PAGE_INTEGRITY_FAILED')
+      return "Kisi sent back a list that didn't look complete — AccessSync stopped rather than act on partial data, so nothing was changed or deleted because of it.";
+    if (e === 'wix.orders.no_member_id' || e === 'WIX_ORDERS_NO_MEMBER_ID') {
+      var nm = (ev.payload || ev.detail || {}).count;
+      return (nm != null ? nm + ' Wix ' + (nm === 1 ? 'order' : 'orders') : 'Some Wix orders') +
+        ' had no member attached, so a sync skipped ' + (nm === 1 ? 'it' : 'them') + ' — nobody gained or lost access because of ' + (nm === 1 ? 'it.' : 'them.');
+    }
+    if (e === 'wix.orders_classified.fetch_failed' || e === 'WIX_ORDERS_CLASSIFIED_FETCH_FAILED')
+      return "Couldn't read orders from Wix during a sync — AccessSync stopped and changed nothing. Nobody lost access.";
+    if (e === 'admin.retry.unroutable_event_type' || e === 'ADMIN_RETRY_UNROUTABLE_EVENT_TYPE')
+      return "A retry was refused — this failed job isn't a door-access grant or removal, so there was nothing to re-run. It stays open on the Errors list.";
+    if (e === 'admin.retry.unreadable_payload' || e === 'ADMIN_RETRY_UNREADABLE_PAYLOAD')
+      return "A retry was refused — the failed job's saved details couldn't be read, so nothing was re-run. It stays open on the Errors list.";
+    if (e === 'admin.retry.revoke_disabled' || e === 'ADMIN_RETRY_REVOKE_DISABLED')
+      return "A retry was refused — it would have removed someone's door access, and retrying removals is paused while AccessSync's safety checks roll out. " +
+        'Nothing was changed and it stays open on the Errors list. If this person should lose access, remove them in Kisi.';
+
+    if (e.indexOf('grant.') === 0)               return 'Grant step: ' + e.replace('grant.', '').replace(/_/g, ' ') + '.';
     if (e.indexOf('revoke.') === 0)               return 'Revoke step: ' + e.replace('revoke.', '').replace(/_/g, ' ') + '.';
     if (e.indexOf('hmac.') === 0)                 return 'Webhook signature: ' + e.replace('hmac.', '').replace(/_/g, ' ') + '.';
 
@@ -187,7 +241,53 @@
     if (e === 'group_not_found')                  return 'Hardware group missing — the door it points to no longer exists' + at + '.';
     if (e === 'untraceable_hardware_access')      return who + ' has door access but no plan or booking justifies it' + at + '.';
     if (e === 'wix_api_unavailable')              return "Wix API didn't respond during reconciliation" + at + '.';
-    if (e === 'lockdown_detected')                return 'A door is currently in lockdown' + at + '.';
+    if (e === 'wix_snapshot_anomaly')
+      return "Wix gave membership numbers that didn't add up" + at + ', so AccessSync paused removals rather than guess. Nobody lost access; the next sync checks again.';
+    // Phase 1 (2026-09-10) alert types — core/reconciliation.js + adapters/standard-adapter.js
+    // finalizeRevoke. Same meaning as core/operator-email-templates.js describeConfigAlert.
+    // Never read the row's hardware_ref here: for these it holds machine detail
+    // ("mass_revoke:wix_orders:…", "member:<id>", Kisi user ids), not a door name.
+    // Only alert types some code writes are listed. The v2 gate's aliases
+    // (revoke_batch_would_revoke_all, revoke_revalidation_failed, revoke_mass_revoke,
+    // revoke_snapshot_unstable, revoke_auto_revoke_*, revoke_dry_run,
+    // revoke_observation_only, revoke_strike_pending) were removed in the fix round
+    // (2026-09-10): nothing writes them and none was ever committed, so no stored
+    // row can carry one. revoke_unknown stays — it is reconciliation.js
+    // _insertAlertOnce's fallback when an alert type is missing.
+    var memberStart = c.member || 'A member';
+    if (e === 'kisi_api_unavailable')
+      return "Kisi didn't respond during a sync" + at + ' — AccessSync stopped and changed nothing. Nobody lost access; the next sync tries again.';
+    if (e === 'hardware_api_unavailable')
+      return "The door system didn't respond during a sync" + at + ' — AccessSync stopped and changed nothing. Nobody lost access; the next sync tries again.';
+    if (e === 'revoke_batch_mass_revoke')
+      return 'A sync was about to remove door access for an unusually large number of members' + at +
+        ' at once, so AccessSync stopped and removed no one. Nobody lost access. Check that your plans and memberships in Wix look right.';
+    if (e === 'revoke_invalid_proposal' || e === 'revoke_unknown')
+      return 'AccessSync ran into an internal problem while checking memberships' + at +
+        ' and stopped before changing anything. Nobody lost access.';
+    if (e === 'finalize_refused_other_assignments')
+      return "AccessSync didn't delete " + (c.member ? c.member + "'s" : "a member's") + ' Kisi account because they still have door access' + at +
+        " that wasn't added by AccessSync — nothing was removed. If they shouldn't have that access anymore, remove it in Kisi.";
+    if (e === 'finalize_refused_shared_user')
+      return "AccessSync didn't delete " + (c.member ? c.member + "'s" : "a member's") + ' Kisi account because another member' + at +
+        ' uses the same Kisi account — nothing was removed. Check in Kisi that each person has their own account.';
+    if (e === 'sweep_repair_pending')
+      return (c.member ? c.member + ' is a paying member, but their door access' : "A paying member's door access") +
+        at + ' is missing in Kisi. AccessSync will restore it once automatic repair is switched on; until then you can re-add it in Kisi.';
+    if (e === 'sweep_removal_pending')
+      return memberStart + at + " no longer shows as paying in Wix. Automatic removal is paused while AccessSync's safety checks roll out, " +
+        'so nothing was removed and they can still get in. If they really stopped paying, you can remove their access in Kisi.';
+    if (e === 'revoke_holder_lapse_pending')
+      return memberStart + at + " is on a shared plan whose main member no longer shows as paying in Wix. Automatic removal is paused while AccessSync's safety checks roll out, " +
+        'so nothing was removed and they can still get in.';
+    // Fix round (2026-09-10, F2): a declined, pending or unrecognized Wix payment is
+    // not a cancellation — the sweep never proposes it for removal. One alert per
+    // membership (a family is one alert, naming the main member).
+    if (e === 'revoke_held_payment_state')
+      return (c.member ? c.member + "'s Wix payment" : "A member's Wix payment") + at +
+        ' is declined, pending or unrecognized — AccessSync is leaving their door access alone. Nobody lost access. ' +
+        "If the payment doesn't go through and they shouldn't get in, you can remove their access in Kisi.";
+    if (e === 'lockdown_detected')               return 'A door is currently in lockdown' + at + '.';
     if (e === 'api_key_invalid_after_rotation')   return 'Hardware API key was rotated but new key is invalid' + at + '.';
 
     // Activity (operator mutations)
@@ -376,6 +476,8 @@
       return 'Reconcile queued a grant for ' + who + onPlan + at + '.';
     if (e === 'reconciliation.revoke_queued' || e === 'RECONCILIATION_REVOKE_QUEUED')
       return 'Reconcile queued a revoke for ' + who + onPlan + at + '.';
+    // sanity_gate_* are retired (2026-09-10, no longer emitted) — kept so older
+    // diagnostic_log rows still read as sentences.
     if (e === 'reconciliation.sanity_gate_triggered' || e === 'RECONCILIATION_SANITY_GATE_TRIGGERED')
       return 'Reconcile sanity gate triggered — pending bulk-revoke count exceeded threshold.';
     if (e === 'reconciliation.sanity_gate_requery_failed' || e === 'RECONCILIATION_SANITY_GATE_REQUERY_FAILED')
@@ -384,6 +486,118 @@
       return 'Reconcile sanity gate cleared on requery — proceeding with revokes.';
     if (e === 'reconciliation.sanity_gate_aborted' || e === 'RECONCILIATION_SANITY_GATE_ABORTED')
       return 'Reconcile sanity gate aborted bulk-revoke pass — operator review required.';
+    // Phase 1 "stop the bleeding" (2026-09-10) — core/reconciliation.js + core/revoke-policy.js.
+    // The sweep is observation-only: it finds members who look like they should
+    // lose access, records them, and removes no one. These say what it found and why
+    // nothing happened. Voice: a gym owner — always say whether anyone lost access.
+    if (e === 'reconciliation.revokes_held' || e === 'RECONCILIATION_REVOKES_HELD') {
+      var rh = ev.payload || ev.detail || {};
+      var heldN = rh.heldMembers != null ? rh.heldMembers : rh.heldCount;
+      var heldWho = heldN != null ? heldN + (heldN === 1 ? ' member looks' : ' members look') : 'Some members look';
+      var heldLead = heldWho + ' like they should lose door access' + at;
+      if (rh.reason === 'observation_only')
+        return heldLead + ", but automatic removal is paused while AccessSync's safety checks roll out. Nobody lost access.";
+      if (rh.reason === 'snapshot_unstable')
+        return heldLead + ", but Wix gave two different member lists moments apart, so AccessSync removed no one. Nobody lost access; the next sync checks again.";
+      if (rh.reason === 'mass_revoke')
+        return heldLead + ", but that's an unusually large share of the gym at once, which points to a data problem, so AccessSync removed no one. Nobody lost access.";
+      if (rh.reason === 'invalid_proposal')
+        return heldLead + ', but AccessSync hit an internal problem checking them and removed no one. Nobody lost access.';
+      if (rh.reason === 'auto_revoke_off')
+        return heldLead + ', but automatic removals are switched off for this gym. Nobody lost access.';
+      if (rh.reason === 'dry_run')
+        return heldLead + ", but automatic removal is paused while AccessSync's safety checks roll out. Nobody lost access.";
+      if (rh.reason === 'strike_pending')
+        return heldLead + ", but they haven't been unpaid long enough yet to act on. Nobody lost access.";
+      return heldLead + ', but AccessSync held back. Nobody lost access.';
+    }
+    if (e === 'reconciliation.revoke_held' || e === 'RECONCILIATION_REVOKE_HELD') {
+      var rp = ev.payload || ev.detail || {};
+      var why1 = rp.reason === 'dry_run'
+        ? "automatic removal is paused while AccessSync's safety checks roll out"
+        : 'automatic removals are switched off for this gym';
+      if (rp.path === 'holder_seat_release')
+        return 'A plan holder\'s released seat was left in place' + at + ' — ' + why1 + '. The seat will not be re-added.';
+      if (rp.path === 'reconcile_member')
+        return 'Re-check found a member with no active plan who still has door access' + at + ' — ' + why1 + ', so their access was left in place.';
+      return 'A door-access removal was held back' + at + ' — ' + why1 + '. Nobody lost access.';
+    }
+    // Fix round (2026-09-10, F2): members whose Wix payment is declined, pending or
+    // unrecognized (for a sub-member: their main member's) — never proposed for
+    // removal; any not-paying count they had is reset. Counted in memberships (a
+    // family is one).
+    if (e === 'reconciliation.payment_state_held' || e === 'RECONCILIATION_PAYMENT_STATE_HELD') {
+      var ph = ev.payload || ev.detail || {};
+      var phN = ph.heldUnits != null ? ph.heldUnits : ph.heldCount;
+      return (phN != null ? phN + (phN === 1 ? ' membership has' : ' memberships have') : 'Some memberships have') +
+        ' a Wix payment that is declined, pending or unrecognized' + at +
+        ' — AccessSync is leaving their door access alone. Nobody lost access.';
+    }
+    if (e === 'reconciliation.holder_seated_read_failed' || e === 'RECONCILIATION_HOLDER_SEATED_READ_FAILED')
+      return "Couldn't check whether a plan holder had given up their own seat during a sync" + at +
+        ' — that plan was left exactly as it was for this member. Nobody lost access; the next sync checks again.';
+    if (e === 'reconcileMember.hardware_fetch_failed' || e === 'RECONCILEMEMBER_HARDWARE_FETCH_FAILED')
+      return "Couldn't reach the door system while re-checking " + who + at + ' — no changes were made. Try again in a few minutes.';
+    if (e === 'reconciliation.repairs_pending' || e === 'RECONCILIATION_REPAIRS_PENDING') {
+      var rr = ev.payload || ev.detail || {};
+      var repN = rr.repairMembers != null ? rr.repairMembers : rr.repairCount;
+      return (repN != null ? repN + ' paying ' + (repN === 1 ? 'member is' : 'members are') : 'Some paying members are') +
+        ' missing door access in Kisi' + at + '. AccessSync will restore it once automatic repair is switched on; until then you can re-add it in Kisi.';
+    }
+    if (e === 'reconciliation.wix_reads_disagreed' || e === 'RECONCILIATION_WIX_READS_DISAGREED')
+      return 'Wix gave two slightly different member lists moments apart' + at + ' — anyone paying in either list was treated as paying. Nobody lost access.';
+    if (e === 'reconciliation.kisi_fetch_failed' || e === 'RECONCILIATION_KISI_FETCH_FAILED')
+      return "Kisi didn't respond during a sync" + at + ' — AccessSync stopped and changed nothing. Nobody lost access; the next sync tries again.';
+    if (e === 'reconciliation.client_sync_skipped_locked' || e === 'RECONCILIATION_CLIENT_SYNC_SKIPPED_LOCKED')
+      return 'Skipped a sync' + at + ' — another sync for this gym was already running. Nothing changed.';
+    if (e === 'reconciliation.client_lock_unavailable' || e === 'RECONCILIATION_CLIENT_LOCK_UNAVAILABLE')
+      return "Couldn't take the sync lock" + at + " — the sync ran anyway. That's safe for now because syncs don't remove anyone.";
+    if (e === 'reconciliation.client_lock_release_failed' || e === 'RECONCILIATION_CLIENT_LOCK_RELEASE_FAILED')
+      return "Couldn't cleanly release the sync lock" + at + ' — the connection was closed instead, so the next sync is not blocked.';
+    if (e === 'reconciliation.active_source_census_failed' || e === 'RECONCILIATION_ACTIVE_SOURCE_CENSUS_FAILED')
+      return "Couldn't load the list of members with door access during a sync" + at + ' — the not-paying check was skipped. Nobody lost access.';
+    if (e === 'reconciliation.strike_clock_unavailable' || e === 'RECONCILIATION_STRIKE_CLOCK_UNAVAILABLE')
+      return "Not-paying tracking isn't switched on in the database yet (update pending) — so nobody can be removed for not paying.";
+    if (e === 'reconciliation.strike_read_failed' || e === 'RECONCILIATION_STRIKE_READ_FAILED')
+      return "Couldn't read members' not-paying counts during a sync" + at + ' — nothing was removed.';
+    if (e === 'reconciliation.strike_record_failed' || e === 'RECONCILIATION_STRIKE_RECORD_FAILED')
+      return "Couldn't note that a member wasn't paying" + at + ' — nothing was removed. The next sync notes it again.';
+    if (e === 'reconciliation.strike_clear_failed' || e === 'RECONCILIATION_STRIKE_CLEAR_FAILED')
+      return "Couldn't reset a member's not-paying count after they showed as paying again" + at + ' — nothing was removed. The next sync tries again.';
+    if (e === 'reconciliation.proposal_population_mismatch' || e === 'RECONCILIATION_PROPOSAL_POPULATION_MISMATCH')
+      return "A sync's safety check found removal candidates it couldn't account for" + at + ' — they were held. Nobody lost access.';
+    if (e === 'reconciliation.flush_ignored_observation_only' || e === 'RECONCILIATION_FLUSH_IGNORED_OBSERVATION_ONLY')
+      return 'A sync tried to approve door-access removals' + at + ', but removals are switched off in this version — nothing was removed. Worth a look by AccessSync support.';
+    if (e === 'reconciliation.revoke_enqueue_refused_observation_only' || e === 'RECONCILIATION_REVOKE_ENQUEUE_REFUSED_OBSERVATION_ONLY')
+      return 'A door-access removal was blocked' + at + ' — removals are switched off in this version. Nobody lost access. Worth a look by AccessSync support.';
+    if (e === 'reconciliation.alert_write_failed' || e === 'RECONCILIATION_ALERT_WRITE_FAILED')
+      return "Couldn't save an alert during a sync" + at + ' — nothing else was affected.';
+    if (e === 'reconciliation.proposal_log_unavailable' || e === 'RECONCILIATION_PROPOSAL_LOG_UNAVAILABLE')
+      return "The sync's decision log isn't set up in the database yet (update pending) — the sync carried on. Nothing was removed.";
+    if (e === 'reconciliation.proposal_log_failed' || e === 'RECONCILIATION_PROPOSAL_LOG_FAILED')
+      return "Couldn't save the sync's decision log" + at + ' — the sync carried on. Nothing was removed.';
+    if (e === 'reconciliation.revoke_queue_failed' || e === 'RECONCILIATION_REVOKE_QUEUE_FAILED')
+      return "Couldn't queue a door-access removal" + at + ' — the member keeps access for now; the next sync tries again.';
+    if (e === 'reconciliation.requeue_skipped_unroutable' || e === 'RECONCILIATION_REQUEUE_SKIPPED_UNROUTABLE') {
+      var ru = ev.payload || ev.detail || {};
+      return 'A failed job was not retried' + (ru.eventType ? ' — its event type (' + ru.eventType + ')' : ' — its event type') +
+        " isn't a grant or a removal, so AccessSync left it alone.";
+    }
+    if (e === 'reconciliation.requeue_skipped_revoke' || e === 'RECONCILIATION_REQUEUE_SKIPPED_REVOKE')
+      return 'A failed door-access removal was not retried — syncs only retry grants right now. Nobody lost access.';
+    if (e === 'reconciliation.requeue_skipped_not_paying' || e === 'RECONCILIATION_REQUEUE_SKIPPED_NOT_PAYING') {
+      var rn = ev.payload || ev.detail || {};
+      if (rn.reason === 'no_wix_read')
+        return "A failed door-access grant was not retried — Wix couldn't be checked this sync. It's tried again once Wix shows the member as paying.";
+      return "A failed door-access grant was not retried — the member isn't paying for " +
+        (rn.reason === 'plan_not_paying' ? 'that plan' : 'a plan') + " in Wix right now. It's tried again once Wix shows them as paying.";
+    }
+    if (e === 'reconciliation.requeue_skipped_unreadable_payload' || e === 'RECONCILIATION_REQUEUE_SKIPPED_UNREADABLE_PAYLOAD')
+      return "A failed job was not retried — its saved details couldn't be read, so AccessSync left it alone.";
+    if (e === 'reconciliation.requeue_record_failed' || e === 'RECONCILIATION_REQUEUE_RECORD_FAILED')
+      return "A failed job couldn't be re-checked during a sync — skipped; the rest of the sync carried on.";
+    if (e === 'reconciliation.kill_switch_read_failed' || e === 'RECONCILIATION_KILL_SWITCH_READ_FAILED')
+      return "Couldn't read the automatic-removal setting" + at + ' — removals are paused to be safe. Grants still run.';
     if (e === 'reconciliation.no_api_key' || e === 'RECONCILIATION_NO_API_KEY')
       return 'Reconcile skipped a location — no hardware API key configured.';
     if (e === 'reconciliation.lockdown_alert_failed' || e === 'RECONCILIATION_LOCKDOWN_ALERT_FAILED')

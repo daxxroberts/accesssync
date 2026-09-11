@@ -41,6 +41,7 @@ jest.mock('../../adapters/hardware-adapter', () => ({
 jest.mock('../../adapters/wix/wix-plans-api', () => ({
   listActiveOrders:      jest.fn(),
   listConfirmedBookings: jest.fn(),
+  listOrdersClassified:  jest.fn(), // Phase 1: the sweep's (double) Wix read
 }));
 
 jest.mock('../../core/plan-mapping-resolver', () => ({ resolve: jest.fn() }));
@@ -73,6 +74,12 @@ const KISI_RA_ID    = '96218158';
 
 beforeEach(() => {
   jest.clearAllMocks();
+  reconciliation._doubleReadDelayMs = 0; // the two Wix reads run back to back in tests
+});
+
+// Phase 1 tripwire (2026-09-10): no reconciliation path may enqueue a revoke.
+afterEach(() => {
+  expect(eventQueue.add.mock.calls.filter(c => c[0] === 'revoke')).toEqual([]);
 });
 
 describe('[P3] OB-225 — Pass 2 source-lookup type-safe varchar matching', () => {
@@ -90,8 +97,9 @@ describe('[P3] OB-225 — Pass 2 source-lookup type-safe varchar matching', () =
       }],
     });
     db.query.mockResolvedValueOnce({ rows: [{ id: 'run-001' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ auto_revoke_mode: 'dry_run' }] }); // auto_revoke_mode read
 
-    wixPlansApi.listActiveOrders.mockResolvedValue([]);
+    wixPlansApi.listOrdersClassified.mockResolvedValue([]);
     wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
 
     // Kisi returns numeric IDs (this is the wire-format reality).
@@ -106,6 +114,10 @@ describe('[P3] OB-225 — Pass 2 source-lookup type-safe varchar matching', () =
     // Pass 2 source-check — return a matching row (the bug is in the query SHAPE,
     // not in our ability to mock a result)
     db.query.mockResolvedValueOnce({ rows: [{ id: 'mas-row-drew', status: 'active' }] });
+    // (Pass 3: hardwareAdapter.listAllUsers is not mocked → outage short-circuit, no query)
+    db.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // Pass 2 backfill UPDATE role_assignment_id
+    db.query.mockResolvedValueOnce({ rows: [] });              // Pass 1.5 sub-member sources
+    db.query.mockResolvedValueOnce({ rows: [] });              // active-source census (Phase 1)
 
     // Remainder of sweep
     db.query.mockResolvedValueOnce({ rowCount: 1 });         // last_active_member_count
@@ -157,8 +169,9 @@ describe('[P3] OB-225 — Pass 2 source-lookup type-safe varchar matching', () =
       }],
     });
     db.query.mockResolvedValueOnce({ rows: [{ id: 'run-001' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ auto_revoke_mode: 'dry_run' }] }); // auto_revoke_mode read
 
-    wixPlansApi.listActiveOrders.mockResolvedValue([]);
+    wixPlansApi.listOrdersClassified.mockResolvedValue([]);
     wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
 
     // Kisi returns numeric IDs — Drew's real-world shape.
@@ -170,6 +183,9 @@ describe('[P3] OB-225 — Pass 2 source-lookup type-safe varchar matching', () =
     db.query.mockResolvedValueOnce({ rows: [{ hardware_group_id: String(KISI_GROUP_ID) }] }); // A12 universe
     // Pass 2 source-check: row EXISTS — A11 must NOT log
     db.query.mockResolvedValueOnce({ rows: [{ id: 'mas-row-drew', status: 'active' }] });
+    db.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // Pass 2 backfill UPDATE role_assignment_id
+    db.query.mockResolvedValueOnce({ rows: [] });              // Pass 1.5 sub-member sources
+    db.query.mockResolvedValueOnce({ rows: [] });              // active-source census (Phase 1)
 
     db.query.mockResolvedValueOnce({ rowCount: 1 });         // last_active_member_count
     db.query.mockResolvedValueOnce({ rowCount: 1 });         // close reconciliation_run
@@ -187,5 +203,7 @@ describe('[P3] OB-225 — Pass 2 source-lookup type-safe varchar matching', () =
     // A11 contract under fix: existing DB source row means NO false-positive log.
     const orphanLog = log.warn.mock.calls.find(c => c[0] === 'reconciliation.unmanaged_assignment_observed');
     expect(orphanLog).toBeUndefined();
+    // ...and that is because the source check ran and matched — not because the sync stopped early.
+    expect(db.query.mock.calls.some(c => String(c[0]).includes('ma.hardware_user_id::text = $2'))).toBe(true);
   });
 });

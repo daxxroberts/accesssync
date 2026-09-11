@@ -134,7 +134,7 @@ const TRIAGE_BACKLOG = new Set([
   'reconciliation.pass_1_2_complete', 'reconciliation.pass_1_5_complete',
   'reconciliation.pass_3_complete', 'reconciliation.pass_3_skipped_unsupported_platform',
   'reconciliation.revoke_queued', 'reconciliation.role_assignment_backfilled',
-  'reconciliation.sanity_gate_resolved_proceed', 'reconciliation.skipped',
+  'reconciliation.skipped',
   'reconciliation.source_inserted_from_wix', 'reconciliation.source_promoted_from_cancelled',
   'reconciliation.sweep_complete', 'reconciliation.wix_sync_complete',
   'reconciliation.wix_sync_start', 'retry.notify.sent', 'revoke.skipped.never_provisioned',

@@ -376,7 +376,79 @@ function describeConfigAlert(row) {
   const affected = Number(r.affectedMembers) || 0;
   const memberNote = affected > 0 ? ' ' + members(affected) + ' may have lost access.' : '';
 
+  // Removal-safety alerts (reconciliation sweep + finalize guards). These NEVER
+  // read r.doorName: for these types config_alert_log.hardware_ref carries machine
+  // detail (counts like "proposed=12", Kisi user ids), not a door name. Each one
+  // says whether anyone lost access and what, if anything, to do.
+  // r.memberName is optional — the nightly digest does not pass one today, so
+  // every sentence reads naturally without it.
+  const person     = r.memberName || null;
+  const whoStart   = person || 'A member';                    // sentence start
+  const possessive = person ? person + '’s' : 'a member’s';
+  const hardware   = r.platform || 'Kisi';
+  const pausedNote = 'Automatic removal is paused while AccessSync’s safety checks roll out, '
+    + 'so nothing was removed and they can still get in.';
+
+  // Only alert types some code actually writes are cataloged here. The v2 gate's
+  // aliases (revoke_batch_would_revoke_all, revoke_revalidation_failed,
+  // revoke_mass_revoke, revoke_snapshot_unstable, revoke_auto_revoke_*,
+  // revoke_dry_run, revoke_observation_only, revoke_strike_pending) were removed
+  // 2026-09-10: nothing writes them (core/reconciliation.js maps each anomaly
+  // hold to one of the three types below and raises no alert for mode or
+  // observation-only holds), and none ever shipped. A stray one still gets the
+  // readable generic sentence from `default`.
   switch (r.alert_type) {
+    case 'revoke_batch_mass_revoke':
+      return 'AccessSync was about to remove door access for an unusually large number of members at '
+        + location + ' at once, so it stopped and removed no one. Nobody lost access. '
+        + 'Check that your plans and memberships in Wix look right — if they do, reply to this email and we’ll look into it.';
+    case 'wix_snapshot_anomaly':
+      return 'Wix gave AccessSync membership numbers for ' + location
+        + ' that didn’t add up, so AccessSync paused removals rather than guess. Nobody lost access. '
+        + 'No action needed — AccessSync checks again on the next sync.';
+    case 'revoke_invalid_proposal':
+      return 'AccessSync ran into an internal problem while checking memberships at ' + location
+        + ' and stopped before changing anything. Nobody lost access. '
+        + 'No action needed on your side — AccessSync tries again on the next sync.';
+    case 'finalize_refused_other_assignments':
+      return 'AccessSync didn’t delete ' + possessive + ' ' + hardware + ' account because they still have door access at '
+        + location + ' that wasn’t added by AccessSync — nothing was removed. '
+        + 'If they shouldn’t have that access anymore, remove it in ' + hardware + '.';
+    case 'finalize_refused_shared_user':
+      return 'AccessSync didn’t delete ' + possessive + ' ' + hardware + ' account because another member at '
+        + location + ' uses the same ' + hardware + ' account — nothing was removed. '
+        + 'Check in ' + hardware + ' that each person has their own account.';
+    case 'sweep_repair_pending':
+      return (person
+        ? person + ' is a paying member, but their door access at ' + location + ' is missing in ' + hardware + '. '
+        : 'A paying member’s door access at ' + location + ' is missing in ' + hardware + '. ')
+        + 'AccessSync will restore it once automatic repair is switched on; until then you can re-add it in ' + hardware + '.';
+    case 'sweep_removal_pending':
+      return whoStart + ' at ' + location + ' no longer shows as paying in Wix. ' + pausedNote + ' '
+        + 'Check their membership in Wix — if they really have stopped paying and shouldn’t get in, you can remove their access in '
+        + hardware + '.';
+    case 'revoke_holder_lapse_pending':
+      return whoStart + ' at ' + location + ' is on a shared plan whose main member no longer shows as paying in Wix. '
+        + pausedNote + ' Check the main member’s plan in Wix — if it has really ended, you can remove '
+        + (person ? possessive : 'their') + ' access in ' + hardware + '.';
+    case 'revoke_held_payment_state':
+      return (person ? possessive + ' Wix payment' : 'A member’s Wix payment') + ' at ' + location
+        + ' is declined, pending or unrecognized — AccessSync is leaving their door access alone. Nobody lost access. '
+        + 'Check the payment in Wix — if it doesn’t go through and they shouldn’t get in, you can remove their access in '
+        + hardware + '.';
+
+    // A sync couldn't read the door system, so it stopped before changing
+    // anything (reconciliation aborts the client's sync). hardware_ref carries
+    // "status=… code=…" — never shown.
+    case 'kisi_api_unavailable':
+      return 'AccessSync couldn’t reach Kisi for ' + location
+        + ' during a sync — it stopped and changed nothing. Nobody lost access. '
+        + 'This usually clears up on its own; AccessSync tries again on the next sync.';
+    case 'hardware_api_unavailable':
+      return 'AccessSync couldn’t reach ' + platform + ' for ' + location
+        + ' during a sync — it stopped and changed nothing. Nobody lost access. '
+        + 'This usually clears up on its own; AccessSync tries again on the next sync.';
+
     case 'group_not_found':
     case 'missing_group':
       return door + ' at ' + location + ' is no longer in ' + platform + '.' + memberNote;
@@ -384,8 +456,6 @@ function describeConfigAlert(row) {
       return 'The access key for ' + location + ' stopped working after it was changed.';
     case 'wix_api_unavailable':
       return 'AccessSync couldn’t reach Wix for ' + location + ' during a sync. This usually clears up on its own.';
-    case 'wix_snapshot_anomaly':
-      return 'Wix reported unexpected membership numbers for ' + location + '. AccessSync paused rather than guess.';
     case 'lockdown_detected':
       return 'A door at ' + location + ' was in lockdown, so AccessSync skipped it instead of forcing a change.';
     case 'untraceable_hardware_access':

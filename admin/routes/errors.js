@@ -15,8 +15,85 @@ const { log } = require('../../core/logger');
 const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../../core/redis-utils');
 const { mintTraceId } = require('../../core/trace-context');
+const { jobNameForEventType } = require('../../core/event-routing');
 
 const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
+
+// ── Retry routing ──────────────────────────────────────────────
+// Both Retry handlers below used to carry their own grant list
+// [plan.purchased, payment.recovered, booking.confirmed] and send EVERYTHING
+// ELSE to 'revoke'. So Retry on a failed plan.started grant (delayed-start
+// member) enqueued a REVOKE, and Retry on a row that is not a member event at
+// all (e.g. source_retry_exhausted) also enqueued a revoke. The row was then
+// marked resolved, hiding the damage. Routing now goes through
+// core/event-routing.js: an event type is a grant, a revoke, or neither —
+// "neither" is refused (nothing queued, row left open), never promoted to a
+// revoke. Same for a payload that is missing, unparseable, or not an object.
+//
+// Phase 1 ("stop the bleeding", 2026-09-10): a retry that routes to 'revoke' is
+// REFUSED too. Replaying a stale removal hours or days later can take door
+// access from someone who has since paid, and Phase 1 enables no new removal
+// path. Nothing is queued and the row stays open, so the gym owner still sees
+// it and can remove the person in Kisi by hand if that is really wanted.
+// Grants replay exactly as before.
+
+const REVOKE_RETRY_DISABLED_MESSAGE =
+  'Retrying a door-access removal is paused while AccessSync\'s safety checks are rolled out. '
+  + 'Nothing was changed — if this person should lose access, remove them in Kisi.';
+
+// Refusal reason → the warn event it logs.
+const RETRY_REFUSED_EVENT = Object.freeze({
+  unroutable_event_type: 'admin.retry.unroutable_event_type',
+  unreadable_payload:    'admin.retry.unreadable_payload',
+  revoke_retry_disabled: 'admin.retry.revoke_disabled',
+});
+
+/** The saved standard event as a plain object, or null when it can't be read. */
+function readRetryPayload(payload) {
+  let standardEvent = payload;
+  if (typeof standardEvent === 'string') {
+    try { standardEvent = JSON.parse(standardEvent); } catch (_) { return null; }
+  }
+  if (!standardEvent || typeof standardEvent !== 'object' || Array.isArray(standardEvent)) return null;
+  return standardEvent;
+}
+
+/**
+ * Decide what replaying one error_queue row may enqueue.
+ * @returns {{ ok: true, jobName: 'grant', standardEvent: object }
+ *         | { ok: false, reason: 'unroutable_event_type'|'revoke_retry_disabled'|'unreadable_payload', error: string }}
+ */
+function planRetry(eventType, payload) {
+  const jobName = jobNameForEventType(eventType);
+  if (!jobName) {
+    return {
+      ok: false,
+      reason: 'unroutable_event_type',
+      error: 'This error can\'t be retried: '
+        + (eventType ? `"${eventType}" is not a grant or revoke event` : 'it has no event type')
+        + ', so there is no job to re-run. Nothing was queued and the error is still open.',
+    };
+  }
+  // Checked before the payload: a removal is refused whatever its saved event says.
+  if (jobName === 'revoke') {
+    return { ok: false, reason: 'revoke_retry_disabled', error: REVOKE_RETRY_DISABLED_MESSAGE };
+  }
+  const standardEvent = readRetryPayload(payload);
+  if (!standardEvent) {
+    return {
+      ok: false,
+      reason: 'unreadable_payload',
+      error: 'This error can\'t be retried: its saved event is missing or unreadable. '
+        + 'Nothing was queued and the error is still open.',
+    };
+  }
+  return { ok: true, jobName, standardEvent };
+}
+
+/** One warn per refused retry — event name is the refusal reason. */
+function warnRetryRefused(plan, ctx) {
+  log.warn(RETRY_REFUSED_EVENT[plan.reason], { ...ctx, reason: plan.reason });
+}
 
 // ── GET /admin/errors ──────────────────────────────────────────
 router.get('/', async (req, res) => {
@@ -141,11 +218,14 @@ router.post('/:id/retry', async (req, res) => {
     if (!errorRow.rows.length) return res.status(404).json({ error: 'Not found' });
 
     const { client_id: tenantId, event_type: eventType, payload } = errorRow.rows[0];
-    const standardEvent = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    const plan = planRetry(eventType, payload);
+    if (!plan.ok) {
+      // Refused: enqueue nothing and leave the row 'failed' so it stays visible.
+      warnRetryRefused(plan, { clientId: tenantId, errorId: req.params.id, eventType, route: 'admin.errors.retry' });
+      return res.status(422).json({ error: plan.error, reason: plan.reason });
+    }
+    const { jobName, standardEvent } = plan;
     if (!standardEvent.traceId) standardEvent.traceId = mintTraceId();
-
-    const jobName = ['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(eventType)
-      ? 'grant' : 'revoke';
 
     await eventQueue.add(jobName, { tenantId, standardEvent }, {
       jobId: `admin-retry-${req.params.id}-${Date.now()}`
@@ -174,7 +254,10 @@ router.post('/bulk-retry', async (req, res) => {
       return res.status(400).json({ error: 'ids array required' });
     }
 
-    const results = { queued: 0, failed: 0, errors: [] };
+    // skipped/skippedRows: rows refused by planRetry (unroutable event type, a
+    // removal — paused in Phase 1 — or unreadable payload) — nothing queued for
+    // them and they stay 'failed'.
+    const results = { queued: 0, failed: 0, skipped: 0, errors: [], skippedRows: [] };
 
     for (const id of ids) {
       try {
@@ -185,10 +268,15 @@ router.post('/bulk-retry', async (req, res) => {
         if (!errorRow.rows.length) { results.failed++; continue; }
 
         const { client_id: tenantId, event_type: eventType, payload } = errorRow.rows[0];
-        const standardEvent = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        const plan = planRetry(eventType, payload);
+        if (!plan.ok) {
+          warnRetryRefused(plan, { clientId: tenantId, errorId: id, eventType, route: 'admin.errors.bulk_retry' });
+          results.skipped++;
+          results.skippedRows.push({ id, reason: plan.reason, error: plan.error });
+          continue;
+        }
+        const { jobName, standardEvent } = plan;
         if (!standardEvent.traceId) standardEvent.traceId = mintTraceId();
-        const jobName = ['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(eventType)
-          ? 'grant' : 'revoke';
 
         await eventQueue.add(jobName, { tenantId, standardEvent }, {
           jobId: `admin-bulk-retry-${id}-${Date.now()}`

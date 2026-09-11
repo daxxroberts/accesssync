@@ -521,11 +521,16 @@
           return { kind: 'error', text: data.error || 'Sync failed' };
         }
         if (data.aborted) {
+          // Each entry: { text, kind }. 'locked' isn't a failure — another sync
+          // for this gym (the nightly sweep, or a second click) holds the lock.
           var reasonMap = {
-            wix_api_unavailable: 'Wix API unreachable — check your Wix API key',
-            hardware_api_unavailable: 'Door system unreachable — check your hardware API key',
+            wix_api_unavailable:      { text: 'Wix API unreachable — check your Wix API key', kind: 'error' },
+            hardware_api_unavailable: { text: 'Door system unreachable — check your hardware API key', kind: 'error' },
+            locked:                   { text: 'A sync is already running for this gym — try again in a minute', kind: 'info' },
           };
-          return { kind: 'error', text: reasonMap[data.reason] || ('Sync aborted — ' + (data.reason || 'unknown')) };
+          return Object.prototype.hasOwnProperty.call(reasonMap, data.reason)
+            ? reasonMap[data.reason]
+            : { kind: 'error', text: 'Sync aborted — ' + (data.reason || 'unknown') };
         }
         if (data.granted || data.revoked) {
           return { kind: 'success', text: (data.granted || 0) + ' granted · ' + (data.revoked || 0) + ' revoked' };

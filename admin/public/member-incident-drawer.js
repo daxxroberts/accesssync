@@ -131,7 +131,7 @@
       '.mid-foot{padding:11px 20px;border-top:1px solid var(--border,#E2E5EA);background:var(--surface,#F9FAFB);display:flex;align-items:center;gap:10px;font-size:11.5px}',
       '.mid-foot a{color:#4F6EF7;text-decoration:none;font-weight:500}',
       '.mid-foot a:hover{text-decoration:underline}',
-      '.mid-toast{position:fixed;bottom:22px;right:22px;background:var(--text,#1A2130);color:#fff;padding:10px 16px;border-radius:8px;font-size:12.5px;z-index:9100;opacity:0;transform:translateY(8px);transition:opacity .15s,transform .15s}',
+      '.mid-toast{position:fixed;bottom:22px;right:22px;max-width:min(420px,calc(100vw - 44px));line-height:1.45;background:var(--text,#1A2130);color:#fff;padding:10px 16px;border-radius:8px;font-size:12.5px;z-index:9100;opacity:0;transform:translateY(8px);transition:opacity .15s,transform .15s}',
       '.mid-toast.show{opacity:1;transform:translateY(0)}',
     ].join('\n');
     document.head.appendChild(s);
@@ -163,7 +163,9 @@
     document.body.appendChild(wrap);
   }
 
-  function showToast(msg) {
+  // textContent, never innerHTML — safe for server-supplied text. ms is optional
+  // (default 2200); longer server explanations get longer to read.
+  function showToast(msg, ms) {
     var t = document.createElement('div');
     t.className = 'mid-toast';
     t.textContent = msg;
@@ -172,7 +174,7 @@
     setTimeout(function () {
       t.classList.remove('show');
       setTimeout(function () { t.remove(); }, 200);
-    }, 2200);
+    }, ms || 2200);
   }
 
   // Pull session role from cookie/document — owner sees the deep-link, operator does not.
@@ -464,8 +466,21 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Retrying…'; }
     fetch('/operator/' + encodeURIComponent(state.clientId) + '/errors/' + encodeURIComponent(state.errorId) + '/retry',
           { method: 'POST', credentials: 'include' })
-      .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
-      .then(function () {
+      // Read the body whatever the status: a refusal (422 — e.g. a door-access
+      // removal, whose retry is paused in Phase 1) carries the server's own
+      // plain-English explanation, which beats a generic "try again".
+      .then(function (r) {
+        return r.json()
+          .catch(function () { return {}; })
+          .then(function (body) { return { ok: r.ok, status: r.status, body: body || {} }; });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          // Nothing was queued; the error stays open. Show why.
+          showToast(res.body.error || ('Retry failed (HTTP ' + res.status + ')'), 6000);
+          if (btn) { btn.disabled = false; btn.textContent = '↻ Retry now'; }
+          return;
+        }
         showToast('Requeued — AccessSync will retry provisioning');
         if (state.onActionDone) state.onActionDone('retry');
         // Refresh the verdict + timeline after a short pause

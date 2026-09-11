@@ -266,11 +266,28 @@
     }
 
     // ── Actions ───────────────────────────────────────────────────
+    // Reads the JSON body whatever the status, so a refusal (e.g. 422 — the
+    // error's event type can't be retried) shows the server's own explanation
+    // instead of a false "Requeued". Resolves { ok, status, body }.
+    function readJsonResponse(r) {
+      return r.json()
+        .catch(function() { return {}; })
+        .then(function(body) { return { ok: r.ok, status: r.status, body: body || {} }; });
+    }
+
     function adminRetry(id, btn) {
       btn.disabled = true; btn.textContent = '…';
       apiFetch('/admin/errors/' + id + '/retry', { method: 'POST' })
-        .then(function(r) { return r.json(); })
-        .then(function() { showToast('success', 'Requeued'); loadAdminErrors(); })
+        .then(readJsonResponse)
+        .then(function(res) {
+          if (!res.ok) {
+            // Nothing was queued; the error stays open. Show why.
+            showToast('error', esc(res.body.error || ('Retry failed (HTTP ' + res.status + ')')));
+            btn.disabled = false; btn.textContent = 'Retry';
+            return;
+          }
+          showToast('success', 'Requeued'); loadAdminErrors();
+        })
         .catch(function() { showToast('error', 'Retry failed'); btn.disabled = false; btn.textContent = 'Retry'; });
     }
 
@@ -294,8 +311,28 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: activeIds }),
       })
-        .then(function(r) { return r.json(); })
-        .then(function(d) { showToast('success', 'Queued ' + (d.queued || 0) + ' for retry'); loadAdminErrors(); })
+        .then(readJsonResponse)
+        .then(function(res) {
+          var d = res.body;
+          if (!res.ok) {
+            showToast('error', esc(d.error || ('Bulk retry failed (HTTP ' + res.status + ')')));
+            loadAdminErrors();
+            return;
+          }
+          var queued  = d.queued  || 0;
+          var skipped = d.skipped || 0;
+          var failed  = d.failed  || 0;
+          var msg = 'Queued ' + queued + ' for retry';
+          // Skipped rows were refused (event type can't be retried, or saved
+          // event unreadable) — they stay open in the list below.
+          if (skipped) msg += ' · skipped ' + skipped + ' that can’t be retried (still open)';
+          if (failed)  msg += ' · ' + failed + ' failed';
+          showToast((skipped || failed) ? 'info' : 'success', esc(msg));
+          if (skipped && d.skippedRows && d.skippedRows.length) {
+            console.warn('[admin-errors] bulk retry skipped rows:', d.skippedRows);
+          }
+          loadAdminErrors();
+        })
         .catch(function() { showToast('error', 'Bulk retry failed'); });
     }
 

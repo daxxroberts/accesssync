@@ -1,0 +1,23 @@
+-- ROLLBACK for reconcile-auto-revoke-kill-switch.sql: removes clients.auto_revoke_mode.
+--
+-- The column's CHECK constraint (clients_auto_revoke_mode_check) goes with it.
+--
+-- WARNING: roll the CODE back first. The code that reads this column reads it
+-- fail-closed (anything other than dry_run or on counts as off). Dropping the
+-- column while that code is still deployed makes every read fail, so EVERY client
+-- is treated as 'off'. Grants keep working, so nothing looks broken; automatic
+-- removals just quietly stop. That fails safe (nobody loses access), but it is
+-- silent.
+--
+-- Safe order:
+--   1. Deploy code that no longer reads auto_revoke_mode.
+--   2. Then run this file.
+--
+-- Dropping the column also throws away every per-client mode an operator has set.
+-- Note which clients are not on the default before running this:
+--   SELECT id, auto_revoke_mode FROM clients WHERE auto_revoke_mode <> 'dry_run';
+--
+-- This drops only auto_revoke_mode. It does not touch auto_revoke_enabled, the
+-- column from the never-applied first draft of the forward file.
+
+ALTER TABLE clients DROP COLUMN IF EXISTS auto_revoke_mode;

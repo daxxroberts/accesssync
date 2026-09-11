@@ -10,13 +10,19 @@
  * SAGE-locked design (2026-06-14):
  *   - Bulk-read: ONE paginated listAllUsers call, not N per-user GETs
  *   - Two-strike requirement: kisi_user_disappeared_observed_at marker on
- *     first sighting; revoke only on the second consecutive observation
+ *     first sighting; a finding only on the second consecutive observation
  *   - Outage short-circuit: listAllUsers throws → Pass 3 aborts for that
  *     client; other passes continue
  *   - Per-source role drift: re-uses Pass 2's kisiAssignments set, free of
  *     additional HTTP calls
  *   - A12 universe filter: only checks groups AccessSync manages
  *   - Platform gate: Kisi only (Seam stub no listAllUsers)
+ *
+ * Phase 1 (2026-09-10): a finding is never a revoke. A PAYING member's finding
+ * is repair_pending; anyone else's is a removal PROPOSAL, recorded and held —
+ * the sweep queues nothing. Live behaviour is covered in
+ * reconcile-revoke-gate.test.js, which asserts on eventQueue.add. The enqueue
+ * path Phase 3b re-arms is pinned, dormant, in its own block below.
  */
 
 'use strict';
@@ -106,6 +112,12 @@ describe('OB-249: Pass 3 operator-deleted-Kisi-user drift detection', () => {
     test('iterates active access rows scoped to source_tag = accesssync', () => {
       expect(reconcileSrc).toMatch(/ma\.status = 'active'\s+AND ma\.hardware_user_id IS NOT NULL\s+AND mm\.source_tag = 'accesssync'/);
     });
+
+    test('Kisi findings carry their unit (fix round P-1): a sub counts in its holder\'s family', () => {
+      expect(reconcileSrc).toMatch(/unitKey: unitKeyOf\(finding\.memberKey, finding\.holderKey\)/);
+      // …and the 'kisi' population is built from the same rule
+      expect(reconcileSrc).toMatch(/pass3UnitKeys\.add\(unitKeyOf\(row\.platform_member_id, holderKey\)\)/);
+    });
   });
 
   describe('two-strike requirement (SAGE condition)', () => {
@@ -117,17 +129,20 @@ describe('OB-249: Pass 3 operator-deleted-Kisi-user drift detection', () => {
       expect(reconcileSrc).toMatch(/reconciliation\.kisi_user_disappeared_first_sighting/);
     });
 
-    test('second sighting (column already set) queues synthetic plan.cancelled', () => {
+    test('second sighting (column already set) raises a finding — a held removal proposal, or repair_pending for a paying member', () => {
       // Logic guard: presence of `kisi_user_disappeared_observed_at` truthy check
       expect(reconcileSrc).toMatch(/row\.kisi_user_disappeared_observed_at/);
-      expect(reconcileSrc).toMatch(/reconciliation\.kisi_user_disappeared_confirmed/);
+      // the finding is routed (paying → repair, otherwise → proposal); nothing is queued
+      expect(reconcileSrc).toMatch(/routePass3Finding\(\{\s*source:\s+REVOKE_SOURCE\.KISI_USER_VANISHED/);
+      expect(reconcileSrc).toMatch(/repairProposals\.push\(\{ \.\.\.proposal, classification: ORDER_CLASS\.PAYING \}\)/);
     });
 
     test("synthetic event uses planId from source_plan_id (OB-150 invariant)", () => {
-      // Within the disappeared_confirmed block, planId must be source_plan_id
-      const confirmedIdx = reconcileSrc.search(/reconciliation\.kisi_user_disappeared_confirmed/);
-      // Look BACKWARDS from the log to find the synthetic event construction
-      const slice = reconcileSrc.slice(Math.max(0, confirmedIdx - 800), confirmedIdx);
+      // Anchor on the proposal (still inside the second-sighting block) and look
+      // back for the synthetic event it carries.
+      const proposalIdx = reconcileSrc.search(/source:\s+REVOKE_SOURCE\.KISI_USER_VANISHED/);
+      expect(proposalIdx).toBeGreaterThan(-1);
+      const slice = reconcileSrc.slice(Math.max(0, proposalIdx - 800), proposalIdx);
       expect(slice).toMatch(/planId:\s+src\.source_plan_id/);
     });
 
@@ -144,17 +159,60 @@ describe('OB-249: Pass 3 operator-deleted-Kisi-user drift detection', () => {
       expect(reconcileSrc).toMatch(/!kisiAssignmentPairs\.has\(pairKey\)/);
     });
 
+    // The drift loop PROPOSES (Phase 1: recorded and held); these anchor on the
+    // ROLE_DRIFT proposal inside the drift loop.
     test('A12 universe filter — only checks AccessSync-managed hardware groups', () => {
       // Look for the accessSyncGroupIds filter in the drift loop
-      const driftIdx = reconcileSrc.search(/reconciliation\.role_assignment_drifted/);
+      const driftIdx = reconcileSrc.search(/source:\s+REVOKE_SOURCE\.ROLE_DRIFT/);
+      expect(driftIdx).toBeGreaterThan(-1);
       const slice = reconcileSrc.slice(Math.max(0, driftIdx - 1500), driftIdx);
       expect(slice).toMatch(/accessSyncGroupIds\.has\(String\(src\.hardware_group_id\)\)/);
     });
 
     test("role-drift synthetic event uses src.source_plan_id (OB-150)", () => {
-      const driftIdx = reconcileSrc.search(/reconciliation\.role_assignment_drifted/);
+      const driftIdx = reconcileSrc.search(/source:\s+REVOKE_SOURCE\.ROLE_DRIFT/);
+      expect(driftIdx).toBeGreaterThan(-1);
       const slice = reconcileSrc.slice(Math.max(0, driftIdx - 1500), driftIdx);
       expect(slice).toMatch(/planId:\s+src\.source_plan_id/);
+    });
+  });
+
+  // Nothing in this block runs in Phase 1: the sweep has no flush loop and
+  // _enqueueApprovedRevoke refuses while SWEEP_OBSERVATION_ONLY is true. These
+  // pin the enqueue path Phase 3b re-arms. For what the sweep does TODAY
+  // (records and holds; zero revoke jobs), see reconcile-revoke-gate.test.js.
+  describe('Phase 3b re-arm contract (dormant in Phase 1)', () => {
+    test('the dormant enqueue path emits reconciliation.kisi_user_disappeared_confirmed for a KISI_USER_VANISHED proposal once re-armed', () => {
+      expect(reconcileSrc).toMatch(
+        /case REVOKE_SOURCE\.KISI_USER_VANISHED:\s*log\.warn\('reconciliation\.kisi_user_disappeared_confirmed'/
+      );
+    });
+
+    test('the dormant enqueue path emits reconciliation.role_assignment_drifted for a ROLE_DRIFT proposal once re-armed', () => {
+      expect(reconcileSrc).toMatch(
+        /case REVOKE_SOURCE\.ROLE_DRIFT:\s*log\.warn\('reconciliation\.role_assignment_drifted'/
+      );
+    });
+
+    test('…and it refuses to enqueue anything while the sweep is observation-only', () => {
+      expect(reconcileSrc).toMatch(/const SWEEP_OBSERVATION_ONLY = true;/);
+      const fnIdx = reconcileSrc.search(/async _enqueueApprovedRevoke\(clientId, p\) \{/);
+      expect(fnIdx).toBeGreaterThan(-1);
+      const body = reconcileSrc.slice(fnIdx, fnIdx + 600);
+      expect(body).toMatch(/if \(SWEEP_OBSERVATION_ONLY\) \{[\s\S]*return false;/);
+    });
+
+    const overrides = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '../../core/EVENT_REGISTRY.json'),
+      'utf8'
+    ));
+
+    test('kisi_user_disappeared_confirmed keeps persist:true (the dormant enqueue event must reach diagnostic_log once re-armed)', () => {
+      expect(overrides.overrides['reconciliation.kisi_user_disappeared_confirmed']).toEqual({ persist: true });
+    });
+
+    test('role_assignment_drifted keeps persist:true (the dormant enqueue event must reach diagnostic_log once re-armed)', () => {
+      expect(overrides.overrides['reconciliation.role_assignment_drifted']).toEqual({ persist: true });
     });
   });
 
@@ -163,10 +221,6 @@ describe('OB-249: Pass 3 operator-deleted-Kisi-user drift detection', () => {
       path.join(__dirname, '../../core/EVENT_REGISTRY.md'),
       'utf8'
     );
-    const overrides = JSON.parse(fs.readFileSync(
-      path.join(__dirname, '../../core/EVENT_REGISTRY.json'),
-      'utf8'
-    ));
 
     test.each([
       'reconciliation.pass_3_aborted_kisi_unavailable',
@@ -182,14 +236,6 @@ describe('OB-249: Pass 3 operator-deleted-Kisi-user drift detection', () => {
       'kisi.list_users_failed',
     ])('event %s is documented in EVENT_REGISTRY.md', (eventName) => {
       expect(registry.includes(eventName)).toBe(true);
-    });
-
-    test('disappeared_confirmed has persist:true (operator-visible revoke trigger)', () => {
-      expect(overrides.overrides['reconciliation.kisi_user_disappeared_confirmed']).toEqual({ persist: true });
-    });
-
-    test('role_assignment_drifted has persist:true (operator-visible revoke trigger)', () => {
-      expect(overrides.overrides['reconciliation.role_assignment_drifted']).toEqual({ persist: true });
     });
   });
 

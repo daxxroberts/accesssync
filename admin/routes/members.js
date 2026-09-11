@@ -14,8 +14,30 @@ const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../../core/redis-utils');
 const { decryptApiKey } = require('../../core/crypto-utils');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
+const { jobNameForEventType } = require('../../core/event-routing');
 
 const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
+
+/**
+ * The saved standard event as a plain object, or null when it can't be read
+ * (missing, unparseable JSON, or not an object). Mirrors admin/routes/errors.js.
+ */
+function readRetryPayload(payload) {
+  let standardEvent = payload;
+  if (typeof standardEvent === 'string') {
+    try { standardEvent = JSON.parse(standardEvent); } catch (_) { return null; }
+  }
+  if (!standardEvent || typeof standardEvent !== 'object' || Array.isArray(standardEvent)) return null;
+  return standardEvent;
+}
+
+// Phase 1 ("stop the bleeding", 2026-09-10): a retry that routes to 'revoke' is
+// refused — nothing queued, row left open. Replaying a stale removal later can
+// take door access from someone who has since paid. Same rule and wording as
+// admin/routes/errors.js.
+const REVOKE_RETRY_DISABLED_MESSAGE =
+  'Retrying a door-access removal is paused while AccessSync\'s safety checks are rolled out. '
+  + 'Nothing was changed — if this person should lose access, remove them in Kisi.';
 
 // ── GET /admin/members/search ──────────────────────────────────
 // OB-13: Searches by platform_member_id OR email.
@@ -366,10 +388,48 @@ router.post('/:id/retry', async (req, res) => {
     }
 
     const { id: errorId, client_id: tenantId, event_type: eventType, payload } = errorResult.rows[0];
-    const standardEvent = typeof payload === 'string' ? JSON.parse(payload) : payload;
 
-    const jobName = ['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(eventType)
-      ? 'grant' : 'revoke';
+    // Route through core/event-routing.js. The inline list this replaced sent
+    // everything that wasn't [plan.purchased, payment.recovered, booking.confirmed]
+    // to 'revoke' — so Retry on a failed plan.started grant enqueued a REVOKE.
+    // Unroutable type, a removal (paused in Phase 1) or unreadable payload:
+    // enqueue nothing, leave the row 'failed' (not resolved), and tell the caller why.
+    const jobName = jobNameForEventType(eventType);
+    if (!jobName) {
+      log.warn('admin.retry.unroutable_event_type', {
+        clientId: tenantId, errorId, eventType, route: 'admin.members.retry', reason: 'unroutable_event_type',
+      });
+      return res.status(422).json({
+        error: 'This error can\'t be retried: '
+          + (eventType ? `"${eventType}" is not a grant or revoke event` : 'it has no event type')
+          + ', so there is no job to re-run. Nothing was queued and the error is still open.',
+        reason: 'unroutable_event_type',
+        errorId,
+      });
+    }
+    // Checked before the payload: a removal is refused whatever its saved event says.
+    if (jobName === 'revoke') {
+      log.warn('admin.retry.revoke_disabled', {
+        clientId: tenantId, errorId, eventType, route: 'admin.members.retry', reason: 'revoke_retry_disabled',
+      });
+      return res.status(422).json({
+        error: REVOKE_RETRY_DISABLED_MESSAGE,
+        reason: 'revoke_retry_disabled',
+        errorId,
+      });
+    }
+    const standardEvent = readRetryPayload(payload);
+    if (!standardEvent) {
+      log.warn('admin.retry.unreadable_payload', {
+        clientId: tenantId, errorId, eventType, route: 'admin.members.retry', reason: 'unreadable_payload',
+      });
+      return res.status(422).json({
+        error: 'This error can\'t be retried: its saved event is missing or unreadable. '
+          + 'Nothing was queued and the error is still open.',
+        reason: 'unreadable_payload',
+        errorId,
+      });
+    }
 
     await eventQueue.add(jobName, { tenantId, standardEvent }, {
       jobId: `admin-member-retry-${id}-${Date.now()}`

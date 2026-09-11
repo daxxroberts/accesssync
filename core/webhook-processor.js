@@ -23,6 +23,7 @@ const tenantResolver = require('./tenant-resolver');
 const { getRedisConnection } = require('./redis-utils');
 const { log } = require('./logger');
 const { getTraceId, getActor, setTraceContext } = require('./trace-context');
+const { GRANT_EVENT_TYPES, REVOKE_EVENT_TYPES } = require('./event-routing');
 
 const connection = getRedisConnection();
 
@@ -139,7 +140,8 @@ class WebhookProcessor {
     // plan.started is phase 2 of delayed-start grants — orderStarted fires when the future
     // startDate arrives. queue-worker has a dedicated plan.started branch that completes
     // the grant (assigns Kisi role, writes member_access_sources). Must be enqueued.
-    if (['plan.purchased', 'plan.started', 'payment.recovered', 'booking.confirmed'].includes(standardEvent.eventType)) {
+    // The grant/revoke lists live in event-routing.js, shared with reconciliation.
+    if (GRANT_EVENT_TYPES.includes(standardEvent.eventType)) {
       await eventQueue.add('grant', { tenantId, standardEvent }, { jobId: `grant-${eventId}` });
       log.info('webhook.enqueued', {
         traceId, eventId, eventType: standardEvent.eventType,
@@ -148,7 +150,7 @@ class WebhookProcessor {
         stage: 'queue', result: 'success',
       });
 
-    } else if (['plan.cancelled', 'payment.failed', 'booking.cancelled', 'member.deleted'].includes(standardEvent.eventType)) {
+    } else if (REVOKE_EVENT_TYPES.includes(standardEvent.eventType)) {
       await eventQueue.add('revoke', { tenantId, standardEvent }, { jobId: `revoke-${eventId}` });
       log.info('webhook.enqueued', {
         traceId, eventId, eventType: standardEvent.eventType,

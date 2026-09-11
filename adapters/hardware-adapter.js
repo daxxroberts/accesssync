@@ -67,6 +67,8 @@ const _requiredFieldsByPlatform = {
     suspendAccess:   ['userId'],
     enableAccess:    ['userId'],
     deleteUser:      ['userId'],
+    getUserById:     ['userId'],
+    getRoleAssignmentsForUser: ['userId'],
   },
   seam: {
     // TODO: populated when Seam adapter is built (post-V1).
@@ -165,6 +167,29 @@ class HardwareAdapter {
   async deleteUser(hardwarePlatform, apiKey, userId, options = {}) {
     this._validate(hardwarePlatform, 'deleteUser', { userId });
     return this._getAdapter(hardwarePlatform).deleteUser(apiKey, userId, options);
+  }
+
+  /**
+   * Phase 1 (I-4): fetch one hardware user. Returns the user object, or null
+   * when the platform says the user does not exist (404). Any other failure
+   * throws. core/grant-revoke.js uses this after an assignRole 404 to tell a
+   * vanished user apart from a vanished door group.
+   */
+  async getUserById(hardwarePlatform, apiKey, userId) {
+    this._validate(hardwarePlatform, 'getUserById', { userId });
+    return this._getAdapter(hardwarePlatform).getUserById(apiKey, userId);
+  }
+
+  /**
+   * Phase 1 (I-5 Guard D): every role assignment one hardware user holds.
+   * Pass-through to the Layer 6 helper (Kisi: [] on 404, other errors throw).
+   * adapters/standard-adapter.js finalizeRevoke refuses to delete a user who
+   * still holds any assignment, and refuses on any throw. A missing userId
+   * fails Gate 1 (INVALID_HARDWARE_REQUEST) so an unfiltered list is never read.
+   */
+  async getRoleAssignmentsForUser(hardwarePlatform, apiKey, userId) {
+    this._validate(hardwarePlatform, 'getRoleAssignmentsForUser', { userId });
+    return this._getAdapter(hardwarePlatform).getRoleAssignmentsForUser(apiKey, userId);
   }
 
   async getLocks(hardwarePlatform, apiKey) {

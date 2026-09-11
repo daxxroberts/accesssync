@@ -5,12 +5,14 @@
  * Responsibilities:
  * - Wix-specific payload parsing only
  * - parseEvent() returns AccessSync standard event object
- * - Depends only on core/logger for structured logging
+ * - Depends only on core/logger for structured logging and the pure
+ *   core/wix-order-classification constants (shared paying rule)
  *
  * Called by wix-connector (Layer 1) after HMAC verification passes.
  */
 
 const { log } = require('../../core/logger');
+const { PAYING_PAYMENT_STATUSES } = require('../../core/wix-order-classification');
 
 class WixAdapter {
 
@@ -40,7 +42,15 @@ class WixAdapter {
       'wixPricingPlans.orderUpdated':   'plan.purchased',  // covers renewals + upgrades
       'wixPricingPlans.orderCanceled':          'plan.cancelled',
       'wixPricingPlans.orderCancelled':         'plan.cancelled',  // British spelling variant
-      'wixPricingPlans.orderAutoRenewCanceled': 'plan.cancelled',  // member cancels, access ends at next billing date
+      // Auto-renew hotfix (2026-09-10): orderAutoRenewCanceled means the member
+      // turned off auto-renew — the order stays ACTIVE and PAID until its end
+      // date, and Wix fires orderEnded then. Mapping it to plan.cancelled
+      // revoked a paid member's door access immediately, weeks early.
+      // 'plan.autorenew_cancelled' is deliberately NON-ROUTABLE: it is in
+      // neither list in core/event-routing.js, so webhook-processor logs
+      // webhook.unrecognised_type, keeps the webhook_log row for audit, and
+      // enqueues nothing. Access ends on orderEnded / orderCanceled below.
+      'wixPricingPlans.orderAutoRenewCanceled': 'plan.autorenew_cancelled',
       'wixPricingPlans.orderEnded':             'plan.cancelled',  // natural expiry or deferred cancel completion
       'wixPricingPlans.orderExpired':           'plan.cancelled',  // legacy / non-standard variant, kept for safety
       'wixPricingPlans.orderPaused':    'payment.failed',
@@ -69,15 +79,20 @@ class WixAdapter {
     // ∈ {PAID, TRIAL}. Anything else is dropped — the eventType is rewritten to
     // 'plan.unpaid_order' so the row still lands in webhook_log (audit trail
     // preserved) but queue-worker has no case for it, so no grant fires.
+    //
+    // The paying payment statuses come from core/wix-order-classification.js so
+    // the webhook and the nightly sweep share one rule. isPayingOrder() is NOT
+    // used here on purpose: this guard lets a payload with NO status through
+    // (Velo short-form events carry no order status), while isPayingOrder
+    // requires status === 'ACTIVE'. Behaviour here is unchanged.
     const GRANT_TRIGGERS = ['plan.purchased', 'plan.started'];
     if (GRANT_TRIGGERS.includes(normalizedEventType)) {
       const orderEntity = body?.data?.entity || body?.data;
       const orderStatus = orderEntity?.status || null;
       const paymentStatus = orderEntity?.lastPaymentStatus || null;
       const ALLOWED_STATUS  = new Set(['ACTIVE']);
-      const ALLOWED_PAYMENT = new Set(['PAID', 'TRIAL', null]); // null = not yet set on free plans
       const statusOk  = !orderStatus  || ALLOWED_STATUS.has(orderStatus);
-      const paymentOk = ALLOWED_PAYMENT.has(paymentStatus);
+      const paymentOk = PAYING_PAYMENT_STATUSES.includes(paymentStatus); // null = not yet set on free plans
       if (!statusOk || !paymentOk) {
         log.warn('wix.parse.unpaid_order_dropped', {
           rawEventType:    eventType,

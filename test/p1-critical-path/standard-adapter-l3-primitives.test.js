@@ -185,6 +185,29 @@ describe('[P1] rollupAccessStatusByPlatformMember', () => {
     expect(sql).toMatch(/WHEN EXISTS/);
     expect(params).toEqual([CLIENT_ID, 'wix-member-abc']);
   });
+
+  // Phase 1: the sweep's rollup must never overwrite lifecycle states it does
+  // not own — DR-044 terminal 'deleted', DR-044 entry 'removing', a live
+  // queue-worker 'in_flight' lock, or the 'pending_identity' park.
+  test('skips deleted / removing / in_flight / pending_identity rows (Phase 1 guard)', async () => {
+    await adapter.rollupAccessStatusByPlatformMember(CLIENT_ID, 'wix-member-abc');
+
+    const [sql] = db.query.mock.calls[0];
+    const m = sql.match(/AND ma\.status NOT IN \(([^)]*)\)/);
+    expect(m).not.toBeNull();
+    const excluded = m[1].split(',').map(s => s.trim().replace(/'/g, '')).sort();
+    expect(excluded).toEqual(['deleted', 'in_flight', 'pending_identity', 'removing']);
+  });
+
+  test("the job's own rollupAccessStatus is NOT filtered — completeGrant/completeRevoke must still move in_flight → active/inactive", async () => {
+    await adapter.rollupAccessStatus(ACCESS_ID);
+    await adapter.rollupAccessStatus(ACCESS_ID, { stampProvisioned: true, hardwarePlatform: 'kisi' });
+
+    for (const sql of capturedQueries()) {
+      expect(sql).not.toMatch(/NOT IN/);
+      expect(sql).not.toMatch(/in_flight/);
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

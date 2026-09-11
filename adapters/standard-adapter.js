@@ -875,6 +875,15 @@ class StandardAdapter {
    * point it calls this. Same rollup rule as rollupAccessStatus(); the join
    * key is the only difference. SQL moved verbatim from reconciliation.js.
    *
+   * Phase 1 guard: the sweep must never overwrite a lifecycle state it does
+   * not own. 'deleted' is DR-044 terminal (a sweep flipping it back to
+   * 'inactive' re-opens a finalized sub-member); 'removing' is the DR-044
+   * entry state a queued revoke/finalize depends on; 'in_flight' is a live
+   * queue-worker lock (the job's own rollupAccessStatus() moves it on);
+   * 'pending_identity' is the identity-recovery park. Those rows are skipped.
+   * rollupAccessStatus() (the job's rollup) is deliberately NOT filtered —
+   * completeGrant/completeRevoke must still move in_flight → active/inactive.
+   *
    * @param {string} clientId
    * @param {string} platformMemberId  member_master.platform_member_id
    */
@@ -892,7 +901,8 @@ class StandardAdapter {
        FROM member_master mm
        WHERE ma.member_master_id = mm.id
          AND ma.client_id = $1
-         AND mm.platform_member_id = $2`,
+         AND mm.platform_member_id = $2
+         AND ma.status NOT IN ('deleted', 'removing', 'in_flight', 'pending_identity')`,
       [clientId, platformMemberId]
     );
   }
@@ -1107,6 +1117,15 @@ class StandardAdapter {
    * is either not ours to delete or has elevated rights that must be reviewed
    * by an operator before they can be detached from AccessSync.
    *
+   * Phase 1 guards (before deleteUser, before any member_access/member_master
+   * write; same non-throwing refusal contract):
+   *   Guard E — another non-deleted member_access row shares this Kisi user
+   *             → reason 'shared_hardware_user', alert finalize_refused_shared_user.
+   *   Guard D — the Kisi user still holds ≥1 role assignment after our revoke
+   *             → reason 'user_has_other_assignments', alert
+   *             finalize_refused_other_assignments. Lookup failure → reason
+   *             'assignment_check_failed' (fail closed).
+   *
    * On Kisi 404 (user already gone — operator manually deleted, or earlier
    * sweep already cleaned up) we treat as idempotent success and proceed
    * with the DB-side finalize.
@@ -1158,6 +1177,78 @@ class StandardAdapter {
         memberId, tenantId, sourceTag: source_tag,
       });
       return { finalized: false, reason: 'foreign_source_tag' };
+    }
+
+    // ── Phase 1 guards E + D ────────────────────────────────────────────────
+    // Evaluated after the status/source_tag checks and BEFORE deleteUser and
+    // before any write to member_access / member_master. A refusal leaves the
+    // member exactly as found (status stays 'inactive', PII intact, Kisi user
+    // intact) and returns a non-throwing { finalized:false } — queue-worker
+    // logs it as a skipped finalize. Only relevant when there IS a Kisi user
+    // to delete; the no-hardware-user path below is unchanged.
+    if (hardwareUserId) {
+      // Guard E — shared Kisi user. Another live member_access row (any
+      // client — a Kisi org can back more than one client) points at the same
+      // Kisi user, e.g. a sub-member created with the holder's email. Deleting
+      // the Kisi user would take that other person's door access with it.
+      // A DB error here propagates (same as the status SELECT above) — nothing
+      // has been deleted yet, so a BullMQ retry is safe.
+      const sharedResult = await db.query(
+        `SELECT id
+         FROM member_access
+         WHERE hardware_user_id = $1
+           AND id <> $2
+           AND COALESCE(status, '') NOT IN ('deleted')
+         LIMIT 10`,
+        [String(hardwareUserId), memberId]
+      );
+      if (sharedResult.rows.length > 0) {
+        log.warn('adapter.finalize_revoke.refused_shared_user', {
+          memberId, tenantId, hardwareUserId,
+          otherAccessCount: sharedResult.rows.length,
+          otherAccessIds: sharedResult.rows.map(r => r.id),
+        });
+        await this._alertOperatorFinalizeRefused(
+          tenantId, memberId, hardwareUserId, 'shared_hardware_user',
+          `kisi user shared with ${sharedResult.rows.length} other access row(s)`,
+          { alertType: 'finalize_refused_shared_user' }
+        );
+        return { finalized: false, reason: 'shared_hardware_user' };
+      }
+
+      // Guard D — the Kisi user still holds role assignment(s) after the
+      // revoke removed ours: door access AccessSync did not add (or did not
+      // just remove). Deleting the user would silently strip it. Any
+      // assignment at all → refuse. The lookup failing (throw, or a non-array
+      // answer) → refuse too: fail closed, never delete on an unknown.
+      let otherAssignments;
+      try {
+        otherAssignments = await hardwareAdapter.getRoleAssignmentsForUser(
+          hardwarePlatform, apiKey, hardwareUserId
+        );
+        if (!Array.isArray(otherAssignments)) {
+          throw new Error(`role-assignment lookup returned ${typeof otherAssignments}, expected array`);
+        }
+      } catch (lookupErr) {
+        log.warn('adapter.finalize_revoke.assignment_check_failed', {
+          memberId, tenantId, hardwareUserId,
+          statusCode: lookupErr.statusCode || null,
+          errorMessage: lookupErr.message || null,
+        });
+        return { finalized: false, reason: 'assignment_check_failed' };
+      }
+      if (otherAssignments.length > 0) {
+        log.warn('adapter.finalize_revoke.refused_other_assignments', {
+          memberId, tenantId, hardwareUserId,
+          assignmentCount: otherAssignments.length,
+        });
+        await this._alertOperatorFinalizeRefused(
+          tenantId, memberId, hardwareUserId, 'other_assignments',
+          `kisi user still holds ${otherAssignments.length} role assignment(s)`,
+          { alertType: 'finalize_refused_other_assignments' }
+        );
+        return { finalized: false, reason: 'user_has_other_assignments' };
+      }
     }
 
     // Attempt Kisi user delete (DR-045 Layers B + C live inside hardwareAdapter.deleteUser)
@@ -1248,18 +1339,25 @@ class StandardAdapter {
    * OB-248 helper — write a config_alert_log row so the operator dashboard
    * surfaces a Kisi delete refusal. Non-throwing; failure to log alert must
    * never crash the finalize.
+   *
+   * opts.alertType overrides the default `finalize_revoke_refused_<reason>`
+   * alert_type (Phase 1 guards D/E use the exact types the operator-email
+   * copy keys on). hardware_ref is capped at the column's 255 chars so a long
+   * message can't make the best-effort INSERT fail silently.
    */
-  async _alertOperatorFinalizeRefused(clientId, memberId, hardwareUserId, reason, message) {
-    const _actor = getActor() || {};
+  async _alertOperatorFinalizeRefused(clientId, memberId, hardwareUserId, reason, message, opts = {}) {
     try {
+      // Inside the try: the actor lookup must not be able to turn a guard
+      // refusal into a thrown finalize either.
+      const _actor = getActor() || {};
       await db.query(
         `INSERT INTO config_alert_log
            (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           clientId,
-          `finalize_revoke_refused_${reason}`,
-          `member_id=${memberId} kisi_user_id=${hardwareUserId} reason=${reason} message=${message}`,
+          opts.alertType || `finalize_revoke_refused_${reason}`,
+          `member_id=${memberId} kisi_user_id=${hardwareUserId} reason=${reason} message=${message}`.slice(0, 255),
           getTraceId() || null,
           _actor.type || 'system',
           _actor.id || 'standard-adapter',
@@ -1392,6 +1490,100 @@ class StandardAdapter {
         [memberId]
       );
     }
+  }
+
+  /**
+   * DR-023 / Phase 1 (3B strike clock): records one "not paying in Wix"
+   * observation against the member's ACTIVE source row(s) for one plan.
+   * Observational only — never touches status or updated_at (updated_at feeds
+   * the stale-lock threshold; an observation is not a state change) and never
+   * removes anything. Phase 3b reads the clock to decide; Phase 1 only records.
+   *
+   * Columns come from migration M3 (reconcile-not-paying-strike.sql). The code
+   * must work BEFORE that migration is applied: Postgres 42703 (undefined
+   * column) → one warn per process + { recorded:false, reason:'columns_missing' }.
+   * Any other error → warn + { recorded:false }. NEVER throws.
+   *
+   * @param {string} accessId      member_access.id
+   * @param {string} sourcePlanId  member_access_sources.source_plan_id
+   * @returns {Promise<{recorded: true, rowCount: number} | {recorded: false, reason?: string}>}
+   */
+  async recordNotPayingObservation(accessId, sourcePlanId) {
+    try {
+      const result = await db.query(
+        `UPDATE member_access_sources
+         SET not_paying_since        = COALESCE(not_paying_since, NOW()),
+             not_paying_last_seen_at = NOW(),
+             not_paying_observations = COALESCE(not_paying_observations, 0) + 1
+         WHERE access_id = $1
+           AND source_plan_id = $2
+           AND status = 'active'`,
+        [accessId, sourcePlanId]
+      );
+      return { recorded: true, rowCount: (result && result.rowCount) || 0 };
+    } catch (err) {
+      if (err && err.code === '42703') {
+        this._warnNotPayingColumnsMissing('record');
+        return { recorded: false, reason: 'columns_missing' };
+      }
+      log.warn('adapter.not_paying.record_failed', {
+        accessId, sourcePlanId, errorCode: (err && err.code) || null,
+      }, err);
+      return { recorded: false };
+    }
+  }
+
+  /**
+   * DR-023 / Phase 1 (3B strike clock): resets the not-paying clock for one
+   * (access, plan) back to NULL / NULL / 0 — the member is PAYING again.
+   * Only rows that actually carry a clock are written (identical end state;
+   * avoids a no-op UPDATE on every paying member every sweep). Same contract
+   * as recordNotPayingObservation: no status / updated_at write, 42703 →
+   * columns_missing (one warn per process), other errors → warn, NEVER throws.
+   *
+   * @param {string} accessId      member_access.id
+   * @param {string} sourcePlanId  member_access_sources.source_plan_id
+   * @returns {Promise<{cleared: true, rowCount: number} | {cleared: false, reason?: string}>}
+   */
+  async clearNotPayingObservation(accessId, sourcePlanId) {
+    try {
+      const result = await db.query(
+        `UPDATE member_access_sources
+         SET not_paying_since        = NULL,
+             not_paying_last_seen_at = NULL,
+             not_paying_observations = 0
+         WHERE access_id = $1
+           AND source_plan_id = $2
+           AND (not_paying_since IS NOT NULL
+                OR not_paying_last_seen_at IS NOT NULL
+                OR COALESCE(not_paying_observations, 0) <> 0)`,
+        [accessId, sourcePlanId]
+      );
+      return { cleared: true, rowCount: (result && result.rowCount) || 0 };
+    } catch (err) {
+      if (err && err.code === '42703') {
+        this._warnNotPayingColumnsMissing('clear');
+        return { cleared: false, reason: 'columns_missing' };
+      }
+      log.warn('adapter.not_paying.clear_failed', {
+        accessId, sourcePlanId, errorCode: (err && err.code) || null,
+      }, err);
+      return { cleared: false };
+    }
+  }
+
+  /**
+   * One warn per process for the pre-migration (M3 not yet applied) state —
+   * every sweep would otherwise emit one per member. The flag lives on the
+   * exported singleton, so it is per-process.
+   */
+  _warnNotPayingColumnsMissing(op) {
+    if (this._notPayingColumnsMissingWarned) return;
+    this._notPayingColumnsMissingWarned = true;
+    log.warn('adapter.not_paying.columns_missing', {
+      op,
+      migration: 'migrations/reconcile-not-paying-strike.sql',
+    });
   }
 
   /**

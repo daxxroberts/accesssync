@@ -8,7 +8,7 @@
  * │    - _fetchActionableRecords: member_access JOIN member_master          │
  * │    - reconcileMember: member_master + member_access (not member_identity)│
  * │    - DB drift check: member_access_sources WHERE access_id (not member_id)│
- * │    - OB-74: Kisi orphan → synthetic revoke queued when no MAS row      │
+ * │    - OB-185 A11: Kisi orphan with no MAS row → observed, NO revoke     │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -26,8 +26,9 @@ jest.mock('../../adapters/hardware-adapter', () => ({
 }));
 
 jest.mock('../../adapters/wix/wix-plans-api', () => ({
-  listActiveOrders:       jest.fn(),
+  listActiveOrders:       jest.fn(),   // reconcileMember (unchanged)
   listConfirmedBookings:  jest.fn(),
+  listOrdersClassified:   jest.fn(),   // Phase 1: the sweep's (double) Wix read
 }));
 
 jest.mock('../../core/plan-mapping-resolver', () => ({
@@ -68,6 +69,12 @@ const RA_ID      = 'kisi-ra-99561847';
 
 beforeEach(() => {
   jest.clearAllMocks();
+  reconciliation._doubleReadDelayMs = 0; // the two Wix reads run back to back in tests
+});
+
+// Phase 1 tripwire (2026-09-10): no reconciliation path may enqueue a revoke.
+afterEach(() => {
+  expect(eventQueue.add.mock.calls.filter(c => c[0] === 'revoke')).toEqual([]);
 });
 
 // ─── Stale lock cleanup — member_access (not member_access_state) ─────────────
@@ -268,8 +275,9 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
 
     // reconciliation_run INSERT
     db.query.mockResolvedValueOnce({ rows: [{ id: 'run-001' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ auto_revoke_mode: 'dry_run' }] }); // auto_revoke_mode read
 
-    wixPlansApi.listActiveOrders.mockResolvedValue([]);
+    wixPlansApi.listOrdersClassified.mockResolvedValue([]);
     wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
 
     // Kisi returns one role assignment whose group IS in AccessSync's universe
@@ -285,6 +293,11 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
 
     // A11 observation: member_access_sources check → NO matching row
     db.query.mockResolvedValueOnce({ rows: [] });
+
+    // (Pass 3: hardwareAdapter.listAllUsers is not mocked → outage short-circuit, no query)
+    db.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // Pass 2 backfill UPDATE role_assignment_id
+    db.query.mockResolvedValueOnce({ rows: [] });              // Pass 1.5 sub-member sources
+    db.query.mockResolvedValueOnce({ rows: [] });              // active-source census (Phase 1)
 
     // update last_active_member_count
     db.query.mockResolvedValueOnce({ rowCount: 1 });
@@ -310,6 +323,9 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
     // A11 contract: NO revoke event queued for orphan observations.
     const revokeCall = eventQueue.add.mock.calls.find(c => c[0] === 'revoke');
     expect(revokeCall).toBeUndefined();
+    // ...and the orphan WAS observed — the sync reached Pass 2, it did not stop early.
+    expect(log.warn).toHaveBeenCalledWith('reconciliation.unmanaged_assignment_observed',
+      expect.objectContaining({ kisiUserId: 'kisi-user-orphan', reason: 'no_matching_db_source_row' }));
   });
 
   test('Kisi assignment OUTSIDE AccessSync universe (group not in plan_mappings) is invisible — no log, no revoke', async () => {
@@ -325,8 +341,9 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
       }],
     });
     db.query.mockResolvedValueOnce({ rows: [{ id: 'run-001' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ auto_revoke_mode: 'dry_run' }] }); // auto_revoke_mode read
 
-    wixPlansApi.listActiveOrders.mockResolvedValue([]);
+    wixPlansApi.listOrdersClassified.mockResolvedValue([]);
     wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
 
     // Kisi returns an assignment for a group AccessSync doesn't provision to
@@ -336,6 +353,9 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
 
     db.query.mockResolvedValueOnce({ rows: [] }); // kisiUserIds identity lookup
     db.query.mockResolvedValueOnce({ rows: [{ hardware_group_id: 'kisi-group-managed' }] }); // A12 universe — staff group NOT in set
+    // (Pass 2 backfill skips the out-of-universe assignment — no query)
+    db.query.mockResolvedValueOnce({ rows: [] }); // Pass 1.5 sub-member sources
+    db.query.mockResolvedValueOnce({ rows: [] }); // active-source census (Phase 1)
     db.query.mockResolvedValueOnce({ rowCount: 1 }); // update last_active_member_count
     db.query.mockResolvedValueOnce({ rowCount: 1 }); // close reconciliation_run
     db.query.mockResolvedValueOnce({ rowCount: 0 }); // stale in_flight
@@ -357,6 +377,10 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
     expect(sourceCheckCall).toBeUndefined();
     // And no revoke queued
     expect(eventQueue.add.mock.calls.find(c => c[0] === 'revoke')).toBeUndefined();
+    // The sync ran past the Wix and Kisi reads (the universe filter was applied, not skipped)
+    expect(log.error).not.toHaveBeenCalledWith('reconciliation.wix_fetch_failed', expect.anything(), expect.anything());
+    expect(log.warn).not.toHaveBeenCalledWith('reconciliation.kisi_fetch_failed', expect.anything(), expect.anything());
+    expect(db.query.mock.calls.some(c => String(c[0]).includes('SELECT DISTINCT hardware_group_id FROM plan_mappings'))).toBe(true);
   });
 
   test('Kisi assignment WITH matching member_access_sources row does NOT queue revoke', async () => {
@@ -374,8 +398,11 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
     });
 
     db.query.mockResolvedValueOnce({ rows: [{ id: 'run-001' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ auto_revoke_mode: 'dry_run' }] }); // auto_revoke_mode read
 
-    wixPlansApi.listActiveOrders.mockResolvedValue([{ memberId: PLATFORM_MEMBER_ID, planId: 'wix-plan-aaa' }]);
+    wixPlansApi.listOrdersClassified.mockResolvedValue([
+      { memberId: PLATFORM_MEMBER_ID, planId: 'wix-plan-aaa', classification: 'PAYING' },
+    ]);
     wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
 
     hardwareAdapter.getManagedRoleAssignments.mockResolvedValue([
@@ -387,8 +414,23 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
       rows: [{ platform_member_id: PLATFORM_MEMBER_ID, sub_master_id: null }],
     });
 
+    // A12 universe filter — GROUP_ID is a group AccessSync provisions to
+    db.query.mockResolvedValueOnce({ rows: [{ hardware_group_id: GROUP_ID }] });
+
     // OB-74: member_access_sources check → row EXISTS → no orphan
-    db.query.mockResolvedValueOnce({ rows: [{ id: 'mas-row-001' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'mas-row-001', status: 'active' }] });
+
+    // (Pass 3: hardwareAdapter.listAllUsers is not mocked → outage short-circuit, no query)
+    // Pass 1 for the member's PAYING plan. Fix round F12: the DR-051 holder_seated
+    // flag is read FIRST (before the promotion), and reused by the DR-051 branch.
+    db.query.mockResolvedValueOnce({ rows: [] });                // DR-051 holder_seated flag (no billing row)
+    db.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });   // promotion UPDATE (nothing cancelled)
+    db.query.mockResolvedValueOnce({ rows: [{ mapping_id: MAPPING_ID, hardware_group_id: GROUP_ID }], rowCount: 1 }); // targets
+    db.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });   // source INSERT (row already exists)
+    db.query.mockResolvedValueOnce({ rowCount: 1 });             // rollupAccessStatusByPlatformMember (L3)
+    // (Pass 2 backfill: the assignment carries no roleAssignmentId → no query)
+    db.query.mockResolvedValueOnce({ rows: [] });                // Pass 1.5 sub-member sources
+    db.query.mockResolvedValueOnce({ rows: [] });                // active-source census (Phase 1)
 
     // update last_active_member_count
     db.query.mockResolvedValueOnce({ rowCount: 1 });
@@ -410,6 +452,11 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
       c => c[0] === 'revoke' && c[1]?.standardEvent?.syntheticSource === 'reconciliation.kisi_orphan'
     );
     expect(revokeCall).toBeUndefined();
+    // The source check ran (String-coerced params) and matched, so nothing was observed as an orphan.
+    const sourceCheck = db.query.mock.calls.find(c => String(c[0]).includes('ma.hardware_user_id::text = $2'));
+    expect(sourceCheck).toBeDefined();
+    expect(sourceCheck[1]).toEqual([CLIENT_ID, 'kisi-user-99', GROUP_ID]);
+    expect(log.warn).not.toHaveBeenCalledWith('reconciliation.unmanaged_assignment_observed', expect.anything());
   });
 });
 
@@ -436,10 +483,11 @@ describe('[P3] DR-049 — multi-member plan holder auto-grants via nightly/manua
     }); // _syncTrueSources
 
     db.query.mockResolvedValueOnce({ rows: [{ id: 'run-001' }] }); // reconciliation_run INSERT
+    db.query.mockResolvedValueOnce({ rows: [{ auto_revoke_mode: 'dry_run' }] }); // auto_revoke_mode read
 
-    // A brand-new buyer of a multi-member-eligible plan — in Wix, not yet in Kisi.
-    wixPlansApi.listActiveOrders.mockResolvedValue([
-      { memberId: 'wix-member-new-buyer', planId: 'wix-plan-family', email: 'buyer@test.com', name: 'New Buyer' },
+    // A brand-new buyer of a multi-member-eligible plan — in Wix (PAYING), not yet in Kisi.
+    wixPlansApi.listOrdersClassified.mockResolvedValue([
+      { memberId: 'wix-member-new-buyer', planId: 'wix-plan-family', classification: 'PAYING' },
     ]);
     wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
 
@@ -448,6 +496,14 @@ describe('[P3] DR-049 — multi-member plan holder auto-grants via nightly/manua
     hardwareAdapter.getManagedRoleAssignments.mockResolvedValue([]);
 
     db.query.mockResolvedValueOnce({ rows: [] }); // A12 universe filter (accessSyncGroupsResult) — always runs
+    // (Pass 3: hardwareAdapter.listAllUsers is not mocked → outage short-circuit, no query)
+    // Pass 1 for the new buyer's plan — not mapped in this fixture
+    db.query.mockResolvedValueOnce({ rows: [] });              // DR-051 holder_seated flag, read first (fix round F12)
+    db.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // promotion UPDATE
+    db.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // targets → plan_not_mapped, skip
+    db.query.mockResolvedValueOnce({ rowCount: 0 });           // rollupAccessStatusByPlatformMember (L3)
+    db.query.mockResolvedValueOnce({ rows: [] });              // Pass 1.5 sub-member sources
+    db.query.mockResolvedValueOnce({ rows: [] });              // active-source census (Phase 1)
 
     // update last_active_member_count
     db.query.mockResolvedValueOnce({ rowCount: 1 });
@@ -488,9 +544,10 @@ describe('[P3] DR-049 — multi-member plan holder auto-grants via nightly/manua
       }],
     });
     db.query.mockResolvedValueOnce({ rows: [{ id: 'run-001' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ auto_revoke_mode: 'dry_run' }] }); // auto_revoke_mode read
 
-    wixPlansApi.listActiveOrders.mockResolvedValue([
-      { memberId: 'wix-member-new-buyer-2', planId: 'wix-plan-family', email: 'buyer2@test.com', name: 'Buyer Two' },
+    wixPlansApi.listOrdersClassified.mockResolvedValue([
+      { memberId: 'wix-member-new-buyer-2', planId: 'wix-plan-family', classification: 'PAYING' },
     ]);
     wixPlansApi.listConfirmedBookings.mockResolvedValue([]);
     hardwareAdapter.getManagedRoleAssignments.mockResolvedValue([]);

@@ -63,8 +63,16 @@ class GrantRevokeLogic {
    */
   async processGrant(tenantId, memberId, hardwareUserId, mappings, wixEvent) {
     const assignments = [];
-    const failedGroups = [];
+    const failedGroups = []; // [{ mapping, err, reason }] — reason is for logs only
     let newHardwareCallMade = false; // only true when assignRole() was actually called
+    // Phase 1 fix round (F3): door-system accounts (platform + key) on which
+    // getUserById has confirmed this member's hardware user is GONE → the
+    // HARDWARE_USER_GONE error. Any further assignRole on the same account would
+    // 404 the same way, so it is skipped — but the loop itself keeps going so a
+    // later mapping satisfied by the OB-47 reuse path (no hardware call) is still
+    // collected, exactly as HEAD collected it. See the end-of-loop decision.
+    const userGoneByAccount = new Map();
+    const accountKey = (m) => `${m.hardwarePlatform}|${m.apiKey}`;
 
     for (const mapping of mappings) {
       const apiKey = mapping.apiKey;
@@ -185,6 +193,14 @@ class GrantRevokeLogic {
         continue; // Skip hardware call for this mapping
       }
 
+      // F3: the user is already confirmed gone on this door-system account — this
+      // mapping needs a real assignRole, which would 404 the same way. Record it as
+      // failed (group health untouched) without calling the door system again.
+      if (userGoneByAccount.has(accountKey(mapping))) {
+        failedGroups.push({ mapping, err: userGoneByAccount.get(accountKey(mapping)), reason: 'user_gone' });
+        continue;
+      }
+
       log.info('grant.role.assigning', {
         clientId: tenantId, memberId, hardwareUserId,
         platformMemberId: wixEvent.platformMemberId,
@@ -194,6 +210,15 @@ class GrantRevokeLogic {
       });
       // K-2: On 404 (group deleted), flag the specific group row and continue the loop.
       // Other groups on the same mapping still get attempted — member gets partial access.
+      // Phase 1 (I-6): the group is only flagged after getUserById confirms the USER
+      // still exists — see the catch below.
+      // Phase 1 fix round (F3/F4): every per-mapping failure recorded below — group
+      // gone, user gone, ambiguous 404, unresolved 409 — is a PARTIAL failure. The
+      // loop continues and the whole-job outcome is decided once, after the loop,
+      // with HEAD's rule: return whatever was collected; throw only if nothing was.
+      // A thrown grant makes queue-worker release the lock as 'failed' (the member's
+      // access row goes inactive), so throwing while assignments were collected
+      // would downgrade a member HEAD kept active.
       try {
         const roleId = await hardwareAdapter.assignRole(
           mapping.hardwarePlatform, apiKey, hardwareUserId, mapping.hardwareGroupId
@@ -216,6 +241,84 @@ class GrantRevokeLogic {
         });
       } catch (err) {
         if (err.code === 'HARDWARE_RESOURCE_NOT_FOUND') {
+          // Phase 1 (I-6): a 404 on assignRole is ambiguous — Kisi returns it when the
+          // GROUP is gone AND when the USER is gone. Flagging the group on a user-gone
+          // 404 marks a working door 'not_found' and hides it from every member. So
+          // before touching plan_mapping_groups, ask the door system whether the user
+          // still exists:
+          //   null            → the user is gone. Group untouched, no group_not_found
+          //                     alert. Record HARDWARE_USER_GONE for this mapping and
+          //                     make no further assignRole call on this door-system
+          //                     account (every one would 404 the same way).
+          //   a user object   → the user exists, so the group really is gone →
+          //                     existing group-not-found handling below, unchanged.
+          //   lookup throws, or returns anything else → we can't tell which resource
+          //                     is gone. Fail safe: record the ORIGINAL 404 without
+          //                     flagging the group (a door must never be hidden from
+          //                     every member on an ambiguous 404), and keep going —
+          //                     HEAD attempted the remaining groups here too.
+          // Group health is never touched on the user-gone or ambiguous paths.
+          // If nothing at all is collected, the end-of-loop rule throws
+          // failedGroups[0].err — HARDWARE_USER_GONE or the original 404.
+          let hardwareUser;
+          try {
+            hardwareUser = await hardwareAdapter.getUserById(
+              mapping.hardwarePlatform, apiKey, hardwareUserId
+            );
+          } catch (lookupErr) {
+            log.warn('grant.not_found_ambiguous', {
+              clientId: tenantId, memberId, hardwareUserId,
+              platformMemberId: wixEvent.platformMemberId,
+              mappingId: mapping.mappingId,
+              hardwareGroupId: mapping.hardwareGroupId,
+              reason: 'user_lookup_failed',
+              lookupErrorCode: (lookupErr && lookupErr.code) || null,
+              collectedSoFar: assignments.length,
+              stage: 'grant', result: 'failed',
+            }, err);
+            failedGroups.push({ mapping, err, reason: 'not_found_ambiguous' });
+            continue;
+          }
+
+          if (hardwareUser === null) {
+            const goneErr = new Error(
+              `Hardware user ${hardwareUserId} no longer exists on ${mapping.hardwarePlatform} ` +
+              `(assignRole 404 on group ${mapping.hardwareGroupId}); group not flagged`
+            );
+            goneErr.code = 'HARDWARE_USER_GONE';
+            // Carry the 404 status so queue-worker's 4xx classification dead-letters
+            // this immediately (UnrecoverableError) — a retry would 404 the same way.
+            goneErr.statusCode = err.statusCode || 404;
+            goneErr.hardwareUserId = hardwareUserId;
+            goneErr.hardwarePlatform = mapping.hardwarePlatform;
+            goneErr.cause = err;
+            log.warn('grant.user_gone', {
+              clientId: tenantId, memberId, hardwareUserId,
+              platformMemberId: wixEvent.platformMemberId,
+              mappingId: mapping.mappingId,
+              hardwareGroupId: mapping.hardwareGroupId,
+              collectedSoFar: assignments.length,
+              stage: 'grant', result: 'failed',
+            }, goneErr);
+            userGoneByAccount.set(accountKey(mapping), goneErr);
+            failedGroups.push({ mapping, err: goneErr, reason: 'user_gone' });
+            continue;
+          }
+
+          if (!hardwareUser || typeof hardwareUser !== 'object') {
+            log.warn('grant.not_found_ambiguous', {
+              clientId: tenantId, memberId, hardwareUserId,
+              platformMemberId: wixEvent.platformMemberId,
+              mappingId: mapping.mappingId,
+              hardwareGroupId: mapping.hardwareGroupId,
+              reason: 'user_lookup_unexpected_result',
+              collectedSoFar: assignments.length,
+              stage: 'grant', result: 'failed',
+            }, err);
+            failedGroups.push({ mapping, err, reason: 'not_found_ambiguous' });
+            continue;
+          }
+
           log.warn('grant.group_not_found', {
             clientId: tenantId, memberId,
             platformMemberId: wixEvent.platformMemberId,
@@ -238,14 +341,34 @@ class GrantRevokeLogic {
               [tenantId, mapping.hardwareGroupId, _tid, _actor.type || null, _actor.id || null]
             ).catch(() => {});
           });
-          failedGroups.push({ mapping, err });
+          failedGroups.push({ mapping, err, reason: 'group_not_found' });
           continue; // Try remaining groups
         }
-        throw err; // Non-404 errors still throw immediately
+        if (err && err.code === 'KISI_ROLE_CONFLICT_UNRESOLVED') {
+          // Phase 1 fix round (F4 / P-4): Kisi answered 409 ("already assigned") but
+          // the adapter's recovery read found no matching (user, group, group_basic)
+          // assignment. This one mapping can't be recorded — treat it as a partial
+          // failure and keep going. The group's health is NOT touched (the door
+          // itself is fine). If every mapping fails, the end-of-loop rule throws, as
+          // HEAD's all-failed path did — no new status transition.
+          log.warn('grant.role.conflict_unresolved', {
+            clientId: tenantId, memberId, hardwareUserId,
+            platformMemberId: wixEvent.platformMemberId,
+            mappingId: mapping.mappingId,
+            hardwareGroupId: mapping.hardwareGroupId,
+            collectedSoFar: assignments.length,
+            stage: 'grant', result: 'failed',
+          }, err);
+          failedGroups.push({ mapping, err, reason: 'role_conflict_unresolved' });
+          continue;
+        }
+        throw err; // Any other error still throws immediately
       }
     }
 
-    // If ALL groups failed, dead-letter the job
+    // If ALL groups failed, dead-letter the job (HEAD's all-failed outcome). The
+    // first recorded failure is thrown: HARDWARE_USER_GONE, the original 404, or
+    // KISI_ROLE_CONFLICT_UNRESOLVED — whichever mapping failed first.
     if (failedGroups.length > 0 && assignments.length === 0) {
       throw failedGroups[0].err;
     }
@@ -257,6 +380,7 @@ class GrantRevokeLogic {
         succeeded: assignments.length,
         failed: failedGroups.length,
         failedGroups: failedGroups.map(f => f.mapping.hardwareGroupId),
+        failureReasons: failedGroups.map(f => f.reason),
         stage: 'grant', result: 'failed',
       });
     }

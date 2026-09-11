@@ -38,6 +38,10 @@ class SeamAdapter {
     throw new Error('Seam adapter not implemented');
   }
 
+  async getUserById(apiKey, userId) {
+    throw new Error('Seam adapter not implemented');
+  }
+
   async getLocks(apiKey) {
     // DR-035: Returns normalized shape [] — reconciliation reads { id, name, locked }.
     // Implement when Seam adapter is built: map Seam lock fields to { id, name, locked: boolean }.

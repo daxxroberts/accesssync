@@ -2014,7 +2014,50 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
       return res.status(404).json({ error: 'Error not found' });
     }
     const error = result.rows[0];
-    await eventQueue.add(error.event_type, error.payload, {
+
+    // "Retry now" used to enqueue a job NAMED after the event type (e.g.
+    // 'plan.purchased') carrying the raw payload as job data. queue-worker only
+    // runs jobs named 'grant'/'revoke' and reads { tenantId, standardEvent } — so
+    // the retry did nothing, yet the row was marked resolved. Route through
+    // core/event-routing.js and send the shape the worker expects. An event type
+    // that is neither a grant nor a revoke, or a payload that can't be read, is
+    // refused: nothing queued, row left open.
+    const { jobNameForEventType } = require('../../core/event-routing');
+    const jobName = jobNameForEventType(error.event_type);
+    // Phase 1 ("stop the bleeding", 2026-09-10): a retry that routes to 'revoke'
+    // is refused too — replaying a stale removal later can take door access from
+    // someone who has since paid. Nothing queued, row left open. Same rule and
+    // wording as admin/routes/errors.js. Checked before the payload.
+    if (jobName === 'revoke') {
+      log.warn('admin.retry.revoke_disabled', {
+        clientId, errorId, eventType: error.event_type, route: 'operator.errors.retry', reason: 'revoke_retry_disabled',
+      });
+      return res.status(422).json({
+        error: 'Retrying a door-access removal is paused while AccessSync\'s safety checks are rolled out. '
+          + 'Nothing was changed — if this person should lose access, remove them in Kisi.',
+        reason: 'revoke_retry_disabled',
+      });
+    }
+    let standardEvent = error.payload;
+    if (typeof standardEvent === 'string') {
+      try { standardEvent = JSON.parse(standardEvent); } catch (_) { standardEvent = null; }
+    }
+    const payloadReadable = !!standardEvent && typeof standardEvent === 'object' && !Array.isArray(standardEvent);
+    if (!jobName || !payloadReadable) {
+      const reason = !jobName ? 'unroutable_event_type' : 'unreadable_payload';
+      log.warn(!jobName ? 'admin.retry.unroutable_event_type' : 'admin.retry.unreadable_payload', {
+        clientId, errorId, eventType: error.event_type, route: 'operator.errors.retry', reason,
+      });
+      return res.status(422).json({
+        error: !jobName
+          ? 'This error can\'t be retried: it isn\'t a member access change AccessSync can re-run. Nothing was queued and the error is still open.'
+          : 'This error can\'t be retried: its saved details are missing or unreadable. Nothing was queued and the error is still open.',
+        reason,
+      });
+    }
+    if (!standardEvent.traceId) standardEvent.traceId = mintTraceId();
+
+    await eventQueue.add(jobName, { tenantId: clientId, standardEvent }, {
       attempts: 3,
       backoff: { type: 'exponential', delay: 5000 },
     });

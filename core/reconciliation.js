@@ -3,9 +3,9 @@
  * @layer core/layer4
  * @role cron-nightly
  * @schedule nightly via Railway Cron
- * @reads member_access, member_master, error_queue, locations, clients (source_api_key, source_site_id, reconciliation_interval, last_sync_at), member_access_sources, plan_mappings
- * @writes member_access, config_alert_log, clients (last_sync_at)
- * @calls hardware-adapter (getLocks, getManagedRoleAssignments), wix-plans-api (listActiveOrders, listConfirmedBookings), plan-mapping-resolver (resolve), BullMQ (re-queue), resend (digest)
+ * @reads member_access, member_master, error_queue, locations, clients (source_api_key, source_site_id, reconciliation_interval, last_sync_at, auto_revoke_mode), member_access_sources (incl. the not_paying_* strike clock), plan_mappings, config_alert_log (alert dedupe)
+ * @writes member_access, config_alert_log, clients (last_sync_at), reconciliation_run, reconciliation_proposal
+ * @calls hardware-adapter (getLocks, getManagedRoleAssignments, listAllUsers), wix-plans-api (listOrdersClassified, listConfirmedBookings, listActiveOrders), plan-mapping-resolver (resolve), revoke-policy (evaluateRemovals, normalizeMode), standard-adapter (recordNotPayingObservation, clearNotPayingObservation), event-routing (jobNameForEventType), db (getClient — per-client advisory lock), BullMQ (re-queue), resend (digest)
  * @exports instance (NightlyReconciliation) — exposes runNightlySweep, _syncClient, reconcileMember
  * @dr DR-003, DR-008, DR-018, DR-020, DR-023, DR-034, DR-037
  *
@@ -26,18 +26,514 @@ const hardwareAdapter = require('../adapters/hardware-adapter');
 const standardAdapter = require('../adapters/standard-adapter');
 const { eventQueue } = require('./webhook-processor');
 const { decryptApiKey } = require('./crypto-utils');
-const { listActiveOrders, listConfirmedBookings } = require('../adapters/wix/wix-plans-api');
+const { listActiveOrders, listConfirmedBookings, listOrdersClassified } = require('../adapters/wix/wix-plans-api');
 const { extractBillingSnapshot } = require('./billing-snapshot');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { log, withTrace } = require('./logger');
 const { runWith, mintTraceId, getTraceId, getActor } = require('./trace-context');
 const { sendOperatorEmail } = require('./operator-mailer');
 const { renderNightlyDigest } = require('./operator-email-templates');
+const {
+  REVOKE_SOURCE, DATA_SOURCE, REVOKE_MODE, REVOKE_HOLD_REASON, ANOMALY_HOLD_REASONS,
+  DEFAULT_STRIKE_POLICY, REMOVABLE_CLASSIFICATIONS, normalizeMode, evaluateRemovals,
+} = require('./revoke-policy');
+const { ORDER_CLASS } = require('./wix-order-classification');
+const { jobNameForEventType } = require('./event-routing');
+
+// ── Phase 1 ("stop the bleeding", 2026-09-10): the sweep is OBSERVATION-ONLY ──
+// Every removal path in _syncClient records what it would do and holds it.
+// Nothing the sweep does can enqueue a revoke: there is no flush loop, and
+// _enqueueApprovedRevoke refuses while this is true. Phase 3b flips it — and
+// flipping it alone arms nothing; 3b must also add the flush back.
+const SWEEP_OBSERVATION_ONLY = true;
+
+// config_alert_log.alert_type raised when the removal policy holds a batch
+// because the data looks wrong (as opposed to an operator mode or Phase 1's
+// observation-only hold). Anything unmapped falls back to `revoke_<reason>`.
+const ANOMALY_ALERT_TYPE = Object.freeze({
+  [REVOKE_HOLD_REASON.INVALID_PROPOSAL]:  'revoke_invalid_proposal',
+  [REVOKE_HOLD_REASON.SNAPSHOT_UNSTABLE]: 'wix_snapshot_anomaly',     // same type the old gate raised
+  [REVOKE_HOLD_REASON.MASS_REVOKE]:       'revoke_batch_mass_revoke',
+});
+
+// Sweep alert types (copy: core/operator-email-templates.js describeConfigAlert).
+const SWEEP_ALERT = Object.freeze({
+  REPAIR_PENDING:       'sweep_repair_pending',        // paying member, door missing in Kisi
+  REMOVAL_PENDING:      'sweep_removal_pending',       // 3B — no longer paying in Wix
+  HOLDER_LAPSE_PENDING: 'revoke_holder_lapse_pending', // Pass 1.5 — holder no longer paying for the sub's plan
+  HELD_PAYMENT_STATE:   'revoke_held_payment_state',   // 3B / Pass 1.5 — payment declined, pending or unrecognised: left alone
+});
+
+// reconciliation_proposal.kind
+const PROPOSAL_KIND = Object.freeze({
+  REMOVAL_PENDING:    'removal_pending',
+  REPAIR_PENDING:     'repair_pending',
+  HELD_PAYMENT_STATE: 'held_payment_state',
+});
+
+// reconciliation_proposal.hold_reason for held_payment_state rows. Not a
+// removal-policy reason: these (member, plan) pairs never reach the policy.
+const HELD_PAYMENT_STATE_REASON = 'payment_state_not_removable';
+
+// Per-member removal alerts (sweep_removal_pending, revoke_holder_lapse_pending,
+// revoke_held_payment_state) are suppressed only when the batch is held because
+// the evidence itself cannot be trusted: the two Wix reads disagreed too much,
+// or the batch was malformed. A MASS_REVOKE hold is about volume — each
+// member's evidence still stands, so their alerts are kept (fix round F9).
+const PER_MEMBER_ALERT_SUPPRESSING_REASONS = Object.freeze([
+  REVOKE_HOLD_REASON.SNAPSHOT_UNSTABLE,
+  REVOKE_HOLD_REASON.INVALID_PROPOSAL,
+]);
+
+// member_access_sources.source_type → the Wix read that says whether it pays.
+// Any other value (including NULL) is not Wix-derived and is never a sweep
+// removal candidate. Null-prototype: a DB value can never hit an inherited key.
+const SOURCE_TYPE_DATA_SOURCE = Object.freeze(Object.assign(Object.create(null), {
+  plan:    DATA_SOURCE.WIX_ORDERS,
+  booking: DATA_SOURCE.WIX_BOOKINGS,
+}));
+
+// "Best" classification per (member, plan) across both reads: the most alive
+// state wins, so one read showing PAYING beats the other showing ENDED.
+const CLASS_RANK = Object.freeze(Object.assign(Object.create(null), {
+  [ORDER_CLASS.PAYING]:   5,
+  [ORDER_CLASS.PENDING]:  4,
+  [ORDER_CLASS.DECLINED]: 3,
+  [ORDER_CLASS.UNKNOWN]:  2,
+  [ORDER_CLASS.ENDED]:    1,
+}));
+// Neither read had any order or booking for this (member, plan).
+const CLASS_ABSENT = 'ABSENT';
+
+// Only an ENDED order, or no order or booking at all (ABSENT), may ever back a
+// Wix-sourced removal proposal — the policy's own list (P-2), so the two can
+// never disagree.
+function isRemovableClass(cls) {
+  return typeof cls === 'string' && REMOVABLE_CLASSIFICATIONS.includes(cls);
+}
+
+// DECLINED / PENDING / UNKNOWN — or any value the sweep does not recognise.
+// A payment that is declined, pending or unrecognised is not a cancellation:
+// such a (member, plan) is recorded as held_payment_state, never proposed for
+// removal, and not counted in any Wix removal population (fix round F2).
+// Suspension is Phase 4's job.
+function isHeldPaymentClass(cls) {
+  return cls !== ORDER_CLASS.PAYING && !isRemovableClass(cls);
+}
+
+// The decision unit a member belongs to (P-1): a sub-member belongs to its
+// holder's family, keyed by the holder's platform_member_id; everyone else is
+// their own unit. A sub whose holder cannot be resolved is its own unit.
+function unitKeyOf(memberKey, holderKey) {
+  return holderKey || memberKey;
+}
+
+const ALERT_REF_MAX_LEN     = 255; // config_alert_log.hardware_ref is varchar(255)
+const PROPOSAL_INSERT_CHUNK = 500; // rows per INSERT; one statement per sweep in practice
+
+function countBySource(proposals) {
+  const counts = {};
+  for (const p of proposals) counts[p.source] = (counts[p.source] || 0) + 1;
+  return counts;
+}
+
+function countByDataSource(proposals) {
+  const counts = {};
+  for (const p of proposals) counts[p.dataSource] = (counts[p.dataSource] || 0) + 1;
+  return counts;
+}
+
+function countByClassification(records) {
+  const counts = {};
+  for (const r of records) counts[r.classification] = (counts[r.classification] || 0) + 1;
+  return counts;
+}
+
+// The unit a proposal is counted in — the same rule as revoke-policy's own
+// (an absent unitKey means the member's own unit).
+function proposalUnit(p) {
+  return p.unitKey === undefined ? p.memberKey : p.unitKey;
+}
+
+// Collision-free composite Map key for (member|access id, plan id).
+function memberPlanKey(a, b) {
+  return JSON.stringify([a, b]);
+}
+
+function alertRef(value) {
+  return String(value === null || value === undefined ? '' : value).slice(0, ALERT_REF_MAX_LEN);
+}
+
+// A strike clock's `since`, as the removal policy expects it (P-3). A Date
+// becomes its ISO instant. A string is passed through UNCHANGED for the policy
+// to judge strictly — never through Date.parse, which reads '12' or '1/1' as a
+// date decades ago and would launder it into a valid-looking, long-ripe clock.
+// (pg returns timestamptz as a Date, so a string here is already unusual; a
+// malformed one holds the batch as invalid_strike_since.)
+function toIsoOrNull(v) {
+  if (v instanceof Date) return Number.isFinite(v.getTime()) ? v.toISOString() : null;
+  if (typeof v === 'string' && v !== '') return v;
+  return null;
+}
+
+function holdReasonForMode(mode) {
+  return mode === REVOKE_MODE.DRY_RUN ? REVOKE_HOLD_REASON.DRY_RUN : REVOKE_HOLD_REASON.AUTO_REVOKE_OFF;
+}
+
+function symmetricDifferenceSize(a, b) {
+  let n = 0;
+  for (const x of a) if (!b.has(x)) n++;
+  for (const x of b) if (!a.has(x)) n++;
+  return n;
+}
+
+/**
+ * Folds the sweep's two Wix reads into one view of who is paying. Pure.
+ *
+ * @param {Array<{orders: Array, bookings: Array}>} reads  exactly two reads;
+ *   orders from listOrdersClassified, bookings from listConfirmedBookings
+ * @returns {{
+ *   wixMembers: Map<string, {plans: Array<{planId, sourceType, rawOrder}>, email, name}>,
+ *   payingPlansByMember: Map<string, Set<string>>,
+ *   bestClass: Map<string, string>,
+ *   payingInRead: Array<Set<string>>,
+ *   readDisagreement: Object<string, number>,
+ * }}
+ *
+ * PAYING = PAYING in EITHER read (Builder rule 5, the union):
+ *   orders   — classification === 'PAYING' (core/wix-order-classification.js)
+ *   bookings — present in the CONFIRMED list
+ * wixMembers carries ONLY paying members and ONLY their paying plans: an
+ * ACTIVE order whose payment is UNPAID / PENDING / FAILED is never a plan the
+ * sweep grants or promotes. readDisagreement counts, per data source, the
+ * members whose paying status differed between the two reads.
+ *
+ * readDisagreement is already a count of UNITS (P-1): every id here is the
+ * Wix member on an order or booking — a primary member or a plan holder,
+ * never a sub-member (subs carry AccessSync-minted `###as` ids and never
+ * appear in Wix). A family whose holder's paying status flips between the
+ * reads therefore counts once, whatever its number of subs.
+ */
+function buildWixPayingView(reads) {
+  const wixMembers          = new Map();
+  const payingPlansByMember = new Map();
+  const bestClass           = new Map();
+  const payingPerRead       = reads.map(() => ({ orders: new Set(), bookings: new Set() }));
+
+  const noteClass = (memberId, planId, cls) => {
+    if (!planId) return;
+    const k = memberPlanKey(memberId, planId);
+    const prev = bestClass.get(k);
+    if (!prev || (CLASS_RANK[cls] || 0) > (CLASS_RANK[prev] || 0)) bestClass.set(k, cls);
+  };
+
+  // A member may hold MULTIPLE plans at once (OB-185 hotfix, 2026-05-18): one
+  // entry per member, plans de-duplicated on planId. Orders go first, so the
+  // first PAYING order for a plan supplies its rawOrder (OB-187 billing backfill).
+  const addPaying = (memberId, planId, sourceType, email, name, rawOrder) => {
+    let entry = wixMembers.get(memberId);
+    if (!entry) {
+      entry = { plans: [], email: email || null, name: name || null };
+      wixMembers.set(memberId, entry);
+    }
+    let plans = payingPlansByMember.get(memberId);
+    if (!plans) {
+      plans = new Set();
+      payingPlansByMember.set(memberId, plans);
+    }
+    if (planId && !plans.has(planId)) {
+      plans.add(planId);
+      entry.plans.push({ planId, sourceType, rawOrder: rawOrder || null });
+    }
+    if (!entry.email && email) entry.email = email;
+    if (!entry.name && name)   entry.name  = name;
+  };
+
+  reads.forEach((read, i) => {
+    for (const o of read.orders) {
+      if (!o || !o.memberId) continue;
+      const cls = CLASS_RANK[o.classification] ? o.classification : ORDER_CLASS.UNKNOWN;
+      noteClass(o.memberId, o.planId, cls);
+      if (cls !== ORDER_CLASS.PAYING) continue;
+      payingPerRead[i].orders.add(o.memberId);
+      addPaying(o.memberId, o.planId || null, 'plan', null, null, o.rawOrder);
+    }
+  });
+  reads.forEach((read, i) => {
+    for (const b of read.bookings) {
+      if (!b || !b.memberId) continue;
+      noteClass(b.memberId, b.planId, ORDER_CLASS.PAYING);
+      payingPerRead[i].bookings.add(b.memberId);
+      addPaying(b.memberId, b.planId || null, 'booking', b.email, b.name, null);
+    }
+  });
+
+  const payingInRead = payingPerRead.map(r => new Set([...r.orders, ...r.bookings]));
+  const readDisagreement = {
+    [DATA_SOURCE.WIX_ORDERS]:   symmetricDifferenceSize(payingPerRead[0].orders,   payingPerRead[1].orders),
+    [DATA_SOURCE.WIX_BOOKINGS]: symmetricDifferenceSize(payingPerRead[0].bookings, payingPerRead[1].bookings),
+  };
+
+  return { wixMembers, payingPlansByMember, bestClass, payingInRead, readDisagreement };
+}
 
 class NightlyReconciliation {
 
   constructor() {
     this.staleThresholdMinutes = 10;
+    // The sweep reads Wix twice, this far apart, and treats a member as paying
+    // if EITHER read says so (Builder rule 5). Tests set 0.
+    this._doubleReadDelayMs = 15000;
+  }
+
+  /**
+   * Automatic-removal mode — clients.auto_revoke_mode ('off' | 'dry_run' | 'on').
+   *
+   * Own try/catch, fail-closed: normalizeMode() turns anything but exactly
+   * 'dry_run' or 'on' — a NULL, a failed read, a column that does not exist
+   * yet because migrations/reconcile-auto-revoke-kill-switch.sql is not
+   * applied — into 'off'. Grants and the reconciliation_run audit row are
+   * never affected by it. (The event keeps its kill-switch name for
+   * continuity: it is the same switch.)
+   *
+   * Phase 1: the sweep is observation-only in every mode. The mode gates the
+   * DR-051 seat self-heal and reconcileMember's per-member revoke, and is
+   * recorded with every proposal.
+   *
+   * @param {string} clientId
+   * @returns {Promise<'off'|'dry_run'|'on'>}
+   */
+  async _readAutoRevokeMode(clientId) {
+    try {
+      const r = await db.query(`SELECT auto_revoke_mode FROM clients WHERE id = $1`, [clientId]);
+      return normalizeMode(r && r.rows && r.rows[0] ? r.rows[0].auto_revoke_mode : undefined);
+    } catch (err) {
+      log.error('reconciliation.kill_switch_read_failed', { clientId }, err);
+      return REVOKE_MODE.OFF;
+    }
+  }
+
+  /**
+   * Per-client Postgres advisory lock, so two sweeps of the same client can
+   * never overlap (the boot sweep, the Railway cron, the in-process scheduler
+   * and the manual /sync/run can all start one).
+   *
+   * Session-level advisory locks belong to a CONNECTION, and db.query() runs on
+   * a pool — the lock and the unlock could land on different connections. So
+   * the lock is taken on a dedicated connection from db.getClient(), held for
+   * the whole sync, unlocked on that same connection and then released. (The
+   * live DATABASE_URL is the Supabase SESSION-mode pooler, where this holds; the
+   * transaction-mode pooler would not keep a session lock.)
+   *
+   * @returns {Promise<{state: 'acquired', conn: Object} | {state: 'held_elsewhere'} | {state: 'unavailable'}>}
+   *   held_elsewhere — another sweep holds it: the caller must skip.
+   *   unavailable    — the lock MECHANISM failed (getClient missing or
+   *                    throwing, the query throwing or answering nonsense).
+   *                    Phase 1 proceeds without the lock: the sweep enqueues no
+   *                    removals, so an overlap is harmless, while skipping
+   *                    would also skip that client's grants.
+   */
+  async _acquireClientLock(clientId) {
+    let conn = null;
+    try {
+      if (typeof db.getClient !== 'function') throw new Error('db.getClient is not available');
+      conn = await db.getClient();
+      if (!conn || typeof conn.query !== 'function') throw new Error('db.getClient returned no usable connection');
+      const r = await conn.query(
+        `SELECT pg_try_advisory_lock(hashtext('reconcile:' || $1::text)) AS locked`,
+        [String(clientId)]
+      );
+      const locked = r && r.rows && r.rows[0] ? r.rows[0].locked : undefined;
+      if (locked === true) return { state: 'acquired', conn };
+      if (locked === false) {
+        // Held by another sweep. This session holds nothing — hand it back.
+        conn.release();
+        return { state: 'held_elsewhere' };
+      }
+      throw new Error('pg_try_advisory_lock returned no boolean');
+    } catch (err) {
+      // Destroy rather than pool the connection: if the lock query failed
+      // mid-flight this session might still hold the lock, and a pooled
+      // connection could keep it indefinitely. Closing the session frees it.
+      if (conn && typeof conn.release === 'function') {
+        try { conn.release(true); } catch (_) { /* already gone */ }
+      }
+      log.warn('reconciliation.client_lock_unavailable', {
+        clientId, errorCode: (err && err.code) || null, traceId: this._sweepTraceId || null,
+      }, err);
+      // 3b: fail closed here — once the sweep can remove access, a sweep that
+      // cannot take the lock must skip (like held_elsewhere), not proceed.
+      return { state: 'unavailable' };
+    }
+  }
+
+  /**
+   * Releases a lock taken by _acquireClientLock on the SAME connection. Never
+   * throws. If the unlock fails or reports nothing was held, the connection is
+   * destroyed (release(true)) instead of pooled — ending the session is what
+   * guarantees Postgres drops the lock.
+   */
+  async _releaseClientLock(lock, clientId) {
+    if (!lock || lock.state !== 'acquired' || !lock.conn) return;
+    let destroy = false;
+    try {
+      const r = await lock.conn.query(
+        `SELECT pg_advisory_unlock(hashtext('reconcile:' || $1::text)) AS unlocked`,
+        [String(clientId)]
+      );
+      if (!(r && r.rows && r.rows[0] && r.rows[0].unlocked === true)) {
+        destroy = true;
+        log.warn('reconciliation.client_lock_release_failed', { clientId, reason: 'not_held' });
+      }
+    } catch (err) {
+      destroy = true;
+      log.warn('reconciliation.client_lock_release_failed', {
+        clientId, reason: 'unlock_threw', errorCode: (err && err.code) || null,
+      }, err);
+    } finally {
+      try {
+        if (destroy) lock.conn.release(true);
+        else lock.conn.release();
+      } catch (_) { /* connection already gone — nothing left to free */ }
+    }
+  }
+
+  /**
+   * Every _syncClient return has the same keys, whichever way the sync ended.
+   * Callers (admin/routes/operator.js /sync/run, the dashboard) destructure it.
+   */
+  _syncResult(fields = {}) {
+    return {
+      granted: 0, revoked: 0, skippedHolderOptin: 0, runId: null,
+      sanityGateTriggered: false, sanityGateResolved: null,
+      heldRevokes: 0, holdReason: null,
+      observationOnly: SWEEP_OBSERVATION_ONLY, proposalsRecorded: 0,
+      ...fields,
+    };
+  }
+
+  /**
+   * INSERT a config_alert_log row unless an UNRESOLVED row with the same
+   * (client, alert_type, hardware_ref) already exists — one statement, so a
+   * condition that persists across sweeps alerts once until an operator
+   * resolves it. alert_type is never null; hardware_ref is capped at 255.
+   * Every parameter is cast explicitly: a parameter used both in the SELECT
+   * list and in the WHERE would otherwise be inferred as two different types.
+   * Never throws.
+   *
+   * @returns {Promise<boolean>} true when a row was written
+   */
+  async _insertAlertOnce(clientId, alertType, hardwareRef) {
+    const type = alertType || 'revoke_unknown';
+    const _actor = getActor() || {};
+    try {
+      const r = await db.query(
+        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+         SELECT $1::uuid, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::varchar
+         WHERE NOT EXISTS (
+           SELECT 1 FROM config_alert_log
+           WHERE client_id    = $1::uuid
+             AND alert_type   = $2::varchar
+             AND hardware_ref = $3::varchar
+             AND resolved_at IS NULL
+         )`,
+        [
+          clientId, type, alertRef(hardwareRef),
+          this._sweepTraceId || getTraceId() || null,
+          _actor.type || null, _actor.id || null,
+        ]
+      );
+      return !!(r && r.rowCount > 0);
+    } catch (err) {
+      log.warn('reconciliation.alert_write_failed', { clientId, alertType: type }, err);
+      return false;
+    }
+  }
+
+  /**
+   * One batched INSERT into reconciliation_proposal (migration
+   * reconcile-proposal-log.sql) for every proposal this sweep made. Log only —
+   * nothing reads it to decide. Never throws: a missing table (the migration
+   * is not applied yet) warns once per process and the sweep carries on.
+   *
+   * @returns {Promise<number>} rows recorded
+   */
+  async _recordProposals(clientId, runId, records) {
+    if (!Array.isArray(records) || records.length === 0) return 0;
+    let recorded = 0;
+    for (let i = 0; i < records.length; i += PROPOSAL_INSERT_CHUNK) {
+      const chunk = records.slice(i, i + PROPOSAL_INSERT_CHUNK);
+      const params = [];
+      const tuples = chunk.map((r, j) => {
+        const b = j * 12;
+        params.push(
+          runId || null, clientId,
+          r.platformMemberId || null, r.sourcePlanId || null, r.hardwareGroupId || null,
+          r.kind, r.source || null, r.dataSource || null, r.classification || null,
+          r.decision, r.holdReason || null,
+          r.evidence ? JSON.stringify(r.evidence) : null
+        );
+        const ph = [];
+        for (let k = 1; k <= 12; k++) ph.push(`$${b + k}`);
+        return `(${ph.join(', ')})`;
+      });
+      try {
+        const res = await db.query(
+          `INSERT INTO reconciliation_proposal
+             (run_id, client_id, platform_member_id, source_plan_id, hardware_group_id,
+              kind, source, data_source, classification, decision, hold_reason, evidence)
+           VALUES ${tuples.join(', ')}`,
+          params
+        );
+        recorded += (res && typeof res.rowCount === 'number') ? res.rowCount : chunk.length;
+      } catch (err) {
+        if (err && err.code === '42P01') {
+          if (!this._proposalLogMissingWarned) {
+            this._proposalLogMissingWarned = true;
+            log.warn('reconciliation.proposal_log_unavailable', {
+              clientId, migration: 'migrations/reconcile-proposal-log.sql',
+            });
+          }
+        } else {
+          log.warn('reconciliation.proposal_log_failed', {
+            clientId, runId, count: chunk.length, errorCode: (err && err.code) || null,
+          }, err);
+        }
+        return recorded;
+      }
+    }
+    return recorded;
+  }
+
+  /**
+   * The Wix double read (Builder rule 5): every pricing-plan order, classified,
+   * plus confirmed bookings — read, wait this._doubleReadDelayMs, read again —
+   * folded by buildWixPayingView. Throws if EITHER read fails or returns a
+   * non-list (the caller aborts the client's sync, fail-closed); the error
+   * carries wixRead = 1 | 2.
+   */
+  async _readWixTwice(wixApiKey, siteId) {
+    const readOnce = async (n) => {
+      try {
+        const [orders, bookings] = await Promise.all([
+          listOrdersClassified(wixApiKey, siteId),
+          listConfirmedBookings(wixApiKey, siteId),
+        ]);
+        if (!Array.isArray(orders) || !Array.isArray(bookings)) {
+          const bad = new Error(`Wix read ${n} returned a non-array list`);
+          bad.code = 'WIX_PAGE_INTEGRITY';
+          throw bad;
+        }
+        return { orders, bookings };
+      } catch (err) {
+        if (err && typeof err === 'object' && !err.wixRead) err.wixRead = n;
+        throw err;
+      }
+    };
+    const first = await readOnce(1);
+    if (this._doubleReadDelayMs > 0) await this._sleep(this._doubleReadDelayMs);
+    const second = await readOnce(2);
+    return buildWixPayingView([first, second]);
   }
 
   /**
@@ -88,8 +584,11 @@ class NightlyReconciliation {
         return;
       }
 
-      // Step 0: True-source sync — Wix ↔ DB diff, queue corrections for missing/lapsed members
-      await this._syncTrueSources();
+      // Step 0: True-source sync — Wix ↔ DB diff, queue grants for paying members.
+      // payingByClient collects each client's PAYING (member → plans) from this
+      // sweep's Wix double read; the step-4 replay only re-grants members in it.
+      const payingByClient = new Map();
+      await this._syncTrueSources(payingByClient);
 
       // Step 1: Clean up stale in_flight records (crash protection).
       // OB-202: Stale lock → 'recovery_pending' (transient retry state).
@@ -111,9 +610,17 @@ class NightlyReconciliation {
       const recordsToProcess = await this._fetchActionableRecords();
       sweepLogger.info('reconciliation.actionable_records', { count: recordsToProcess.length, stage: 'cron', result: 'success' });
 
-      // Step 4: Re-process records with rate limit compliance
+      // Step 4: Re-process records with rate limit compliance. Grant replays
+      // only (Phase 1), and only for members PAYING in this sweep's Wix read.
+      // One bad record never stops the rest, the digest or last_sync_at.
       for (const record of recordsToProcess) {
-        await this._processRecordTargeted(record);
+        try {
+          await this._processRecordTargeted(record, payingByClient);
+        } catch (err) {
+          log.warn('reconciliation.requeue_record_failed', {
+            memberId: record && record.member_id, clientId: record && record.client_id,
+          }, err);
+        }
         await this._sleep(250); // Respect Kisi 5 req/sec (DR-008)
       }
 
@@ -130,13 +637,16 @@ class NightlyReconciliation {
   }
 
   /**
-   * Step 0: Pull Wix active orders + confirmed bookings, diff against member_master/member_access.
-   * Queue synthetic grant/revoke jobs for any mismatches found.
+   * Step 0: Pull Wix orders + confirmed bookings (twice), diff against member_master/member_access.
+   * Queue synthetic grants for paying members; record (never enqueue) removals — Phase 1.
    *
    * Sub-members (platform_member_id containing '###as' or sub_master_id IS NOT NULL)
-   * are operator-managed — they are excluded from the Wix absence revoke check.
+   * are operator-managed — they are excluded from the Wix absence check (3B).
+   *
+   * @param {Map} [payingByClient]  filled with clientId → Map<memberId, Set<planId>>
+   *   (PAYING in either Wix read) for every client whose Wix double read succeeded.
    */
-  async _syncTrueSources() {
+  async _syncTrueSources(payingByClient = null) {
     const sweepLogger = this._sweepLogger || log;
     const sweepTraceId = this._sweepTraceId || null;
     sweepLogger.info('reconciliation.wix_sync_start', { traceId: sweepTraceId, stage: 'cron', result: 'start' });
@@ -157,6 +667,7 @@ class NightlyReconciliation {
         await this._syncClient(client, {
           triggeredBy: 'cron',
           triggeredByActor: { type: 'system', id: `reconciliation-${triggerSource}` },
+          payingCollector: payingByClient,
         });
       } catch (err) {
         log.error('reconciliation.client_sync_failed', { clientId: client.id }, err);
@@ -181,12 +692,60 @@ class NightlyReconciliation {
    * back to Wix platform_member_ids (on member_master), and member_master.source_tag = 'accesssync'
    * filters out staff/contractors.
    *
-   * Hardening (2026-04-28):
-   *  - Opens a reconciliation_run audit row at start, closes at end with full counts
-   *  - Mass-revoke sanity gate: if would-be revoke count >= 25% of yesterday's active count,
-   *    waits 30s, re-fetches Wix, aborts revoke phase if drop persists. Grants always proceed.
+   * Hardening:
+   *  - Opens a reconciliation_run audit row at start, closes at end with full counts (2026-04-28)
+   *  - Per-client Postgres advisory lock (2026-09-10): a second concurrent sync of the same
+   *    client returns skipped:'locked' and touches nothing (see _acquireClientLock).
+   *  - Phase 1 "stop the bleeding" (2026-09-10) — the sweep is OBSERVATION-ONLY:
+   *      · Wix is read twice (listOrdersClassified + listConfirmedBookings, _doubleReadDelayMs
+   *        apart). PAYING = PAYING in either read. Grants and Pass 1 use PAYING plans only —
+   *        an ACTIVE order whose payment is UNPAID is never granted by the sweep.
+   *      · Either Wix read or the Kisi assignment read failing aborts the client's sync
+   *        (fail-closed: no grants, no removals, run row closed 'aborted', operator alerted).
+   *      · Every removal path — 3B Wix absence, Pass 3 Kisi-user-gone / role drift for
+   *        non-paying members, Pass 1.5 holder lapse — only PROPOSES. One decision
+   *        (core/revoke-policy.js evaluateRemovals, observationOnly: true) holds them all,
+   *        whatever clients.auto_revoke_mode says. Nothing is enqueued: `revoked` is always 0.
+   *      · Pass 3 findings for PAYING members are repair_pending (a missing door), never a
+   *        removal. Every proposal is written to reconciliation_proposal; operators get
+   *        de-duplicated alerts (sweep_repair_pending / sweep_removal_pending /
+   *        revoke_holder_lapse_pending) and one anomaly alert when the data looks wrong.
+   *  - Phase 1 fix round (2026-09-10):
+   *      · 3B and Pass 1.5 propose a (member, plan) only when its Wix classification — for a
+   *        sub, its HOLDER's — is ENDED or ABSENT (P-2). A declined, pending or unrecognised
+   *        payment is recorded as held_payment_state (no strike clock; any running clock is
+   *        cleared), alerted once per unit (revoke_held_payment_state), and never counted in
+   *        a Wix removal population.
+   *      · Decisions are in UNITS (P-1): a family — the holder plus its subs — is one unit
+   *        keyed by the holder's platform_member_id. Every proposal carries unitKey and every
+   *        population is a count of distinct units.
+   *      · Strike clocks are read from the DB, the policy decides, and only then does any
+   *        clock move. Fix round 3: an anomaly-held sweep — an empty batch whose two reads
+   *        disagreed too much included — never ADVANCES a clock, nor does a sweep that could
+   *        not read the clocks; clears always run, because clearing only ever delays a
+   *        removal.
+   *      · Per-member alerts survive a MASS_REVOKE hold; only SNAPSHOT_UNSTABLE and
+   *        INVALID_PROPOSAL suppress them.
+   *      · Pass 1 never promotes a seat its holder released (DR-051 holder_seated=false).
+   *    Return adds observationOnly, proposalsRecorded and holdReason.
    */
   async _syncClient(client, opts = {}) {
+    const lock = await this._acquireClientLock(client.id);
+    if (lock.state === 'held_elsewhere') {
+      // Another sweep of this client is running. Open no run row, change nothing.
+      log.warn('reconciliation.client_sync_skipped_locked', {
+        clientId: client.id, triggeredBy: opts.triggeredBy || 'cron', traceId: this._sweepTraceId || null,
+      });
+      return this._syncResult({ skipped: 'locked', aborted: true, reason: 'locked' });
+    }
+    try {
+      return await this._syncClientLocked(client, opts);
+    } finally {
+      await this._releaseClientLock(lock, client.id);
+    }
+  }
+
+  async _syncClientLocked(client, opts = {}) {
     const triggeredBy        = opts.triggeredBy || 'cron';
     // OB-227: literal 'reconciliation-cron' default was the bug — masked which trigger
     // path invoked the sweep. Callers must pass an explicit triggeredByActor; if absent,
@@ -199,8 +758,10 @@ class NightlyReconciliation {
     const traceId = this._sweepTraceId || null;
 
     let granted = 0;
-    let revoked = 0;
-    let skippedHolderOptin = 0;
+    // Phase 1: the sweep never enqueues a revoke. Kept in the return and the
+    // reconciliation_run row (revokes_queued) so both still read honestly.
+    const revoked = 0;
+    const skippedHolderOptin = 0; // always 0 since DR-049; kept for callers
 
     // Open the audit row immediately so even an early abort is recorded
     const runRowResult = await db.query(
@@ -212,65 +773,123 @@ class NightlyReconciliation {
     ).catch(e => { log.error('reconciliation.run_open_failed', { clientId: client.id }, e); return { rows: [{ id: null }] }; });
     const runId = runRowResult.rows[0]?.id || null;
 
-    // 1. Pull Wix side — active plan orders + confirmed bookings.
+    // Automatic-removal mode — read once, up front, fail-closed 'off' (see
+    // _readAutoRevokeMode). Gates the DR-051 seat self-heal in Pass 1 and is
+    // recorded with every proposal. It never arms a sweep removal in Phase 1.
+    const mode = await this._readAutoRevokeMode(client.id);
+
+    // Every removal path below pushes a proposal here instead of enqueueing:
+    // { source, dataSource, memberKey, unitKey, planId, ... }. The removal
+    // decision (after 3B, before the grant loop) holds all of them in Phase 1.
+    const revokeProposals = [];
+    // Pass 3 findings for PAYING members: a door that should exist is missing.
+    // Never a removal — recorded as repair_pending and alerted.
+    const repairProposals = [];
+    // 3B / Pass 1.5 (member, plan) pairs whose Wix payment is declined, pending
+    // or unrecognised (fix round F2): never proposed, never counted in a Wix
+    // removal population — recorded as held_payment_state and alerted.
+    const heldPaymentState = [];
+    // Units Pass 3 sees as active + provisioned — the 'kisi' population the
+    // removal policy judges volume against; stays empty if Pass 3 is skipped.
+    const pass3UnitKeys = new Set();
+
+    // 1. Pull Wix side — every pricing-plan order (classified) + confirmed bookings,
+    //    read TWICE, this._doubleReadDelayMs apart (Builder rule 5).
     //
-    // OB-87: FAIL CLOSED. If EITHER Wix fetch throws, we cannot distinguish
+    // OB-87: FAIL CLOSED. If ANY Wix fetch in either read throws, we cannot distinguish
     // "member has no active plan" from "Wix API is broken." An empty-but-valid
     // response from a broken endpoint would cause a mass revoke of real members.
     // So: on any fetch error, flag config_alert_log and abort this client's sync
-    // entirely — no grants, no revokes. Nightly digest will surface the alert.
-    let orders, bookings;
+    // entirely — no grants, no removals. Nightly digest will surface the alert.
+    // (wix-plans-api now also throws WIX_PAGE_INTEGRITY on a malformed or
+    // truncated page instead of returning a short list.)
+    let wixView;
     try {
-      [orders, bookings] = await Promise.all([
-        listActiveOrders(wixApiKey, siteId),
-        listConfirmedBookings(wixApiKey, siteId),
-      ]);
+      wixView = await this._readWixTwice(wixApiKey, siteId);
     } catch (err) {
       log.error('reconciliation.wix_fetch_failed', {
         clientId: client.id, siteId,
-        wixStatus: err.status || null,
+        wixStatus: err.status || err.statusCode || null,
         wixCode:   err.code || null,
+        wixRead:   err.wixRead || null,
       }, err);
       const _actor = getActor() || {};
       await db.query(
         `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
          VALUES ($1, 'wix_api_unavailable', $2, $3, $4, $5)`,
-        [client.id, `status=${err.status || 'unknown'} code=${err.code || 'unknown'}`, getTraceId() || null, _actor.type || null, _actor.id || null]
+        [client.id, alertRef(`status=${err.status || err.statusCode || 'unknown'} code=${err.code || 'unknown'}`), getTraceId() || null, _actor.type || null, _actor.id || null]
       ).catch(() => {}); // Fault-tolerant — never block digest
       // Close the audit row as aborted before returning
       if (runId) await db.query(
         `UPDATE reconciliation_run SET status = 'aborted', abort_reason = 'wix_api_unavailable', completed_at = NOW() WHERE id = $1`,
         [runId]
       ).catch(() => {});
-      // Abort this client's sync. Do NOT fall through to compare/revoke.
-      return { granted: 0, revoked: 0, skippedHolderOptin: 0, runId, aborted: true, reason: 'wix_api_unavailable' };
+      // Abort this client's sync. Do NOT fall through to compare/grant/propose.
+      return this._syncResult({ runId, aborted: true, reason: 'wix_api_unavailable' });
     }
 
-    // Map: wixMemberId → { plans: [{ planId, sourceType }], email, name }
-    // A member may have MULTIPLE active orders (multiple plans simultaneously). Pre-OB-185-hotfix
-    // this Map was `{planId, ...}` and Map.set silently overwrote, dropping all but the last
-    // plan per member. Fixed 2026-05-18 after Builder reported 4 active plans surfacing as 1.
-    // Orders and bookings BOTH contribute plans (dedup on planId per member).
-    const wixMembers = new Map();
-    const _addPlan = (memberId, planId, sourceType, email, name, rawOrder) => {
-      if (!memberId) return;
-      let entry = wixMembers.get(memberId);
-      if (!entry) {
-        entry = { plans: [], email: email || null, name: name || null };
-        wixMembers.set(memberId, entry);
-      }
-      if (planId && !entry.plans.some(p => p.planId === planId)) {
-        entry.plans.push({ planId, sourceType, rawOrder: rawOrder || null });
-      }
-      // Fill in email/name from later entries if earlier was null
-      if (!entry.email && email) entry.email = email;
-      if (!entry.name && name)   entry.name  = name;
-    };
-    for (const o of orders) _addPlan(o.memberId, o.planId, 'plan', o.email, o.name, o.rawOrder);
-    for (const b of bookings) _addPlan(b.memberId, b.planId, 'booking', b.email, b.name, null);
+    // wixMembers: memberId → { plans: [{ planId, sourceType, rawOrder }], email, name } —
+    // PAYING members (either read) with their PAYING plans only. Multi-plan members keep
+    // every plan (OB-185 hotfix 2026-05-18); orders and bookings both contribute.
+    const { wixMembers, payingPlansByMember, bestClass, payingInRead, readDisagreement } = wixView;
+    if (opts.payingCollector instanceof Map) opts.payingCollector.set(client.id, payingPlansByMember);
 
-    // 2. Pull Kisi side — live role assignments, filtered to AccessSync-managed users via DB join
-    const kisiAssignments = await hardwareAdapter.getManagedRoleAssignments(hardwarePlatform, hardwareApiKey);
+    if (readDisagreement[DATA_SOURCE.WIX_ORDERS] > 0 || readDisagreement[DATA_SOURCE.WIX_BOOKINGS] > 0) {
+      log.warn('reconciliation.wix_reads_disagreed', {
+        clientId: client.id, readDisagreement,
+        payingRead1: payingInRead[0].size, payingRead2: payingInRead[1].size,
+        traceId: this._sweepTraceId,
+      });
+    }
+
+    // Is this (member, plan) PAYING in either read? A sub-member is judged by
+    // its holder: the sub keeps access while the holder pays for that plan.
+    const isPayingPlan = (memberKey, holderKey, planId) => {
+      const plans = payingPlansByMember.get(holderKey || memberKey);
+      return !!(plans && planId && plans.has(planId));
+    };
+    // Best Wix classification seen for (member, plan) in either read, or ABSENT.
+    const classOf = (memberKey, planId) =>
+      (memberKey && planId && bestClass.get(memberPlanKey(memberKey, planId))) || CLASS_ABSENT;
+
+    // 2. Pull Kisi side — live role assignments, filtered to AccessSync-managed users via DB join.
+    //
+    // Phase 1 (I-4): getManagedRoleAssignments THROWS on any Kisi error or malformed page
+    // (it used to return [] — which read as "nobody has a door" and would have proposed a
+    // role-drift removal for every active member). A throw aborts this client's sync exactly
+    // like a Wix failure: no grants, no proposals, run row 'aborted', operator alerted.
+    let kisiAssignments;
+    try {
+      kisiAssignments = await hardwareAdapter.getManagedRoleAssignments(hardwarePlatform, hardwareApiKey);
+      if (!Array.isArray(kisiAssignments)) {
+        const bad = new Error('getManagedRoleAssignments returned a non-array');
+        bad.code = 'KISI_PAGE_INTEGRITY';
+        throw bad;
+      }
+    } catch (err) {
+      log.warn('reconciliation.kisi_fetch_failed', {
+        clientId: client.id, hardwarePlatform,
+        statusCode: err.statusCode || null, code: err.code || null,
+        traceId: this._sweepTraceId,
+      }, err);
+      const _actor = getActor() || {};
+      await db.query(
+        `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          client.id,
+          hardwarePlatform === 'kisi' ? 'kisi_api_unavailable' : 'hardware_api_unavailable',
+          alertRef(`status=${err.statusCode || 'unknown'} code=${err.code || 'unknown'}`),
+          getTraceId() || null, _actor.type || null, _actor.id || null,
+        ]
+      ).catch(() => {}); // Fault-tolerant — never block digest
+      if (runId) await db.query(
+        `UPDATE reconciliation_run SET status = 'aborted', abort_reason = 'hardware_api_unavailable', completed_at = NOW() WHERE id = $1`,
+        [runId]
+      ).catch(() => {});
+      // 'hardware_api_unavailable' is the reason the dashboard Sync button already words.
+      return this._syncResult({ runId, aborted: true, reason: 'hardware_api_unavailable' });
+    }
     const kisiUserIds = [...new Set(kisiAssignments.map(a => a.userId).filter(Boolean))];
 
     // Map: platform_member_id (Wix member ID) → { isSubMember }
@@ -375,12 +994,19 @@ class NightlyReconciliation {
     //
     // Two-strike requirement (SAGE condition): we set
     // `kisi_user_disappeared_observed_at` (OB-249 migration column) on the FIRST
-    // observation. The NEXT sweep sees it populated and proceeds with synthetic
-    // plan.cancelled. Single transient 404s during Kisi outages can't trigger
-    // false revokes — they need consecutive confirmations.
+    // observation. The NEXT sweep sees it populated and records a finding per
+    // active source plan. Single transient 404s during Kisi outages can't raise
+    // a finding — they need consecutive confirmations.
     //
-    // Outage short-circuit: if listAllUsers throws (network/5xx/auth), abort
-    // Pass 3 for this client. Pass 1, Pass 1.5, and the 3A grant queue continue.
+    // Phase 1 (2026-09-10): a finding is never a revoke. If the member is PAYING
+    // for that plan (either Wix read; a sub-member via its holder) the door is
+    // MISSING, not surplus: repair_pending + a deduplicated sweep_repair_pending
+    // alert (Builder rule 2 — the sweep repairs paying members, never removes
+    // them). Otherwise it is a removal proposal, recorded and held.
+    //
+    // Outage short-circuit: if listAllUsers throws (network/5xx/auth, or a
+    // KISI_PAGE_INTEGRITY page), abort Pass 3 for this client. Pass 1, Pass 1.5,
+    // and the 3A grant queue continue.
     //
     // Platform gate: Kisi only for now. Seam stub doesn't implement listAllUsers
     // yet (OB-XXX when Seam ships).
@@ -390,6 +1016,7 @@ class NightlyReconciliation {
     let pass3DisappearedConfirmed = 0;
     let pass3RoleDrifted = 0;
     let pass3UserRecovered = 0;
+    let pass3RepairPending = 0;
 
     if (hardwarePlatform === 'kisi') {
       try {
@@ -419,12 +1046,18 @@ class NightlyReconciliation {
           .map(a => `${a.userId}:${a.groupId}`)
       );
 
+      // holder_platform_member_id: a sub-member's holder (member_master via
+      // sub_master_id) — subs are judged PAYING by their holder's plans.
       const activeAccessRows = await db.query(
         `SELECT ma.id AS access_id, ma.hardware_user_id::text AS hardware_user_id,
                 ma.kisi_user_disappeared_observed_at,
-                mm.platform_member_id, ma.sub_master_id
+                mm.platform_member_id, ma.sub_master_id,
+                holder_mm.platform_member_id AS holder_platform_member_id
          FROM member_access ma
          JOIN member_master mm ON mm.id = ma.member_master_id
+         LEFT JOIN member_master holder_mm
+                ON holder_mm.id        = ma.sub_master_id
+               AND holder_mm.client_id = ma.client_id
          WHERE ma.client_id = $1
            AND ma.status = 'active'
            AND ma.hardware_user_id IS NOT NULL
@@ -432,12 +1065,29 @@ class NightlyReconciliation {
         [client.id]
       );
 
+      // Paying for this plan → the door is missing: repair_pending, never a
+      // removal. Otherwise → a removal proposal (held — Phase 1). Kisi-sourced
+      // proposals are decided in units too (P-1): a sub-member counts as its
+      // holder's family, everyone else as themselves.
+      const routePass3Finding = (finding) => {
+        const proposal = { ...finding, unitKey: unitKeyOf(finding.memberKey, finding.holderKey) };
+        if (isPayingPlan(proposal.memberKey, proposal.holderKey, proposal.planId)) {
+          repairProposals.push({ ...proposal, classification: ORDER_CLASS.PAYING });
+          pass3RepairPending++;
+        } else {
+          revokeProposals.push(proposal);
+        }
+      };
+
       for (const row of activeAccessRows.rows) {
+        const holderKey = row.sub_master_id ? (row.holder_platform_member_id || null) : null;
+        // The 'kisi' population, in units, under the same collapse rule as the proposals.
+        if (row.platform_member_id) pass3UnitKeys.add(unitKeyOf(row.platform_member_id, holderKey));
         const userPresent = kisiUserIdSet.has(row.hardware_user_id);
 
         if (!userPresent) {
           if (row.kisi_user_disappeared_observed_at) {
-            // SECOND consecutive observation — queue synthetic revoke per active source
+            // SECOND consecutive observation — one finding per active source plan
             const subSources = await db.query(
               `SELECT DISTINCT source_plan_id FROM member_access_sources
                WHERE access_id = $1 AND status = 'active' AND source_plan_id IS NOT NULL`,
@@ -453,27 +1103,21 @@ class NightlyReconciliation {
                 synthetic:        true,
                 traceId:          tid,
               };
-              try {
-                await eventQueue.add(
-                  'revoke',
-                  { tenantId: client.id, standardEvent: syntheticEvent },
-                  { jobId: `pass3-userdrift-${row.access_id}-${src.source_plan_id}-${Date.now()}` }
-                );
-                pass3DisappearedConfirmed++;
-                log.warn('reconciliation.kisi_user_disappeared_confirmed', {
-                  clientId:         client.id,
-                  accessId:         row.access_id,
-                  platformMemberId: row.platform_member_id,
-                  hardwareUserId:   row.hardware_user_id,
-                  sourcePlanId:     src.source_plan_id,
-                  traceId:          tid,
-                  sweepTraceId:     this._sweepTraceId,
-                });
-              } catch (err) {
-                log.error('reconciliation.pass_3_revoke_queue_failed', {
-                  clientId: client.id, accessId: row.access_id, sourcePlanId: src.source_plan_id,
-                }, err);
-              }
+              // Finding only — recorded, never enqueued in Phase 1. A held
+              // finding is re-derived next sweep: the two-strike marker stays set.
+              routePass3Finding({
+                source:         REVOKE_SOURCE.KISI_USER_VANISHED,
+                dataSource:     DATA_SOURCE.KISI,
+                memberKey:      row.platform_member_id,
+                planId:         src.source_plan_id,
+                accessId:       row.access_id,
+                hardwareUserId: row.hardware_user_id,
+                holderKey,
+                classification: classOf(holderKey || row.platform_member_id, src.source_plan_id),
+                syntheticEvent,
+                jobId: `pass3-userdrift-${row.access_id}-${src.source_plan_id}-${Date.now()}`,
+              });
+              pass3DisappearedConfirmed++; // detection count, not enqueue count
             }
           } else {
             // FIRST observation — record timestamp only, no destructive action.
@@ -527,28 +1171,21 @@ class NightlyReconciliation {
                 synthetic:        true,
                 traceId:          tid,
               };
-              try {
-                await eventQueue.add(
-                  'revoke',
-                  { tenantId: client.id, standardEvent: syntheticEvent },
-                  { jobId: `pass3-roledrift-${row.access_id}-${src.source_plan_id}-${Date.now()}` }
-                );
-                pass3RoleDrifted++;
-                log.warn('reconciliation.role_assignment_drifted', {
-                  clientId:         client.id,
-                  accessId:         row.access_id,
-                  platformMemberId: row.platform_member_id,
-                  hardwareUserId:   row.hardware_user_id,
-                  hardwareGroupId:  src.hardware_group_id,
-                  sourcePlanId:     src.source_plan_id,
-                  traceId:          tid,
-                  sweepTraceId:     this._sweepTraceId,
-                });
-              } catch (err) {
-                log.error('reconciliation.pass_3_revoke_queue_failed', {
-                  clientId: client.id, accessId: row.access_id, sourcePlanId: src.source_plan_id,
-                }, err);
-              }
+              // Finding only — recorded, never enqueued in Phase 1.
+              routePass3Finding({
+                source:          REVOKE_SOURCE.ROLE_DRIFT,
+                dataSource:      DATA_SOURCE.KISI,
+                memberKey:       row.platform_member_id,
+                planId:          src.source_plan_id,
+                accessId:        row.access_id,
+                hardwareUserId:  row.hardware_user_id,
+                hardwareGroupId: src.hardware_group_id,
+                holderKey,
+                classification:  classOf(holderKey || row.platform_member_id, src.source_plan_id),
+                syntheticEvent,
+                jobId: `pass3-roledrift-${row.access_id}-${src.source_plan_id}-${Date.now()}`,
+              });
+              pass3RoleDrifted++; // detection count, not enqueue count
             }
           }
         }
@@ -563,10 +1200,14 @@ class NightlyReconciliation {
       disappearedConfirmed:      pass3DisappearedConfirmed,
       roleDrifted:               pass3RoleDrifted,
       userRecovered:             pass3UserRecovered,
+      // Of the confirmed / drifted findings, how many belong to a PAYING member
+      // (repair_pending, not a removal proposal).
+      repairPending:             pass3RepairPending,
       traceId:                   this._sweepTraceId,
     });
 
-    // OB-185 Pass 1 promotion logic — for each Wix-active member who EXISTS in our DB,
+    // OB-185 Pass 1 promotion logic — for each Wix-PAYING member who EXISTS in our DB,
+    // (Phase 1: wixMembers holds PAYING plans only — an ACTIVE+UNPAID order is never promoted.)
     // ensure their source rows reflect "active" status. This handles the post-S-11 case
     // where migration translated existing access_status='inactive' → source.status='cancelled'
     // for members who in reality had active Wix plans the whole time.
@@ -591,34 +1232,65 @@ class NightlyReconciliation {
       for (const plan of wixData.plans) {
         if (!plan.planId) continue;
 
-        // ── (a) Promotion: flip cancelled → active for any existing source row matching this plan
+        // ── DR-051 flag, read FIRST (fix round F12). A holder who released their OWN
+        // seat on this plan has member_billing.holder_seated=false. The promotion in
+        // (a) would otherwise flip that released seat back cancelled → active, and in
+        // 'off' / 'dry_run' the self-heal further down is held — so the seat the
+        // member gave up would stay resurrected. Read once, before (a), and reused by
+        // the DR-051 branch in (b). Sub-members / members with no billing row → no
+        // flag row → not released. A failed read leaves this plan exactly as found:
+        // no promotion, no billing backfill, no seat INSERT.
+        let holderReleasedSeat;
         try {
-          const promotionResult = await db.query(
-            `UPDATE member_access_sources mas
-             SET status = 'active', updated_at = NOW()
-             FROM member_access ma, member_master mm, plan_mappings pm
-             WHERE mas.access_id = ma.id
-               AND mm.id = ma.member_master_id
-               AND pm.id = mas.mapping_id
-               AND ma.client_id = $1
-               AND mm.platform_member_id = $2
-               AND pm.source_plan_id = $3
-               AND mas.status = 'cancelled'
-             RETURNING mas.id, mas.access_id`,
+          const seatFlagRes = await db.query(
+            `SELECT mb.holder_seated
+             FROM member_billing mb
+             JOIN member_master mm ON mm.id = mb.member_master_id
+             WHERE mb.client_id = $1 AND mm.platform_member_id = $2 AND mb.plan_id = $3
+             ORDER BY mb.cycle_index DESC LIMIT 1`,
             [client.id, memberId, plan.planId]
           );
-          if (promotionResult.rowCount > 0) {
-            promoted += promotionResult.rowCount;
-            log.info('reconciliation.source_promoted_from_cancelled', {
-              clientId: client.id, platformMemberId: memberId, planId: plan.planId,
-              sourceCount: promotionResult.rowCount,
-              traceId: this._sweepTraceId, stage: 'reconcile', result: 'promoted',
-            });
-          }
+          const seatFlagRows = (seatFlagRes && seatFlagRes.rows) || [];
+          holderReleasedSeat = seatFlagRows.length > 0 && seatFlagRows[0].holder_seated === false;
         } catch (err) {
-          log.error('reconciliation.source_promotion_failed', {
+          log.warn('reconciliation.holder_seated_read_failed', {
             clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+            traceId: this._sweepTraceId,
           }, err);
+          continue;
+        }
+
+        // ── (a) Promotion: flip cancelled → active for any existing source row matching
+        //    this plan — never for a seat its holder released (the DR-051 flag above).
+        if (!holderReleasedSeat) {
+          try {
+            const promotionResult = await db.query(
+              `UPDATE member_access_sources mas
+               SET status = 'active', updated_at = NOW()
+               FROM member_access ma, member_master mm, plan_mappings pm
+               WHERE mas.access_id = ma.id
+                 AND mm.id = ma.member_master_id
+                 AND pm.id = mas.mapping_id
+                 AND ma.client_id = $1
+                 AND mm.platform_member_id = $2
+                 AND pm.source_plan_id = $3
+                 AND mas.status = 'cancelled'
+               RETURNING mas.id, mas.access_id`,
+              [client.id, memberId, plan.planId]
+            );
+            if (promotionResult.rowCount > 0) {
+              promoted += promotionResult.rowCount;
+              log.info('reconciliation.source_promoted_from_cancelled', {
+                clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+                sourceCount: promotionResult.rowCount,
+                traceId: this._sweepTraceId, stage: 'reconcile', result: 'promoted',
+              });
+            }
+          } catch (err) {
+            log.error('reconciliation.source_promotion_failed', {
+              clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+            }, err);
+          }
         }
 
         // ── (b) Backfill INSERT: for every (mapping × hardware_group) this plan expects,
@@ -711,41 +1383,48 @@ class NightlyReconciliation {
           }
 
           // DR-051 — durable leave enforcement. If this holder released their OWN seat on
-          // this plan (member_billing.holder_seated=false), the 6-hour reconcile must (a)
-          // NOT re-add the seat Wix still lists, and (b) self-heal any lingering active
+          // this plan (member_billing.holder_seated=false — read before (a) above), the
+          // 6-hour reconcile must (a) NOT re-add the seat Wix still lists, (b) NOT promote
+          // it back from cancelled (skipped above), and (c) self-heal any lingering active
           // holder seat by marking it cancelled (DB-only — no Kisi call; the door role
           // follows the normal remaining-source logic, and in the all-same-door reality
           // other plans still hold it). Scoped to the holder's own access row
           // (sub_master_id IS NULL) + this plan's source_plan_id. Sub-members / members
           // with no billing row → no flag row → normal backfill proceeds below.
-          const seatFlagRes = await db.query(
-            `SELECT mb.holder_seated
-             FROM member_billing mb
-             JOIN member_master mm ON mm.id = mb.member_master_id
-             WHERE mb.client_id = $1 AND mm.platform_member_id = $2 AND mb.plan_id = $3
-             ORDER BY mb.cycle_index DESC LIMIT 1`,
-            [client.id, memberId, plan.planId]
-          );
-          if (seatFlagRes.rows.length > 0 && seatFlagRes.rows[0].holder_seated === false) {
-            const healed = await db.query(
-              `UPDATE member_access_sources mas
-               SET status = 'cancelled', updated_at = NOW()
-               FROM member_access ma
-               JOIN member_master mm ON mm.id = ma.member_master_id
-               WHERE mas.access_id = ma.id
-                 AND ma.client_id = $1
-                 AND mm.platform_member_id = $2
-                 AND ma.sub_master_id IS NULL
-                 AND mas.source_plan_id = $3
-                 AND mas.status = 'active'
-               RETURNING mas.id`,
-              [client.id, memberId, plan.planId]
-            );
-            log.info('reconciliation.holder_seat_released_enforced', {
-              clientId: client.id, platformMemberId: memberId, planId: plan.planId,
-              healedCount: healed.rowCount,
-              traceId: this._sweepTraceId, stage: 'reconcile', result: 'skipped_release',
-            });
+          if (holderReleasedSeat) {
+            // The self-heal cancels a live seat, so it runs only when the client's
+            // automatic-removal mode is explicitly 'on' ('off' and 'dry_run' —
+            // the migration default — hold it). It is not part of the removal
+            // batch — it enforces an explicit, recorded member choice. The
+            // `continue` below runs either way, so the released seat is never
+            // re-added.
+            if (mode !== REVOKE_MODE.ON) {
+              log.warn('reconciliation.revoke_held', {
+                path: 'holder_seat_release', reason: holdReasonForMode(mode),
+                clientId: client.id, platformMemberId: memberId, sourcePlanId: plan.planId,
+                traceId: this._sweepTraceId,
+              });
+            } else {
+              const healed = await db.query(
+                `UPDATE member_access_sources mas
+                 SET status = 'cancelled', updated_at = NOW()
+                 FROM member_access ma
+                 JOIN member_master mm ON mm.id = ma.member_master_id
+                 WHERE mas.access_id = ma.id
+                   AND ma.client_id = $1
+                   AND mm.platform_member_id = $2
+                   AND ma.sub_master_id IS NULL
+                   AND mas.source_plan_id = $3
+                   AND mas.status = 'active'
+                 RETURNING mas.id`,
+                [client.id, memberId, plan.planId]
+              );
+              log.info('reconciliation.holder_seat_released_enforced', {
+                clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+                healedCount: healed.rowCount,
+                traceId: this._sweepTraceId, stage: 'reconcile', result: 'skipped_release',
+              });
+            }
             continue; // skip the seat backfill for this plan — holder is unseated by choice
           }
 
@@ -869,97 +1548,633 @@ class NightlyReconciliation {
       clientId: client.id, promoted, backfilled, traceId: this._sweepTraceId,
     });
 
-    // ── Pass 1.5: Holder-lapse → sub-member revoke propagation (OB-247) ──
-    // After Pass 1 has settled holder state from Wix, any sub-member whose
-    // holder is no longer 'active' should also lose access. Pure DB-derived;
-    // no Kisi calls in this pass. Synthetic plan.cancelled events flow through
-    // the existing revoke worker → cancels source rows + Kisi removeRole.
+    // ── Pass 1.5: Holder-lapse → sub-member removal proposals (OB-247) ──
+    // A sub-member's door rides on its holder's plan. Phase 1 (2026-09-10)
+    // judges that from WIX, not from the holder's member_access.status: for
+    // each ACTIVE sub-member source (member_access_sources.source_plan_id), the
+    // holder (member_master via member_access.sub_master_id) must hold a PAYING
+    // plan with that same source_plan_id in either Wix read (wixMembers). The
+    // old DB predicate wrongly lapsed the subs of a holder who had only released
+    // their OWN seat (DR-051) while still paying.
     //
-    // Per-source semantics (OB-150 invariant): processRevoke requires planId on
-    // the synthetic event to target the right source row. We enumerate each
-    // active source on the sub-member and queue ONE synthetic per source — one
-    // sub with 2 plans = 2 revoke jobs. Each job is independently idempotent.
+    // Per-source semantics (OB-150 invariant): one proposal per (sub, source
+    // plan), each with planId set so a future targeted revoke hits the right
+    // source row. No Kisi calls in this pass.
     //
-    // Architecturally distinct from Pass 2 (Kisi orphan observe) and Pass 3
-    // (operator-deleted-Kisi-user drift). Pass 1.5 catches BILLING lapse only.
-    let subMemberRevokesQueued = 0;
+    // Phase 1: every lapse is a PROPOSAL (dataSource wix_orders), recorded and
+    // held by the removal decision below, plus a deduplicated
+    // revoke_holder_lapse_pending alert. Nothing is enqueued.
+    //
+    // Fix round (2026-09-10): a lapse is proposed only when the HOLDER's Wix
+    // classification for the sub's plan (best across both reads) is ENDED or
+    // ABSENT (P-2). A holder whose payment is declined, pending or
+    // unrecognised — or who cannot be found at all — leaves the sub alone:
+    // held_payment_state, never a proposal (Phase 4 handles suspension). Every
+    // proposal is keyed to its family's unit, the holder (P-1) — a holder that
+    // is never the sub itself (fix round 3: the policy's unit rule).
+    let subMemberRevokesProposed = 0;
+    let lapsedSubsFound = 0;
+    let subsHeldPaymentState = 0;
+    // Every sub examined here (logged as subsExamined).
+    const pass15SubKeys = new Set();
+    // The family units this pass contributes to the wix_orders population: the
+    // HOLDER of every active sub source that could be proposed, seated or not.
+    // A source held for its holder's payment state can never be proposed, so
+    // it is not at risk and does not count.
+    const pass15HolderUnits = new Set();
     try {
-      const lapsedSubsResult = await db.query(
-        `SELECT sub.id AS sub_access_id, sub_mm.platform_member_id
+      const subSourcesResult = await db.query(
+        `SELECT DISTINCT sub.id AS sub_access_id,
+                sub_mm.platform_member_id,
+                holder_mm.platform_member_id AS holder_platform_member_id,
+                mas.source_plan_id
          FROM member_access sub
          JOIN member_master sub_mm ON sub_mm.id = sub.member_master_id
-         LEFT JOIN member_access holder
-                ON holder.member_master_id = sub.sub_master_id
-               AND holder.client_id        = sub.client_id
+         JOIN member_access_sources mas
+           ON mas.access_id = sub.id
+          AND mas.status = 'active'
+          AND mas.source_plan_id IS NOT NULL
+         LEFT JOIN member_master holder_mm
+                ON holder_mm.id        = sub.sub_master_id
+               AND holder_mm.client_id = sub.client_id
          WHERE sub.client_id      = $1
            AND sub.sub_master_id IS NOT NULL
-           AND sub.status         = 'active'
-           AND (holder.status IS NULL OR holder.status <> 'active')`,
+           AND sub.status         = 'active'`,
         [client.id]
       );
 
-      for (const sub of lapsedSubsResult.rows) {
-        // Enumerate distinct active source plans for this sub-member.
-        // Each gets its own synthetic plan.cancelled with planId set so
-        // processRevoke's targeted DELETE hits (OB-150 invariant).
-        const subSourcesResult = await db.query(
-          `SELECT DISTINCT source_plan_id
-           FROM member_access_sources
-           WHERE access_id = $1
-             AND status = 'active'
-             AND source_plan_id IS NOT NULL`,
-          [sub.sub_access_id]
-        );
+      const lapsedSubAccessIds = new Set();
+      const heldSubAccessIds   = new Set();
+      for (const source of subSourcesResult.rows) {
+        if (source.platform_member_id) pass15SubKeys.add(source.platform_member_id);
+        // A holder that resolves to the sub ITSELF (a corrupt sub_master_id that
+        // points at the sub's own member_master row) is no holder at all: treated
+        // as unresolvable, so the source is held as UNKNOWN below. Proposed, it
+        // would carry unitKey === memberKey — a HOLDER_LAPSE shape the removal
+        // policy refuses as unit_structure_invalid, holding the whole batch as an
+        // invalid_proposal anomaly every sweep (fix round 3, R3-1).
+        const holderKey = (source.holder_platform_member_id
+          && source.holder_platform_member_id !== source.platform_member_id)
+          ? source.holder_platform_member_id
+          : null;
+        // The holder's classification for the sub's plan, best across both reads.
+        // No resolvable holder → UNKNOWN: nothing is known about who pays for this
+        // seat, so it is never a removal (it used to be proposed as ABSENT).
+        const holderClass = holderKey ? classOf(holderKey, source.source_plan_id) : ORDER_CLASS.UNKNOWN;
+        if (holderKey && !isHeldPaymentClass(holderClass)) pass15HolderUnits.add(holderKey);
+        // The sub keeps its door while the holder pays for this plan (either read).
+        if (holderKey && isPayingPlan(holderKey, null, source.source_plan_id)) continue;
 
-        for (const source of subSourcesResult.rows) {
+        if (isRemovableClass(holderClass)) {
+          lapsedSubAccessIds.add(source.sub_access_id);
           const subTraceId = mintTraceId();
           const syntheticEvent = {
             eventType:        'plan.cancelled',
-            platformMemberId: sub.platform_member_id,
+            platformMemberId: source.platform_member_id,
             sourcePlatform:   'wix',
             planId:           source.source_plan_id,
             synthetic:        true,
             traceId:          subTraceId,
           };
-          const jobId = `pass1.5-${sub.sub_access_id}-${source.source_plan_id}-${Date.now()}`;
-          try {
-            await eventQueue.add(
-              'revoke',
-              { tenantId: client.id, standardEvent: syntheticEvent },
-              { jobId }
-            );
-            subMemberRevokesQueued++;
-            log.info('reconciliation.sub_member_holder_lapsed', {
-              clientId:         client.id,
-              subAccessId:      sub.sub_access_id,
-              platformMemberId: sub.platform_member_id,
-              sourcePlanId:     source.source_plan_id,
-              jobId,
-              traceId:          subTraceId,
-              sweepTraceId:     this._sweepTraceId,
-              stage:            'reconcile',
-              result:           'revoke_queued',
-            });
-          } catch (err) {
-            log.error('reconciliation.sub_member_holder_lapsed_queue_failed', {
-              clientId:     client.id,
-              subAccessId:  sub.sub_access_id,
-              sourcePlanId: source.source_plan_id,
-              traceId:      subTraceId,
-            }, err);
-          }
+          const jobId = `pass1.5-${source.sub_access_id}-${source.source_plan_id}-${Date.now()}`;
+          // Proposal only — recorded and held (Phase 1). sub_member_holder_lapsed
+          // is emitted only when a revoke is actually enqueued (Phase 3b).
+          revokeProposals.push({
+            source:         REVOKE_SOURCE.HOLDER_LAPSE,
+            dataSource:     DATA_SOURCE.WIX_ORDERS,
+            memberKey:      source.platform_member_id,
+            unitKey:        holderKey, // the family's unit (P-1)
+            planId:         source.source_plan_id,
+            accessId:       source.sub_access_id,
+            holderKey,
+            classification: holderClass,
+            syntheticEvent,
+            jobId,
+          });
+          subMemberRevokesProposed++;
+        } else {
+          // Declined / pending / unrecognised holder payment, or no holder found:
+          // the sub is left alone. Recorded, never proposed; subs carry no clock.
+          heldSubAccessIds.add(source.sub_access_id);
+          heldPaymentState.push({
+            source:         REVOKE_SOURCE.HOLDER_LAPSE,
+            dataSource:     DATA_SOURCE.WIX_ORDERS,
+            memberKey:      source.platform_member_id,
+            unitKey:        unitKeyOf(source.platform_member_id, holderKey),
+            planId:         source.source_plan_id,
+            accessId:       source.sub_access_id,
+            holderKey,
+            classification: holderClass,
+          });
         }
       }
+      lapsedSubsFound      = lapsedSubAccessIds.size;
+      subsHeldPaymentState = heldSubAccessIds.size;
 
       log.info('reconciliation.pass_1_5_complete', {
         clientId:               client.id,
-        lapsedSubsFound:        lapsedSubsResult.rows.length,
-        subMemberRevokesQueued,
+        subsExamined:           pass15SubKeys.size,
+        lapsedSubsFound,
+        // Field name kept for log continuity; it counts PROPOSALS (one per
+        // lapsed sub source) — Phase 1 records and holds them, enqueues none.
+        subMemberRevokesQueued: subMemberRevokesProposed,
+        // Subs left alone because their holder's payment is declined, pending
+        // or unrecognised (or the holder cannot be found).
+        subsHeldPaymentState,
         traceId:                this._sweepTraceId,
       });
     } catch (err) {
       log.error('reconciliation.pass_1_5_failed', { clientId: client.id }, err);
     }
+
+    // ── Active-source census ───────────────────────────────────────────────────
+    // Every AccessSync-managed member with an ACTIVE, plan-scoped source row, read
+    // AFTER Pass 1 (so rows it just promoted or inserted for paying members count).
+    // Feeds 3B's candidates and the populations the removal policy judges volume
+    // against. A failed read skips 3B (no observation, no proposal); grants are
+    // unaffected.
+    let census = null; // memberKey → { accessId, isSub, sources: Map<planId, sourceType> }
+    try {
+      const censusResult = await db.query(
+        `SELECT ma.id AS access_id, mm.platform_member_id, ma.sub_master_id,
+                mas.source_type, mas.source_plan_id
+         FROM member_access_sources mas
+         JOIN member_access ma ON ma.id = mas.access_id
+         JOIN member_master mm ON mm.id = ma.member_master_id
+         WHERE ma.client_id = $1
+           AND mas.status = 'active'
+           AND mas.source_plan_id IS NOT NULL
+           AND mm.source_tag = 'accesssync'
+         ORDER BY mm.platform_member_id, mas.source_plan_id, mas.source_type`,
+        [client.id]
+      );
+      census = new Map();
+      for (const row of censusResult.rows) {
+        const memberKey = row.platform_member_id;
+        if (!memberKey) continue;
+        let entry = census.get(memberKey);
+        if (!entry) {
+          entry = {
+            accessId: row.access_id,
+            isSub:    row.sub_master_id != null || String(memberKey).includes('###as'),
+            sources:  new Map(),
+          };
+          census.set(memberKey, entry);
+        }
+        if (!entry.sources.has(row.source_plan_id)) entry.sources.set(row.source_plan_id, row.source_type || null);
+      }
+    } catch (err) {
+      census = null;
+      log.warn('reconciliation.active_source_census_failed', { clientId: client.id, traceId: this._sweepTraceId }, err);
+    }
+
+    // ── Not-paying strike clocks (migrations/reconcile-not-paying-strike.sql) ──
+    // Read once: the (access, plan) pairs that carry a clock right now. Before
+    // that migration is applied the columns do not exist (Postgres 42703): no
+    // clock is read, started or cleared — so nothing can ever become eligible
+    // for removal (fail safe). Any OTHER read failure (fix round 3, R3-4): every
+    // proposal carries no strike, no clock is advanced this sweep, and the
+    // clears are widened to every PAYING (member, plan) in the census — see
+    // "when strike clocks may move" after the removal decision.
+    const strikeClocks = new Map(); // memberPlanKey(accessId, planId) → { since, observations }
+    let strikeColumnsMissing = false;
+    let strikeReadFailed     = false;
+    if (census && census.size > 0) {
+      try {
+        const strikeResult = await db.query(
+          `SELECT access_id, source_plan_id,
+                  MIN(not_paying_since)        AS not_paying_since,
+                  MAX(not_paying_observations) AS not_paying_observations
+           FROM member_access_sources
+           WHERE client_id = $1
+             AND status = 'active'
+             AND source_plan_id IS NOT NULL
+             AND (not_paying_since IS NOT NULL OR COALESCE(not_paying_observations, 0) > 0)
+           GROUP BY access_id, source_plan_id`,
+          [client.id]
+        );
+        for (const row of strikeResult.rows) {
+          const observations = Number(row.not_paying_observations);
+          strikeClocks.set(memberPlanKey(row.access_id, row.source_plan_id), {
+            since:        toIsoOrNull(row.not_paying_since),
+            observations: Number.isInteger(observations) && observations >= 0 ? observations : 0,
+          });
+        }
+      } catch (err) {
+        if (err && err.code === '42703') {
+          strikeColumnsMissing = true;
+          if (!this._strikeColumnsMissingWarned) {
+            this._strikeColumnsMissingWarned = true;
+            log.warn('reconciliation.strike_clock_unavailable', {
+              clientId: client.id, migration: 'migrations/reconcile-not-paying-strike.sql',
+            });
+          }
+        } else {
+          // The one warn for this sweep's read failure (R3-4). strikeClocks
+          // stays empty, so no proposal carries a strike.
+          strikeReadFailed = true;
+          log.warn('reconciliation.strike_read_failed', {
+            clientId: client.id, errorCode: (err && err.code) || null,
+          }, err);
+        }
+      }
+    }
+
+    // 3B. Provisioned PRIMARY members PAYING in NEITHER Wix read → one removal
+    //     proposal per active source plan (OB-150: each carries planId), with
+    //     dataSource from the source's source_type (plan → wix_orders,
+    //     booking → wix_bookings). Phase 1: recorded and held — nothing is
+    //     enqueued (the old plan-less 3B revoke was also a silent no-op in
+    //     processRevoke). Sub-members are judged by Pass 1.5, never here.
+    //
+    //     Fix round (2026-09-10):
+    //       · Only a (member, plan) classified ENDED or ABSENT (best across both
+    //         reads) is proposed, carrying that classification (P-2). DECLINED,
+    //         PENDING or UNKNOWN is not a cancellation: held_payment_state —
+    //         recorded without a strike, its clock cleared after the decision,
+    //         alerted once, never proposed and never counted in a population.
+    //       · A proposal carries its strike clock AS THE DB HAS IT, before this
+    //         sweep. The clock is advanced only after the removal decision, and
+    //         only when that decision is not an anomaly hold and the clocks
+    //         could be read (see "when strike clocks may move" below).
+    //       · A primary member is its own unit (P-1): unitKey = memberKey.
+    const now = Date.now();
+    let sourcesSkippedNonWix = 0;
+    if (census) {
+      for (const [memberKey, entry] of census) {
+        if (entry.isSub) continue;
+        if (payingPlansByMember.has(memberKey)) continue; // PAYING in either read → never a candidate
+        for (const [planId, sourceType] of entry.sources) {
+          const dataSource = SOURCE_TYPE_DATA_SOURCE[sourceType];
+          if (!dataSource) { sourcesSkippedNonWix++; continue; }
+
+          const classification = classOf(memberKey, planId);
+          if (!isRemovableClass(classification)) {
+            // Declined / pending / unrecognised payment — left alone (Phase 4
+            // handles suspension). No strike, no proposal.
+            heldPaymentState.push({
+              source:         REVOKE_SOURCE.WIX_ABSENCE,
+              dataSource,
+              memberKey,
+              unitKey:        memberKey,
+              planId,
+              accessId:       entry.accessId,
+              classification,
+            });
+            continue;
+          }
+
+          // The clock as the DB has it, before this sweep's observation — null
+          // when none has started or the strike columns are not migrated (never
+          // eligible for removal).
+          const clock  = strikeColumnsMissing ? null : strikeClocks.get(memberPlanKey(entry.accessId, planId));
+          const strike = clock ? { since: clock.since, observations: clock.observations } : null;
+
+          const recoEventId = `recon-${client.id}-${memberKey}-${planId}-${Date.now()}`;
+          const syntheticEvent = {
+            eventType:        'plan.cancelled',
+            sourcePlatform:   'wix',
+            platformMemberId: memberKey,
+            planId,
+            wixSiteId:        siteId,
+            synthetic:        true,
+            // 3b: a DR-050 allow-listed source (reconciliation.wix_not_paying) when armed.
+            syntheticSource:  'reconciliation.true_source_sync',
+            traceId:          this._sweepTraceId || crypto.randomUUID(),
+            eventId:          recoEventId,
+          };
+          revokeProposals.push({
+            source:         REVOKE_SOURCE.WIX_ABSENCE,
+            dataSource,
+            memberKey,
+            unitKey:        memberKey,
+            planId,
+            accessId:       entry.accessId,
+            classification,
+            strike,
+            eventId:        recoEventId,
+            syntheticEvent,
+            jobId:          `revoke-wix-sync-${client.id}-${memberKey}-${planId}-${Date.now()}`,
+          });
+        }
+      }
+    }
+
+    // ── Removal decision — ONE decision over every removal this sweep proposed ──
+    //
+    // Phase 1 (2026-09-10): observationOnly — evaluateRemovals holds the whole
+    // batch whatever clients.auto_revoke_mode says, and there is NO flush: no
+    // code path in this sweep enqueues a revoke. Anomalies (invalid input, the
+    // two Wix reads disagreeing too much, more than half of a population at
+    // once) are still judged first, so an operator learns the data looks wrong
+    // even while removals are paused.
+    //
+    // Populations at risk (core/revoke-policy.js), each a set of distinct UNITS
+    // (P-1: a family — the holder plus its subs — is ONE unit, keyed by the
+    // holder's platform_member_id; everyone else is their own unit):
+    //   wix_orders   — primaries with an active 'plan' source, plus the holder
+    //                  of every active sub source Pass 1.5 examined, seated or not
+    //   wix_bookings — primaries with an active 'booking' source (3B only
+    //                  proposes primaries, so subs never pad this denominator)
+    //   kisi         — the units of Pass 3's rows (active, provisioned,
+    //                  AccessSync-tagged)
+    // A (member, plan) held for its payment state (DECLINED / PENDING /
+    // UNKNOWN — for a sub, its holder's) can never be proposed, so it is not at
+    // risk: it is left out of both Wix populations, and a unit with no other
+    // source there does not count at all. Holding it out only ever shrinks a
+    // denominator, which tightens the caps. Kisi keeps every provisioned unit:
+    // Pass 3's findings follow Kisi, not Wix payments, and P-2 exempts them.
+    // currentManaged is the size of the union. By construction every
+    // proposal's unitKey is in its own data source's set (3B from the census,
+    // HOLDER_LAPSE from the Pass 1.5 rows, Pass 3 from its own rows), hence in
+    // the union; the check below warns if that ever stops being true.
+    const wixOrdersPop   = new Set(pass15HolderUnits);
+    const wixBookingsPop = new Set();
+    if (census) {
+      for (const [memberKey, entry] of census) {
+        if (entry.isSub) continue;
+        for (const [planId, sourceType] of entry.sources) {
+          if (isHeldPaymentClass(classOf(memberKey, planId))) continue;
+          if (sourceType === 'plan')    wixOrdersPop.add(memberKey);
+          if (sourceType === 'booking') wixBookingsPop.add(memberKey);
+        }
+      }
+    }
+    const populationSets = {
+      [DATA_SOURCE.WIX_ORDERS]:   wixOrdersPop,
+      [DATA_SOURCE.WIX_BOOKINGS]: wixBookingsPop,
+      [DATA_SOURCE.KISI]:         pass3UnitKeys,
+    };
+    const populationByDataSource = {
+      [DATA_SOURCE.WIX_ORDERS]:   wixOrdersPop.size,
+      [DATA_SOURCE.WIX_BOOKINGS]: wixBookingsPop.size,
+      [DATA_SOURCE.KISI]:         pass3UnitKeys.size,
+    };
+    const managedUnits   = new Set([...wixOrdersPop, ...wixBookingsPop, ...pass3UnitKeys]);
+    const currentManaged = managedUnits.size;
+
+    const outsidePopulation = revokeProposals.filter(p => {
+      const pop  = populationSets[p.dataSource];
+      const unit = proposalUnit(p);
+      return !pop || !pop.has(unit) || !managedUnits.has(unit);
+    });
+    if (outsidePopulation.length > 0) {
+      log.warn('reconciliation.proposal_population_mismatch', {
+        clientId: client.id, count: outsidePopulation.length,
+        bySource: countBySource(outsidePopulation), traceId: this._sweepTraceId,
+      });
+    }
+
+    const decision = evaluateRemovals({
+      proposals:       revokeProposals,
+      currentManaged,
+      populationByDataSource,
+      readDisagreement,
+      mode,
+      observationOnly: SWEEP_OBSERVATION_ONLY,
+      now,
+      strikePolicy:    DEFAULT_STRIKE_POLICY,
+    });
+    // Phase 1 has no flush loop. observationOnly leaves decision.flush empty;
+    // should a future edit ever change that, the flush is ignored here, loudly.
+    if (Array.isArray(decision.flush) && decision.flush.length > 0) {
+      log.warn('reconciliation.flush_ignored_observation_only', {
+        clientId: client.id, flushCount: decision.flush.length, traceId: this._sweepTraceId,
+      });
+    }
+
+    // Why the decision held, if it did.
+    //   · A non-empty batch is always held in Phase 1 (observation-only); its
+    //     reason is the policy's.
+    //   · An EMPTY batch is still judged (fix round 3, R3-5): the policy holds
+    //     it when the two reads themselves disagreed too much
+    //     (SNAPSHOT_UNSTABLE) — or, were the populations ever malformed, as
+    //     INVALID_PROPOSAL (also the fallback should a hold ever come back
+    //     without a reason). That is an anomaly like any other: the
+    //     de-duplicated anomaly alert, the run closed 'aborted', no clock
+    //     advanced, per-member alerts suppressed (F9). A clean empty batch has
+    //     no hold reason, as before.
+    const holdReason = revokeProposals.length > 0
+      ? (decision.reason || REVOKE_HOLD_REASON.OBSERVATION_ONLY)
+      : (decision.action === 'hold' ? (decision.reason || REVOKE_HOLD_REASON.INVALID_PROPOSAL) : null);
+    const anomalyHold = holdReason !== null && ANOMALY_HOLD_REASONS.includes(holdReason);
+
+    // ── When strike clocks may move (fix round 3 — Phase 3b depends on this) ──
+    // THE RULE: an anomaly-held sweep never ADVANCES a clock; clears always
+    // run, because clearing only ever delays a removal.
+    //
+    // The proposals above carried each clock exactly as the DB had it, and the
+    // decision is made. Now:
+    //   · ADVANCE — one not-paying observation per WIX_ABSENCE proposal — only
+    //     when the decision's reason is NOT an anomaly hold (INVALID_PROPOSAL,
+    //     SNAPSHOT_UNSTABLE, MASS_REVOKE; an empty batch held for
+    //     SNAPSHOT_UNSTABLE included), and only when this sweep could read the
+    //     existing clocks (a non-42703 read failure freezes it too). A run of
+    //     reads that cannot be trusted must never ripen anyone's strike.
+    //   · CLEAR — in EVERY sweep, anomaly hold or not:
+    //       (a) every (member, plan) PAYING in either read that carries a
+    //           clock — and, when the clock read failed, every PAYING
+    //           (member, plan) in the census, since which ones carry a clock
+    //           is unknown;
+    //       (b) every held_payment_state (member, plan) (F2): a declined,
+    //           pending or unrecognised payment never keeps a removal clock
+    //           running.
+    //     A clear can only make a member look NEWER to the strike, never older
+    //     — it can only delay a removal — so it is safe on any read, even one
+    //     the anomaly says cannot be trusted. Skipping it is what let a stale
+    //     clock outlive a held sweep: a member who paid again during a
+    //     MASS_REVOKE hold kept their old clock, and their next lapse started
+    //     out already ripe.
+    // Primaries only: nothing ever starts a clock on a sub. The L3 primitives
+    // write only a row that carries a clock, and never throw. Before the strike
+    // migration (42703) no clock is read, advanced or cleared at all.
+    let notPayingObserved = 0;
+    let strikesCleared    = 0;
+    let heldClocksCleared = 0;
+    // Why no clock may be advanced this sweep, if none may. Never stops a clear.
+    const strikeAdvanceFrozenReason = anomalyHold
+      ? 'anomaly_hold'
+      : (strikeReadFailed ? 'strike_read_failed' : null);
+    const strikeAdvanceFrozen = strikeAdvanceFrozenReason !== null;
+    const strikeAdvanced      = new Set(); // proposals whose observation this sweep recorded
+
+    // ADVANCE — never on an anomaly hold, never on an unreadable clock.
+    if (!strikeAdvanceFrozen) {
+      for (const p of revokeProposals) {
+        if (strikeColumnsMissing) break;
+        if (p.source !== REVOKE_SOURCE.WIX_ABSENCE) continue;
+        let rec = null;
+        try {
+          rec = await standardAdapter.recordNotPayingObservation(p.accessId, p.planId);
+        } catch (err) {
+          log.warn('reconciliation.strike_record_failed', {
+            clientId: client.id, accessId: p.accessId, sourcePlanId: p.planId,
+          }, err);
+        }
+        if (rec && rec.recorded === true && rec.rowCount > 0) {
+          strikeAdvanced.add(p);
+          notPayingObserved++;
+        } else if (rec && rec.reason === 'columns_missing') {
+          strikeColumnsMissing = true; // stop calling for the rest of this sweep
+        }
+      }
+    }
+
+    // CLEAR (a) — always: a (member, plan) PAYING again in either read resets
+    // its clock.
+    if (census && !strikeColumnsMissing && (strikeReadFailed || strikeClocks.size > 0)) {
+      for (const [memberKey, entry] of census) {
+        if (strikeColumnsMissing) break;
+        if (entry.isSub) continue; // sub-members carry no clock of their own
+        for (const planId of entry.sources.keys()) {
+          if (strikeColumnsMissing) break;
+          if (!isPayingPlan(memberKey, null, planId)) continue;
+          // Clock read OK: only the pairs that carry one. Read failed: every
+          // PAYING pair — the primitive leaves a row without a clock untouched.
+          if (!strikeReadFailed && !strikeClocks.has(memberPlanKey(entry.accessId, planId))) continue;
+          try {
+            const res = await standardAdapter.clearNotPayingObservation(entry.accessId, planId);
+            if (res && res.cleared && res.rowCount > 0) strikesCleared++;
+            else if (res && res.reason === 'columns_missing') strikeColumnsMissing = true;
+          } catch (err) {
+            log.warn('reconciliation.strike_clear_failed', {
+              clientId: client.id, accessId: entry.accessId, sourcePlanId: planId,
+            }, err);
+          }
+        }
+      }
+    }
+
+    // CLEAR (b) — always: a declined / pending / unrecognised payment stops any
+    // running clock. Called for every such (member, plan), whatever the clock
+    // read said — the primitive only writes a row that actually carries one.
+    for (const h of heldPaymentState) {
+      if (strikeColumnsMissing) break;
+      if (h.source !== REVOKE_SOURCE.WIX_ABSENCE) continue;
+      try {
+        const res = await standardAdapter.clearNotPayingObservation(h.accessId, h.planId);
+        if (res && res.cleared && res.rowCount > 0) heldClocksCleared++;
+        else if (res && res.reason === 'columns_missing') strikeColumnsMissing = true;
+      } catch (err) {
+        log.warn('reconciliation.strike_clear_failed', {
+          clientId: client.id, accessId: h.accessId, sourcePlanId: h.planId,
+        }, err);
+      }
+    }
+
+    if (revokeProposals.length > 0) {
+      const heldKeys = [...new Set(revokeProposals.map(p => p.memberKey))];
+      log.warn('reconciliation.revokes_held', {
+        clientId:         client.id,
+        reason:           holdReason,
+        detail:           decision.detail || null,
+        dataSource:       decision.dataSource || null,
+        mode,
+        observationOnly:  SWEEP_OBSERVATION_ONLY,
+        heldCount:        revokeProposals.length,
+        heldMembers:      heldKeys.length,
+        // What every cap counts (P-1): a family is one unit.
+        heldUnits:        new Set(revokeProposals.map(proposalUnit)).size,
+        bySource:         countBySource(revokeProposals),
+        byDataSource:     countByDataSource(revokeProposals),
+        // How many would clear the strike clock — what 'on' would act on once
+        // Phase 3b arms removal. A preview only.
+        strikeReady:      decision.counts ? decision.counts.strikeReady : null,
+        // No clock was advanced this sweep, and why (clears still ran).
+        strikeAdvanceFrozen,
+        strikeAdvanceFrozenReason,
+        sampleMemberKeys: heldKeys.slice(0, 10),
+        traceId:          this._sweepTraceId,
+      });
+    }
+    if (heldPaymentState.length > 0) {
+      const heldUnitKeys = [...new Set(heldPaymentState.map(h => h.unitKey))];
+      log.warn('reconciliation.payment_state_held', {
+        clientId:         client.id,
+        heldCount:        heldPaymentState.length,
+        heldUnits:        heldUnitKeys.length,
+        bySource:         countBySource(heldPaymentState),
+        byClassification: countByClassification(heldPaymentState),
+        clocksCleared:    heldClocksCleared,
+        strikeAdvanceFrozen,
+        strikeAdvanceFrozenReason,
+        sampleUnitKeys:   heldUnitKeys.slice(0, 10),
+        traceId:          this._sweepTraceId,
+      });
+    }
+    if (repairProposals.length > 0) {
+      const repairKeys = [...new Set(repairProposals.map(p => p.memberKey))];
+      log.warn('reconciliation.repairs_pending', {
+        clientId:         client.id,
+        repairCount:      repairProposals.length,
+        repairMembers:    repairKeys.length,
+        bySource:         countBySource(repairProposals),
+        sampleMemberKeys: repairKeys.slice(0, 10),
+        traceId:          this._sweepTraceId,
+      });
+    }
+
+    // ── Operator alerts (config_alert_log, de-duplicated) ─────────────────────
+    // Anomaly: ONE alert for the batch — an empty batch held as an anomaly
+    // included (R3-5). Its hardware_ref names the condition, not counts, so a
+    // condition that persists alerts once until an operator resolves it (the
+    // counts are in reconciliation.revokes_held / wix_reads_disagreed).
+    if (anomalyHold) {
+      await this._insertAlertOnce(
+        client.id,
+        ANOMALY_ALERT_TYPE[holdReason] || `revoke_${holdReason}`,
+        [holdReason, decision.dataSource, decision.detail].filter(Boolean).join(':')
+      );
+    }
+    // Paying members whose door is missing in Kisi — one alert per member.
+    for (const memberKey of new Set(repairProposals.map(p => p.memberKey))) {
+      await this._insertAlertOnce(client.id, SWEEP_ALERT.REPAIR_PENDING, `member:${memberKey}`);
+    }
+    // Per-member alerts (fix round F9). Kept when the batch is held for
+    // MASS_REVOKE — that hold is about volume; each member's evidence still
+    // stands. Suppressed only for SNAPSHOT_UNSTABLE and INVALID_PROPOSAL, where
+    // the per-member evidence itself cannot be trusted and the anomaly alert
+    // above already tells the operator. Everything is still recorded below.
+    const perMemberAlertsSuppressed = holdReason !== null
+      && PER_MEMBER_ALERT_SUPPRESSING_REASONS.includes(holdReason);
+    if (!perMemberAlertsSuppressed) {
+      const holderLapseKeys = new Set(revokeProposals
+        .filter(p => p.source === REVOKE_SOURCE.HOLDER_LAPSE).map(p => p.memberKey));
+      for (const memberKey of holderLapseKeys) {
+        await this._insertAlertOnce(client.id, SWEEP_ALERT.HOLDER_LAPSE_PENDING, `member:${memberKey}`);
+      }
+      const notPayingKeys = new Set(revokeProposals
+        .filter(p => p.source === REVOKE_SOURCE.WIX_ABSENCE).map(p => p.memberKey));
+      for (const memberKey of notPayingKeys) {
+        await this._insertAlertOnce(client.id, SWEEP_ALERT.REMOVAL_PENDING, `member:${memberKey}`);
+      }
+      // Declined / pending / unrecognised payments — ONE alert per unit: a
+      // family whose holder's payment is declined is one alert (naming the
+      // holder), not one per seat. De-duplicated like the rest.
+      for (const unitKey of new Set(heldPaymentState.map(h => h.unitKey))) {
+        await this._insertAlertOnce(client.id, SWEEP_ALERT.HELD_PAYMENT_STATE, `member:${unitKey}`);
+      }
+    }
+
+    // ── Proposal log (reconciliation_proposal) — every proposal, one INSERT ────
+    const proposalRecords = [
+      ...revokeProposals.map(p => this._proposalRecord(p, PROPOSAL_KIND.REMOVAL_PENDING, holdReason, {
+        mode, decision, payingInRead, strikeAdvanced: strikeAdvanced.has(p),
+      })),
+      // Repairs are not armed in Phase 1 either (3a) — held, observation only.
+      ...repairProposals.map(p => this._proposalRecord(p, PROPOSAL_KIND.REPAIR_PENDING, REVOKE_HOLD_REASON.OBSERVATION_ONLY, { mode, decision: null, payingInRead })),
+      // Declined / pending / unrecognised payments — recorded, never proposed:
+      // no strike, and no policy decision (they never reach the policy).
+      ...heldPaymentState.map(h => this._proposalRecord(h, PROPOSAL_KIND.HELD_PAYMENT_STATE, HELD_PAYMENT_STATE_REASON, { mode, decision: null, payingInRead })),
+    ];
+    const proposalsRecorded = await this._recordProposals(client.id, runId, proposalRecords);
+
+    // reconciliation_run: the "sanity gate" is the policy's instability /
+    // mass-revoke check. In v3 a tripped gate always holds the batch, so it
+    // never resolves to a proceed.
+    const sanityGateTriggered = holdReason === REVOKE_HOLD_REASON.SNAPSHOT_UNSTABLE
+      || holdReason === REVOKE_HOLD_REASON.MASS_REVOKE;
+    const sanityGateResolved  = sanityGateTriggered ? false : null;
 
     // 3A. In Wix, not in Kisi → paid but not provisioned → queue grant.
     //
@@ -1018,119 +2233,8 @@ class NightlyReconciliation {
       }
     }
 
-    // 3B. In Kisi (AccessSync-managed, primary members only), not in Wix → cancelled/lapsed → queue revoke
-    //
-    // Sanity gate: if would-be revokes >= 25% of yesterday's active count (and yesterday > 5),
-    // wait 30s and re-fetch Wix once. If second snapshot agrees, proceed. If it disagrees,
-    // abort revoke phase entirely. Grants always proceed (additive ops are safe).
-    const wouldRevokeIds = [];
-    for (const [memberId, kisiData] of kisiMembers) {
-      if (kisiData.isSubMember) continue;
-      if (wixMembers.has(memberId)) continue;
-      wouldRevokeIds.push(memberId);
-    }
-
-    let sanityGateTriggered = false;
-    let sanityGateResolved  = null;
-    let revokesProceed      = true;
-
-    const yesterdayCount = client.last_active_member_count || null;
-    const SANITY_THRESHOLD = 0.25;
-    const SANITY_FLOOR     = 5;
-
-    if (wouldRevokeIds.length > 0
-        && yesterdayCount && yesterdayCount > SANITY_FLOOR
-        && (wouldRevokeIds.length / yesterdayCount) >= SANITY_THRESHOLD) {
-
-      sanityGateTriggered = true;
-      log.warn('reconciliation.sanity_gate_triggered', {
-        clientId: client.id, traceId: this._sweepTraceId,
-        wouldRevoke: wouldRevokeIds.length, yesterday: yesterdayCount,
-        threshold: SANITY_THRESHOLD,
-      });
-
-      // Wait then re-fetch once
-      await new Promise(r => setTimeout(r, 30000));
-
-      let secondOrders, secondBookings;
-      try {
-        [secondOrders, secondBookings] = await Promise.all([
-          listActiveOrders(wixApiKey, siteId),
-          listConfirmedBookings(wixApiKey, siteId),
-        ]);
-      } catch (e) {
-        log.error('reconciliation.sanity_gate_requery_failed', { clientId: client.id }, e);
-        revokesProceed = false;
-        sanityGateResolved = false;
-      }
-
-      if (revokesProceed) {
-        const secondMembers = new Map();
-        for (const o of secondOrders || []) if (o.memberId) secondMembers.set(o.memberId, true);
-        for (const b of secondBookings || []) if (b.memberId && !secondMembers.has(b.memberId)) secondMembers.set(b.memberId, true);
-
-        // Recompute would-revoke against the second snapshot
-        const secondWouldRevoke = wouldRevokeIds.filter(id => !secondMembers.has(id));
-        const secondRatio = yesterdayCount ? secondWouldRevoke.length / yesterdayCount : 0;
-
-        if (secondRatio >= SANITY_THRESHOLD) {
-          sanityGateResolved = true;
-          log.info('reconciliation.sanity_gate_resolved_proceed', {
-            clientId: client.id, secondRevokes: secondWouldRevoke.length,
-          });
-        } else {
-          revokesProceed = false;
-          sanityGateResolved = false;
-          log.warn('reconciliation.sanity_gate_aborted', {
-            clientId: client.id,
-            firstWouldRevoke: wouldRevokeIds.length,
-            secondWouldRevoke: secondWouldRevoke.length,
-            yesterday: yesterdayCount,
-          });
-          const _actor = getActor() || {};
-          await db.query(
-            `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
-             VALUES ($1, 'wix_snapshot_anomaly', $2, $3, $4, $5)`,
-            [
-              client.id,
-              `first=${wouldRevokeIds.length} second=${secondWouldRevoke.length} yesterday=${yesterdayCount}`,
-              this._sweepTraceId || getTraceId() || null,
-              _actor.type || null,
-              _actor.id || null,
-            ]
-          ).catch(() => {});
-        }
-      }
-    }
-
-    if (revokesProceed) {
-      for (const memberId of wouldRevokeIds) {
-        const recoEventId = `recon-${client.id}-${memberId}-${Date.now()}`;
-        const traceId = this._sweepTraceId || crypto.randomUUID();
-        const syntheticEvent = {
-          eventType:        'plan.cancelled',
-          sourcePlatform:   'wix',
-          platformMemberId: memberId,
-          wixSiteId:        siteId,
-          synthetic:        true,
-          syntheticSource:  'reconciliation.true_source_sync',
-          traceId,
-          eventId:          recoEventId,
-        };
-
-        const jobId = `revoke-wix-sync-${client.id}-${memberId}-${Date.now()}`;
-        await eventQueue.add('revoke', { tenantId: client.id, standardEvent: syntheticEvent }, { jobId });
-        log.info('reconciliation.revoke_queued', {
-          clientId: client.id, platformMemberId: memberId,
-          jobId, eventId: recoEventId,
-          traceId: this._sweepTraceId,
-          sourceType: 'cron', stage: 'cron', result: 'success',
-        });
-        revoked++;
-      }
-    }
-
-    // Update last_active_member_count for next sweep's sanity gate baseline
+    // Paying-member count, kept for the dashboard. No longer a policy input:
+    // revoke-policy v3 judges against the population actually at risk.
     await db.query(
       `UPDATE clients SET last_active_member_count = $1 WHERE id = $2`,
       [wixMembers.size, client.id]
@@ -1146,11 +2250,15 @@ class NightlyReconciliation {
              abort_reason = $9
        WHERE id = $10`,
       [
-        sanityGateTriggered && !revokesProceed ? 'aborted' : 'success',
+        // A data anomaly aborts the run; observation-only, dry_run and off are
+        // intentional holds, so the run still succeeded.
+        anomalyHold ? 'aborted' : 'success',
         wixMembers.size, kisiMembers.size,
         granted, revoked, skippedHolderOptin,
         sanityGateTriggered, sanityGateResolved,
-        sanityGateTriggered && !revokesProceed ? 'sanity_gate_tripped' : null,
+        // null unless removals were proposed (then why they were held) or an
+        // empty batch was held as an anomaly (R3-5: the reads disagreed too much)
+        holdReason,
         runId,
       ]
     ).catch(e => log.error('reconciliation.run_close_failed', { runId }, e));
@@ -1160,9 +2268,163 @@ class NightlyReconciliation {
       wixActive: wixMembers.size, kisiManaged: kisiMembers.size,
       granted, revoked, skippedHolderOptin,
       sanityGateTriggered, sanityGateResolved,
+      heldRevokes: revokeProposals.length, holdReason,
+      repairsPending: repairProposals.length,
+      heldPaymentState: heldPaymentState.length,
+      observationOnly: SWEEP_OBSERVATION_ONLY, proposalsRecorded, mode,
+      readDisagreement, notPayingObserved, strikesCleared, heldClocksCleared,
+      strikeAdvanceFrozen, strikeAdvanceFrozenReason, sourcesSkippedNonWix,
     });
 
-    return { granted, revoked, skippedHolderOptin, runId, sanityGateTriggered, sanityGateResolved };
+    return this._syncResult({
+      granted, revoked, skippedHolderOptin, runId, sanityGateTriggered, sanityGateResolved,
+      heldRevokes: revokeProposals.length, holdReason, proposalsRecorded,
+    });
+  }
+
+  /**
+   * One reconciliation_proposal row (see _recordProposals). decision is always
+   * 'held' in Phase 1; hold_reason is the policy's reason (removals),
+   * observation_only (repairs, which Phase 1 does not perform either) or
+   * payment_state_not_removable (held_payment_state — never proposed).
+   *
+   * evidence.strike is the clock the policy judged — as the DB had it BEFORE
+   * this sweep; evidence.strikeAdvanced says whether this sweep then recorded
+   * an observation on it (never during an anomaly hold, nor when the clock
+   * read failed).
+   */
+  _proposalRecord(p, kind, holdReason, { mode, decision, payingInRead, strikeAdvanced = false }) {
+    const judgeKey = p.holderKey || p.memberKey;
+    return {
+      platformMemberId: p.memberKey,
+      sourcePlanId:     p.planId || null,
+      hardwareGroupId:  p.hardwareGroupId || null,
+      kind,
+      source:           p.source,
+      dataSource:       p.dataSource,
+      classification:   p.classification || null,
+      decision:         'held',
+      holdReason,
+      evidence: {
+        accessId:            p.accessId || null,
+        hardwareUserId:      p.hardwareUserId || null,
+        holderKey:           p.holderKey || null,
+        unitKey:             p.unitKey || null,
+        strike:              p.strike || null,
+        strikeAdvanced:      !!strikeAdvanced,
+        // Member-level: paying on ANY plan in that read (sub-members: their holder).
+        memberPayingInRead1: payingInRead[0].has(judgeKey),
+        memberPayingInRead2: payingInRead[1].has(judgeKey),
+        mode,
+        observationOnly:     SWEEP_OBSERVATION_ONLY,
+        policyDetail:        decision ? (decision.detail || null) : null,
+        policyDataSource:    decision ? (decision.dataSource || null) : null,
+      },
+    };
+  }
+
+  /**
+   * Enqueue one revoke the removal policy approved. On success, emit the same
+   * per-source event — same name, level and fields — that the inline code
+   * emitted before the gate existed, so the trace timeline reads as it always
+   * has. Each item has its own try/catch: one failed enqueue never stops the rest.
+   *
+   * KEPT FOR PHASE 3b, which re-arms sweep removals through it. In Phase 1
+   * nothing calls it — and it refuses anyway while SWEEP_OBSERVATION_ONLY is
+   * true, so no future call site can reach the queue by accident.
+   *
+   * @param {string} clientId
+   * @param {Object} p  a proposal from _syncClient's revokeProposals
+   * @returns {Promise<boolean>} true when the job reached the queue
+   */
+  async _enqueueApprovedRevoke(clientId, p) {
+    if (SWEEP_OBSERVATION_ONLY) {
+      log.warn('reconciliation.revoke_enqueue_refused_observation_only', {
+        clientId, source: p && p.source, platformMemberId: p && p.memberKey,
+        sourcePlanId: p && p.planId, traceId: this._sweepTraceId,
+      });
+      return false;
+    }
+    try {
+      await eventQueue.add(
+        'revoke',
+        { tenantId: clientId, standardEvent: p.syntheticEvent },
+        { jobId: p.jobId }
+      );
+    } catch (err) {
+      switch (p.source) {
+        case REVOKE_SOURCE.KISI_USER_VANISHED:
+        case REVOKE_SOURCE.ROLE_DRIFT:
+          log.error('reconciliation.pass_3_revoke_queue_failed', {
+            clientId, accessId: p.accessId, sourcePlanId: p.planId,
+          }, err);
+          break;
+        case REVOKE_SOURCE.HOLDER_LAPSE:
+          log.error('reconciliation.sub_member_holder_lapsed_queue_failed', {
+            clientId,
+            subAccessId:  p.accessId,
+            sourcePlanId: p.planId,
+            traceId:      p.syntheticEvent.traceId,
+          }, err);
+          break;
+        case REVOKE_SOURCE.WIX_ABSENCE:
+        default:
+          // 3B had no catch before — one failed enqueue aborted the whole client sync.
+          log.error('reconciliation.revoke_queue_failed', {
+            clientId, platformMemberId: p.memberKey, jobId: p.jobId, source: p.source,
+            traceId: this._sweepTraceId,
+          }, err);
+      }
+      return false;
+    }
+
+    switch (p.source) {
+      case REVOKE_SOURCE.KISI_USER_VANISHED:
+        log.warn('reconciliation.kisi_user_disappeared_confirmed', {
+          clientId,
+          accessId:         p.accessId,
+          platformMemberId: p.memberKey,
+          hardwareUserId:   p.hardwareUserId,
+          sourcePlanId:     p.planId,
+          traceId:          p.syntheticEvent.traceId,
+          sweepTraceId:     this._sweepTraceId,
+        });
+        break;
+      case REVOKE_SOURCE.ROLE_DRIFT:
+        log.warn('reconciliation.role_assignment_drifted', {
+          clientId,
+          accessId:         p.accessId,
+          platformMemberId: p.memberKey,
+          hardwareUserId:   p.hardwareUserId,
+          hardwareGroupId:  p.hardwareGroupId,
+          sourcePlanId:     p.planId,
+          traceId:          p.syntheticEvent.traceId,
+          sweepTraceId:     this._sweepTraceId,
+        });
+        break;
+      case REVOKE_SOURCE.HOLDER_LAPSE:
+        log.info('reconciliation.sub_member_holder_lapsed', {
+          clientId,
+          subAccessId:      p.accessId,
+          platformMemberId: p.memberKey,
+          sourcePlanId:     p.planId,
+          jobId:            p.jobId,
+          traceId:          p.syntheticEvent.traceId,
+          sweepTraceId:     this._sweepTraceId,
+          stage:            'reconcile',
+          result:           'revoke_queued',
+        });
+        break;
+      case REVOKE_SOURCE.WIX_ABSENCE:
+      default:
+        log.info('reconciliation.revoke_queued', {
+          clientId, platformMemberId: p.memberKey,
+          jobId: p.jobId, eventId: p.eventId,
+          traceId: this._sweepTraceId,
+          sourceType: 'cron', stage: 'cron', result: 'success',
+        });
+    }
+    return true;
   }
 
   /**
@@ -1187,9 +2449,16 @@ class NightlyReconciliation {
    *   access_restored       — Wix active, no hardware access. Grant queued.
    *   access_removed        — No active Wix sub, but hardware still had access.
    *                           Revoke queued.
+   *   revoke_held           — Same situation as access_removed, but the client's
+   *                           automatic-removal mode (clients.auto_revoke_mode)
+   *                           is not 'on' ('off', 'dry_run', or unreadable).
+   *                           Nothing queued.
    *   needs_attention       — Integrity issue surfaced. No grant/revoke fires.
    *                           See `alerts` array. Operator must resolve.
    *   wix_unavailable       — Wix API failed. No changes made. Retry later.
+   *   hardware_unavailable  — The door system's role-assignment read failed
+   *                           (Kisi error or malformed page). No changes made.
+   *                           Retry later.
    *   no_identity           — Member not provisioned in AccessSync (no member_master/member_access row).
    *   sub_member_skipped    — Caller passed a sub-member; reconcile plan holder instead.
    *
@@ -1369,10 +2638,33 @@ class NightlyReconciliation {
       return result;
     }
 
-    // 5. Pull live hardware role assignments for this member
+    // 5. Pull live hardware role assignments for this member.
+    //    getManagedRoleAssignments THROWS on any Kisi error or malformed page
+    //    (Phase 1, I-4 — it used to return [], which read as "no door access").
+    //    Wrapped like the Wix step above (fix round F15): a failed read changes
+    //    nothing — no grant, no revoke, no alert row — and says so plainly.
     let actualGroupIds = new Set();
     if (hardwareUserId) {
-      const allAssignments = await hardwareAdapter.getManagedRoleAssignments(hardwarePlatform, hardwareApiKey);
+      let allAssignments;
+      try {
+        allAssignments = await hardwareAdapter.getManagedRoleAssignments(hardwarePlatform, hardwareApiKey);
+        if (!Array.isArray(allAssignments)) {
+          const bad = new Error('getManagedRoleAssignments returned a non-array');
+          bad.code = 'KISI_PAGE_INTEGRITY';
+          throw bad;
+        }
+      } catch (err) {
+        log.warn('reconcileMember.hardware_fetch_failed', {
+          clientId, memberId, hardwarePlatform,
+          statusCode: (err && err.statusCode) || null, code: (err && err.code) || null, traceId,
+        }, err);
+        result.action = 'hardware_unavailable';
+        result.alerts.push({
+          code: 'hardware_api_unavailable',
+          detail: 'AccessSync couldn’t reach the door system — no changes were made. Try again in a few minutes.',
+        });
+        return result;
+      }
       actualGroupIds = new Set(
         allAssignments.filter(a => a.userId === hardwareUserId).map(a => a.groupId).filter(Boolean)
       );
@@ -1413,7 +2705,33 @@ class NightlyReconciliation {
     }
 
     // 7b. Case: no active Wix subs, hardware has access → revoke
+    //
+    //     UNREACHABLE AS WRITTEN (found in the Phase 1 fix round, 2026-09-10; the
+    //     same at HEAD c89b7c0): whenever this condition holds, 7a's holds too —
+    //     with no expected groups, every actual group is untraceable — and 7a
+    //     returns first (needs_attention, nothing queued). It is left exactly as
+    //     it was: making it reachable would add a removal path, which Phase 1
+    //     forbids. Phase 3b decides whether it should exist. Its mode gate below
+    //     stays so that it can never fire unarmed if it ever becomes reachable.
     if (expectedGroupIds.size === 0 && actualGroupIds.size > 0) {
+      // Automatic-removal mode — read where the revoke becomes possible,
+      // fail-closed: only an explicit 'on' lets this per-member revoke through.
+      const mode = await this._readAutoRevokeMode(clientId);
+      if (mode !== REVOKE_MODE.ON) {
+        log.warn('reconciliation.revoke_held', {
+          path: 'reconcile_member', reason: holdReasonForMode(mode),
+          clientId, memberId, platformMemberId, traceId,
+        });
+        result.alerts.push({
+          code: 'auto_revoke_disabled',
+          detail: mode === REVOKE_MODE.DRY_RUN
+            ? 'This member has no active plan but still has door access. Automatic removals are paused while AccessSync’s safety checks roll out, so their access was left in place. If they shouldn’t get in, remove their access by hand.'
+            : 'This member has no active plan but still has door access. Automatic removals are switched off for this gym, so their access was left in place. If they shouldn’t get in, remove their access by hand.',
+        });
+        result.action = 'revoke_held';
+        return result;
+      }
+
       const recoEventId = `recon-mbr-${clientId}-${platformMemberId}-${Date.now()}`;
       const syntheticEvent = {
         eventType:        'plan.cancelled',
@@ -1559,10 +2877,25 @@ class NightlyReconciliation {
     return result.rows;
   }
 
-  async _processRecordTargeted(record) {
+  /**
+   * R6 — replay a member's latest failed job from error_queue (step 4).
+   *
+   * Phase 1 (2026-09-10): GRANT-ONLY, and only for a member PAYING in this
+   * sweep's Wix double read. A revoke is never replayed (months-old failed
+   * revokes must not fire on their own), and a type that is neither is
+   * skipped. The paying snapshot is passed in by _runNightlySweepBody; when it
+   * is missing — or has no entry for this client because its sync aborted or
+   * was skipped — the replay is skipped (fail-closed). When the event names a
+   * plan, that plan itself must be PAYING, not just the member.
+   *
+   * @param {Object} record  a row from _fetchActionableRecords
+   * @param {Map<string, Map<string, Set<string>>>} [payingByClient]
+   *   clientId → (memberId → PAYING planIds), from this sweep's Wix reads
+   */
+  async _processRecordTargeted(record, payingByClient = null) {
     // 1. Fetch the latest failed event payload from error_queue
     const errorResult = await db.query(
-      `SELECT event_type, payload FROM error_queue
+      `SELECT id, event_type, payload FROM error_queue
        WHERE member_id = $1
        ORDER BY created_at DESC LIMIT 1`,
       [record.member_id]
@@ -1573,7 +2906,7 @@ class NightlyReconciliation {
       return;
     }
 
-    const { event_type: eventType, payload } = errorResult.rows[0];
+    const { id: errorQueueId, event_type: eventType, payload } = errorResult.rows[0];
     let standardEvent;
     try {
       standardEvent = typeof payload === 'string' ? JSON.parse(payload) : payload;
@@ -1581,10 +2914,54 @@ class NightlyReconciliation {
       log.error('reconciliation.payload_parse_failed', { memberId: record.member_id }, e);
       return;
     }
+    // Null / primitive / array payload (e.g. JSON 'null'): nothing to replay.
+    if (!standardEvent || typeof standardEvent !== 'object' || Array.isArray(standardEvent)) {
+      log.warn('reconciliation.requeue_skipped_unreadable_payload', {
+        memberId: record.member_id, platformMemberId: record.platform_member_id, eventType,
+      });
+      return;
+    }
 
-    const jobName = ['plan.purchased', 'payment.recovered', 'booking.confirmed'].includes(eventType)
-      ? 'grant'
-      : 'revoke';
+    // One answer for grant-vs-revoke (core/event-routing.js). The old inline
+    // list here was missing plan.started and defaulted everything else to
+    // 'revoke' — a crashed deferred-start grant was replayed as a revoke. An
+    // event type that is neither is skipped, never promoted to a revoke.
+    const jobName = jobNameForEventType(eventType);
+    if (!jobName) {
+      log.warn('reconciliation.requeue_skipped_unroutable', {
+        memberId: record.member_id, platformMemberId: record.platform_member_id, eventType,
+      });
+      return;
+    }
+
+    // Grant-only. The payload's own type must agree: a row labelled as a grant
+    // whose event is a revoke is never replayed as either.
+    const payloadJobName = standardEvent.eventType ? jobNameForEventType(standardEvent.eventType) : jobName;
+    if (jobName !== 'grant' || payloadJobName !== 'grant') {
+      log.warn('reconciliation.requeue_skipped_revoke', {
+        memberId: record.member_id, platformMemberId: record.platform_member_id,
+        clientId: record.client_id, eventType, payloadEventType: standardEvent.eventType || null,
+      });
+      return;
+    }
+
+    // Only for members PAYING in this sweep's Wix read (and, when the event
+    // names a plan, for that plan).
+    const payingForClient = payingByClient instanceof Map ? payingByClient.get(record.client_id) : null;
+    const memberKey = standardEvent.platformMemberId || record.platform_member_id || null;
+    const payingPlans = payingForClient instanceof Map && memberKey ? payingForClient.get(memberKey) : null;
+    const planId = standardEvent.planId || null;
+    let notPayingReason = null;
+    if (!(payingForClient instanceof Map)) notPayingReason = 'no_wix_read';
+    else if (!payingPlans)                 notPayingReason = 'member_not_paying';
+    else if (planId && !payingPlans.has(planId)) notPayingReason = 'plan_not_paying';
+    if (notPayingReason) {
+      log.warn('reconciliation.requeue_skipped_not_paying', {
+        memberId: record.member_id, platformMemberId: memberKey, clientId: record.client_id,
+        eventType, planId, reason: notPayingReason,
+      });
+      return;
+    }
 
     // Guard: never re-queue a job without a traceId — worker rejects at queue-worker.js:77
     // and BullMQ marks it exhausted on attempt 1. If the original payload predates traceId
@@ -1593,9 +2970,18 @@ class NightlyReconciliation {
       standardEvent.traceId = this._sweepTraceId || crypto.randomUUID();
     }
 
+    // jobId is sweep-scoped for traceability (which error_queue row, which sweep).
+    // Deliberately NOT stable across sweeps (e.g. just `requeue-${id}`): BullMQ
+    // keeps the last 500 failed jobs (removeOnFail: 500, core/webhook-processor.js),
+    // and a retained failed job's id silently blocks a new job with the same id —
+    // so a member whose replay failed once could never be retried. Duplicate
+    // replays of the same member are already serialised by the per-member lock
+    // in resolveAndLock.
+    const jobId = `requeue-${errorQueueId}-${this._sweepTraceId || 'nosweep'}`;
+
     // 2. Re-queue to BullMQ — respects in_flight lock and concurrency controls (not direct grant-revoke call)
-    await eventQueue.add(jobName, { tenantId: record.client_id, standardEvent });
-    log.info('reconciliation.requeued', { jobName, memberId: record.member_id, platformMemberId: record.platform_member_id });
+    await eventQueue.add(jobName, { tenantId: record.client_id, standardEvent }, { jobId });
+    log.info('reconciliation.requeued', { jobName, memberId: record.member_id, platformMemberId: record.platform_member_id, jobId });
   }
 
   async _generateAndSendDigest() {

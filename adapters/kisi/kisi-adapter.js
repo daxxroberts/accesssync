@@ -77,10 +77,174 @@ function findElevatedAssignments(roleAssignments) {
   });
 }
 
+/**
+ * Phase 1 pagination integrity (I-4).
+ *
+ * A bulk Kisi list feeds the reconcile sweep's view of "who has a door". A page
+ * that is silently short, malformed, or duplicated looks exactly like a mass of
+ * members losing access — the Pass 3 mass-revoke failure mode. So every bulk
+ * list throws `code='KISI_PAGE_INTEGRITY'` rather than guess:
+ *   - a page body that is not an array (never coerced to [])
+ *   - the same id seen twice across pages (offset drift / duplicated page)
+ *   - more than KISI_LIST_MAX_PAGES pages (runaway pagination)
+ * Callers treat the throw as "Kisi unreadable this sweep" and abort, never as
+ * "nobody has access".
+ */
+const KISI_LIST_PAGE_LIMIT = 100;
+const KISI_LIST_MAX_PAGES  = 100;
+
+function _kisiPageIntegrityError(endpoint, reason, detail = {}) {
+  const err = new Error(`KISI_PAGE_INTEGRITY: ${endpoint} — ${reason}`);
+  err.code = 'KISI_PAGE_INTEGRITY';
+  err.integrityReason = reason;
+  err.endpoint = endpoint;
+  Object.assign(err, detail);
+  log.warn('kisi.page_integrity_failed', { endpoint, reason, ...detail });
+  return err;
+}
+
+/**
+ * Shared offset/limit pager for Kisi bulk lists. Returns the raw items of every
+ * page, in order. Throws KISI_PAGE_INTEGRITY on a non-array page, a duplicate
+ * item id, or a page-cap breach. HTTP errors from the connector propagate as-is.
+ * Items without an id are passed through (the dedupe check only covers ids).
+ *
+ * `endpoint` labels the list in logs/errors; `buildPath(limit, offset)` returns
+ * the request path for one page.
+ */
+async function _fetchAllKisiPages(endpoint, buildPath, apiKey) {
+  const items = [];
+  const seenIds = new Set();
+  const limit = KISI_LIST_PAGE_LIMIT;
+  let offset = 0;
+  let page = 0;
+  while (true) {
+    page += 1;
+    const data = await kisiConnector.makeRequest(
+      buildPath(limit, offset),
+      { method: 'GET' },
+      apiKey
+    );
+    if (!Array.isArray(data)) {
+      throw _kisiPageIntegrityError(endpoint, 'non_array_page', {
+        page, offset, bodyType: data === null ? 'null' : typeof data,
+      });
+    }
+    for (const item of data) {
+      const id = item?.id;
+      if (id !== undefined && id !== null) {
+        const key = String(id);
+        if (seenIds.has(key)) {
+          throw _kisiPageIntegrityError(endpoint, 'duplicate_id', { page, offset, duplicateId: key });
+        }
+        seenIds.add(key);
+      }
+      items.push(item);
+    }
+    if (data.length < limit) break;
+    if (page >= KISI_LIST_MAX_PAGES) {
+      // A full page at the cap means more data exists that we will not read.
+      // Returning a truncated list would read as missing access — refuse.
+      throw _kisiPageIntegrityError(endpoint, 'page_cap_exceeded', {
+        page, offset, maxPages: KISI_LIST_MAX_PAGES,
+      });
+    }
+    offset += limit;
+  }
+  return items;
+}
+
+function _normEmail(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+/**
+ * assignRole 409 recovery matcher (I-4). True only for a `group_basic`
+ * assignment of THIS user to THIS group. Field fallbacks follow what Kisi
+ * returns (see getManagedRoleAssignments + the PARSE 2026-05-17 response
+ * shape): group via group_id / group.id / applies_to_id, user via user_id /
+ * user.id / assignee_id. A missing role_id is treated as group_basic.
+ *
+ * Stricter than the spec formula in three fail-safe ways: the group value
+ * must be present; an explicit non-User assignee_type (Team/Guest) never
+ * matches; an explicit non-group scope / applies_to_type never matches — Kisi
+ * ids are per-resource integers, so a Team or Place id can equal a user or
+ * group id.
+ *
+ * What a non-match costs (it is NOT retried): assignRole throws
+ * KISI_ROLE_CONFLICT_UNRESOLVED carrying statusCode 409. core/grant-revoke.js
+ * records that one group as a partial failure (group health never flagged)
+ * and carries on with the grant's other mappings. When EVERY mapping in a
+ * grant fails with KISI_ROLE_CONFLICT_UNRESOLVED, processGrant throws, and
+ * core/queue-worker.js's catch calls standardAdapter.releaseLock('failed'),
+ * which sets member_access.status = 'inactive' (its 4xx rule then dead-letters
+ * the job for an operator). That is a DATABASE status only: nothing in Kisi
+ * is touched, and the next sweep's Pass 1 rollup
+ * (rollupAccessStatusByPlatformMember, run for every member PAYING in either
+ * Wix read) restores a paying member to 'active'. (A sub-member is not a Wix
+ * member, so Pass 1 does not roll it up: its row stays 'inactive' until a
+ * later grant for it succeeds.) It is NOT the disposition HEAD
+ * (c89b7c0) had: HEAD's recovery read `?user_id=&group_id=&limit=1` and
+ * adopted whatever assignment id Kisi returned first — possibly someone
+ * else's assignment, or an elevated role — as this member's
+ * role_assignment_id: a latent wrongful removal, because a later revoke
+ * deletes the assignment on record. The interim 'inactive' is an accepted
+ * Phase 1 exception; the proper fix is Phase 3a's "releaseLock recomputes
+ * status".
+ */
+function _isUserGroupBasicAssignment(a, userId, groupId) {
+  if (!a || typeof a !== 'object') return false;
+  const gid = a.group_id ?? a.group?.id ?? a.applies_to_id;
+  if (gid === undefined || gid === null || String(gid) !== String(groupId)) return false;
+  if ((a.role_id ?? 'group_basic') !== 'group_basic') return false;
+  const uid = a.user_id ?? a.user?.id ?? a.assignee_id ?? userId;
+  if (String(uid) !== String(userId)) return false;
+  if (a.assignee_type && String(a.assignee_type).toLowerCase() !== 'user') return false;
+  if (a.scope && String(a.scope).toLowerCase() !== 'group') return false;
+  if (a.applies_to_type && String(a.applies_to_type).toLowerCase() !== 'group') return false;
+  return true;
+}
+
+/**
+ * P-4: the error assignRole throws when a 409 recovery cannot find this
+ * user's group_basic assignment on this group.
+ *
+ * statusCode stays 409 (the conflict Kisi actually returned) so queue-worker
+ * classifies it exactly as it classified the raw 409 before: 4xx →
+ * UnrecoverableError → dead-letter. `code` is deliberately NOT
+ * HARDWARE_RESOURCE_NOT_FOUND — grant-revoke reads that code as "the user or
+ * the group is gone" and may flag the group's health. The original 409 is kept
+ * on `cause`.
+ */
+function _roleConflictUnresolvedError(userId, groupId, conflictErr, detail = {}) {
+  const err = new Error(
+    `KISI_ROLE_CONFLICT_UNRESOLVED: Kisi returned 409 for user ${userId} on group ${groupId}, ` +
+    'but no matching group_basic assignment was found'
+  );
+  err.code        = 'KISI_ROLE_CONFLICT_UNRESOLVED';
+  err.statusCode  = (conflictErr && conflictErr.statusCode) || 409;
+  err.userId      = userId;
+  err.groupId     = groupId;
+  err.cause       = conflictErr;
+  err.body        = conflictErr ? conflictErr.body : undefined;
+  err.userMessage = "Kisi says this person already has access to this door, but AccessSync " +
+                    "couldn't find that access record. Nothing was changed.";
+  err.action      = "Check this person's door groups in Kisi.";
+  Object.assign(err, detail);
+  return err;
+}
+
 class KisiAdapter {
 
   /**
    * Find a user by email. Returns Kisi user ID or null.
+   *
+   * Phase 1 (I-4): Kisi's `?query=` is a search, not an exact lookup — it can
+   * return other users, so the first result is NOT necessarily this person.
+   * Returning `data[0]` blindly could bind a member to someone else's Kisi
+   * account. Only a result whose email equals the requested email
+   * (trimmed, case-insensitive) is accepted; otherwise null, and the caller
+   * creates the user.
    */
   async findUserByEmail(apiKey, email) {
     const data = await kisiConnector.makeRequest(
@@ -88,9 +252,44 @@ class KisiAdapter {
       { method: 'GET' },
       apiKey
     );
-    if (Array.isArray(data) && data.length > 0) return data[0].id;
-    if (data && data.id) return data.id;
+    const target = _normEmail(email);
+    let results = [];
+    if (Array.isArray(data)) results = data;
+    else if (data && data.id) results = [data];
+    if (!target || results.length === 0) return null;
+
+    const match = results.find(u => _normEmail(u?.email) === target);
+    if (match && match.id !== undefined && match.id !== null) return match.id;
+
+    // Results came back but none is this exact email. Count only — never log
+    // the searched or returned emails (DR-001 PII).
+    log.warn('kisi.user.find_no_exact_match', { resultCount: results.length });
     return null;
+  }
+
+  /**
+   * Fetch a single Kisi user by id (I-4). Used by core/grant-revoke.js to tell
+   * "the user is gone" apart from "the door group is gone" when assignRole 404s.
+   *
+   * Returns the user object, or null on 404 (user does not exist).
+   * Every other failure throws — including a 2xx whose body is not a user
+   * object, so an ambiguous response is never read as "user gone".
+   */
+  async getUserById(apiKey, userId) {
+    let data;
+    try {
+      data = await kisiConnector.makeRequest(`/users/${userId}`, { method: 'GET' }, apiKey);
+    } catch (err) {
+      if (err.statusCode === 404) return null;
+      throw err;
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data) || data.id === undefined || data.id === null) {
+      const err = new Error(`Kisi GET /users/${userId} returned no user object`);
+      err.code = 'KISI_RESPONSE_INTEGRITY';
+      err.userId = userId;
+      throw err;
+    }
+    return data;
   }
 
   /**
@@ -163,23 +362,57 @@ class KisiAdapter {
     } catch (err) {
       // 409 means the assignment already exists — idempotent success.
       // Fetch the existing role assignment ID so we can record it correctly.
+      //
+      // Phase 1 (I-4): the `group_id` query filter on GET /role_assignments is
+      // unverified, and `limit=1` + `existing[0]` could hand back a DIFFERENT
+      // assignment (another door, an elevated role, a Team grant). List this
+      // user's assignments and match client-side on (user, group, group_basic).
       if (err.statusCode === 409) {
         log.info('kisi.role.already_exists', { userId, groupId });
-        const existing = await kisiConnector.makeRequest(
-          `/role_assignments?user_id=${userId}&group_id=${groupId}&limit=1`,
-          { method: 'GET' },
-          apiKey
-        );
-        const match = Array.isArray(existing) ? existing[0] : null;
+        let existing;
+        try {
+          existing = await kisiConnector.makeRequest(
+            `/role_assignments?user_id=${userId}&limit=100`,
+            { method: 'GET' },
+            apiKey
+          );
+        } catch (recoveryErr) {
+          // Fix round P-4: a 404 on the recovery read can't mean "user or
+          // group gone" — Kisi just said (409) the assignment exists. Left
+          // as-is it carries code HARDWARE_RESOURCE_NOT_FOUND, which
+          // grant-revoke reads as an assignRole 404 and may use to flag a
+          // working door. Treat it as an unresolved conflict instead. Every
+          // other recovery-read failure (5xx, 429, 401/403, network)
+          // propagates unchanged, exactly as before.
+          if (recoveryErr && recoveryErr.statusCode === 404) {
+            log.warn('kisi.role.conflict_unresolvable', {
+              userId, groupId, candidateCount: 0, reason: 'recovery_read_not_found',
+            });
+            throw _roleConflictUnresolvedError(userId, groupId, err, {
+              candidateCount: 0, reason: 'recovery_read_not_found',
+            });
+          }
+          throw recoveryErr;
+        }
+        const candidates = Array.isArray(existing) ? existing : [];
+        const match = candidates.find(a => _isUserGroupBasicAssignment(a, userId, groupId)) || null;
         if (match?.id) {
           // Pair with kisi.role.already_exists so the trace shows the recovery
           // landed cleanly. EVENT_REGISTRY override persists this info event.
           log.info('kisi.role.recovery_succeeded', { userId, groupId, roleAssignmentId: match.id });
           return match.id;
         }
-        // Kisi confirmed 409 but we can't retrieve the ID — surface as unknown
-        log.warn('kisi.role.conflict_unresolvable', { userId, groupId });
-        throw err;
+        // Kisi confirmed 409 but no (user, group, group_basic) assignment
+        // matches. Fix round P-4: throw KISI_ROLE_CONFLICT_UNRESOLVED (not the
+        // raw 409) so grant-revoke can record this one group as a partial
+        // failure. statusCode stays 409, so an all-groups-failed grant still
+        // dead-letters (4xx) — it is NOT retried. See the matcher's header.
+        log.warn('kisi.role.conflict_unresolvable', {
+          userId, groupId, candidateCount: candidates.length, reason: 'no_matching_assignment',
+        });
+        throw _roleConflictUnresolvedError(userId, groupId, err, {
+          candidateCount: candidates.length, reason: 'no_matching_assignment',
+        });
       }
       log.error('kisi.role.assign_failed', { userId, groupId, statusCode: err.statusCode }, err);
       throw err;
@@ -271,23 +504,40 @@ class KisiAdapter {
   }
 
   /**
-   * Fetch all role assignments for a single Kisi user. Used by Layer C of the delete
-   * guard. Distinct from `getManagedRoleAssignments()` which fetches org-wide.
+   * Fetch all role assignments for a single Kisi user. Distinct from
+   * `getManagedRoleAssignments()` which fetches org-wide. Two callers, both
+   * guards in front of an irreversible Kisi user delete:
+   *   - adapters/standard-adapter.js finalizeRevoke Guard D (via
+   *     hardware-adapter) — refuses on ANY throw (assignment_check_failed).
+   *   - deleteUser Layer C below — a throw aborts deleteUser before its DELETE.
    *
-   * Returns [] on 404 (user gone). Other errors propagate.
+   * Returns [] ONLY on an HTTP 404. Every other HTTP error propagates.
+   *
+   * Fix round F7: a 2xx whose body is not an array (null/204, an object
+   * wrapper, HTML, a string) throws `code='KISI_PAGE_INTEGRITY'`. It used to be
+   * coerced to [] — which both guards read as "this user holds no other door
+   * and no elevated role", so the delete went ahead on an answer we could not
+   * read. Neither guard can fail closed on a value that looks like a clean
+   * empty list.
    */
   async getRoleAssignmentsForUser(apiKey, userId) {
+    let data;
     try {
-      const data = await kisiConnector.makeRequest(
+      data = await kisiConnector.makeRequest(
         `/role_assignments?user_id=${userId}&limit=100`,
         { method: 'GET' },
         apiKey
       );
-      return Array.isArray(data) ? data : [];
     } catch (err) {
       if (err.statusCode === 404) return [];
       throw err;
     }
+    if (!Array.isArray(data)) {
+      throw _kisiPageIntegrityError('/role_assignments?user_id', 'non_array_page', {
+        userId, bodyType: data === null ? 'null' : typeof data,
+      });
+    }
+    return data;
   }
 
   /**
@@ -305,6 +555,10 @@ class KisiAdapter {
    *                    (admin / manager / owner) post-creation. ELEVATED_ROLE_ATTACHED.
    *
    * Any single guard failing alone fails closed. All three must pass for DELETE to fire.
+   * Layer C fails closed on an unreadable answer too: if getRoleAssignmentsForUser
+   * throws (any non-404 HTTP error, or KISI_PAGE_INTEGRITY on a non-array 2xx body —
+   * fix round F7), that error propagates out of deleteUser and the DELETE never fires.
+   * (A 404 on the role lookup still reads as "no assignments" — pre-Phase-1 behaviour.)
    *
    * Call count: 2 GETs + 1 DELETE on the destructive path. All other adapter methods remain
    * single-call. The added cost protects an irreversible operation against a real failure
@@ -356,7 +610,8 @@ class KisiAdapter {
       throw err;
     }
 
-    // Layer C — elevated-role check
+    // Layer C — elevated-role check. Deliberately NOT wrapped in try/catch: a
+    // throw here (HTTP error or KISI_PAGE_INTEGRITY) must abort the delete.
     const roleAssignments = await this.getRoleAssignmentsForUser(apiKey, userId);
     const elevated = findElevatedAssignments(roleAssignments);
     if (elevated.length > 0) {
@@ -397,6 +652,11 @@ class KisiAdapter {
    * { id, email, name } populated. Returns [] on missing key.
    *
    * Throws on non-2xx errors so caller can short-circuit Pass 3 on outage.
+   *
+   * Phase 1 (I-4) integrity: throws `code='KISI_PAGE_INTEGRITY'` on a non-array
+   * page, a duplicate user id across pages, or more than KISI_LIST_MAX_PAGES
+   * pages (see _fetchAllKisiPages). A short/malformed page is never read as
+   * "these users were deleted".
    */
   async listAllUsers(apiKey) {
     if (!apiKey) {
@@ -404,26 +664,19 @@ class KisiAdapter {
       return [];
     }
     const allUsers = [];
-    let offset = 0;
-    const limit = 100;
     try {
-      while (true) {
-        const data = await kisiConnector.makeRequest(
-          `/users?limit=${limit}&offset=${offset}`,
-          { method: 'GET' },
-          apiKey
-        );
-        const users = Array.isArray(data) ? data : [];
-        for (const u of users) {
-          allUsers.push({ id: u.id, email: u.email || null, name: u.name || null });
-        }
-        if (users.length < limit) break;
-        offset += limit;
+      const users = await _fetchAllKisiPages(
+        '/users',
+        (limit, offset) => `/users?limit=${limit}&offset=${offset}`,
+        apiKey
+      );
+      for (const u of users) {
+        allUsers.push({ id: u.id, email: u.email || null, name: u.name || null });
       }
       log.info('kisi.list_users.fetched', { totalUsers: allUsers.length });
       return allUsers;
     } catch (err) {
-      log.error('kisi.list_users_failed', { statusCode: err.statusCode || null, offset }, err);
+      log.error('kisi.list_users_failed', { statusCode: err.statusCode || null, code: err.code || null }, err);
       throw err;
     }
   }
@@ -454,7 +707,13 @@ class KisiAdapter {
    * the Kisi side of the Wix ↔ Kisi diff. Returns all assignments regardless of source_tag;
    * the reconciliation filters by joining against member_identity (source_tag = 'accesssync').
    *
-   * Returns [] on error or missing key.
+   * Returns [] on missing key.
+   *
+   * Phase 1 (I-4): THROWS on any HTTP error — it used to return [] here, which
+   * the sweep read as "no member has a door" (the Pass 3 mass-revoke risk).
+   * Also throws `code='KISI_PAGE_INTEGRITY'` on a non-array page, a duplicate
+   * assignment id across pages, or more than KISI_LIST_MAX_PAGES pages.
+   * Return shape unchanged: [{ userId, groupId, roleAssignmentId }].
    */
   async getManagedRoleAssignments(apiKey) {
     if (!apiKey) {
@@ -462,32 +721,27 @@ class KisiAdapter {
       return [];
     }
     const allAssignments = [];
-    let offset = 0;
-    const limit = 100;
 
     try {
-      while (true) {
-        const data = await kisiConnector.makeRequest(
-          `/role_assignments?limit=${limit}&offset=${offset}`,
-          { method: 'GET' },
-          apiKey
-        );
-        const assignments = Array.isArray(data) ? data : [];
-        for (const a of assignments) {
-          allAssignments.push({
-            userId:           a.user_id || a.user?.id,
-            groupId:          a.group_id || a.group?.id,
-            roleAssignmentId: a.id,
-          });
-        }
-        if (assignments.length < limit) break;
-        offset += limit;
+      const assignments = await _fetchAllKisiPages(
+        '/role_assignments',
+        (limit, offset) => `/role_assignments?limit=${limit}&offset=${offset}`,
+        apiKey
+      );
+      for (const a of assignments) {
+        allAssignments.push({
+          userId:           a.user_id || a.user?.id,
+          groupId:          a.group_id || a.group?.id,
+          roleAssignmentId: a.id,
+        });
       }
       log.info('kisi.managed_assignments.fetched', { count: allAssignments.length });
       return allAssignments;
     } catch (err) {
-      log.error('kisi.managed_assignments.fetch_failed', {}, err);
-      return [];
+      log.error('kisi.managed_assignments.fetch_failed', {
+        statusCode: err.statusCode || null, code: err.code || null,
+      }, err);
+      throw err;
     }
   }
 

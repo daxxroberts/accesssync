@@ -60,6 +60,8 @@ jest.mock('../../adapters/standard-adapter', () => ({
 jest.mock('../../adapters/wix/wix-plans-api', () => ({
   listActiveOrders: jest.fn().mockResolvedValue([]),
   listConfirmedBookings: jest.fn().mockResolvedValue([]),
+  // Phase 1: the sweep reads every order, classified, twice.
+  listOrdersClassified: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock('../../core/plan-mapping-resolver', () => ({
@@ -76,10 +78,18 @@ jest.mock('../../core/logger', () => ({
 }));
 
 const reconciliation = require('../../core/reconciliation');
+const { eventQueue } = require('../../core/webhook-processor');
+const wixPlansApi = require('../../adapters/wix/wix-plans-api');
+
+// Phase 1 tripwire (2026-09-10): no reconciliation path may enqueue a revoke.
+afterEach(() => {
+  expect(eventQueue.add.mock.calls.filter(c => c[0] === 'revoke')).toEqual([]);
+});
 
 beforeEach(() => {
   capturedActors.length = 0;
   jest.clearAllMocks();
+  reconciliation._doubleReadDelayMs = 0; // the two Wix reads run back to back in tests
 });
 
 describe('[P3] OB-227 — reconcile trigger source propagates to actor.id', () => {
@@ -122,6 +132,7 @@ describe('[P3] OB-227 — reconcile trigger source propagates to actor.id', () =
     const db = require('../../db');
     // Audit-row INSERT must return an id so the close path doesn't crash
     db.query.mockResolvedValueOnce({ rows: [{ id: 'run-1' }] }) // INSERT reconciliation_run
+            .mockResolvedValueOnce({ rows: [{ auto_revoke_mode: 'dry_run' }] }) // auto_revoke_mode read
             .mockResolvedValue({ rows: [], rowCount: 0 });      // everything else
 
     // Provide a minimal client object; Wix fetch will return [] from mocks,
@@ -132,7 +143,11 @@ describe('[P3] OB-227 — reconcile trigger source propagates to actor.id', () =
       last_active_member_count: 0,
     };
 
-    await reconciliation._syncClient(client, {}); // no triggeredByActor passed
+    const result = await reconciliation._syncClient(client, {}); // no triggeredByActor passed
+
+    // The sync ran end to end (past the Wix double read), not an early abort.
+    expect(result.aborted).toBeUndefined();
+    expect(wixPlansApi.listOrdersClassified).toHaveBeenCalledTimes(2);
 
     // The audit-row INSERT is the first db.query call; its 5th param is actor_id
     const insertCall = db.query.mock.calls.find(c =>
@@ -148,6 +163,7 @@ describe('[P3] OB-227 — reconcile trigger source propagates to actor.id', () =
   test('per-client _syncClient with explicit operator actor preserves operator identity (not downgraded)', async () => {
     const db = require('../../db');
     db.query.mockResolvedValueOnce({ rows: [{ id: 'run-2' }] })
+            .mockResolvedValueOnce({ rows: [{ auto_revoke_mode: 'dry_run' }] }) // auto_revoke_mode read
             .mockResolvedValue({ rows: [], rowCount: 0 });
 
     const client = {

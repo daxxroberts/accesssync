@@ -12,8 +12,27 @@
 
 const { log } = require('../../core/logger');
 const { RateLimiter } = require('../../core/rate-limiter');
+const { classifyOrder } = require('../../core/wix-order-classification');
 
 const WIX_API_BASE = 'https://www.wixapis.com';
+
+// Pagination integrity (reconciliation safety pass, 2026-09-10).
+// A list that is silently short is worse than a list that fails: the sweep
+// reads "member missing from Wix" as "member stopped paying". So every
+// page-walk below throws a WIX_PAGE_INTEGRITY error instead of returning a
+// partial list when the response shape or the paging looks wrong. Callers
+// already fail closed on a throw (reconciliation aborts the client's sync).
+const WIX_MAX_PAGES = 200;
+
+function wixIntegrityError(message, detail = {}) {
+  const err = new Error(`Wix page integrity: ${message}`);
+  err.code = 'WIX_PAGE_INTEGRITY';
+  err.detail = detail;
+  err.userMessage = 'Wix returned an incomplete or inconsistent list, so AccessSync skipped this sync rather than act on partial data.';
+  err.action = 'No action needed — the next sync retries. If this repeats, contact AccessSync support.';
+  err.resolution = 'RETRY';
+  return err;
+}
 
 // Shared limiter for this file. Wix documents a 10 req/sec REST cap.
 // Module-scoped — every caller of listPricingPlans / listBookingServices / etc. contends
@@ -186,47 +205,148 @@ async function listAllMappable(apiKey, siteId) {
 }
 
 /**
+ * Page-walk EVERY pricing-plan order on a Wix site (all statuses), raw.
+ * Internal — listActiveOrders and listOrdersClassified both build on it so
+ * they share one set of integrity checks.
+ *
+ * OB-85/87: The v2 /orders/query POST endpoint was removed by Wix (returns 503 FUNCTION_REMOVED).
+ * Replacement is GET /pricing-plans/v2/orders with query-string (offset) paging.
+ * The GET variant doesn't accept a filter parameter, so callers filter client-side.
+ *
+ * Throws (never returns a partial list):
+ *   - HTTP errors, via wixFetch (unchanged)
+ *   - WIX_PAGE_INTEGRITY when a 200 body has no `orders` array ({} is NOT
+ *     "zero orders"), when the same order id appears twice (offset drift —
+ *     an order moved between pages, so another one may have been skipped),
+ *     or when the walk needs more than WIX_MAX_PAGES pages.
+ *
+ * Orders with no id at all cannot be duplicate-checked; they are passed
+ * through unchanged (the REST list always carries `id`).
+ */
+async function _fetchAllOrders(apiKey, siteId) {
+  const allOrders = [];
+  const seenIds = new Set();
+  const limit = 50;
+  let offset = 0;
+  let pages = 0;
+
+  while (true) {
+    if (pages >= WIX_MAX_PAGES) {
+      throw wixIntegrityError(`orders walk exceeded ${WIX_MAX_PAGES} pages`, { siteId, pages, limit });
+    }
+    const path = `/pricing-plans/v2/orders?limit=${limit}&offset=${offset}`;
+    const data = await wixFetch(path, apiKey, siteId);
+    pages += 1;
+
+    if (!data || !Array.isArray(data.orders)) {
+      throw wixIntegrityError('orders page has no orders array', { siteId, page: pages, offset });
+    }
+    const orders = data.orders;
+
+    for (const o of orders) {
+      // A null/primitive entry threw a TypeError here before; name it instead.
+      if (!o || typeof o !== 'object') {
+        throw wixIntegrityError('orders page contains a non-object entry', { siteId, page: pages, offset });
+      }
+      const id = o.id || o._id || null;
+      if (id) {
+        if (seenIds.has(id)) {
+          throw wixIntegrityError('duplicate order id across pages', { siteId, page: pages, offset });
+        }
+        seenIds.add(id);
+      }
+      allOrders.push(o);
+    }
+    if (orders.length < limit) break;
+    offset += limit;
+  }
+  return allOrders;
+}
+
+/**
  * List all active pricing plan orders for a Wix site.
  * Used by nightly reconciliation to discover members who paid but were never provisioned.
  * Returns normalized order objects — one per active plan holder.
  *
- * OB-85/87: The v2 /orders/query POST endpoint was removed by Wix (returns 503 FUNCTION_REMOVED).
- * Replacement is GET /pricing-plans/v2/orders with query-string paging. Client-side filters
- * for status === 'ACTIVE' since the GET variant doesn't accept a filter parameter.
+ * Contract unchanged by the 2026-09-10 safety pass: ACTIVE status only (any
+ * payment status), same return shape. It now inherits _fetchAllOrders'
+ * integrity checks. reconcileMember still depends on this exact filter.
  * Throws on failure so reconciliation can abort instead of false-revoking.
  */
 async function listActiveOrders(apiKey, siteId) {
   const allOrders = [];
-  let offset = 0;
-  const limit = 50;
 
   try {
-    while (true) {
-      const path = `/pricing-plans/v2/orders?limit=${limit}&offset=${offset}`;
-      const data = await wixFetch(path, apiKey, siteId);
-      const orders = data.orders || [];
-
-      for (const o of orders) {
-        if (o.status !== 'ACTIVE') continue;
-        allOrders.push({
-          memberId: o.buyer?.memberId || o.buyer?.contactId || null,
-          planId:   o.planId || null,
-          email:    null,
-          name:     null,
-          // OB-187: pass through the raw order shape so reconcile can build a
-          // billing snapshot for legacy members who never came in via a webhook.
-          // extractBillingSnapshot expects { data: { entity: <order> } } — we
-          // wrap here so the caller doesn't have to know the webhook envelope.
-          rawOrder: o,
-        });
-      }
-      if (orders.length < limit) break;
-      offset += limit;
+    const orders = await _fetchAllOrders(apiKey, siteId);
+    for (const o of orders) {
+      if (o.status !== 'ACTIVE') continue;
+      allOrders.push({
+        memberId: o.buyer?.memberId || o.buyer?.contactId || null,
+        planId:   o.planId || null,
+        email:    null,
+        name:     null,
+        // OB-187: pass through the raw order shape so reconcile can build a
+        // billing snapshot for legacy members who never came in via a webhook.
+        // extractBillingSnapshot expects { data: { entity: <order> } } — we
+        // wrap here so the caller doesn't have to know the webhook envelope.
+        rawOrder: o,
+      });
     }
     log.info('wix.active_orders.fetched', { siteId, count: allOrders.length });
     return allOrders;
   } catch (err) {
     log.error('wix.active_orders.fetch_failed', { siteId, httpStatus: err.statusCode }, err);
+    throw err;
+  }
+}
+
+/**
+ * List EVERY pricing-plan order for a Wix site (all statuses), each tagged
+ * with its classification from core/wix-order-classification.js
+ * (PAYING / PENDING / DECLINED / ENDED / UNKNOWN).
+ *
+ * Used by the nightly sweep so it can tell "stopped paying" apart from
+ * "payment declined" or "checkout not finished" — listActiveOrders cannot,
+ * because it keeps any ACTIVE order regardless of payment status.
+ *
+ * Returns [{ orderId, memberId, planId, classification, status,
+ *            lastPaymentStatus, autoRenewCanceled, endDate, rawOrder }].
+ * Orders with no buyer memberId/contactId are skipped (they cannot be tied
+ * to a member) and counted in one wix.orders.no_member_id warn per call.
+ *
+ * Throws on any HTTP or integrity failure — never returns a partial list.
+ */
+async function listOrdersClassified(apiKey, siteId) {
+  try {
+    const orders = await _fetchAllOrders(apiKey, siteId);
+    const out = [];
+    let noMemberId = 0;
+
+    for (const o of orders) {
+      const memberId = o.buyer?.memberId || o.buyer?.contactId || null;
+      if (!memberId) {
+        noMemberId += 1;
+        continue;
+      }
+      out.push({
+        orderId:           o.id || o._id || null,
+        memberId,
+        planId:            o.planId || null,
+        classification:    classifyOrder(o),
+        status:            o.status ?? null,
+        lastPaymentStatus: o.lastPaymentStatus ?? null,
+        autoRenewCanceled: typeof o.autoRenewCanceled === 'boolean' ? o.autoRenewCanceled : null,
+        endDate:           o.endDate ?? null,
+        rawOrder:          o,
+      });
+    }
+
+    if (noMemberId > 0) {
+      log.warn('wix.orders.no_member_id', { siteId, count: noMemberId });
+    }
+    return out;
+  } catch (err) {
+    log.error('wix.orders_classified.fetch_failed', { siteId, httpStatus: err.statusCode }, err);
     throw err;
   }
 }
@@ -247,8 +367,20 @@ async function listConfirmedBookings(apiKey, siteId) {
   // /_api/bookings-reader/v2/extended-bookings/query. Response key is
   // `extendedBookings` (not `bookings`) and pagination is cursor-based.
   // Throws on failure to protect reconciliation from false-revokes.
+  //
+  // Pagination integrity (2026-09-10) — throws WIX_PAGE_INTEGRITY, never a
+  // partial list, when: the body has neither an `extendedBookings` nor a
+  // `bookings` array; a FULL page arrives with no next cursor (Wix truncated
+  // the walk — unless it explicitly says pagingMetadata.hasNext === false,
+  // which is a legitimate last page when the total is an exact multiple of
+  // the limit); a booking id repeats; or the walk needs > WIX_MAX_PAGES pages.
+  const seenIds = new Set();
+  let pages = 0;
   try {
     while (true) {
+      if (pages >= WIX_MAX_PAGES) {
+        throw wixIntegrityError(`bookings walk exceeded ${WIX_MAX_PAGES} pages`, { siteId, pages, limit });
+      }
       const query = {
         cursorPaging: cursor ? { limit, cursor } : { limit },
       };
@@ -256,9 +388,28 @@ async function listConfirmedBookings(apiKey, siteId) {
         method: 'POST',
         body: { query },
       });
-      const bookings = data.extendedBookings || data.bookings || [];
+      pages += 1;
+
+      let bookings;
+      if (data && Array.isArray(data.extendedBookings))  bookings = data.extendedBookings;
+      else if (data && Array.isArray(data.bookings))     bookings = data.bookings;
+      else {
+        throw wixIntegrityError('bookings page has no extendedBookings/bookings array', { siteId, page: pages });
+      }
+
       for (const b of bookings) {
+        // A null/primitive entry threw a TypeError here before; name it instead.
+        if (!b || typeof b !== 'object') {
+          throw wixIntegrityError('bookings page contains a non-object entry', { siteId, page: pages });
+        }
         const booking = b.booking || b;
+        const bookingId = booking.id || booking._id || null;
+        if (bookingId) {
+          if (seenIds.has(bookingId)) {
+            throw wixIntegrityError('duplicate booking id across pages', { siteId, page: pages });
+          }
+          seenIds.add(bookingId);
+        }
         if (booking.status && booking.status !== 'CONFIRMED') continue;
         allBookings.push({
           memberId: booking.contactId || null,
@@ -270,6 +421,9 @@ async function listConfirmedBookings(apiKey, siteId) {
         });
       }
       cursor = data.pagingMetadata?.cursors?.next || null;
+      if (!cursor && bookings.length >= limit && data.pagingMetadata?.hasNext !== false) {
+        throw wixIntegrityError('full bookings page with no next cursor', { siteId, page: pages, limit });
+      }
       if (!cursor || bookings.length < limit) break;
     }
     log.info('wix.confirmed_bookings.fetched', { siteId, count: allBookings.length });
@@ -295,4 +449,4 @@ async function testApiKey(apiKey, siteId) {
   }
 }
 
-module.exports = { listPricingPlans, listBookingServices, listAllMappable, testApiKey, listActiveOrders, listConfirmedBookings };
+module.exports = { listPricingPlans, listBookingServices, listAllMappable, testApiKey, listActiveOrders, listConfirmedBookings, listOrdersClassified };
