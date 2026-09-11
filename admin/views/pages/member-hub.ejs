@@ -535,13 +535,14 @@ body {
    --brand/--brand-dark when the gym hasn't set branding. Connector
    icon/name/links via CONNECTOR_REGISTRY, keyed by hardwarePlatform. */
 .get-app-card {
-  margin-top: 20px; display: flex; align-items: center; gap: 12px;
+  margin-top: 20px; display: flex; flex-direction: column; gap: 10px;
   padding: 14px 14px 14px 13px; border-radius: 12px; text-align: left;
   background: var(--brand-dim);
   box-shadow: inset 0 0 0 1px var(--brand-glow);
   border-left: 3px solid var(--gym-primary, var(--brand));
 }
 .get-app-card.hidden { display: none !important; }
+.get-app-main { display: flex; align-items: center; gap: 12px; }
 .get-app-icon { width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; }
 .get-app-text { flex: 1; min-width: 0; }
 .get-app-label { font-size: 13px; font-weight: 700; color: var(--text); }
@@ -551,6 +552,12 @@ body {
   color: var(--gym-secondary, var(--brand)); font-weight: 700; font-size: 12px; text-decoration: none;
 }
 .get-app-link.hidden { display: none !important; }
+.get-app-requirements {
+  font-size: 11px; color: var(--text2); line-height: 1.6;
+  padding-top: 10px; border-top: 1px solid var(--brand-glow);
+}
+.get-app-requirements.hidden { display: none !important; }
+.get-app-requirements strong { color: var(--text); }
 
 /* ═══════════════════════════════════════════════════════
    TAB 2 — MANAGE MEMBERS
@@ -1232,15 +1239,21 @@ body {
       <div class="ov-sub">Your access is active and ready. Head to the entrance and use your app or credential to get in.</div>
       <div class="ov-access-list" id="ov-access-list"></div>
       <div class="get-app-card hidden" id="get-app-card">
-        <img id="get-app-icon" class="get-app-icon" alt=""/>
-        <div class="get-app-text">
-          <div class="get-app-label" id="get-app-label">Get the app</div>
-          <div class="get-app-sub">Open doors from your phone</div>
+        <div class="get-app-main">
+          <img id="get-app-icon" class="get-app-icon" alt=""/>
+          <div class="get-app-text">
+            <div class="get-app-label" id="get-app-label">Get the app</div>
+            <div class="get-app-sub">Open doors from your phone</div>
+          </div>
+          <div class="get-app-links">
+            <a id="get-app-ios" class="get-app-link hidden" target="_blank" rel="noopener noreferrer">iPhone</a>
+            <a id="get-app-android" class="get-app-link hidden" target="_blank" rel="noopener noreferrer">Android</a>
+          </div>
         </div>
-        <div class="get-app-links">
-          <a id="get-app-ios" class="get-app-link hidden" target="_blank" rel="noopener noreferrer">iPhone</a>
-          <a id="get-app-android" class="get-app-link hidden" target="_blank" rel="noopener noreferrer">Android</a>
-        </div>
+        <!-- Same connector-driven requirements the email shows (Bluetooth + Always
+             location for Kisi) — populated by renderGetAppCard(), hidden when the
+             connector has none (e.g. seam, stubbed). -->
+        <div class="get-app-requirements hidden" id="get-app-requirements"></div>
       </div>
     </div>
 
@@ -1535,6 +1548,18 @@ function renderGetAppCard(data) {
   if (connector.iosLink) ios.href = connector.iosLink;
   android.classList.toggle('hidden', !connector.androidLink);
   if (connector.androidLink) android.href = connector.androidLink;
+
+  // Same connector-driven requirements the email shows (Bluetooth + Always
+  // location for Kisi) — null-guarded like icon/links above; a stubbed
+  // connector (e.g. seam) has none yet, so the row just stays hidden.
+  const reqEl   = document.getElementById('get-app-requirements');
+  const reqList = connector.requirements || [];
+  if (reqList.length) {
+    reqEl.innerHTML = '<strong>Important:</strong> ' + reqList.map(esc).join(' &middot; ');
+    reqEl.classList.remove('hidden');
+  } else {
+    reqEl.classList.add('hidden');
+  }
 
   card.classList.remove('hidden');
 }

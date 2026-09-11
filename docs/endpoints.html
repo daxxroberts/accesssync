@@ -210,7 +210,7 @@ key_facts:
         <span class="method GET">GET</span>
         <div>
           <div class="endpoint-path">/member/access-status?memberId=&amp;clientId=</div>
-          <div class="endpoint-desc">Member access status — RS256 JWT verified. Returns enriched access array with plan names, door names, location info. Polled by sync-status page.</div>
+          <div class="endpoint-desc">Member access status — RS256 JWT verified. Returns enriched access array with plan names, door names, location info. Polled by the member-hub status overlay.</div>
         </div>
         <span class="chip none">Wix JWT</span>
       </div>
@@ -858,15 +858,6 @@ key_facts:
           <div class="endpoint-desc">Admin tab — Wix-synced administrators, role badges</div>
         </div>
         <span class="chip admin-jwt">Admin JWT</span>
-      </div>
-      <div class="section-divider">Member-Facing</div>
-      <div class="endpoint-row">
-        <span class="method GET">GET</span>
-        <div>
-          <div class="endpoint-path">/sync-status?memberId=&amp;clientId=</div>
-          <div class="endpoint-desc">Post-purchase sync status page — 4 states (syncing, active, error, pending). Polls /member/access-status every 3s.</div>
-        </div>
-        <span class="chip public">Public</span>
       </div>
       <div class="section-divider">Static / Shell</div>
       <div class="endpoint-row">

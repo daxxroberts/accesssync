@@ -27,25 +27,24 @@
       "template": "/**\n * AccessSync Velo backend webhook forwarder — version {{VERSION}}\n * Generated for client {{CLIENT_ID}}\n * Do not modify the version header below — AccessSync uses it for install detection.\n */\nimport { fetch } from 'wix-fetch';\nimport { getSecret } from 'wix-secrets-backend';\nimport { createHmac } from 'crypto';\n\nconst CORE_ENGINE_URL = '{{CORE_ENGINE_URL}}/webhooks/wix';\nconst CLIENT_ID = '{{CLIENT_ID}}';\nconst SNIPPET_VERSION = '{{VERSION}}';\n\nasync function _send(eventType, data) {\n  try {\n    const secret = await getSecret('accesssync_webhook_secret');\n    const payload = { eventType, data };\n    const body = JSON.stringify(payload);\n    const sig = createHmac('sha256', secret).update(body).digest('base64');\n    await fetch(CORE_ENGINE_URL, {\n      method: 'POST',\n      headers: {\n        'Content-Type': 'application/json',\n        'x-wix-signature': sig,\n        'x-accesssync-client-id': CLIENT_ID,\n        'x-accesssync-snippet-version': SNIPPET_VERSION\n      },\n      body\n    });\n  } catch (e) { console.error('AccessSync webhook error:', e); }\n}\n\nexport function wixPricingPlans_onOrderPurchased(event)        { return _send('wixPricingPlans.orderPurchased', event); }\nexport function wixPricingPlans_onOrderStarted(event)          { return _send('wixPricingPlans.orderStarted', event); }\nexport function wixPricingPlans_onOrderCanceled(event)         { return _send('wixPricingPlans.orderCanceled', event); }\nexport function wixPricingPlans_onOrderAutoRenewCanceled(event){ return _send('wixPricingPlans.orderAutoRenewCanceled', event); }\nexport function wixPricingPlans_onOrderEnded(event)            { return _send('wixPricingPlans.orderEnded', event); }\nexport function wixPricingPlans_onOrderUpdated(event)          { return _send('wixPricingPlans.orderUpdated', event); }\nexport function wixBookings_onBookingConfirmed(event)          { return _send('wixBookings.bookingConfirmed', event); }\nexport function wixBookings_onBookingCanceled(event)           { return _send('wixBookings.bookingCanceled', event); }\nexport function wixMembers_onMemberDeleted(event)              { return _send('wixMembers.memberDeleted', event); }\n"
     },
     {
-      "id": "sync_status_page",
-      "name": "Sync Status Page",
-      "display_group": "post_purchase_flow",
-      "category": "required",
-      "criticality": "high",
-      "description": "Member-facing page that shows door access provisioning status after a plan purchase. Embed in your Wix site as a members-only page so members see whether their access is ready.",
-      "wix_install_path": "Wix Editor → new page 'Access Status' → add HTML iFrame (id html1) → Velo Dev Mode → page code",
-      "current_version": "v2.1.0",
+      "id": "thank_you_button",
+      "name": "Post-Purchase Status Button",
+      "category": "optional",
+      "criticality": "low",
+      "description": "Adds a button to your Thank You page (and Bookings confirmation page, if used) that opens the member's Access Hub straight to the live setup animation, in a genuine new browser tab — a real click, so it's never blocked by a popup blocker the way an auto-opened window on page load would be. Nothing renders inside Wix (no iframe). Optional — without this, members can still reach their status manually via the My Access button, but this gives them a direct nudge right after checkout instead of having to know where to look.",
+      "wix_install_path": "Wix Editor → existing Thank You page (and Bookings confirmation page, if used) → add a Button element (id btnViewStatus) → Velo Dev Mode → page code",
+      "current_version": "v1.0.0",
       "required_env_vars": ["ADMIN_HUB_URL"],
-      "verify_via": "iframe_heartbeat",
-      "verify_heartbeat_path": "/sync-status/heartbeat",
-      "stale_after_days": 30,
+      "verify_via": "none",
+      "stale_after_days": 60,
       "instructions": [
-        "In your Wix editor, create a new members-only page called 'Access Status'",
-        "Add an HTML iFrame component to the page and set its ID to 'html1'",
+        "In your Wix editor, open the Thank You page that members see after completing a plan purchase",
+        "Add a Button element to the page (e.g. labeled \"View My Access Status\") and set its ID to 'btnViewStatus'",
         "Open the Velo Dev Mode code panel for that page",
-        "Paste the snippet below"
+        "Paste the snippet below",
+        "Repeat on your Bookings Confirmation page if you use Bookings"
       ],
-      "template": "// AccessSync Sync Status page — version {{VERSION}}\nimport wixUsers from 'wix-users';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\nconst SNIPPET_VERSION = '{{VERSION}}';\n\n$w.onReady(async function () {\n  const user = wixUsers.currentUser;\n  if (!user.loggedIn) { $w('#html1').src = ''; return; }\n  const token = await user.getAuthToken();\n  const memberId = user.id;\n  $w('#html1').src = ADMIN_HUB + '/sync-status'\n    + '?memberId=' + encodeURIComponent(memberId)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&v=' + encodeURIComponent(SNIPPET_VERSION)\n    + '&token=' + encodeURIComponent(token);\n});\n"
+      "template": "// AccessSync post-purchase status button — version {{VERSION}}\nimport { currentMember } from 'wix-members-frontend';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\n\n$w.onReady(async function () {\n  const member = await currentMember.getMember();\n  if (!member?._id) { $w('#btnViewStatus').hide(); return; }\n  const url = ADMIN_HUB + '/member-hub'\n    + '?memberId=' + encodeURIComponent(member._id)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&tab=status';\n  $w('#btnViewStatus').link = url;\n  $w('#btnViewStatus').target = '_blank';\n  $w('#btnViewStatus').show();\n});\n"
     },
     {
       "id": "my_access_page",

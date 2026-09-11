@@ -339,11 +339,11 @@ key_facts:
 
     <div class="section-label">Member-Facing Page</div>
     <div class="url-card">
-      <a href="https://accesssync-admin.up.railway.app/sync-status" target="_blank" class="url-row">
+      <a href="https://accesssync-admin.up.railway.app/member-hub" target="_blank" class="url-row">
         <span class="type-badge type-page">Page</span>
         <div>
-          <div class="url-path">/sync-status<span class="param">?memberId={id}&clientId={id}</span></div>
-          <div class="url-desc">Post-purchase sync status — shown to gym member after buying a plan. 4 states: syncing / active / error / pending. Polls every 3s, 3-min max timeout. Stale data indicator.</div>
+          <div class="url-path">/member-hub<span class="param">?memberId={id}&clientId={id}</span></div>
+          <div class="url-desc">Unified member hub — My Access + Manage Members tabs, opened as a real new browser tab from a Wix button (no iframe). Its own status overlay auto-shows the same post-purchase sync animation (syncing / active / error / pending, 3s poll, 3-min max timeout) whenever it detects an in-flight or pending status — no separate sync-status page needed.</div>
         </div>
         <span class="auth-badge auth-none">None</span>
       </a>

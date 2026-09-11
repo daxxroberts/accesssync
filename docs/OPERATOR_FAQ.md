@@ -85,13 +85,13 @@ Two services running on Railway: a Core Engine (handles Wix webhooks, talks to y
 
 The onboarding wizard walks through each step. You'll need: Wix API key, access control system API key, your site URL, and one mapped plan to confirm everything works.
 
-### How do I embed the sync screens on my Wix site?
+### How do I add the member screen to my Wix site?
 
-There are two member-facing screens AccessSync provides:
-1. **Sync Status** — shown right after a member buys a plan, animates them through the provisioning steps
-2. **My Access / Manage Members** — the member's ongoing view of their access and (for multi-member plans) their additional members
+AccessSync provides one member-facing screen — **My Access / Manage Members** — showing a member's current access and (for multi-member plans) their additional members. The same screen automatically shows the live setup/provisioning animation right after a purchase, so there's no separate "sync status" screen to install.
 
-Both are HTML pages embedded as iframes via Wix Velo. The onboarding wizard provides the snippets. Both screens self-resize to fit the Wix layout.
+It's a Button on your Wix member page (the onboarding wizard provides the snippet) that opens the page in a real new browser tab — not an iframe embedded in Wix.
+
+Optionally, the Setup Hub also offers a second button snippet for your Thank You (and Bookings confirmation) page — same new-tab link, but it lands the member straight on the live setup animation right after they buy, instead of them having to already know where the My Access button is.
 
 ### A member says they never got an email from Kisi after signing up. What do I tell them?
 

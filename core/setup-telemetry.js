@@ -18,7 +18,7 @@ const { log } = require('./logger');
 /**
  * Record that a snippet was seen "live" on the Wix side.
  * Called from the Wix webhook receiver (velo_events_backend version header)
- * and from iframe heartbeat endpoints (sync_status_page / my_access_page).
+ * and from the my_access_page heartbeat endpoint.
  *
  * Transitions install_state to 'verified' when version_installed matches the
  * registry's current_version, 'stale' otherwise.

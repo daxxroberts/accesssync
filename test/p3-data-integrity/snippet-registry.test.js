@@ -69,13 +69,35 @@ describe('core/SNIPPET_REGISTRY.json — shape', () => {
     expect(events.required_env_vars).toContain('CORE_ENGINE_URL');
   });
 
-  test('sync_status_page and my_access_page snippets present and require ADMIN_HUB_URL', () => {
-    const sync = registry.snippets.find(s => s.id === 'sync_status_page');
-    const hub  = registry.snippets.find(s => s.id === 'my_access_page');
-    expect(sync).toBeDefined();
+  test('my_access_page snippet present, requires ADMIN_HUB_URL, opens in a new tab (no iframe)', () => {
+    const hub = registry.snippets.find(s => s.id === 'my_access_page');
     expect(hub).toBeDefined();
-    expect(sync.required_env_vars).toContain('ADMIN_HUB_URL');
     expect(hub.required_env_vars).toContain('ADMIN_HUB_URL');
+    expect(hub.template).toContain("target = '_blank'");
+  });
+
+  // The old sync_status_page iframe snippet (embedded /sync-status in a Wix HTML
+  // iFrame) was removed — my_access_page/member-hub.ejs already shows the same
+  // setup/sync-status animation, opened as a real new tab instead.
+  test('sync_status_page is gone — no iframe-embedded snippet remains in the registry', () => {
+    expect(registry.snippets.find(s => s.id === 'sync_status_page')).toBeUndefined();
+    for (const s of registry.snippets) {
+      expect(s.wix_install_path.toLowerCase()).not.toContain('iframe');
+    }
+  });
+
+  // thank_you_button replaces the old thank_you_redirect (removed, then this
+  // gap got flagged: nothing pointed a member anywhere right after purchase).
+  // Optional/low — my_access_page alone is still enough to reach status.
+  test('thank_you_button snippet: optional, requires ADMIN_HUB_URL, opens member-hub status view in a new tab', () => {
+    const btn = registry.snippets.find(s => s.id === 'thank_you_button');
+    expect(btn).toBeDefined();
+    expect(btn.category).toBe('optional');
+    expect(btn.required_env_vars).toContain('ADMIN_HUB_URL');
+    expect(btn.template).toContain("target = '_blank'");
+    expect(btn.template).toContain('/member-hub');
+    expect(btn.template).toContain("tab=status");
+    expect(btn.wix_install_path.toLowerCase()).not.toContain('iframe');
   });
 });
 
@@ -102,7 +124,7 @@ describe('core/snippet-registry.js — renderSnippet()', () => {
 
   test('returns missing_env_vars error when ADMIN_HUB_URL is unset', () => {
     delete process.env.ADMIN_HUB_URL;
-    const result = registryModule.renderSnippet('sync_status_page', { clientId: 'abc-123' });
+    const result = registryModule.renderSnippet('my_access_page', { clientId: 'abc-123' });
     expect(result.error).toBe('missing_env_vars');
     expect(result.missing).toContain('ADMIN_HUB_URL');
   });
@@ -132,22 +154,23 @@ describe('core/snippet-registry.js — renderSnippet()', () => {
     expect(result.body).not.toContain('{{VERSION}}');
   });
 
-  test('renders sync_status_page with auth token + version param', () => {
-    process.env.ADMIN_HUB_URL = 'https://admin.example.com';
-    const result = registryModule.renderSnippet('sync_status_page', { clientId: 'op-uuid-2' });
-    expect(result.error).toBeUndefined();
-    expect(result.body).toContain('https://admin.example.com');
-    expect(result.body).toContain('op-uuid-2');
-    expect(result.body).toContain('encodeURIComponent(token)');
-    expect(result.body).not.toContain('{{ADMIN_HUB_URL}}');
-  });
-
   test('renders my_access_page (member hub)', () => {
     process.env.ADMIN_HUB_URL = 'https://admin.example.com';
     const result = registryModule.renderSnippet('my_access_page', { clientId: 'op-uuid-3' });
     expect(result.error).toBeUndefined();
     expect(result.body).toContain('/member-hub');
     expect(result.body).toContain('op-uuid-3');
+  });
+
+  test('renders thank_you_button pointing at member-hub with tab=status', () => {
+    process.env.ADMIN_HUB_URL = 'https://admin.example.com';
+    const result = registryModule.renderSnippet('thank_you_button', { clientId: 'op-uuid-4' });
+    expect(result.error).toBeUndefined();
+    expect(result.body).toContain('https://admin.example.com');
+    expect(result.body).toContain('op-uuid-4');
+    expect(result.body).toContain('/member-hub');
+    expect(result.body).toContain("tab=status");
+    expect(result.body).not.toContain('{{ADMIN_HUB_URL}}');
   });
 
   test('ADMIN_HUB_URL is required, not substitutable by CORE_ENGINE_URL (existing behavior preserved)', () => {
