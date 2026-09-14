@@ -154,12 +154,21 @@ function renderStepGuideTable({ connector, branding }) {
   // Bluetooth + "Always" location) and how the tap actually works day to day.
   // Null-guarded the same way as iconUrl/iosLink/androidLink above; a stubbed
   // connector (seam) has neither yet, so nothing renders.
-  const notesHtml = connectorNoteSections(connector).map(s =>
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr><td style="background-color:#f7f7f5;border-radius:8px;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
-      '<strong>' + s.title + ':</strong><br/>' +
+  // Requirements render as an amber callout (tinted box + left accent + amber
+  // label) so "Important" reads as a block, not a bolded word; how-it-works
+  // stays neutral. Inline styles only — Outlook. Mirrors .app-tab-section--callout.
+  const notesHtml = connectorNoteSections(connector).map(s => {
+    const box   = s.callout
+      ? 'background-color:#FFF7E6;border-left:3px solid #D97706;border-radius:0 8px 8px 0;'
+      : 'background-color:#f7f7f5;border-radius:8px;';
+    const label = s.callout
+      ? '<strong style="color:#B45309;font-size:11px;letter-spacing:.5px;text-transform:uppercase;">' + s.title + '</strong>'
+      : '<strong>' + s.title + ':</strong>';
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr><td style="' + box + 'padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
+      label + '<br/>' +
       s.items.map(r => '&bull;&nbsp; ' + escapeHtml(r)).join('<br/>') +
-    '</td></tr></table>'
-  ).join('');
+    '</td></tr></table>';
+  }).join('');
 
   return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr>' + tds + '</tr></table>' + linksHtml + notesHtml;
 }
@@ -181,8 +190,8 @@ function renderStepGuideText({ connector }) {
 // email parts can't disagree on which sections exist or what they're called.
 function connectorNoteSections(connector) {
   return [
-    { title: 'Important requirements', items: connector.requirements || [] },
-    { title: 'How it works',           items: connector.usageTips    || [] },
+    { title: 'Important requirements', items: connector.requirements || [], callout: true  },
+    { title: 'How it works',           items: connector.usageTips    || [], callout: false },
   ].filter(s => s.items.length);
 }
 

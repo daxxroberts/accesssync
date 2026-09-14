@@ -37,8 +37,8 @@ const CONNECTORS = {
     // renderStepGuideTable/Text (core/email-templates.js) in every email that
     // tells a member to install the app.
     requirements: [
-      'Bluetooth turned on (Android: NFC on)',
-      'Location permission set to "Always" in the Kisi app’s settings',
+      'Bluetooth on (Android: NFC on)',
+      'Location set to "Always" for the Kisi app',
     ],
     // How to get in, day to day. Every line traces to docs.kisi.io or our own
     // createUser path (PARSE 2026-09-13). Sign-in is a member-initiated action
@@ -47,9 +47,9 @@ const CONNECTORS = {
     // AccessSync sends its own Resend emails. No "works from a bag with the
     // screen locked" claim until that's verified.
     usageTips: [
-      'To sign in, open the app and enter the same email you used at checkout — it sends you a sign-in link to tap. No password.',
-      'You don’t need to open the app to get in — just keep your phone on you',
-      'At the door, hold your phone up to the reader for a moment until it unlocks',
+      'Sign in with your checkout email. Tap the sign-in link it sends. No password.',
+      'No need to open the app to get in. Keep your phone on you.',
+      'At the door, hold your phone to the reader until it unlocks.',
     ],
   },
   seam: {

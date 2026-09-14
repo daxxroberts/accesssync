@@ -590,6 +590,21 @@ body {
 .app-tab-section-title { font-size: 11.5px; font-weight: 600; color: var(--text2); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 6px; }
 .app-tab-list { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text); line-height: 1.6; }
 .app-tab-list li { margin-bottom: 4px; }
+/* "Important" is a callout, not a bolded word: amber tint + accent so it
+   reads as its own block on the tab, the overlay card, and (via inline
+   styles) the emails. */
+.app-tab-section--callout {
+  background: var(--amber-dim); border-left: 3px solid var(--amber);
+  border-radius: 8px; padding: 10px 12px 8px; border-top: none;
+}
+.app-tab-section--callout .app-tab-section-title { color: var(--amber); }
+.app-tab-section--callout .app-tab-list { color: var(--text); }
+/* Compact variant for the overlay's Get App card — same blocks, tighter. */
+.app-instructions.compact .app-tab-section { margin-top: 10px; padding-top: 0; border-top: none; }
+.app-instructions.compact .app-tab-section:first-child { margin-top: 0; }
+.app-instructions.compact .app-tab-section-title { font-size: 10.5px; margin-bottom: 3px; }
+.app-instructions.compact .app-tab-list { font-size: 11.5px; line-height: 1.5; padding-left: 16px; }
+.app-instructions.compact .app-tab-list li { margin-bottom: 2px; }
 
 /* ═══════════════════════════════════════════════════════
    TAB 2 — MANAGE MEMBERS
@@ -1634,24 +1649,24 @@ function renderGetAppCard(data) {
 // so the two surfaces can't drift on wording, section names, or the null-guard.
 // Mirrors connectorNoteSections() in core/email-templates.js — different
 // runtime, same data, same two sections in the same order.
+// Same markup in both modes — the requirements always render as an amber
+// callout so "Important" reads as a block, not a bolded word inside a
+// sentence; `compact` only tightens spacing/type via the .compact wrapper
+// (Builder 2026-09-13: the dot-joined one-liner on the overlay was unreadable).
 function connectorInstructionsHtml(connector, opts) {
   const compact  = !!(opts && opts.compact);
   const sections = [
-    { title: 'Important',    items: connector.requirements || [] },
-    { title: 'How it works', items: connector.usageTips    || [] },
+    { title: 'Important',    items: connector.requirements || [], callout: true  },
+    { title: 'How it works', items: connector.usageTips    || [], callout: false },
   ].filter(s => s.items.length);
   if (!sections.length) return '';
-  if (compact) {
-    return sections.map(s =>
-      '<div><strong>' + s.title + ':</strong> ' + s.items.map(esc).join(' &middot; ') + '</div>'
-    ).join('');
-  }
-  return sections.map(s =>
-    '<div class="app-tab-section">' +
+  const inner = sections.map(s =>
+    '<div class="app-tab-section' + (s.callout ? ' app-tab-section--callout' : '') + '">' +
       '<div class="app-tab-section-title">' + s.title + '</div>' +
       '<ul class="app-tab-list">' + s.items.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>' +
     '</div>'
   ).join('');
+  return compact ? '<div class="app-instructions compact">' + inner + '</div>' : inner;
 }
 
 // Tab 3 — "Get the {Connector} App". Always visible (every gym runs some door
