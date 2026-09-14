@@ -52,9 +52,9 @@
       "display_group": "post_purchase_flow",
       "category": "optional",
       "criticality": "low",
-      "description": "Adds a button to wherever members land right after purchase — your Thank You page directly, or a dedicated info page like \"Member Door Sync Status\" if you use the Auto-Redirect snippet above — that opens the member's Access Hub straight to the live setup animation, in a genuine new browser tab. A real click, so it's never blocked by a popup blocker the way an auto-opened window on page load would be. Nothing renders inside Wix (no iframe). Optional — without this, members can still reach their status manually via the My Access button, but this gives them a direct nudge right after checkout instead of having to know where to look.",
+      "description": "Adds a button to wherever members land right after purchase — your Thank You page directly, or a dedicated info page like \"Member Door Sync Status\" if you use the Auto-Redirect snippet above — that takes the member straight to their live setup animation in the same tab (that page has done its job once they tap; a new tab would strand it behind the status view on a phone). Nothing renders inside Wix (no iframe). Optional — without this, members can still reach their status manually via the My Access button, but this gives them a direct nudge right after checkout instead of having to know where to look.",
       "wix_install_path": "Wix Editor → your Thank You page or post-purchase info page → add a Button element (id btnViewStatus) → Velo Dev Mode → page code",
-      "current_version": "v1.0.0",
+      "current_version": "v1.1.0",
       "required_env_vars": ["ADMIN_HUB_URL"],
       "verify_via": "none",
       "stale_after_days": 60,
@@ -65,7 +65,7 @@
         "Paste the snippet below",
         "Repeat on your Bookings Confirmation page if you use Bookings and it doesn't already redirect through the same info page"
       ],
-      "template": "// AccessSync post-purchase status button — version {{VERSION}}\nimport { currentMember } from 'wix-members-frontend';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\n\n$w.onReady(async function () {\n  const member = await currentMember.getMember();\n  if (!member?._id) { $w('#btnViewStatus').hide(); return; }\n  const url = ADMIN_HUB + '/member-hub'\n    + '?memberId=' + encodeURIComponent(member._id)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&tab=status';\n  $w('#btnViewStatus').link = url;\n  $w('#btnViewStatus').target = '_blank';\n  $w('#btnViewStatus').show();\n});\n"
+      "template": "// AccessSync post-purchase status button — version {{VERSION}}\nimport { currentMember } from 'wix-members-frontend';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\n\n$w.onReady(async function () {\n  const member = await currentMember.getMember();\n  if (!member?._id) { $w('#btnViewStatus').hide(); return; }\n  const url = ADMIN_HUB + '/member-hub'\n    + '?memberId=' + encodeURIComponent(member._id)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&tab=status';\n  $w('#btnViewStatus').link = url;\n  $w('#btnViewStatus').target = '_self';\n  $w('#btnViewStatus').show();\n});\n"
     },
     {
       "id": "my_access_page",

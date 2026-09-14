@@ -88,12 +88,16 @@ describe('core/SNIPPET_REGISTRY.json — shape', () => {
 
   // thank_you_button: optional — my_access_page alone is still enough to reach
   // status even without it.
-  test('thank_you_button snippet: optional, requires ADMIN_HUB_URL, opens member-hub status view in a new tab', () => {
+  // Same tab on purpose (Builder 2026-09-13): the post-purchase page has done
+  // its job once tapped; a new tab strands it behind the status view on mobile.
+  // The My Access button (my_access_page) stays new-tab — different moment.
+  test('thank_you_button snippet: optional, requires ADMIN_HUB_URL, opens member-hub status view in the SAME tab', () => {
     const btn = registry.snippets.find(s => s.id === 'thank_you_button');
     expect(btn).toBeDefined();
     expect(btn.category).toBe('optional');
     expect(btn.required_env_vars).toContain('ADMIN_HUB_URL');
-    expect(btn.template).toContain("target = '_blank'");
+    expect(btn.template).toContain("target = '_self'");
+    expect(btn.template).not.toContain("target = '_blank'");
     expect(btn.template).toContain('/member-hub');
     expect(btn.template).toContain("tab=status");
     expect(btn.wix_install_path.toLowerCase()).not.toContain('iframe');

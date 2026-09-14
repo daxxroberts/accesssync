@@ -93,7 +93,7 @@ It's a Button on your Wix member page (the onboarding wizard provides the snippe
 
 Optionally, the Setup Hub also offers a Post-Purchase Flow pair for your Thank You (and Bookings confirmation) page:
 1. **Auto-Redirect** — no button, no click: on page load it sends the member straight to a post-purchase info page of your own (e.g. one called "Member Door Sync Status"). A same-tab redirect like this is never blocked by a popup blocker the way an auto-opened new window would be.
-2. **Status Button** — installed on whichever page members actually land on (your Thank You page directly, or the info page the redirect sends them to) — opens the live setup animation in a new tab on click.
+2. **Status Button** — installed on whichever page members actually land on (your Thank You page directly, or the info page the redirect sends them to) — takes them to the live setup animation in the same tab on click.
 
 Use either on its own, or both together if you want an info page in between.
 
