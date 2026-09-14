@@ -373,7 +373,7 @@ async function maybeSendAccessSuspendedEmail({ clientId, accessId, standardEvent
 }
 
 /** M5 — access restored (payment.recovered). Mirrors M4. */
-async function maybeSendAccessRestoredEmail({ clientId, accessId, standardEvent, eventKey }) {
+async function maybeSendAccessRestoredEmail({ clientId, accessId, standardEvent, eventKey, hardwarePlatform }) {
   try {
     if (!_restoreEmailAllowed(standardEvent)) {
       log.info('email.member.suppressed', { clientId, emailType: 'access_restored', reason: 'not_allowed' });
@@ -391,7 +391,9 @@ async function maybeSendAccessRestoredEmail({ clientId, accessId, standardEvent,
       dedupKey: `${accessId}:${planId}:${eventKey || 'noevent'}`,
       recipient: ctx.email,
       render: templates.renderAccessRestored,
-      renderArgs: { member: { firstName: ctx.firstName }, planName: ctx.planName },
+      // hardwarePlatform comes from the queue-worker's lockResult; same
+      // fail-open-to-kisi default as M1 so the copy always names an app.
+      renderArgs: { member: { firstName: ctx.firstName }, planName: ctx.planName, hardwarePlatform: hardwarePlatform || 'kisi' },
     });
   } catch (err) {
     log.warn('email.member.failed', { clientId, emailType: 'access_restored' }, err);

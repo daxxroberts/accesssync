@@ -285,20 +285,24 @@ function renderAccessSuspended({ branding, member, planName }) {
  * pair, opposite direction. No plan/door list needed since nothing changed
  * about what they have access to, only whether it's currently live.
  */
-function renderAccessRestored({ branding, member, planName }) {
+function renderAccessRestored({ branding, member, planName, hardwarePlatform }) {
   const first = (member && member.firstName) ? member.firstName : null;
   const gym   = branding.gymName;
   const plan  = planName || 'membership';
+  // App name from the connector registry, never hardcoded — the only member
+  // email that still said "Kisi" literally, which would be wrong for a gym on
+  // another connector. Same fail-open-to-kisi default as M1.
+  const app   = getConnectorBranding(hardwarePlatform).displayName;
 
   const bodyHtml =
     '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
     '<p style="margin:0 0 12px 0;">Your payment went through &mdash; your <strong>' + escapeHtml(plan) + '</strong> access at <strong>' + escapeHtml(gym) + '</strong> is back on.</p>' +
-    '<p style="margin:0;">Use the Kisi app on your phone to tap in at the door, same as before.</p>';
+    '<p style="margin:0;">Use the ' + escapeHtml(app) + ' app on your phone to tap in at the door, same as before.</p>';
 
   const bodyText =
     'Hi ' + (first || 'there') + ',\n\n' +
     'Your payment went through - your ' + plan + ' access at ' + gym + ' is back on.\n\n' +
-    'Use the Kisi app on your phone to tap in at the door, same as before.';
+    'Use the ' + app + ' app on your phone to tap in at the door, same as before.';
 
   const { html, text } = renderLayout({ branding, heading: 'Your access is back', bodyHtml, bodyText });
   return { subject: 'Your ' + plan + ' access at ' + gym + ' is back', html, text };

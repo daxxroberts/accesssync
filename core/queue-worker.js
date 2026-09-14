@@ -136,6 +136,7 @@ async function _processJobBody(job, traceId) {
         // (finalizeRevoke never runs for a recovery), so fire-and-forget is safe.
         memberMailer.maybeSendAccessRestoredEmail({
           clientId: tenantId, accessId: memberId, standardEvent, eventKey: eventId || job.id,
+          hardwarePlatform, // from lockResult above — names the right app in the email, not a hardcoded "Kisi"
         }).catch(() => {});
         logger.info('queue.grant.recovered.complete', {
           clientId, memberId, eventId,

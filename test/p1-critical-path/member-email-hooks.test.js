@@ -328,6 +328,19 @@ describe('[P1] DR-052 M4/M5 — access-suspended / access-restored', () => {
     expect(payload.subject).toBe('Your Couples access at House of Gains is back');
   });
 
+  test('payment.recovered → hardwarePlatform from the queue-worker threads into the restored email copy', async () => {
+    mockDb({ memberRow: MEMBER, planRows: [{ plan_name: 'Couples' }] });
+    const r = await mailer.maybeSendAccessRestoredEmail({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'payment.recovered', planId: 'sp-1' },
+      eventKey: 'evt-3', hardwarePlatform: 'seam',
+    });
+    expect(r.sent).toBe(true);
+    const payload = mockResendSend.mock.calls[0][0];
+    expect(payload.html).toContain('Use the Seam app');
+    expect(payload.html).not.toContain('Kisi');
+  });
+
   test('wrong eventType on the suspend hook → suppressed, no lookup at all', async () => {
     mockDb({ memberRow: MEMBER });
     const r = await mailer.maybeSendAccessSuspendedEmail({

@@ -275,6 +275,18 @@ describe('[P2] DR-052 content renderers — escaping, subjects, text part', () =
     expect(out.text).toContain('back on');
   });
 
+  // 2026-09-13: the last member email that still said "Kisi" literally. App name
+  // now comes from the connector registry; missing platform fails open to kisi.
+  test('renderAccessRestored: app name is connector-driven, defaults to Kisi', () => {
+    const kisi = t.renderAccessRestored({ branding: BRANDING, member: { firstName: 'Daxx' }, planName: 'Couples' });
+    expect(kisi.html).toContain('Use the Kisi app');
+    expect(kisi.text).toContain('Use the Kisi app');
+    const seam = t.renderAccessRestored({ branding: BRANDING, member: { firstName: 'Daxx' }, planName: 'Couples', hardwarePlatform: 'seam' });
+    expect(seam.html).toContain('Use the Seam app');
+    expect(seam.html).not.toContain('Kisi');
+    expect(seam.text).toContain('Use the Seam app');
+  });
+
   test('renderAccessSuspended and renderAccessRestored: hostile gym/plan names are escaped', () => {
     const suspended = t.renderAccessSuspended({
       branding: HOSTILE, member: { firstName: '<b>Jane</b>' }, planName: '<svg/onload=x>Couples',
