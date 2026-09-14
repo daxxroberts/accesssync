@@ -339,6 +339,24 @@
 
       personRow.plans = plans;
       personRow.planCount = plans.length;
+
+      // Leaving: true only when EVERY plan still granting this person access has both
+      // auto-renew off AND a known end date. A plan with no end date (permanent access)
+      // or still auto-renewing means access continues indefinitely, so there's no
+      // departure date to show yet. When true, the date shown is the latest end date
+      // among their plans — access holds until the last one actually ends.
+      var allDeparting = plans.length > 0 && plans.every(function (p) {
+        return p.autoRenewCanceled === true && !!p.validUntil;
+      });
+      if (allDeparting) {
+        var endTimes = plans
+          .map(function (p) { return new Date(p.validUntil).getTime(); })
+          .filter(function (t) { return !isNaN(t); });
+        personRow.leavingOn = endTimes.length > 0 ? formatDate(Math.max.apply(null, endTimes)) : null;
+      } else {
+        personRow.leavingOn = null;
+      }
+
       // Has any plan in an error/suspended state? Drives the top-row error badge.
       personRow.hasError = plans.some(function (p) {
         return p.rawStatus === "suspended" || p.rawStatus === "failed" || p.rawStatus === "revoked";

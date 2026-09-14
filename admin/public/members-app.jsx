@@ -321,6 +321,11 @@ function App() {
                               Needs attention
                             </span>
                           )}
+                          {m.leavingOn && (
+                            <span className="member-tag" style={{background:"var(--amber-dim, #fef3c7)",color:"var(--amber, #d97706)",borderColor:"rgba(217,119,6,.22)"}}>
+                              Leaving {m.leavingOn}
+                            </span>
+                          )}
                         </div>
                         <div className="member-email">{m.email}</div>
                       </div>
