@@ -36,6 +36,17 @@ describe('[P2] core/connector-branding — getConnectorBranding', () => {
     expect(c.usageTips.some(t => /open the app/i.test(t))).toBe(true);
   });
 
+  // Sign-in is a member-initiated action inside the app (checkout email -> sign-in
+  // link, no password). Kisi's own invite email is unreliable, so no surface may
+  // tell a member to wait for or look for an email from Kisi.
+  test('kisi usageTips explain in-app sign-in with the checkout email, and never point at a Kisi email', () => {
+    const c = getConnectorBranding('kisi');
+    expect(c.usageTips.some(t => /checkout/i.test(t) && /sign-in link/i.test(t) && /no password/i.test(t))).toBe(true);
+    for (const t of [...c.usageTips, ...c.requirements]) {
+      expect(t).not.toMatch(/email from kisi|kisi (will|sends?|emails?) you|wait for|look for|watch for|invitation/i);
+    }
+  });
+
   test('seam is a recognized key but a stub — null icon/links/requirements/usageTips, not a fallback to kisi', () => {
     const c = getConnectorBranding('seam');
     expect(c.displayName).toBe('Seam');

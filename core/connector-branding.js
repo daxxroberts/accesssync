@@ -37,13 +37,17 @@ const CONNECTORS = {
     // renderStepGuideTable/Text (core/email-templates.js) in every email that
     // tells a member to install the app.
     requirements: [
-      'Bluetooth turned on',
+      'Bluetooth turned on (Android: NFC on)',
       'Location permission set to "Always" in the Kisi app’s settings',
     ],
-    // How a tap actually works day to day — reassurance, not setup. Kept to
-    // what the Builder has confirmed for HOG's readers (2026-09-13); no
-    // "works from a bag with the screen locked" claim until that's verified.
+    // How to get in, day to day. Every line traces to docs.kisi.io or our own
+    // createUser path (PARSE 2026-09-13). Sign-in is a member-initiated action
+    // inside the app — never "wait for an email from Kisi": Kisi's own invite
+    // is unreliable (Builder: fires about half the time), which is exactly why
+    // AccessSync sends its own Resend emails. No "works from a bag with the
+    // screen locked" claim until that's verified.
     usageTips: [
+      'To sign in, open the app and enter the same email you used at checkout — it sends you a sign-in link to tap. No password.',
       'You don’t need to open the app to get in — just keep your phone on you',
       'At the door, hold your phone up to the reader for a moment until it unlocks',
     ],

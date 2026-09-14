@@ -97,19 +97,19 @@ Optionally, the Setup Hub also offers a Post-Purchase Flow pair for your Thank Y
 
 Use either on its own, or both together if you want an info page in between.
 
-### A member says they never got an email from Kisi after signing up. What do I tell them?
+### A member says they never got an email after signing up. What do I tell them?
 
-When a member buys a plan, AccessSync creates their Kisi account and Kisi sends an invitation email automatically. The email comes from Kisi (not from your gym's address) and sometimes lands in spam. Here's what to check:
+The email that matters is **yours** — the branded "Your access is ready" email AccessSync sends from your gym the moment their door access is live. It has the app download links and the sign-in steps. Don't send members looking for an email from Kisi: Kisi's own notification is unreliable, and nothing in the member's setup depends on it.
 
-1. Ask the member to search their inbox (including spam / junk) for an email from Kisi
-2. Check that they're looking in the same inbox they used when buying the plan on Wix
-3. If nothing's there after a few minutes: go to the **Kisi dashboard → Users**, find their name, and click **Resend invitation**. This triggers a fresh email from Kisi immediately.
+1. Ask the member to check the inbox (including spam / junk) they used when buying the plan on Wix — that's the address the email went to
+2. If it isn't there: open **Members**, find them, and click **Resend welcome email**. It goes out again immediately.
+3. If the resend doesn't arrive either, the email address is probably mis-typed in Wix. Correct it in Wix, then resend.
 
-If the resend also doesn't arrive, the member's email address may be mis-typed in Wix. Correct it in Wix and resend.
+### A member has the app but can't sign in.
 
-### A member can't download the Kisi app or log in. They got the invitation email but something's wrong.
+There is no password and nothing to "accept." In the Kisi app they tap **Add account**, enter the **same email they used at checkout**, and tap Continue — the app sends a sign-in link to that inbox, and tapping it signs them in. Their door credential is already in place on our end the moment access shows as active.
 
-Forward them to the Kisi Help Center for app setup (download.kisi.com or the Kisi support site). If the invitation link is expired (links expire after 24 hours): go to **Kisi dashboard → Users → Resend invitation** to issue a fresh link. Once the link is active, the member follows it to set up their PIN and download the app — the door credential is already in place on our end.
+If they entered a different email than the one on their Wix purchase, the link goes nowhere: have them use the checkout email. If they still can't get in, check that their access shows **Active** on the Members page; if it does, the remaining issue is on the phone — Bluetooth on (NFC on Android) and Location set to "Always" for the Kisi app.
 
 If a member's plan was canceled before they set up the app, their Kisi account is deactivated. They'd need to resubscribe in Wix first, then set up the app.
 

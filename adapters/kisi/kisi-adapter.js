@@ -295,7 +295,10 @@ class KisiAdapter {
   /**
    * Create a Kisi user. DR-043: behaviour is per-tenant via options.userPattern.
    *
-   * 'invited'  (default) — send_emails: true  → Kisi sends invitation email; member can download app
+   * 'invited'  (default) — send_emails: true  → user can sign in to the Kisi app. Kisi MAY also send
+   *                        its own notice, but it lands roughly half the time (Builder, 2026-09-13),
+   *                        so nothing member-facing relies on it — AccessSync's Resend emails carry
+   *                        the app links + sign-in steps (core/email-templates.js).
    * 'managed'            — send_emails: false  → DR-007 managed user; no app access
    *
    * Both patterns always set confirm: true (server-side confirmation — no email link required).
