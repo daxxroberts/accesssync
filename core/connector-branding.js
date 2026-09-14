@@ -2,7 +2,8 @@
  * core/connector-branding.js
  *
  * Single source of truth for hardware-connector display data (app icon, store
- * links, display name, on-device setup requirements), keyed by `hardwarePlatform`.
+ * links, display name, on-device setup requirements, day-to-day usage tips),
+ * keyed by `hardwarePlatform`.
  * Consumed by both the member-facing email (core/email-templates.js) and the web
  * step guide (admin/views/pages/member-hub.ejs, injected server-side by
  * admin/server.js) so the two surfaces can never drift on icon/store-link values.
@@ -39,6 +40,13 @@ const CONNECTORS = {
       'Bluetooth turned on',
       'Location permission set to "Always" in the Kisi app’s settings',
     ],
+    // How a tap actually works day to day — reassurance, not setup. Kept to
+    // what the Builder has confirmed for HOG's readers (2026-09-13); no
+    // "works from a bag with the screen locked" claim until that's verified.
+    usageTips: [
+      'You don’t need to open the app to get in — just keep your phone on you',
+      'At the door, hold your phone up to the reader for a moment until it unlocks',
+    ],
   },
   seam: {
     // Stubbed — post-V1 (DR-011). No live app-store presence yet; consumers
@@ -48,12 +56,13 @@ const CONNECTORS = {
     iosLink:     null,
     androidLink: null,
     requirements: null,
+    usageTips:    null,
   },
 };
 
 /**
  * @param {string} [hardwarePlatform] e.g. 'kisi' | 'seam'
- * @returns {{displayName: string, iconUrl: string|null, iosLink: string|null, androidLink: string|null, requirements: string[]|null}}
+ * @returns {{displayName: string, iconUrl: string|null, iosLink: string|null, androidLink: string|null, requirements: string[]|null, usageTips: string[]|null}}
  */
 function getConnectorBranding(hardwarePlatform) {
   return CONNECTORS[hardwarePlatform] || CONNECTORS.kisi;

@@ -218,6 +218,21 @@ describe('[P2] DR-052 content renderers — escaping, subjects, text part', () =
       expect(out.text).toContain('Bluetooth');
     });
 
+    // 2026-09-13: usage tips ("How it works") ride alongside requirements — same
+    // shared connectorNoteSections() feeds both email parts, so both must carry it.
+    test('renderAccessReady (kisi): How it works section says you need not open the app, in both parts', () => {
+      const out = t.renderAccessReady({
+        branding: BRANDING, member: { firstName: 'Jane' },
+        plans: [{ planName: 'Monthly', doorName: 'Front Door' }],
+      });
+      expect(out.html).toContain('How it works');
+      expect(out.html).toMatch(/open the app/i);
+      expect(out.text).toContain('How it works');
+      expect(out.text).toMatch(/open the app/i);
+      // Requirements come first, then how-it-works — order is part of the contract.
+      expect(out.text.indexOf('Important requirements')).toBeLessThan(out.text.indexOf('How it works'));
+    });
+
     test('renderSubMemberInvite (kisi): same Important requirements block as the holder gets', () => {
       const out = t.renderSubMemberInvite({
         branding: BRANDING, member: { firstName: 'Jamie' }, holderName: 'Daxx Roberts',
@@ -236,6 +251,8 @@ describe('[P2] DR-052 content renderers — escaping, subjects, text part', () =
       });
       expect(out.html).not.toContain('Important requirements');
       expect(out.text).not.toContain('Important requirements');
+      expect(out.html).not.toContain('How it works');
+      expect(out.text).not.toContain('How it works');
     });
   });
 

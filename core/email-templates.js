@@ -150,18 +150,18 @@ function renderStepGuideTable({ connector, branding }) {
     ? '<p style="margin:8px 0 0 0;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:13px;">' + linkParts.join(' &nbsp;&middot;&nbsp; ') + '</p>'
     : '<p style="margin:8px 0 0 0;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:' + NEUTRAL_TEXT + ';">Check with your gym for the app to use at the door.</p>';
 
-  // Connector-specific on-device setup requirements (e.g. Kisi needs Bluetooth +
-  // "Always" location to unlock doors reliably) — null-guarded the same way as
-  // iconUrl/iosLink/androidLink above; a stubbed connector (seam) has none yet.
-  const reqList = connector.requirements || [];
-  const reqHtml = reqList.length
-    ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr><td style="background-color:#f7f7f5;border-radius:8px;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
-        '<strong>Important requirements:</strong><br/>' +
-        reqList.map(r => '&bull;&nbsp; ' + escapeHtml(r)).join('<br/>') +
-      '</td></tr></table>'
-    : '';
+  // Connector-specific on-device notes — setup requirements (e.g. Kisi needs
+  // Bluetooth + "Always" location) and how the tap actually works day to day.
+  // Null-guarded the same way as iconUrl/iosLink/androidLink above; a stubbed
+  // connector (seam) has neither yet, so nothing renders.
+  const notesHtml = connectorNoteSections(connector).map(s =>
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr><td style="background-color:#f7f7f5;border-radius:8px;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
+      '<strong>' + s.title + ':</strong><br/>' +
+      s.items.map(r => '&bull;&nbsp; ' + escapeHtml(r)).join('<br/>') +
+    '</td></tr></table>'
+  ).join('');
 
-  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr>' + tds + '</tr></table>' + linksHtml + reqHtml;
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;"><tr>' + tds + '</tr></table>' + linksHtml + notesHtml;
 }
 
 function renderStepGuideText({ connector }) {
@@ -170,9 +170,20 @@ function renderStepGuideText({ connector }) {
   if (connector.iosLink)     linkLines.push('iPhone: ' + connector.iosLink);
   if (connector.androidLink) linkLines.push('Android: ' + connector.androidLink);
   const linksText = linkLines.length ? linkLines.join('\n') : 'Check with your gym for the app to use at the door.';
-  const reqList = connector.requirements || [];
-  const reqText = reqList.length ? '\n\nImportant requirements:\n' + reqList.map(r => '- ' + r).join('\n') : '';
-  return stages + '\n' + linksText + reqText;
+  const notesText = connectorNoteSections(connector)
+    .map(s => '\n\n' + s.title + ':\n' + s.items.map(r => '- ' + r).join('\n'))
+    .join('');
+  return stages + '\n' + linksText + notesText;
+}
+
+// The two instructional lists a connector can carry, in display order, with
+// empty/null ones dropped. Shared by the HTML and text step guides so the two
+// email parts can't disagree on which sections exist or what they're called.
+function connectorNoteSections(connector) {
+  return [
+    { title: 'Important requirements', items: connector.requirements || [] },
+    { title: 'How it works',           items: connector.usageTips    || [] },
+  ].filter(s => s.items.length);
 }
 
 /**

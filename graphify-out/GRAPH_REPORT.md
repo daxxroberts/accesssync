@@ -1,11 +1,11 @@
-# Graph Report - .  (2026-09-11)
+# Graph Report - .  (2026-09-13)
 
 ## Corpus Check
-- 237 files · ~380,724 words
+- 237 files · ~381,048 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1090 nodes · 1314 edges · 228 communities detected
+- 1091 nodes · 1317 edges · 228 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
@@ -102,24 +102,24 @@ Cohesion: 0.15
 Nodes (0): 
 
 ### Community 18 - "Community 18"
+Cohesion: 0.4
+Nodes (12): brandingFromClientRow(), connectorNoteSections(), escapeHtml(), isValidHexColor(), renderAccessReady(), renderAccessRemoved(), renderAccessRestored(), renderAccessSuspended() (+4 more)
+
+### Community 19 - "Community 19"
 Cohesion: 0.28
 Nodes (12): buildTimeline(), checkSetup(), fetchRailwayLogs(), humanize(), listRecentTraces(), loadEventRegistry(), main(), queryDb() (+4 more)
 
-### Community 19 - "Community 19"
+### Community 20 - "Community 20"
 Cohesion: 0.17
 Nodes (1): SeamAdapter
 
-### Community 20 - "Community 20"
+### Community 21 - "Community 21"
 Cohesion: 0.33
 Nodes (10): _fetchAllOrders(), listActiveOrders(), listAllMappable(), listBookingServices(), listConfirmedBookings(), listOrdersClassified(), listPricingPlans(), testApiKey() (+2 more)
 
-### Community 21 - "Community 21"
+### Community 22 - "Community 22"
 Cohesion: 0.18
 Nodes (2): resolveActor(), traceContextMiddleware()
-
-### Community 22 - "Community 22"
-Cohesion: 0.42
-Nodes (11): brandingFromClientRow(), escapeHtml(), isValidHexColor(), renderAccessReady(), renderAccessRemoved(), renderAccessRestored(), renderAccessSuspended(), renderLayout() (+3 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.3

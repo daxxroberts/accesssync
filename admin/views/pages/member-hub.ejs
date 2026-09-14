@@ -12,6 +12,7 @@
   @data POST /api/multi-member/submit
   @dr DR-029, DR-030, DR-031, DR-032, DR-033, DR-040
   @notes Tab 1 = My Access (always visible). Tab 2 = Manage Members (gated on allowMultiple).
+         Tab 3 = Get the App (always visible; label/icon/links/instructions from CONNECTOR_REGISTRY).
          Status overlay = always present, triggers on ?tab=status or in-flight access state.
          Holder name fallback: widget-data does not return firstName/lastName (AXIOM gap — OB pending).
 %>
@@ -558,6 +559,28 @@ body {
 }
 .get-app-requirements.hidden { display: none !important; }
 .get-app-requirements strong { color: var(--text); }
+.ov-continue { margin-top: 20px; }
+
+/* ═══════════════════════════════════════════════════════
+   TAB 3 — GET THE APP
+   Same two-role gym-color split as .get-app-card above: primary = left
+   accent, secondary = the download buttons. ═══════════════════════ */
+.app-tab-card { border-left: 3px solid var(--gym-primary, var(--brand)); }
+.app-tab-header { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.app-tab-icon { width: 52px; height: 52px; border-radius: 12px; flex-shrink: 0; }
+.app-tab-title { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: -.2px; }
+.app-tab-sub { font-size: 12px; color: var(--text2); margin-top: 2px; line-height: 1.4; }
+.app-tab-links { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Two-class selectors so these win over .btn-primary / .btn-primary:hover,
+   which are declared later in this sheet and would otherwise take the
+   source-order tiebreak back to the AccessSync indigo. */
+.app-tab-links .app-tab-link { background: var(--gym-secondary, var(--brand)); text-decoration: none; }
+.app-tab-links .app-tab-link:hover { background: var(--gym-secondary, var(--brand-dark)); filter: brightness(.92); }
+.app-tab-nolinks { font-size: 12.5px; color: var(--text2); }
+.app-tab-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.app-tab-section-title { font-size: 11.5px; font-weight: 600; color: var(--text2); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 6px; }
+.app-tab-list { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text); line-height: 1.6; }
+.app-tab-list li { margin-bottom: 4px; }
 
 /* ═══════════════════════════════════════════════════════
    TAB 2 — MANAGE MEMBERS
@@ -982,6 +1005,8 @@ body {
   <div class="tab-bar hidden" id="tab-bar">
     <button class="tab-btn active" id="tab-btn-access" onclick="switchTab('access')">My Access</button>
     <button class="tab-btn hidden" id="tab-btn-members" onclick="switchTab('members')">Manage Members</button>
+    <!-- Always shown — every gym runs some door hardware. Label is filled by renderAppTab(). -->
+    <button class="tab-btn" id="tab-btn-app" onclick="switchTab('app')">Get the App</button>
   </div>
 
   <!-- ── Tab 1: My Access ─────────────────────────────── -->
@@ -1127,6 +1152,32 @@ body {
     </div>
   </div><!-- /panel-members -->
 
+  <!-- ── Tab 3: Get the App ───────────────────────────── -->
+  <!-- Always visible. Everything here — tab label, icon, store links, the
+       requirements + how-it-works lists — comes from CONNECTOR_REGISTRY via
+       renderAppTab(), keyed by the hardwarePlatform /member/access-status
+       returns (kisi fallback until that arrives). Same data the emails and the
+       overlay's Get App card read, so the three can't drift. -->
+  <div class="tab-panel" id="panel-app">
+    <div class="panel-body">
+      <div class="data-card app-tab-card" id="app-tab-card">
+        <div class="app-tab-header">
+          <img id="app-tab-icon" class="app-tab-icon" alt=""/>
+          <div>
+            <div class="app-tab-title" id="app-tab-title">Get the app</div>
+            <div class="app-tab-sub">Your phone is your key — this is how you open the door.</div>
+          </div>
+        </div>
+        <div class="app-tab-links">
+          <a id="app-tab-ios" class="btn-primary app-tab-link hidden" target="_blank" rel="noopener noreferrer">Download for iPhone</a>
+          <a id="app-tab-android" class="btn-primary app-tab-link hidden" target="_blank" rel="noopener noreferrer">Download for Android</a>
+          <div id="app-tab-nolinks" class="app-tab-nolinks hidden">Check with your gym for the app to use at the door.</div>
+        </div>
+        <div id="app-tab-instructions"></div>
+      </div>
+    </div>
+  </div><!-- /panel-app -->
+
 </div><!-- /shell -->
 
 <!-- Sticky CTA (Manage Members) -->
@@ -1255,6 +1306,10 @@ body {
              connector has none (e.g. seam, stubbed). -->
         <div class="get-app-requirements hidden" id="get-app-requirements"></div>
       </div>
+      <!-- Manual dismiss. The overlay used to auto-hide 1.5s after access went
+           active (loadAccessData), which read as the page jumping away before the
+           member had clicked anything. It now stays until they choose to move on. -->
+      <button type="button" class="btn-primary full ov-continue" onclick="hideOverlay()">Continue to My Access</button>
     </div>
 
     <!-- Error state -->
@@ -1549,19 +1604,67 @@ function renderGetAppCard(data) {
   android.classList.toggle('hidden', !connector.androidLink);
   if (connector.androidLink) android.href = connector.androidLink;
 
-  // Same connector-driven requirements the email shows (Bluetooth + Always
-  // location for Kisi) — null-guarded like icon/links above; a stubbed
-  // connector (e.g. seam) has none yet, so the row just stays hidden.
-  const reqEl   = document.getElementById('get-app-requirements');
-  const reqList = connector.requirements || [];
-  if (reqList.length) {
-    reqEl.innerHTML = '<strong>Important:</strong> ' + reqList.map(esc).join(' &middot; ');
-    reqEl.classList.remove('hidden');
-  } else {
-    reqEl.classList.add('hidden');
-  }
+  // Compact one-liners here (it's a small card); the Get the App tab shows the
+  // same lists in full. Row stays hidden for a connector with neither (seam).
+  const reqEl = document.getElementById('get-app-requirements');
+  const instrHtml = connectorInstructionsHtml(connector, { compact: true });
+  reqEl.innerHTML = instrHtml;
+  reqEl.classList.toggle('hidden', !instrHtml);
 
   card.classList.remove('hidden');
+}
+
+// One place that turns connector.requirements / connector.usageTips into markup.
+// Shared by the overlay's Get App card (compact) and the Get the App tab (full)
+// so the two surfaces can't drift on wording, section names, or the null-guard.
+// Mirrors connectorNoteSections() in core/email-templates.js — different
+// runtime, same data, same two sections in the same order.
+function connectorInstructionsHtml(connector, opts) {
+  const compact  = !!(opts && opts.compact);
+  const sections = [
+    { title: 'Important',    items: connector.requirements || [] },
+    { title: 'How it works', items: connector.usageTips    || [] },
+  ].filter(s => s.items.length);
+  if (!sections.length) return '';
+  if (compact) {
+    return sections.map(s =>
+      '<div><strong>' + s.title + ':</strong> ' + s.items.map(esc).join(' &middot; ') + '</div>'
+    ).join('');
+  }
+  return sections.map(s =>
+    '<div class="app-tab-section">' +
+      '<div class="app-tab-section-title">' + s.title + '</div>' +
+      '<ul class="app-tab-list">' + s.items.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>' +
+    '</div>'
+  ).join('');
+}
+
+// Tab 3 — "Get the {Connector} App". Always visible (every gym runs some door
+// hardware), so it renders once at boot on the kisi fallback and again from
+// loadAccessData() once the real hardwarePlatform + gym colors arrive.
+function renderAppTab(data) {
+  const d = data || {};
+  const connector = CONNECTOR_REGISTRY[d.hardwarePlatform] || CONNECTOR_REGISTRY.kisi;
+  const card = document.getElementById('app-tab-card');
+  if (d.primaryColor)   card.style.setProperty('--gym-primary', d.primaryColor);
+  if (d.secondaryColor) card.style.setProperty('--gym-secondary', d.secondaryColor);
+
+  document.getElementById('tab-btn-app').textContent   = 'Get the ' + connector.displayName + ' App';
+  document.getElementById('app-tab-title').textContent = 'Get the ' + connector.displayName + ' app';
+
+  const icon = document.getElementById('app-tab-icon');
+  if (connector.iconUrl) { icon.src = connector.iconUrl; icon.style.display = ''; }
+  else { icon.style.display = 'none'; }
+
+  const ios     = document.getElementById('app-tab-ios');
+  const android = document.getElementById('app-tab-android');
+  ios.classList.toggle('hidden', !connector.iosLink);
+  if (connector.iosLink) ios.href = connector.iosLink;
+  android.classList.toggle('hidden', !connector.androidLink);
+  if (connector.androidLink) android.href = connector.androidLink;
+  document.getElementById('app-tab-nolinks').classList.toggle('hidden', !!(connector.iosLink || connector.androidLink));
+
+  document.getElementById('app-tab-instructions').innerHTML = connectorInstructionsHtml(connector);
 }
 
 async function pollAccess() {
@@ -1786,6 +1889,10 @@ async function loadAccessData() {
     const syncingStatuses = ['in_flight','pending_sync','pending_hardware','pending_identity'];
     const status = data.status;
 
+    // Tab 3 is status-independent — refresh it with the real connector + gym
+    // colors on every load, whatever state the access itself is in.
+    renderAppTab(data);
+
     if (status === 'active') {
       showBanner('active');
       renderPlans(data.plans || []);
@@ -1793,13 +1900,18 @@ async function loadAccessData() {
       setTimestamp(data.provisionedAt, false);
       startFreshnessCheck();
 
-      // If overlay was triggered but access is already active, dismiss immediately
+      // If the overlay was triggered but access is already active, settle it on
+      // the success view — and leave it there. It used to auto-hide after 1.5s,
+      // which read as the page jumping away before the member had clicked
+      // anything; the Continue button in #ov-active is now the only way off.
+      // Also renders the Get App card, which only pollAccess()'s path did before.
       if (_overlayActive && !_overlaySettled) {
         _overlaySettled = true;
         clearStepTimers(); markAllDone();
         setOvState('active');
         renderOvAccess(data.access || []);
-        setTimeout(() => { hideOverlay(); }, 1500);
+        renderGetAppCard(data);
+        notifyHeight();
       }
     } else if (syncingStatuses.includes(status)) {
       showBanner('syncing');
@@ -2767,6 +2879,10 @@ async function boot() {
       // Widget-data failure is non-fatal — still show My Access
     }
   }
+
+  // Tab 3 has no gate — paint it on the kisi fallback now so it's never blank;
+  // loadAccessData() repaints it with the real connector + gym colors.
+  renderAppTab({});
 
   // Show tab bar now that we know which tabs to include
   const tabBar   = document.getElementById('tab-bar');

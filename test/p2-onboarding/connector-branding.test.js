@@ -27,13 +27,23 @@ describe('[P2] core/connector-branding — getConnectorBranding', () => {
     expect(c.requirements.some(r => /location/i.test(r) && /always/i.test(r))).toBe(true);
   });
 
-  test('seam is a recognized key but a stub — null icon/links/requirements, not a fallback to kisi', () => {
+  // Usage tips are distinct from requirements: how a tap works day to day, not
+  // what has to be switched on. The one claim that matters most — you don't
+  // have to open the app — must be there.
+  test('kisi usageTips say you do not need to open the app to get in', () => {
+    const c = getConnectorBranding('kisi');
+    expect(Array.isArray(c.usageTips)).toBe(true);
+    expect(c.usageTips.some(t => /open the app/i.test(t))).toBe(true);
+  });
+
+  test('seam is a recognized key but a stub — null icon/links/requirements/usageTips, not a fallback to kisi', () => {
     const c = getConnectorBranding('seam');
     expect(c.displayName).toBe('Seam');
     expect(c.iconUrl).toBeNull();
     expect(c.iosLink).toBeNull();
     expect(c.androidLink).toBeNull();
     expect(c.requirements).toBeNull();
+    expect(c.usageTips).toBeNull();
   });
 
   test('unrecognized/undefined hardwarePlatform fails open to kisi (today\'s only live connector)', () => {
