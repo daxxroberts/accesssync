@@ -950,7 +950,7 @@ html, body {
         <div style="margin-top:24px">
           <div style="font-size:13px;font-weight:600;color:var(--text1);margin-bottom:6px">B — Member Hub page (recommended)</div>
           <p class="code-instructions" style="margin-bottom:8px">
-            Gives members a page to check their door access status and manage additional members on their plan. This one button does double duty — clicking it right after a purchase automatically shows the live setup animation (no separate Thank You page button needed); clicking it any other time just shows their current access.
+            Gives members a page to check their door access status and manage additional members on their plan. This one button does double duty — clicking it right after a purchase automatically shows the live setup animation; clicking it any other time just shows their current access.
           </p>
           <ol class="code-steps">
             <li>In Wix Editor, open the member area page where members will manage their access</li>
@@ -967,6 +967,12 @@ html, body {
               <pre id="member-hub-code-display"></pre>
             </div>
           </div>
+          <!-- The post-purchase pair (thank_you_redirect + thank_you_button) lives only in
+               the registry-driven Setup Guide; without this pointer a new operator never
+               learns it exists. -->
+          <p class="code-instructions" style="margin:12px 0 0 0;font-size:12px;">
+            <strong>Optional, once you're live:</strong> send members straight from your Thank You page to their setup animation. Both snippets (an auto-redirect and a status button) are in <strong>Wix Setup Guide</strong> under <em>Post-Purchase Flow</em>.
+          </p>
         </div>
       </div>
 
