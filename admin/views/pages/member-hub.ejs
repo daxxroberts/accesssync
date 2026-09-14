@@ -1571,22 +1571,28 @@ function startPipeline() {
   });
 }
 
+// One row per DOOR, plans as chips — same grouping as the My Access tab
+// (groupAccessByDoor). It used to be one row per access entry, so a holder
+// on five plans that all open the same door saw five identical rows that
+// pushed the Get App card and the Continue button ~1000px down the page.
 function renderOvAccess(access) {
   if (!access || !access.length) return;
   const list = document.getElementById('ov-access-list');
-  list.innerHTML = access.map((a, i) => `
+  list.innerHTML = groupAccessByDoor(access).map((d, i) => {
+    const chips = d.plans.map(p => '<span class="door-plan-chip">' + esc(p) + '</span>').join('');
+    return `
     <div class="ov-access-item" style="animation-delay:${i * 0.12}s">
       <div class="ov-access-icon">
         <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
           <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1h.02c1.71 0 3.1 1.39 3.1 3.1v2z" fill="var(--green)"/>
         </svg>
       </div>
-      <div>
-        <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(a.doorName || a.locationName || 'Door Access')}</div>
-        ${a.planName ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${esc(a.planName)}</div>` : ''}
+      <div style="min-width:0;flex:1">
+        <div style="font-weight:700;font-size:13px;color:var(--text)">${esc(d.doorName)}</div>
+        ${chips ? `<div class="door-plans">${chips}</div>` : ''}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 // Null-guards connector.iconUrl/iosLink/androidLink — a recognized-but-stubbed
@@ -1805,6 +1811,27 @@ function renderPlans(plans) {
 // /my-access — a member with 5 plans all granting the entrance door should see
 // ONE entrance-door row, not 5. See my-access.ejs renderDoors for the canonical
 // implementation this mirrors.
+// Collapse access entries (one per plan × door) into one entry per door with
+// the contributing plan names, in first-seen order. Shared by the My Access
+// tab (renderDoors) and the status overlay (renderOvAccess) so the two can't
+// disagree about what counts as "the same door".
+function groupAccessByDoor(access) {
+  const byDoor = new Map();
+  for (const a of access || []) {
+    const key = (a.doorName || 'Door Access') + '' + (a.locationName || '');
+    if (!byDoor.has(key)) {
+      byDoor.set(key, {
+        doorName:     a.doorName || a.locationName || 'Door Access',
+        locationName: a.locationName || '',
+        plans:        [],
+      });
+    }
+    const d = byDoor.get(key);
+    if (a.planName && !d.plans.includes(a.planName)) d.plans.push(a.planName);
+  }
+  return Array.from(byDoor.values());
+}
+
 function renderDoors(access) {
   const el = document.getElementById('doors-list');
   if (!access || !access.length) {
@@ -1812,21 +1839,8 @@ function renderDoors(access) {
     return;
   }
 
-  const byDoor = new Map();
-  for (const a of access) {
-    const key = (a.doorName || 'Door Access') + '' + (a.locationName || '');
-    if (!byDoor.has(key)) {
-      byDoor.set(key, {
-        doorName:     a.doorName || a.locationName || 'Door Access',
-        locationName: a.locationName || '',
-        plans:        new Set(),
-      });
-    }
-    if (a.planName) byDoor.get(key).plans.add(a.planName);
-  }
-
-  el.innerHTML = Array.from(byDoor.values()).map(d => {
-    const chips = Array.from(d.plans).map(p =>
+  el.innerHTML = groupAccessByDoor(access).map(d => {
+    const chips = d.plans.map(p =>
       '<span class="door-plan-chip">' + esc(p) + '</span>'
     ).join('');
     return `
