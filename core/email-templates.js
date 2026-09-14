@@ -404,7 +404,7 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
 
   const { html, text } = renderLayout({
     branding, heading: 'Your day pass is ready', bodyHtml, bodyText,
-    ctaText: unlockUrl ? 'Unlock the door' : null,
+    ctaText: unlockUrl ? 'Can’t scan? Tap to unlock' : null,
     ctaUrl:  unlockUrl || null,
   });
   return { subject: 'Your ' + gym + ' day pass is ready', html, text };
