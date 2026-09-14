@@ -297,11 +297,19 @@ body {
 /* ═══════════════════════════════════════════════════════
    STATUS OVERLAY
    ═══════════════════════════════════════════════════════ */
+/* The card is often taller than the viewport (5 access rows + Get App card +
+   Continue button ≈ 1000px on a phone). A fixed overlay with align-items:center
+   and no overflow clipped BOTH ends and couldn't scroll — which was invisible
+   while the overlay auto-hid after 1.5s, and became a trap once it started
+   waiting for the Continue click. overflow-y:auto + flex-start on the overlay
+   with margin:auto on the card centers it when it fits and scrolls when not. */
 .status-overlay {
   position: fixed; inset: 0; z-index: 100;
   background: var(--bg);
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: flex-start; justify-content: center;
   padding: 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   transition: opacity .3s ease;
 }
 .status-overlay.hidden { display: none !important; }
@@ -311,6 +319,7 @@ body {
   border-radius: 16px;
   overflow: hidden; /* clips .overlay-band's square top to the card's rounded corners */
   max-width: 480px; width: 100%;
+  margin: auto 0; /* vertical centering that yields to scrolling once the card overflows */
   text-align: center;
   box-shadow: 0 8px 32px var(--shadow);
 }
