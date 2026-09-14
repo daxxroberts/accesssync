@@ -632,6 +632,38 @@
     if (e === 'reconcile.integrity.alert' || e === 'RECONCILE_INTEGRITY_ALERT')
       return 'Reconcile detected an integrity issue — alert written to config_alert_log.';
 
+    // Day pass events (OB-98 / OB-251, 2026-09-14) — Kisi group link + QR, no hardware user.
+    if (e === 'grant.day_pass.link_created' || e === 'GRANT_DAY_PASS_LINK_CREATED') {
+      var dpc = ev.payload || {};
+      return 'Day pass issued — QR code and unlock link created for member ' + (dpc.memberId || '?') +
+        (dpc.hardwareGroupId ? ' on group ' + dpc.hardwareGroupId : '') +
+        (dpc.validUntil ? ', valid until ' + dpc.validUntil : '') + '.';
+    }
+    if (e === 'queue.grant.day_pass.complete' || e === 'QUEUE_GRANT_DAY_PASS_COMPLETE') {
+      var dpq = ev.payload || {};
+      return 'Day pass recorded and the QR email sent to member ' + (dpq.memberId || '?') +
+        (dpq.validUntil ? ' — expires ' + dpq.validUntil : '') + '.';
+    }
+    if (e === 'revoke.day_pass.link_deleted' || e === 'REVOKE_DAY_PASS_LINK_DELETED') {
+      var dpr = ev.payload || {};
+      return 'Day pass ended — QR and unlock link removed for member ' + (dpr.memberId || '?') +
+        (dpr.syntheticSource === 'day-pass-sweep.expired' ? ' (expired on schedule)' : '') + '.';
+    }
+    if (e === 'day_pass_sweep.revoke_queued' || e === 'DAY_PASS_SWEEP_REVOKE_QUEUED') {
+      var dps = ev.payload || {};
+      return 'Day pass expired — revoke queued for member ' + (dps.memberId || '?') + '.';
+    }
+    if (e === 'day_pass_sweep.orphan_link_deleted' || e === 'DAY_PASS_SWEEP_ORPHAN_LINK_DELETED') {
+      var dpo = ev.payload || {};
+      return 'Cleaned up an expired day-pass link Kisi still had (' + (dpo.groupLinkId || '?') + ') with no matching record.';
+    }
+    if (e === 'day_pass_sweep.complete' || e === 'DAY_PASS_SWEEP_COMPLETE') {
+      var dpd = ev.payload || {};
+      return 'Day-pass sweep finished — ' + (dpd.expiredEnqueued || 0) + ' expired, ' + (dpd.orphansDeleted || 0) + ' orphaned link(s) removed.';
+    }
+    if (e === 'reconciliation.day_pass_plan_skipped' || e === 'RECONCILIATION_DAY_PASS_PLAN_SKIPPED')
+      return 'Reconcile skipped a day-pass plan — time-boxed passes are never backfilled.';
+
     // Operator + admin action events — Run #9 added these to EVENT_REGISTRY
     // persist list (2026-05-26). Cover the highest-value entries; remaining
     // low-frequency ones fall back to the default until needed.

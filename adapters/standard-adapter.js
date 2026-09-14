@@ -339,6 +339,85 @@ class StandardAdapter {
   }
 
   /**
+   * Day pass (OB-98 / OB-251): a day-pass buyer never gets a hardware user, so
+   * resolveIdentity is skipped — but the QR email still needs an address, and live
+   * Wix order webhooks carry no buyer.email. Runs the OB-89 Gate 2 recovery ladder
+   * for the email alone (Wix Members API → member_master cache) and parks the
+   * member pending_identity when it is exhausted, exactly as resolveIdentity does.
+   *
+   * @returns {Promise<{email: string, name?: string, source: string}|null>}
+   */
+  async resolveEmailOnly(memberId, tenantId, platformMemberId, eventEmail = null) {
+    if (eventEmail) return { email: eventEmail, source: 'event' };
+    const recovered = await this._recoverMissingEmail(memberId, tenantId, platformMemberId);
+    if (recovered && recovered.email) {
+      log.info('adapter.identity.gate2_recovered', {
+        memberId, platformMemberId, clientId: tenantId,
+        recoveredVia: recovered.source,
+        stage: 'identity', result: 'success',
+      });
+      return recovered;
+    }
+    log.warn('adapter.identity.parked_pending_identity', {
+      memberId, platformMemberId, clientId: tenantId,
+      reason: 'email_unrecoverable',
+      stage: 'identity', result: 'skipped',
+    });
+    await this._parkPendingIdentity(memberId, tenantId, ['email']);
+    return null;
+  }
+
+  /**
+   * Day pass claim — the cross-job mutex. Wix fires orderUpdated / orderPurchased /
+   * orderStarted for one purchase within ~500 ms and the worker runs 20 jobs wide;
+   * resolveAndLock's row lock is released at COMMIT, so nothing else serializes the
+   * Kisi round-trip. The A9 UNIQUE on member_access_sources does: exactly one job's
+   * INSERT lands per (member × plan × group), and only that job creates the group
+   * link. Losers get [] and just recompute the rollup. The row starts
+   * 'pending_hardware' and completeGrant's ON CONFLICT upsert flips it 'active' with
+   * the link id + valid_until.
+   *
+   * @returns {Promise<Array>} the subset of `mappings` this job now owns
+   */
+  async claimDayPassSources(memberId, tenantId, mappings, sourcePlanId) {
+    const claimed = [];
+    for (const mapping of mappings || []) {
+      if (!mapping.hardwareGroupId) continue;
+      const res = await db.query(
+        `INSERT INTO member_access_sources
+           (client_id, access_id, source_type, source_plan_id, hardware_group_id, mapping_id, status)
+         VALUES ($1, $2, 'day_pass', $3, $4, $5, 'pending_hardware')
+         ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO NOTHING
+         RETURNING id`,
+        [tenantId, memberId, sourcePlanId || null, mapping.hardwareGroupId, mapping.mappingId || null]
+      );
+      if (res.rows && res.rows.length > 0) claimed.push(mapping);
+    }
+    return claimed;
+  }
+
+  /**
+   * Day pass — drop the claim rows for mappings whose link creation failed, so the
+   * next attempt (retry or re-purchase) can claim again. Only ever touches
+   * 'pending_hardware' day_pass rows — an active pass is never released here.
+   */
+  async releaseDayPassClaims(memberId, tenantId, mappings, sourcePlanId) {
+    const groupIds = (mappings || []).map(m => m.hardwareGroupId).filter(Boolean);
+    if (groupIds.length === 0) return 0;
+    const res = await db.query(
+      `DELETE FROM member_access_sources
+       WHERE client_id = $1
+         AND access_id = $2
+         AND source_type = 'day_pass'
+         AND COALESCE(source_plan_id, '') = COALESCE($3, '')
+         AND hardware_group_id = ANY($4::text[])
+         AND status = 'pending_hardware'`,
+      [tenantId, memberId, sourcePlanId || null, groupIds]
+    );
+    return (res && res.rowCount) || 0;
+  }
+
+  /**
    * Records a successful grant:
    * - INSERTs member_billing row (idempotent on wix_order_id + cycle_index)
    * - INSERTs member_access_sources rows (access_id→billing_id link, role_assignment_id, valid_until RI-03)

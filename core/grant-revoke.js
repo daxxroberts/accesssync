@@ -41,7 +41,9 @@ const { logMemberAccessEvent } = require('./member-access-log');
 // (see core/reconciliation.js case 7b) — it is a verified cancellation the webhook
 // missed, not a self-heal. 'multi-member.holder_release' / '.remove_sub' are excluded —
 // those are seat changes; the plan holder's Wix subscription is still active.
-const BILLING_CANCEL_ALLOWED_SYNTHETIC = new Set(['reconciliation.reconcile_member']);
+// 'day-pass-sweep.expired' (OB-98 / OB-251): the pass's valid_until has passed —
+// the single-payment order is genuinely over, so its billing row flips 'cancelled'.
+const BILLING_CANCEL_ALLOWED_SYNTHETIC = new Set(['reconciliation.reconcile_member', 'day-pass-sweep.expired']);
 
 function _isGenuineBillingCancellation(wixEvent) {
   if (!wixEvent || !wixEvent.synthetic) return true;
@@ -93,11 +95,14 @@ class GrantRevokeLogic {
       // (Kisi returns 409) and could corrupt valid_until on a permanent assignment.
       // We still record the new source row so revoke tracking stays accurate.
       if (mapping.hardwareGroupId) {
+        // Day-pass rows (source_type='day_pass') hold a group-link id, not a role
+        // assignment — a permanent grant must never adopt one as "existing access".
         const sourceCheck = await db.query(
           `SELECT source_plan_id, source_type, role_assignment_id
            FROM member_access_sources
            WHERE access_id = $1
              AND hardware_group_id = $2
+             AND source_type <> 'day_pass'
            ORDER BY created_at ASC
            LIMIT 1`,
           [memberId, mapping.hardwareGroupId]
@@ -139,6 +144,7 @@ class GrantRevokeLogic {
          WHERE access_id = $1
            AND hardware_group_id = $2
            AND role_assignment_id IS NOT NULL
+           AND source_type <> 'day_pass'
          ORDER BY created_at ASC
          LIMIT 1`,
         [memberId, mapping.hardwareGroupId || null]
@@ -411,6 +417,137 @@ class GrantRevokeLogic {
   }
 
   /**
+   * Day pass (OB-98 / OB-251) — the order's end date is the credential's expiry.
+   * Returns it, or null for a SYNTHETIC event that carries none (reconcile re-grants
+   * never do, and must be a no-op — throwing would flip the member inactive while the
+   * link is still live, and the expiry sweep could then never find the row). A REAL
+   * webhook without an end date is a payload defect: throw DAY_PASS_NO_END_DATE so
+   * it dead-letters visibly instead of issuing a credential with no expiry.
+   */
+  dayPassEndDate(wixEvent) {
+    const endDate = (wixEvent && wixEvent.endDate) || null;
+    if (endDate) return endDate;
+    if (wixEvent && wixEvent.synthetic) return null;
+    const err = new Error('Day pass grant requires an order end date (valid_until) — none on the event');
+    err.code = 'DAY_PASS_NO_END_DATE';
+    throw err;
+  }
+
+  /**
+   * Day pass grant: one Kisi group link (QR + access link) per claimed mapping.
+   * No hardware user is involved. queue-worker has already resolved an email and
+   * claimed the source rows through L3 (the cross-job mutex), so `mappings` here is
+   * exactly the set this job owns. Same partial-failure rule as processGrant: return
+   * what was created; throw only if nothing was (the caller releases failed claims).
+   *
+   * @param {Object} opts  { email }  — recipient for Kisi's own record on the link
+   * @returns {{ assignments: Array, links: Array }}
+   *   assignments → standardAdapter.completeGrant (roleAssignmentId = group link id,
+   *                 sourceType 'day_pass', planEndDate = valid_until via RI-03)
+   *   links       → member-mailer (linkUrl / qrImage* — bearer credentials, never logged)
+   */
+  async processDayPassGrant(tenantId, memberId, mappings, wixEvent, opts = {}) {
+    const endDate = this.dayPassEndDate(wixEvent);
+    const assignments = [];
+    const links = [];
+    if (!endDate) return { assignments, links };
+
+    const failed = [];
+    const label = `Day pass · ${wixEvent.planName || opts.planName || wixEvent.planId || 'plan'}`;
+
+    for (const mapping of mappings) {
+      if (!mapping.hardwareGroupId) continue;
+      log.info('grant.day_pass.link_creating', {
+        clientId: tenantId, memberId,
+        platformMemberId: wixEvent.platformMemberId,
+        mappingId: mapping.mappingId, hardwareGroupId: mapping.hardwareGroupId,
+        validUntil: endDate,
+        stage: 'grant', result: 'start',
+      });
+      try {
+        const link = await hardwareAdapter.createGroupLink(mapping.hardwarePlatform, mapping.apiKey, {
+          groupId:    mapping.hardwareGroupId,
+          clientId:   tenantId,
+          email:      opts.email || null,
+          validFrom:  wixEvent.startDate || null,
+          validUntil: endDate,
+          label,
+        });
+        assignments.push({
+          accessId:           memberId,
+          mappingId:          mapping.mappingId,
+          roleAssignmentId:   String(link.id),
+          hardwareGroupId:    mapping.hardwareGroupId,
+          hardwarePlatform:   mapping.hardwarePlatform,
+          sourcePlanId:       wixEvent.planId || null,
+          sourceType:         'day_pass',
+          wixOrderId:         wixEvent.wixOrderId || null,
+          wixSubscriptionId:  wixEvent.wixSubscriptionId || null,
+          planName:           wixEvent.planName || null,
+          cycleIndex:         wixEvent.cycleIndex || null,
+          effectiveStart:     wixEvent.startDate || null,
+          planEndDate:        endDate,
+        });
+        links.push({
+          mappingId:       mapping.mappingId,
+          hardwareGroupId: mapping.hardwareGroupId,
+          groupLinkId:     link.id,
+          sourcePlanId:    wixEvent.planId || null,
+          linkUrl:         link.linkUrl || null,
+          qrImageBase64:   link.qrImageBase64 || null,
+          qrImageUrl:      link.qrImageUrl || null,
+          validFrom:       wixEvent.startDate || null,
+          validUntil:      endDate,
+        });
+        log.info('grant.day_pass.link_created', {
+          clientId: tenantId, memberId,
+          platformMemberId: wixEvent.platformMemberId,
+          mappingId: mapping.mappingId, hardwareGroupId: mapping.hardwareGroupId,
+          groupLinkId: link.id,
+          hasLink: !!link.linkUrl, hasQrImage: !!(link.qrImageBase64 || link.qrImageUrl),
+          validUntil: endDate,
+          stage: 'grant', result: 'success',
+        });
+      } catch (err) {
+        log.warn('grant.day_pass.link_failed', {
+          clientId: tenantId, memberId,
+          platformMemberId: wixEvent.platformMemberId,
+          mappingId: mapping.mappingId, hardwareGroupId: mapping.hardwareGroupId,
+          statusCode: err.statusCode || null, code: err.code || null,
+          stage: 'grant', result: 'failed',
+        }, err);
+        failed.push({ mapping, err });
+      }
+    }
+
+    if (failed.length > 0 && assignments.length === 0) {
+      throw failed[0].err;
+    }
+    if (failed.length > 0) {
+      log.warn('grant.partial_failure', {
+        clientId: tenantId, memberId,
+        platformMemberId: wixEvent.platformMemberId,
+        succeeded: assignments.length,
+        failed: failed.length,
+        failedGroups: failed.map(f => f.mapping.hardwareGroupId),
+        failureReasons: failed.map(f => f.err.code || 'group_link_failed'),
+        stage: 'grant', result: 'failed',
+      });
+    }
+    if (assignments.length > 0) {
+      await logMemberAccessEvent({
+        memberId,
+        clientId: tenantId,
+        eventType: 'provisioned',
+        credentialType: 'qr',
+        mappingId: assignments[0].mappingId,
+        hardwareGroupId: assignments[0].hardwareGroupId,
+      });
+    }
+    return { assignments, links };
+  }
+
+  /**
    * Looks up and decrypts the client-level hardware API key for revoke operations.
    */
   async _getClientApiKey(tenantId) {
@@ -436,6 +573,16 @@ class GrantRevokeLogic {
     switch (eventType) {
 
       case 'payment.failed': {
+        // A day-pass-only buyer has no hardware user to suspend (single-payment
+        // orders don't pause, but Wix could still emit one). Status flip only.
+        if (!hardwareUserId) {
+          log.warn('revoke.payment_failed.no_hardware_user', {
+            clientId: tenantId, memberId,
+            platformMemberId: wixEvent.platformMemberId,
+            stage: 'revoke', result: 'skipped',
+          });
+          return 'disabled';
+        }
         await hardwareAdapter.suspendAccess(
           hardwarePlatform, apiKey, hardwareUserId,
           `Payment failed on ${new Date().toISOString()}`,
@@ -455,7 +602,7 @@ class GrantRevokeLogic {
         const planId = wixEvent.planId || null;
 
         const raWithGroups = await db.query(
-          `SELECT role_assignment_id, hardware_group_id, mapping_id
+          `SELECT role_assignment_id, hardware_group_id, mapping_id, source_plan_id, source_type
            FROM member_access_sources
            WHERE access_id = $1`,
           [memberId]
@@ -491,33 +638,65 @@ class GrantRevokeLogic {
         // BEFORE the source rows are deleted below. Scoped identically to the DELETE
         // (source_type + source_plan_id) so a cancel on one plan never flips billing
         // status for the person's other, still-active plans.
+        // A plan.cancelled names a Wix plan; the rows for it are 'plan' or (OB-98) 'day_pass'.
+        const billingSourceTypes = sourceType === 'plan' ? ['plan', 'day_pass'] : [sourceType];
         const billingRowsResult = await db.query(
           `SELECT DISTINCT mas.billing_id
            FROM member_access_sources mas
            WHERE mas.access_id = $1
-             AND mas.source_type = $2
+             AND mas.source_type = ANY($2::text[])
              AND COALESCE(mas.source_plan_id, '') = COALESCE($3, '')
              AND mas.client_id = $4
              AND mas.billing_id IS NOT NULL`,
-          [memberId, sourceType, planId, tenantId]
+          [memberId, billingSourceTypes, planId, tenantId]
         );
         const billingIds = billingRowsResult.rows.map(r => r.billing_id);
 
-        for (const { role_assignment_id: raId, hardware_group_id: groupId } of raWithGroups.rows) {
-          // OB-201: defense-in-depth client_id filter (A9 hardening — client_id NOT NULL FK CASCADE).
-          await db.query(
-            `DELETE FROM member_access_sources
-             WHERE access_id = $1
-               AND hardware_group_id = $2
-               AND source_type = $3
-               AND COALESCE(source_plan_id, '') = COALESCE($4, '')
-               AND client_id = $5`,
-            [memberId, groupId, sourceType, planId, tenantId]
-          );
+        // OB-201: defense-in-depth client_id filter (A9 hardening — client_id NOT NULL FK CASCADE).
+        // ONE statement shared by the role and day-pass branches below — the DR-023
+        // write-count ratchet pins this file at exactly one member_access_sources DELETE.
+        const deleteSourceRow = (groupId, rowSourceType, rowPlanId) => db.query(
+          `DELETE FROM member_access_sources
+           WHERE access_id = $1
+             AND hardware_group_id = $2
+             AND source_type = $3
+             AND COALESCE(source_plan_id, '') = COALESCE($4, '')
+             AND client_id = $5`,
+          [memberId, groupId, rowSourceType, rowPlanId, tenantId]
+        );
 
+        for (const row of raWithGroups.rows) {
+          const { role_assignment_id: raId, hardware_group_id: groupId } = row;
+
+          // Day pass (OB-98 / OB-251): the credential is a Kisi group link, not a role
+          // assignment. A link is never shared across plans, so it goes outright — no
+          // remaining-count gate — and only when it belongs to the plan this event
+          // names. Kisi DELETE runs BEFORE the row DELETE: it is 404-idempotent, so a
+          // crash between the two leaves a row to retry from, never an orphaned live
+          // link. A 'pending_hardware' claim row (no link id yet) is just dropped.
+          if (row.source_type === 'day_pass') {
+            if (planId && row.source_plan_id && row.source_plan_id !== planId) continue;
+            if (raId) {
+              await hardwareAdapter.deleteGroupLink(hardwarePlatform, apiKey, raId, { clientId: tenantId });
+            }
+            await deleteSourceRow(groupId, 'day_pass', row.source_plan_id);
+            log.info('revoke.day_pass.link_deleted', {
+              clientId: tenantId, memberId,
+              platformMemberId: wixEvent.platformMemberId,
+              hardwareGroupId: groupId, groupLinkId: raId || null,
+              planId: row.source_plan_id || null,
+              syntheticSource: wixEvent.syntheticSource || null,
+              stage: 'revoke', result: 'success',
+            });
+            continue;
+          }
+
+          await deleteSourceRow(groupId, sourceType, planId);
+
+          // Day-pass rows never keep a permanent group open — a bearer link is not a seat.
           const remaining = await db.query(
             `SELECT COUNT(*) AS cnt FROM member_access_sources
-             WHERE access_id = $1 AND hardware_group_id = $2`,
+             WHERE access_id = $1 AND hardware_group_id = $2 AND source_type <> 'day_pass'`,
             [memberId, groupId]
           );
 

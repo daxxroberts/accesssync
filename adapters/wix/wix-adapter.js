@@ -87,7 +87,9 @@ class WixAdapter {
     // requires status === 'ACTIVE'. Behaviour here is unchanged.
     const GRANT_TRIGGERS = ['plan.purchased', 'plan.started'];
     if (GRANT_TRIGGERS.includes(normalizedEventType)) {
-      const orderEntity = body?.data?.entity || body?.data;
+      // orderPurchased / orderStarted arrive double-wrapped ({ data: { data: { order } } }),
+      // orderUpdated as { data: { entity } } — verified in production webhook_log 2026-09-14.
+      const orderEntity = body?.data?.entity || body?.data?.data?.order || body?.data;
       const orderStatus = orderEntity?.status || null;
       const paymentStatus = orderEntity?.lastPaymentStatus || null;
       const ALLOWED_STATUS  = new Set(['ACTIVE']);
@@ -150,9 +152,15 @@ class WixAdapter {
       null;
 
     // Resolve startDate — present on Order object when orderStarted fires (delayed-start plans)
+    // Every order field below also reads the double-wrapped shape (d.data.order) that
+    // orderPurchased / orderStarted use — memberId/planId already did, the rest did not,
+    // which left startDate/endDate/planName/orderId NULL on those events and only
+    // populated on the orderUpdated echo. Day passes need endDate on the first event.
+    const wrappedOrder = d?.data?.order;
     const startDate =
       entity?.startDate  ||   // REST webhook: entity is the Order object
       d?.startDate       ||   // Velo events.js: data IS the Order object directly
+      wrappedOrder?.startDate ||
       body?.startDate    ||   // top-level fallback
       null;
 
@@ -162,27 +170,32 @@ class WixAdapter {
       entity?._id        ||   // REST webhook: Order._id
       d?._id             ||   // Velo: data IS the Order object
       d?.order?._id      ||   // legacy wrapper
+      wrappedOrder?._id  ||
       body?.orderId      ||
       null;
     const wixSubscriptionId =
       entity?.subscriptionId ||
       d?.subscriptionId      ||
       d?.order?.subscriptionId ||
+      wrappedOrder?.subscriptionId ||
       null;
     const planName =
       entity?.planName   ||
       d?.planName        ||
       d?.order?.planName ||
+      wrappedOrder?.planName ||
       null;
     const endDate =
       entity?.endDate    ||
       d?.endDate         ||
       d?.order?.endDate  ||
+      wrappedOrder?.endDate ||
       null;
     const cycleIndex =
       entity?.currentCycle?.index  ||
       d?.currentCycle?.index       ||
       d?.order?.currentCycle?.index ||
+      wrappedOrder?.currentCycle?.index ||
       null;
 
     // Resolve email/name from buyer or member data
@@ -190,6 +203,7 @@ class WixAdapter {
       entity?.buyer?.email        ||  // REST webhook
       d?.buyer?.email             ||  // Velo: data IS the Order object
       d?.order?.buyer?.email      ||  // legacy wrapper
+      wrappedOrder?.buyer?.email  ||
       entity?.member?.loginEmail  ||  // REST webhook: member event
       d?.member?.loginEmail       ||  // Velo events.js: member event
       d?.email                    ||
@@ -199,6 +213,7 @@ class WixAdapter {
       entity?.buyer?.fullName     ||  // REST webhook
       d?.buyer?.fullName          ||  // Velo: data IS the Order object
       d?.order?.buyer?.fullName   ||  // legacy wrapper
+      wrappedOrder?.buyer?.fullName ||
       entity?.member?.name        ||  // REST webhook: member event
       d?.member?.name             ||  // Velo events.js: member event
       d?.name                     ||

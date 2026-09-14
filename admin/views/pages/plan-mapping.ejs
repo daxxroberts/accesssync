@@ -759,6 +759,22 @@
           '</label>' +
         '</div>';
 
+      // ── Day pass toggle (OB-98 / OB-251) ──
+      bodyHTML +=
+        '<div class="toggle-row">' +
+          '<div>' +
+            '<div class="toggle-label">Day pass (QR code)</div>' +
+            '<div class="toggle-sublabel">' + (plan.isDayPass
+              ? 'Buyers get a QR code and unlock link by email that expires with the order. No ' + platformName() + ' account or app. Map one ' + groupLabel().toLowerCase() + '.'
+              : 'Off. Members get a ' + platformName() + ' account and unlock with the app.') + '</div>' +
+          '</div>' +
+          '<label class="toggle-switch">' +
+            '<input type="checkbox" ' + (plan.isDayPass ? 'checked' : '') + ' onchange="handleDayPassToggle(\'' + plan.id + '\', this.checked)"/>' +
+            '<div class="toggle-track"></div>' +
+            '<div class="toggle-knob"></div>' +
+          '</label>' +
+        '</div>';
+
       // ── Max members config ──
       if (plan.isMultiMember) {
         var additionalAllowed = plan.maxMembers - 1;
@@ -911,6 +927,14 @@
       plan.isMultiMember = checked;
       if (checked && plan.maxMembers < 2) plan.maxMembers = 2;
       if (!checked) plan.maxMembers = 1;
+      markDirty();
+      render();
+    }
+
+    // Day pass (OB-98 / OB-251) — saved as plan_mappings.access_type 'day_pass' | 'group'.
+    function handleDayPassToggle(planId, checked) {
+      var plan = plans.find(function(p) { return p.id === planId; });
+      plan.isDayPass = !!checked;
       markDirty();
       render();
     }
@@ -1171,12 +1195,14 @@
         var multiChanged   = plan.isMultiMember !== orig.isMultiMember || plan.maxMembers !== orig.maxMembers;
         var groupChanged   = JSON.stringify((plan.groupIds || []).slice().sort()) !== JSON.stringify((orig.groupIds || []).slice().sort());
         var statusChanged  = plan.status !== orig.status;
+        var dayPassChanged = !!plan.isDayPass !== !!orig.isDayPass;
 
-        if (!multiChanged && !groupChanged && !statusChanged) { pending--; if (pending === 0) checkDone(); return; }
+        if (!multiChanged && !groupChanged && !statusChanged && !dayPassChanged) { pending--; if (pending === 0) checkDone(); return; }
 
         var body = {};
         if (multiChanged) { body.allow_multiple = plan.isMultiMember; body.max_members = plan.maxMembers; }
         if (statusChanged) body.status = plan.status;
+        if (dayPassChanged) body.access_type = plan.isDayPass ? 'day_pass' : 'group';
         if (groupChanged && plan.groups) body.groups = plan.groups;
 
         apiFetch('/operator/' + clientId + '/plan-mappings/' + plan.id, {
@@ -1429,6 +1455,7 @@
                   planType: planType,
                   isMultiMember: !!m.allow_multiple,
                   maxMembers: m.max_members || 1,
+                  isDayPass: m.access_type === 'day_pass',
                   groupIds: groupIds,
                   status: m.status || 'inactive',
                   sourceStatus: m.source_status || 'active',
@@ -1504,7 +1531,8 @@
           return JSON.stringify(plan.groupIds) !== JSON.stringify(orig.groupIds)
               || plan.isMultiMember !== orig.isMultiMember
               || plan.maxMembers !== orig.maxMembers
-              || plan.status !== orig.status;
+              || plan.status !== orig.status
+              || !!plan.isDayPass !== !!orig.isDayPass;
         });
         console.log('[plan-mapping] saveChanges clicked — changed plans:', changed.length, changed.map(function(p) { return p.id; }));
         if (!changed.length) {
@@ -1527,6 +1555,7 @@
               allow_multiple: plan.isMultiMember,
               max_members: plan.maxMembers,
               status: plan.status,
+              access_type: plan.isDayPass ? 'day_pass' : 'group',
             })
           }).then(function(r) {
             if (!r.ok) {

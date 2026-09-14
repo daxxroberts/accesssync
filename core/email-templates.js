@@ -352,6 +352,64 @@ function renderSubMemberInvite({ branding, member, holderName, plans, hardwarePl
   return { subject: holder + ' added you to ' + plan + ' at ' + gym, html, text };
 }
 
+/**
+ * M6 — Day pass ready (OB-98 / OB-251). Fires once the Kisi group link exists.
+ * Copy: GROVE, Humanizer-passed 2026-09-14. Deliberately does NOT reuse the M1
+ * step guide or connector usage tips — there is no app and no account. The
+ * no-forward callout is what keeps a bearer QR compliant with MEMBER_EMAILS_SPEC
+ * §3 (time-boxed only, sharing risk named) — it is not optional.
+ *
+ *   doorName        plan_mappings.door_name for the mapped group
+ *   validUntilText  pre-formatted local time string (caller decides the timezone)
+ *   durationLabel   e.g. '24 hours' — derived from the order window by the caller
+ *   unlockUrl       Kisi access link (null → no CTA, QR only)
+ *   qrSrc           'cid:…' for an inline attachment, an https URL, or null
+ */
+function renderDayPassReady({ branding, member, doorName, validUntilText, durationLabel, unlockUrl, qrSrc }) {
+  const first    = (member && member.firstName) ? member.firstName : null;
+  const gym      = branding.gymName;
+  const door     = doorName || 'the door';
+  const when     = validUntilText || 'your pass expires';
+  const duration = durationLabel || '24 hours';
+
+  const qrHtml = qrSrc
+    ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;"><tr><td align="center">' +
+        '<img src="' + escapeHtml(qrSrc) + '" width="220" height="220" alt="Your door code" style="display:block;width:220px;height:220px;border:0;outline:none;" />' +
+      '</td></tr></table>'
+    : '';
+
+  const tapHtml = unlockUrl
+    ? ' If the reader doesn&rsquo;t catch it, tap the button below on your phone. The door unlocks from your browser. No app, no account.'
+    : ' No app, no account.';
+  const tapText = unlockUrl
+    ? ' If the reader doesn\'t catch it, tap the link below on your phone. The door unlocks from your browser. No app, no account.'
+    : ' No app, no account.';
+
+  const bodyHtml =
+    '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
+    '<p style="margin:0 0 12px 0;">You&rsquo;re in at <strong>' + escapeHtml(gym) + '</strong> until <strong>' + escapeHtml(when) + '</strong>. That&rsquo;s ' + escapeHtml(duration) + ' from when you bought it, not the end of the day.</p>' +
+    qrHtml +
+    '<p style="margin:0 0 12px 0;">Hold this code up to the reader at ' + escapeHtml(door) + '.' + tapHtml + '</p>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr><td style="background-color:#FFF7E6;border-left:3px solid #D97706;border-radius:0 8px 8px 0;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
+      '<strong style="color:#B45309;font-size:11px;letter-spacing:.5px;text-transform:uppercase;">Don&rsquo;t forward this email</strong><br/>' +
+      'Anyone with the code or the link can open the door until your pass expires.' +
+    '</td></tr></table>';
+
+  const bodyText =
+    'Hi ' + (first || 'there') + ',\n\n' +
+    'You\'re in at ' + gym + ' until ' + when + '. That\'s ' + duration + ' from when you bought it, not the end of the day.\n\n' +
+    (qrSrc ? 'Your door code is attached to this email as an image.\n\n' : '') +
+    'Hold this code up to the reader at ' + door + '.' + tapText + '\n\n' +
+    'Don\'t forward this email. Anyone with the code or the link can open the door until your pass expires.';
+
+  const { html, text } = renderLayout({
+    branding, heading: 'Your day pass is ready', bodyHtml, bodyText,
+    ctaText: unlockUrl ? 'Unlock the door' : null,
+    ctaUrl:  unlockUrl || null,
+  });
+  return { subject: 'Your ' + gym + ' day pass is ready', html, text };
+}
+
 module.exports = {
   escapeHtml,
   isValidHexColor,
@@ -364,4 +422,5 @@ module.exports = {
   renderAccessSuspended,
   renderAccessRestored,
   renderSubMemberInvite,
+  renderDayPassReady,
 };

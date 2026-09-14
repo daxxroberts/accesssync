@@ -307,6 +307,38 @@ if (SCHEDULER_ENABLED) {
   });
 }
 
+// ── In-process day-pass expiry sweep (OB-98 / OB-101) ─────────────────────────
+// Day passes are Kisi group links with a valid_until; nothing else revokes on time.
+// core/day-pass-sweep.js enqueues a synthetic revoke for every expired pass and
+// deletes orphaned links. Same shape as the reconcile scheduler above: first run
+// shortly after boot, then every 15 minutes; DISABLE_INPROCESS_DAY_PASS_SWEEP=1
+// silences it if a Railway cron (`node core/day-pass-sweep.js`) takes over.
+const DAY_PASS_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
+const DAY_PASS_SWEEP_INITIAL_DELAY_MS = 2 * 60 * 1000;
+const DAY_PASS_SWEEP_ENABLED = process.env.NODE_ENV !== 'test'
+  && process.env.DISABLE_INPROCESS_DAY_PASS_SWEEP !== '1';
+
+if (DAY_PASS_SWEEP_ENABLED) {
+  const fireDayPassSweep = async () => {
+    try {
+      log.warn('admin.scheduler.day_pass_sweep_start', { trigger: 'inprocess_scheduler' });
+      const { runDayPassSweep } = require('../core/day-pass-sweep');
+      const result = await runDayPassSweep({ triggerSource: 'inprocess' });
+      log.warn('admin.scheduler.day_pass_sweep_complete', { trigger: 'inprocess_scheduler', ...result });
+    } catch (err) {
+      log.error('admin.scheduler.day_pass_sweep_failed', { trigger: 'inprocess_scheduler' }, err);
+    }
+  };
+  setTimeout(() => {
+    fireDayPassSweep();
+    setInterval(fireDayPassSweep, DAY_PASS_SWEEP_INTERVAL_MS);
+  }, DAY_PASS_SWEEP_INITIAL_DELAY_MS);
+  log.warn('admin.scheduler.day_pass_sweep_armed', {
+    initial_delay_minutes: DAY_PASS_SWEEP_INITIAL_DELAY_MS / 60000,
+    interval_minutes: DAY_PASS_SWEEP_INTERVAL_MS / 60000,
+  });
+}
+
 // ── Prevent silent crashes ─────────────────────────────────────
 process.on('uncaughtException', (err) => {
   log.critical('admin.uncaught_exception', {}, err);

@@ -69,6 +69,9 @@ const _requiredFieldsByPlatform = {
     deleteUser:      ['userId'],
     getUserById:     ['userId'],
     getRoleAssignmentsForUser: ['userId'],
+    // Day pass (OB-98 / OB-251): a group link is the credential — no userId.
+    createGroupLink: ['groupId', 'clientId', 'validUntil'],
+    deleteGroupLink: ['groupLinkId'],
   },
   seam: {
     // TODO: populated when Seam adapter is built (post-V1).
@@ -207,6 +210,44 @@ class HardwareAdapter {
   // OB-249: bulk-read user list for reconcile Pass 3 (operator-deleted drift detection)
   async listAllUsers(hardwarePlatform, apiKey) {
     return this._getAdapter(hardwarePlatform).listAllUsers(apiKey);
+  }
+
+  /**
+   * Resolve the Layer 6 adapter and refuse cleanly when it lacks an operation —
+   * the seam stub has no group-link surface, and a TypeError deep inside a queue
+   * job is a worse failure than a coded error the retry engine can classify.
+   */
+  _getAdapterWith(hardwarePlatform, method) {
+    const adapter = this._getAdapter(hardwarePlatform);
+    if (typeof adapter[method] !== 'function') {
+      const err = new Error(`${method} is not supported on hardware platform ${hardwarePlatform}`);
+      err.code = 'HARDWARE_UNSUPPORTED_OPERATION';
+      err.hardwarePlatform = hardwarePlatform;
+      err.attemptedOperation = method;
+      throw err;
+    }
+    return adapter;
+  }
+
+  /**
+   * Day pass (OB-98 / OB-251): create a time-bounded group link (QR + access link).
+   * params: { groupId, clientId, email?, validFrom?, validUntil, label? }
+   * Returns the Layer 6 normalized link { id, linkUrl, qrImageBase64, qrImageUrl, secret, ... }.
+   */
+  async createGroupLink(hardwarePlatform, apiKey, params = {}) {
+    this._validate(hardwarePlatform, 'createGroupLink', params);
+    return this._getAdapterWith(hardwarePlatform, 'createGroupLink').createGroupLink(apiKey, params);
+  }
+
+  /** Delete a day-pass group link. options.clientId drives the ownership-marker guard. */
+  async deleteGroupLink(hardwarePlatform, apiKey, groupLinkId, options = {}) {
+    this._validate(hardwarePlatform, 'deleteGroupLink', { groupLinkId });
+    return this._getAdapterWith(hardwarePlatform, 'deleteGroupLink').deleteGroupLink(apiKey, groupLinkId, options);
+  }
+
+  /** All group links in the org — [{ id, name, groupId, validUntil, ownerClientId }]. */
+  async listGroupLinks(hardwarePlatform, apiKey) {
+    return this._getAdapterWith(hardwarePlatform, 'listGroupLinks').listGroupLinks(apiKey);
   }
 }
 

@@ -176,7 +176,10 @@ describe('[P1] DR-050 — scoping and idempotency', () => {
     const lookupCall = db.query.mock.calls[2];
     expect(lookupCall[0]).toMatch(/FROM member_access_sources/);
     expect(lookupCall[0]).toMatch(/source_plan_id/);
-    expect(lookupCall[1]).toEqual([MEMBER_ID, 'plan', PLAN_ID, TENANT_ID]);
+    // Scoping is by source_plan_id (this plan, not the person). The source_type set
+    // widened to ['plan','day_pass'] on 2026-09-14 (OB-98): a day pass for the same
+    // Wix plan carries a billing row too, and its expiry is a genuine cancellation.
+    expect(lookupCall[1]).toEqual([MEMBER_ID, ['plan', 'day_pass'], PLAN_ID, TENANT_ID]);
   });
 
   test('the UPDATE excludes rows already cancelled (status <> \'cancelled\')', async () => {

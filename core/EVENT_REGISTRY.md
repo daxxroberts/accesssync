@@ -542,3 +542,39 @@ nightly digest — route through this one send path.
 | `email_branding.updated` | activity | Operator saved member-email branding (colors / enabled toggle) |
 | `email_branding.logo_uploaded` | activity | Operator uploaded a member-email logo |
 | `email_branding.test_sent` | activity | Operator sent a branded test email to the admin contact |
+
+## Day Pass Events (OB-98 / OB-101 / OB-251, 2026-09-14)
+
+A day pass is a Wix 1-day pricing plan delivered as a Kisi **group link** (QR code +
+access link, `POST /group_links`) instead of a hardware user + role assignment. The
+link id lives in `member_access_sources.role_assignment_id` with `source_type='day_pass'`;
+`valid_until` is the expiry. `core/day-pass-sweep.js` revokes on time.
+
+| Event | Level | Description |
+|---|---|---|
+| `kisi.group_link.creating` | info | POST /group_links about to fire (group, tenant, window) |
+| `kisi.group_link.created` | info | Group link created — id + whether the response carried a link URL / QR image (keys only, never values) |
+| `kisi.group_link.create_failed` | error | POST /group_links failed |
+| `kisi.group_link.deleted` | info | Group link deleted after the DR-045 Layer B marker check passed |
+| `kisi.group_link.delete_skipped_already_gone` | info | GET or DELETE returned 404 — idempotent success |
+| `kisi.group_link.delete_refused_unowned` | warn | Link carries no AccessSync marker — refused (operator's own link) |
+| `kisi.group_link.delete_refused_cross_tenant` | warn | Link's marker names a different tenant — refused |
+| `kisi.group_link.delete_guard_fetch_failed` / `kisi.group_link.delete_failed` | error | Guard read or DELETE failed (non-404) |
+| `kisi.list_group_links_no_key` | warn | listGroupLinks called with no API key |
+| `grant.day_pass.link_creating` | info | Day-pass grant about to create a link for one mapping |
+| `grant.day_pass.link_created` | info | Link created and recorded on the assignment (member_access_log `provisioned`, credential_type `qr`) |
+| `grant.day_pass.link_failed` | warn | Link creation failed for one mapping — partial-failure rule applies |
+| `grant.day_pass.synthetic_skipped` | info | Synthetic re-grant (reconcile) carried no endDate — deliberate no-op |
+| `grant.day_pass.claim_lost` | info | Another job already claimed this (member × plan × group) — Wix triple-fire absorbed |
+| `queue.grant.day_pass.complete` | info | Day-pass grant recorded; QR email dispatched |
+| `revoke.day_pass.link_deleted` | info | Revoke deleted the Kisi link then the source row (link first — 404-idempotent) |
+| `revoke.payment_failed.no_hardware_user` | warn | payment.failed for a day-pass-only member — status flip only, no suspend call |
+| `queue.grant.recovered.no_hardware_user` | warn | payment.recovered for a day-pass-only member — no enableAccess call |
+| `reconciliation.day_pass_plan_skipped` | warn | Pass 1 skipped a day-pass plan — reconcile never backfills a time-boxed link |
+| `day_pass_sweep.start` / `day_pass_sweep.complete` | info | 15-minute sweep lifecycle (expired count, orphan count) |
+| `day_pass_sweep.revoke_queued` | info | Expired pass → synthetic `plan.cancelled` revoke job (`day-pass-sweep.expired`) |
+| `day_pass_sweep.enqueue_failed` | error | Could not enqueue the revoke job |
+| `day_pass_sweep.orphan_link_deleted` | info | Expired, marker-owned link with no DB row deleted |
+| `day_pass_sweep.orphan_delete_failed` / `day_pass_sweep.list_links_failed` / `day_pass_sweep.key_decrypt_failed` | warn | Orphan pass skipped a client or a link |
+| `day_pass_sweep.fatal` | critical | Sweep process crashed (Railway Cron entry point) |
+| `admin.scheduler.day_pass_sweep_armed` / `_start` / `_complete` / `_failed` | warn / error | In-process 15-minute scheduler lifecycle (admin/server.js) |

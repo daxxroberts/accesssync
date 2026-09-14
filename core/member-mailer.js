@@ -48,9 +48,14 @@ const { brandingFromClientRow } = require('./email-templates');
  * @param {Function} p.render          template fn (renderAccessReady etc.) — called with
  *                                     { branding, ...p.renderArgs }
  * @param {Object} [p.renderArgs]      template-specific args (member, plans, planName, ...)
- * @param {boolean} [p.bypassEnabledGate]  true ONLY for the operator "send test email"
+ * @param {boolean} [p.bypassEnabledGate]  true ONLY for (a) the operator "send test email"
  *                                     button — a test send is the operator explicitly
- *                                     asking, so the ship-dark toggle doesn't apply.
+ *                                     asking, so the ship-dark toggle doesn't apply —
+ *                                     and (b) day_pass_ready (OB-98): that email IS the
+ *                                     credential, not a courtesy; a buyer with no QR paid
+ *                                     for nothing.
+ * @param {Array}  [p.attachments]     Resend attachments passthrough
+ *                                     [{ filename, content, contentType, contentId }]
  * @returns {Promise<{sent: boolean, reason?: string}>}
  */
 async function sendMemberEmail(p) {
@@ -110,6 +115,7 @@ async function sendMemberEmail(p) {
       text,
     };
     if (client.notification_email) sendPayload.reply_to = client.notification_email;
+    if (Array.isArray(p.attachments) && p.attachments.length > 0) sendPayload.attachments = p.attachments;
 
     const result = await resend.emails.send(sendPayload);
     const resendId = result && result.data && result.data.id ? result.data.id : null;
@@ -401,6 +407,120 @@ async function maybeSendAccessRestoredEmail({ clientId, accessId, standardEvent,
   }
 }
 
+// ─── M6 day pass (OB-98 / OB-251) ────────────────────────────────────────────
+
+const DAY_PASS_QR_CID = 'daypassqr';
+
+function _formatWhen(iso, timeZone) {
+  if (!iso) return null;
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+      timeZone, timeZoneName: 'short',
+    }).format(new Date(iso));
+  } catch (_) {
+    return String(iso);
+  }
+}
+
+function _durationLabel(validFrom, validUntil) {
+  const start = validFrom ? Date.parse(validFrom) : NaN;
+  const end   = validUntil ? Date.parse(validUntil) : NaN;
+  if (isNaN(start) || isNaN(end) || end <= start) return '24 hours';
+  const hours = Math.round((end - start) / 3_600_000);
+  if (hours === 24) return '24 hours';
+  if (hours % 24 === 0) { const days = hours / 24; return days + (days === 1 ? ' day' : ' days'); }
+  return hours + ' hours';
+}
+
+/**
+ * M6 — day pass ready. The QR + link ARE the credential, so this bypasses the
+ * ship-dark toggle (see sendMemberEmail's bypassEnabledGate note). Only ever fires
+ * for a real purchase webhook: the claim mutex means exactly one job carries links,
+ * and synthetic re-grants never reach here with any. The QR rides as an inline CID
+ * attachment (Gmail strips base64 data URIs); the access link is the CTA and the
+ * guaranteed fallback if inline images don't render.
+ *
+ * links: [{ mappingId, hardwareGroupId, linkUrl, qrImageBase64, qrImageUrl, validFrom, validUntil }]
+ * Timezone for the expiry text: MEMBER_EMAIL_TIMEZONE (IANA), default UTC — no
+ * per-client timezone column exists yet.
+ */
+async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links, recipientEmail, eventKey }) {
+  try {
+    if (!Array.isArray(links) || links.length === 0) return { sent: false, reason: 'no_links' };
+    if (standardEvent && standardEvent.synthetic) {
+      log.info('email.member.suppressed', {
+        clientId, emailType: 'day_pass_ready', reason: 'synthetic_source',
+        syntheticSource: standardEvent.syntheticSource,
+      });
+      return { sent: false, reason: 'synthetic_source' };
+    }
+
+    const memberRes = await db.query(
+      `SELECT mm.id AS member_master_id, mm.email, mm.first_name
+       FROM member_access ma JOIN member_master mm ON mm.id = ma.member_master_id
+       WHERE ma.id = $1`,
+      [accessId]
+    );
+    const m = memberRes.rows[0] || {};
+    const recipient = recipientEmail || m.email || null;
+    if (!recipient) {
+      log.info('email.member.skipped_disabled', { clientId, emailType: 'day_pass_ready', reason: 'no_recipient' });
+      return { sent: false, reason: 'no_recipient' };
+    }
+
+    const primary = links[0];
+    let doorName = null;
+    if (primary.mappingId) {
+      const pmRes = await db.query(
+        `SELECT door_name FROM plan_mappings WHERE id = $1`,
+        [primary.mappingId]
+      ).catch(() => ({ rows: [] }));
+      doorName = (pmRes.rows[0] && pmRes.rows[0].door_name) || null;
+    }
+
+    const attachments = [];
+    let qrSrc = null;
+    if (primary.qrImageBase64) {
+      attachments.push({
+        filename:    'day-pass-qr.png',
+        content:     primary.qrImageBase64,
+        contentType: 'image/png',
+        contentId:   DAY_PASS_QR_CID,
+      });
+      qrSrc = 'cid:' + DAY_PASS_QR_CID;
+    } else if (primary.qrImageUrl) {
+      qrSrc = primary.qrImageUrl;
+    }
+
+    const timeZone = process.env.MEMBER_EMAIL_TIMEZONE || 'UTC';
+    const planId  = (standardEvent && standardEvent.planId) || primary.sourcePlanId || 'na';
+    const orderId = (standardEvent && standardEvent.wixOrderId) || eventKey || 'noorder';
+
+    return await sendMemberEmail({
+      clientId, memberMasterId: m.member_master_id || null,
+      emailType: 'day_pass_ready',
+      dedupKey: `${accessId}:${planId}:${orderId}`,
+      recipient,
+      bypassEnabledGate: true,
+      attachments,
+      render: templates.renderDayPassReady,
+      renderArgs: {
+        member:         { firstName: m.first_name || null },
+        doorName,
+        validUntilText: _formatWhen(primary.validUntil, timeZone),
+        durationLabel:  _durationLabel(primary.validFrom, primary.validUntil),
+        unlockUrl:      primary.linkUrl || null,
+        qrSrc,
+      },
+    });
+  } catch (err) {
+    log.warn('email.member.failed', { clientId, emailType: 'day_pass_ready' }, err);
+    return { sent: false, reason: 'exception' };
+  }
+}
+
 module.exports = {
   sendMemberEmail,
   maybeSendGrantEmail,
@@ -408,4 +528,7 @@ module.exports = {
   maybeSendAccessRemovedEmail,
   maybeSendAccessSuspendedEmail,
   maybeSendAccessRestoredEmail,
+  maybeSendDayPassEmail,
+  _formatWhen,
+  _durationLabel,
 };

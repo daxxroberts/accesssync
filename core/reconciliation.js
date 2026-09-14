@@ -1275,6 +1275,7 @@ class NightlyReconciliation {
                  AND mm.platform_member_id = $2
                  AND pm.source_plan_id = $3
                  AND mas.status = 'cancelled'
+                 AND COALESCE(pm.access_type, 'group') <> 'day_pass'
                RETURNING mas.id, mas.access_id`,
               [client.id, memberId, plan.planId]
             );
@@ -1300,12 +1301,24 @@ class NightlyReconciliation {
         try {
           const targets = await db.query(
             `SELECT pm.id AS mapping_id,
-                    COALESCE(pmg.hardware_group_id, pm.hardware_group_id) AS hardware_group_id
+                    COALESCE(pmg.hardware_group_id, pm.hardware_group_id) AS hardware_group_id,
+                    COALESCE(pm.access_type, 'group') AS access_type
              FROM plan_mappings pm
              LEFT JOIN plan_mapping_groups pmg ON pmg.mapping_id = pm.id
              WHERE pm.client_id = $1 AND pm.source_plan_id = $2 AND pm.status = 'active'`,
             [client.id, plan.planId]
           );
+          // Day pass (OB-98 / OB-251): a day-pass grant is a time-boxed Kisi group link
+          // with no hardware user. Reconcile must never backfill one — an INSERT here
+          // writes no valid_until and would turn a 24h pass into permanent access.
+          // Expiry is owned by core/day-pass-sweep.js and the real orderEnded webhook.
+          if (targets.rows.some(t => t.access_type === 'day_pass')) {
+            log.warn('reconciliation.day_pass_plan_skipped', {
+              clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+              traceId: this._sweepTraceId, stage: 'reconcile', result: 'skipped',
+            });
+            continue;
+          }
           if (targets.rowCount === 0) {
             log.warn('reconciliation.plan_not_mapped', {
               clientId: client.id, platformMemberId: memberId, planId: plan.planId,

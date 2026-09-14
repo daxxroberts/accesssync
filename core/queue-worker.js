@@ -63,6 +63,98 @@ async function getClientApiKey(tenantId) {
 }
 
 /**
+ * Day pass grant (OB-98 / OB-251). A day-pass buyer never gets a hardware user —
+ * the credential is a Kisi group link (QR + access link) that expires with the
+ * order. Same layer discipline as the standard path, different steps:
+ *   1. endDate   — synthetic event without one → no-op (reconcile re-grants);
+ *                  real webhook without one → throws, dead-letters visibly
+ *   2. email     — L3 resolveEmailOnly: the QR has to go somewhere, and live Wix
+ *                  order webhooks carry no buyer.email (0/10 recent orders)
+ *   3. claim     — L3 claimDayPassSources: the cross-job mutex against Wix's
+ *                  triple-fire; a loser just recomputes the rollup and exits
+ *   4. hardware  — L4 processDayPassGrant: one link per claimed mapping
+ *   5. record    — L3 completeGrant (RI-03 writes valid_until), then the branded
+ *                  QR email, fire-and-forget
+ * Called from both the plan.purchased and plan.started paths; the second call for
+ * the same order loses the claim and is a clean no-op.
+ */
+async function _runDayPassGrant({ tenantId, memberId, mappings, standardEvent, eventId, job, logger, traceId, jobStart }) {
+  const clientId = tenantId;
+  const planId = standardEvent.planId || null;
+
+  const endDate = grantRevokeLogic.dayPassEndDate(standardEvent);
+  if (!endDate) {
+    logger.info('grant.day_pass.synthetic_skipped', {
+      clientId, memberId, eventId,
+      platformMemberId: standardEvent.platformMemberId, planId,
+      syntheticSource: standardEvent.syntheticSource || null,
+      stage: 'grant', result: 'skipped',
+    });
+    await standardAdapter.rollupAccessStatus(memberId);
+    return;
+  }
+
+  const identity = await standardAdapter.resolveEmailOnly(
+    memberId, tenantId, standardEvent.platformMemberId, standardEvent.email || null
+  );
+  if (!identity) {
+    logger.warn('queue.grant.parked.pending_identity', {
+      clientId, memberId, eventId,
+      platformMemberId: standardEvent.platformMemberId, planId,
+      stage: 'identity', result: 'skipped',
+    });
+    return;
+  }
+
+  const claimed = await standardAdapter.claimDayPassSources(memberId, tenantId, mappings, planId);
+  if (claimed.length === 0) {
+    logger.info('grant.day_pass.claim_lost', {
+      clientId, memberId, eventId,
+      platformMemberId: standardEvent.platformMemberId, planId,
+      mappingCount: mappings.length,
+      stage: 'grant', result: 'skipped',
+    });
+    await standardAdapter.rollupAccessStatus(memberId);
+    return;
+  }
+
+  let result;
+  try {
+    result = await grantRevokeLogic.processDayPassGrant(tenantId, memberId, claimed, standardEvent, { email: identity.email });
+  } catch (err) {
+    await standardAdapter.releaseDayPassClaims(memberId, tenantId, claimed, planId).catch(() => {});
+    throw err;
+  }
+  const okMappingIds = new Set(result.assignments.map(a => a.mappingId));
+  const failedClaims = claimed.filter(m => !okMappingIds.has(m.mappingId));
+  if (failedClaims.length > 0) {
+    await standardAdapter.releaseDayPassClaims(memberId, tenantId, failedClaims, planId).catch(() => {});
+  }
+
+  const billingSnapshot = extractBillingSnapshot(standardEvent.rawPayload);
+  await standardAdapter.completeGrant(memberId, tenantId, result.assignments, billingSnapshot);
+  setTraceContext(traceId, {
+    clientId, memberId,
+    planName:  standardEvent.planName || null,
+    mappingId: (claimed[0] && claimed[0].mappingId) || null,
+  });
+  logger.info('queue.grant.day_pass.complete', {
+    clientId, memberId, eventId,
+    platformMemberId: standardEvent.platformMemberId, planId,
+    links: result.links.length,
+    validUntil: endDate,
+    durationMs: Date.now() - jobStart,
+    stage: 'grant', result: 'success',
+  });
+
+  memberMailer.maybeSendDayPassEmail({
+    clientId: tenantId, accessId: memberId, standardEvent,
+    links: result.links, recipientEmail: identity.email,
+    eventKey: eventId || job.id,
+  }).catch(() => {});
+}
+
+/**
  * Job processor function.
  * BullMQ calls this for every job dequeued. Returning normally = success. Throwing = retry.
  *
@@ -127,7 +219,16 @@ async function _processJobBody(job, traceId) {
         memberId = resolvedMemberId;
         lastStep = 'grant.recovered.enable_access';
         const apiKey = await getClientApiKey(tenantId);
-        await hardwareAdapter.enableAccess(hardwarePlatform, apiKey, hardwareUserId, { clientId: tenantId });
+        if (hardwareUserId) {
+          await hardwareAdapter.enableAccess(hardwarePlatform, apiKey, hardwareUserId, { clientId: tenantId });
+        } else {
+          // Day-pass-only member (OB-98): no hardware user to re-enable — status flip only.
+          logger.warn('queue.grant.recovered.no_hardware_user', {
+            clientId, memberId, eventId,
+            platformMemberId: standardEvent.platformMemberId,
+            stage: 'grant', result: 'skipped',
+          });
+        }
         lastStep = 'grant.recovered.complete_revoke';
         await standardAdapter.completeRevoke(memberId, tenantId, 'active');
         // OB-162: enrich trace_context on payment.recovered path (no mapping context available)
@@ -177,6 +278,14 @@ async function _processJobBody(job, traceId) {
             mappingCount: mappings.length,
             stage: 'grant', result: 'skipped',
           });
+          return;
+        }
+
+        // Day pass (OB-98 / OB-251): no Kisi user — group link + QR instead. The
+        // orderStarted echo of a day-pass purchase loses the claim and no-ops.
+        if (mappings[0].accessType === 'day_pass') {
+          lastStep = 'grant.started.day_pass';
+          await _runDayPassGrant({ tenantId, memberId, mappings, standardEvent, eventId, job, logger, traceId, jobStart });
           return;
         }
 
@@ -292,6 +401,15 @@ async function _processJobBody(job, traceId) {
           mappingCount: mappings.length,
           stage: 'grant', result: 'skipped',
         });
+        return;
+      }
+
+      // Day pass (OB-98 / OB-251): branch before identity — a day-pass buyer never
+      // gets a hardware user. Skips resolveIdentity, pending_start parking, and
+      // processGrant entirely; see _runDayPassGrant for the sequence.
+      if (mappings[0].accessType === 'day_pass') {
+        lastStep = 'grant.day_pass';
+        await _runDayPassGrant({ tenantId, memberId, mappings, standardEvent, eventId, job, logger, traceId, jobStart });
         return;
       }
 

@@ -1932,6 +1932,7 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
         // always carry the mapping). Filter to active access rows only.
         `SELECT pm.id, pm.source_plan_id, pm.plan_name, pm.door_name, pm.hardware_group_id,
                 pm.status, pm.source_status, pm.allow_multiple, pm.max_members, pm.created_at,
+                COALESCE(pm.access_type, 'group') AS access_type,
                 COUNT(DISTINCT ma.member_master_id)::int AS member_count
          FROM plan_mappings pm
          LEFT JOIN member_access_sources mas ON mas.mapping_id = pm.id
@@ -2077,9 +2078,16 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
 // ── PATCH /operator/:clientId/plan-mappings/:mappingId ───────────
 // Accepts `groups: [{ hardware_group_id, door_name }]` for multi-group mapping.
 // Also accepts legacy single-group fields for backward compat.
+// plan_mappings.access_type — 'group' (default), 'time_limited' (legacy, warn-only),
+// 'day_pass' (OB-98 / OB-251: Kisi group link + QR, no hardware user, expires with the order).
+const PLAN_ACCESS_TYPES = new Set(['group', 'time_limited', 'day_pass']);
+
 router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
   const { clientId, mappingId } = req.params;
-  const { status, door_name, hardware_group_id, groups, allow_multiple, max_members, location_id, addGroupId, removeGroupId } = req.body;
+  const { status, door_name, hardware_group_id, groups, allow_multiple, max_members, location_id, addGroupId, removeGroupId, access_type } = req.body;
+  if (access_type !== undefined && !PLAN_ACCESS_TYPES.has(access_type)) {
+    return res.status(400).json({ error: 'Invalid access_type' });
+  }
   try {
     // Snapshot old groups + status BEFORE any changes — needed for member sync diff
     const [oldGroupsResult, oldMappingResult] = await Promise.all([
@@ -2139,6 +2147,7 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     if (hardware_group_id !== undefined) { fields.push(`hardware_group_id = $${vals.length + 1}`); vals.push(hardware_group_id); }
     if (allow_multiple !== undefined)    { fields.push(`allow_multiple = $${vals.length + 1}`);    vals.push(!!allow_multiple); }
     if (max_members !== undefined)       { fields.push(`max_members = $${vals.length + 1}`);       vals.push(Math.max(1, Math.min(20, parseInt(max_members) || 1))); }
+    if (access_type !== undefined)       { fields.push(`access_type = $${vals.length + 1}`);       vals.push(access_type); }
 
     // If groups array provided, use first group for backward compat on plan_mappings row
     if (groups && Array.isArray(groups) && groups.length > 0) {
@@ -2404,13 +2413,17 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
     const apiKey = decryptKey(keyRow.rows[0].raw_key);
     const platform = keyRow.rows[0].platform || 'kisi';
 
-    // Fetch all member source rows for this mapping in the old groups
+    // Fetch all member source rows for this mapping in the old groups.
+    // Day-pass rows (OB-98) hold a Kisi group-link id in role_assignment_id — never a
+    // role assignment — so they are excluded: removeRole on one would DELETE a foreign
+    // /role_assignments id. Expired passes are cleaned up by core/day-pass-sweep.js.
     const membersResult = await db.query(
       `SELECT mas.id AS mra_id, mas.access_id AS member_id, mas.role_assignment_id, mas.hardware_group_id,
               ma.hardware_user_id
        FROM member_access_sources mas
        JOIN member_access ma ON ma.id = mas.access_id
-       WHERE mas.mapping_id = $1 AND mas.hardware_group_id = ANY($2::text[]) AND ma.client_id = $3`,
+       WHERE mas.mapping_id = $1 AND mas.hardware_group_id = ANY($2::text[]) AND ma.client_id = $3
+         AND mas.source_type <> 'day_pass'`,
       [mappingId, oldGroupIds, clientId]
     );
 

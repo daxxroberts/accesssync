@@ -49,6 +49,40 @@ function parseAccessSyncMarker(notes) {
 }
 
 /**
+ * Normalize a Kisi POST/GET /group_links response. The shareable-URL field name and
+ * the QR image encoding are not confirmed live (api.kisi.io/docs renders client-side),
+ * so every plausible field is read and the image is accepted as a data URI, raw base64,
+ * or a hosted URL. `secret` and the image are credentials — never log them.
+ */
+function _normalizeGroupLink(data) {
+  const d = (data && typeof data === 'object') ? data : {};
+  const rawImg = typeof d.quick_response_code_image === 'string' ? d.quick_response_code_image : null;
+  let qrImageBase64 = null;
+  let qrImageUrl = null;
+  if (rawImg) {
+    const dataUri = rawImg.match(/^data:image\/[a-z0-9+.-]+;base64,(.+)$/i);
+    if (dataUri) qrImageBase64 = dataUri[1];
+    else if (/^https?:\/\//i.test(rawImg)) qrImageUrl = rawImg;
+    else qrImageBase64 = rawImg;
+  }
+  const linkUrl = d.url || d.link || d.link_url || d.share_url || null;
+  const marker = parseAccessSyncMarker(d.name);
+  return {
+    id:            d.id,
+    name:          d.name || null,
+    groupId:       d.group_id || (d.group && d.group.id) || null,
+    secret:        d.secret || null,
+    linkUrl:       typeof linkUrl === 'string' ? linkUrl : null,
+    qrImageBase64,
+    qrImageUrl,
+    qrToken:       d.quick_response_code_token || null,
+    validFrom:     d.valid_from || null,
+    validUntil:    d.valid_until || null,
+    ownerClientId: marker ? marker.clientId : null,
+  };
+}
+
+/**
  * Layer C of the delete guard — elevated-role check (DR-045 amendment).
  *
  * AccessSync only ever issues `group_basic` role assignments scoped to Groups. Any
@@ -776,10 +810,135 @@ class KisiAdapter {
       return [];
     }
   }
+
+  /**
+   * Day pass (OB-98 / OB-251): create a Kisi digital credential — a group-scoped
+   * access link + QR code — via POST /group_links. No Kisi user is created; the
+   * link itself is the credential, so the DR-045 Layer B ownership marker goes in
+   * the link's `name` (group links have no `notes`). The `secret` and QR image come
+   * back ONLY so the caller can email them — never logged, never persisted
+   * (core/log-redaction.js covers the field names).
+   *
+   * Response field names for the shareable URL and the QR encoding are unverified
+   * live (GD-02 successor): _normalizeGroupLink reads defensively and the response
+   * KEYS (never values) are logged once so the first HOG test reveals the real shape.
+   */
+  async createGroupLink(apiKey, { groupId, clientId, email, validFrom, validUntil, label }) {
+    const name = buildAccessSyncMarker(clientId, label || 'Day pass').slice(0, 255);
+    const body = {
+      group_link: {
+        name,
+        group_id: groupId,
+        ...(email ? { email } : {}),
+        ...(validFrom ? { valid_from: validFrom } : {}),
+        valid_until: validUntil,
+        quick_response_code_type: 'online',
+      },
+    };
+    log.info('kisi.group_link.creating', { groupId, clientId, validFrom: validFrom || null, validUntil });
+    let data;
+    try {
+      data = await kisiConnector.makeRequest('/group_links', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }, apiKey);
+    } catch (err) {
+      log.error('kisi.group_link.create_failed', {
+        groupId, clientId, statusCode: err.statusCode || null, code: err.code || null,
+      });
+      throw err;
+    }
+    const link = _normalizeGroupLink(data);
+    log.info('kisi.group_link.created', {
+      groupId, clientId, groupLinkId: link.id,
+      hasLink: !!link.linkUrl,
+      hasQrImage: !!(link.qrImageBase64 || link.qrImageUrl),
+      responseKeys: (data && typeof data === 'object') ? Object.keys(data) : [],
+    });
+    return link;
+  }
+
+  /**
+   * Delete a day-pass group link. Mirrors deleteUser's Layer B guard: GET first,
+   * refuse unless the `[AS|managed|<clientId>|…]` marker in `name` names the
+   * requesting tenant — an operator's hand-made links are never touched. 404 on
+   * either call is idempotent success.
+   */
+  async deleteGroupLink(apiKey, groupLinkId, options = {}) {
+    let link;
+    try {
+      link = await kisiConnector.makeRequest(`/group_links/${groupLinkId}`, { method: 'GET' }, apiKey);
+    } catch (err) {
+      if (err.statusCode === 404) {
+        log.info('kisi.group_link.delete_skipped_already_gone', { groupLinkId });
+        return;
+      }
+      log.error('kisi.group_link.delete_guard_fetch_failed', { groupLinkId, statusCode: err.statusCode || null });
+      throw err;
+    }
+
+    const marker = parseAccessSyncMarker(link && link.name);
+    if (!marker) {
+      const err = new Error(`Kisi group link ${groupLinkId} has no AccessSync ownership marker — refusing to delete`);
+      err.code = 'UNOWNED_GROUP_LINK';
+      err.groupLinkId = groupLinkId;
+      log.warn('kisi.group_link.delete_refused_unowned', { groupLinkId });
+      throw err;
+    }
+    if (options.clientId && marker.clientId !== options.clientId) {
+      const err = new Error(
+        `Kisi group link ${groupLinkId} is owned by clientId ${marker.clientId}, ` +
+        `not requesting clientId ${options.clientId} — refusing to delete`
+      );
+      err.code = 'CLIENT_MISMATCH';
+      err.groupLinkId = groupLinkId;
+      err.ownerClientId = marker.clientId;
+      err.requestingClientId = options.clientId;
+      log.warn('kisi.group_link.delete_refused_cross_tenant', {
+        groupLinkId, ownerClientId: marker.clientId, requestingClientId: options.clientId,
+      });
+      throw err;
+    }
+
+    try {
+      await kisiConnector.makeRequest(`/group_links/${groupLinkId}`, { method: 'DELETE' }, apiKey);
+      log.info('kisi.group_link.deleted', { groupLinkId, ownerClientId: marker.clientId });
+    } catch (err) {
+      if (err.statusCode === 404) {
+        log.info('kisi.group_link.delete_skipped_already_gone', { groupLinkId });
+        return;
+      }
+      log.error('kisi.group_link.delete_failed', { groupLinkId, statusCode: err.statusCode || null });
+      throw err;
+    }
+  }
+
+  /**
+   * All group links in the org, paginated with the I-4 integrity guard. Used by
+   * core/day-pass-sweep.js to find links AccessSync created (marker present) that
+   * have expired and have no DB row left (a crash between create and record).
+   * Throws on any HTTP/integrity failure — the sweep skips the client, never guesses.
+   */
+  async listGroupLinks(apiKey) {
+    if (!apiKey) {
+      log.warn('kisi.list_group_links_no_key', {});
+      return [];
+    }
+    const links = await _fetchAllKisiPages(
+      '/group_links',
+      (limit, offset) => `/group_links?limit=${limit}&offset=${offset}`,
+      apiKey
+    );
+    return links.map(l => {
+      const n = _normalizeGroupLink(l);
+      return { id: n.id, name: n.name, groupId: n.groupId, validUntil: n.validUntil, ownerClientId: n.ownerClientId };
+    });
+  }
 }
 
 const adapter = new KisiAdapter();
 adapter.buildAccessSyncMarker = buildAccessSyncMarker;
 adapter.parseAccessSyncMarker = parseAccessSyncMarker;
 adapter.findElevatedAssignments = findElevatedAssignments;
+adapter._normalizeGroupLink = _normalizeGroupLink;
 module.exports = adapter;

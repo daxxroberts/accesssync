@@ -54,6 +54,17 @@ const SENSITIVE_FIELDS = new Set([
   'refresh_token',
   'cookie',
   'set-cookie',
+  // Day-pass bearer credentials (OB-98 / OB-251) — a Kisi group link's URL, QR
+  // image, or QR token opens the door for anyone holding it until it expires.
+  'linkUrl',
+  'link_url',
+  'link',
+  'share_url',
+  'qrToken',
+  'quick_response_code_token',
+  'qrImageBase64',
+  'quick_response_code_image',
+  'qrImageUrl',
   // Service keys
   'OPERATOR_INVITE_TOKEN',
   'OWNER_PIN',
