@@ -274,3 +274,45 @@ describe('[P3] Edge cases that could cause silent wrong-member provisioning', ()
   });
 
 });
+
+// --- wixOrderId Resolution -------------------------------------------------
+// One Wix purchase fires three grant webhooks with three different event ids
+// but ONE order id: orderUpdated ({ data: { entity } }) plus orderPurchased and
+// orderStarted ({ data: { data: { order } } }). The order id is what the
+// access-ready email dedups on and what the ingress trace id is derived from --
+// if any shape drops it, members get one email and one trace PER WEBHOOK.
+
+describe('[P3] Wix webhook -> wixOrderId resolves on every production payload shape', () => {
+  const ORDER_ID = 'df8d1946-a77a-3707-b2e1-e637c65cd8dc';
+  const paidOrder = {
+    _id: ORDER_ID, planId: CONNECT_PLAN_ID, status: 'ACTIVE', lastPaymentStatus: 'PAID',
+    buyer: { memberId: WIX_MEMBER_ID },
+  };
+
+  it('orderUpdated -- { data: { entity } }', () => {
+    const r = wixAdapter.parseEvent('wixPricingPlans.orderUpdated', 'site-001', { data: { entity: paidOrder } });
+    expect(r.eventType).toBe('plan.purchased');
+    expect(r.wixOrderId).toBe(ORDER_ID);
+  });
+
+  it('orderPurchased -- double-wrapped { data: { data: { order } } }', () => {
+    const r = wixAdapter.parseEvent('wixPricingPlans.orderPurchased', 'site-001', { data: { data: { order: paidOrder } } });
+    expect(r.eventType).toBe('plan.purchased');
+    expect(r.wixOrderId).toBe(ORDER_ID);
+  });
+
+  it('orderStarted -- double-wrapped { data: { data: { order } } }', () => {
+    const r = wixAdapter.parseEvent('wixPricingPlans.orderStarted', 'site-001', { data: { data: { order: paidOrder } } });
+    expect(r.eventType).toBe('plan.started');
+    expect(r.wixOrderId).toBe(ORDER_ID);
+  });
+
+  it('all three shapes agree on the same order id (the email dedup + trace key)', () => {
+    const ids = [
+      wixAdapter.parseEvent('wixPricingPlans.orderUpdated',   'site-001', { data: { entity: paidOrder } }),
+      wixAdapter.parseEvent('wixPricingPlans.orderPurchased', 'site-001', { data: { data: { order: paidOrder } } }),
+      wixAdapter.parseEvent('wixPricingPlans.orderStarted',   'site-001', { data: { data: { order: paidOrder } } }),
+    ].map(e => e.wixOrderId);
+    expect(new Set(ids).size).toBe(1);
+  });
+});

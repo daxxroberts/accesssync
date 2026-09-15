@@ -2,7 +2,7 @@
  * @file trace-context.js
  * @layer core/shared
  * @role logging-context
- * @exports runWith, setActor, getContext, getTraceId, getActor, mintTraceId
+ * @exports runWith, setActor, getContext, getTraceId, getActor, mintTraceId, deriveTraceId
  * @dr DR-037
  *
  * Universal trace + actor context via AsyncLocalStorage.
@@ -110,6 +110,39 @@ function getActor() {
  */
 function mintTraceId() {
   return crypto.randomUUID();
+}
+
+// Fixed namespace for deterministic trace ids. Never change it — every trace
+// derived from a Wix order id hashes through it, and changing it would split
+// an order's history into two traces at the deploy boundary.
+const TRACE_NAMESPACE = Buffer.from('7a1c0b6e5f2d4e8fa9b3c4d5e6f70812', 'hex');
+
+/**
+ * Derive a deterministic RFC 4122 v5 trace ID from a stable business key,
+ * e.g. 'wix-order:<orderId>'.
+ *
+ * Every webhook that carries the same key lands in the same trace, so one
+ * purchase (orderUpdated ×N → orderPurchased → orderStarted, then later
+ * renewals / cancellation on the same order) reads as ONE timeline in the
+ * Logs view instead of one trace per Wix webhook. Same input → same id, so
+ * concurrent webhooks need no DB lookup to agree on the trace.
+ *
+ * Output passes the version/variant checks in admin/routes/logs.js and
+ * admin/middleware/trace-context.js (version nibble 5, variant 8-b).
+ *
+ * @param {string} name - stable key; callers namespace it ('wix-order:…')
+ * @returns {string} UUID v5
+ */
+function deriveTraceId(name) {
+  const hash = crypto.createHash('sha1')
+    .update(TRACE_NAMESPACE)
+    .update(String(name), 'utf8')
+    .digest();
+  const b = Buffer.from(hash.subarray(0, 16));
+  b[6] = (b[6] & 0x0f) | 0x50; // version 5
+  b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const h = b.toString('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
 /**
@@ -338,6 +371,7 @@ module.exports = {
   getTraceId,
   getActor,
   mintTraceId,
+  deriveTraceId,
   registerTrace,
   setTraceContext,
 };

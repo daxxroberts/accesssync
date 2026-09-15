@@ -22,6 +22,7 @@ const setupTelemetry = require('../../core/setup-telemetry'); // OB-237 Phase C
 const { decryptApiKey } = require('../../core/crypto-utils'); // OB-238
 const db = require('../../db'); // OB-238
 const { log } = require('../../core/logger');
+const { deriveTraceId } = require('../../core/trace-context');
 
 class WixConnector {
   constructor() {
@@ -37,7 +38,9 @@ class WixConnector {
    */
   async handleWebhook(req, res) {
     // Hoist traceId so the catch block can include it in the error log.
-    const traceId = crypto.randomUUID();
+    // Starts random; re-derived from the Wix order id once the payload is parsed
+    // (see below) so every webhook for one order shares a trace.
+    let traceId = crypto.randomUUID();
     try {
       // Use raw body captured by server.js middleware for HMAC verification (P1 fix).
       // Re-serializing req.body risks field ordering differences that break signature checks.
@@ -133,6 +136,18 @@ class WixConnector {
       }
 
       const standardEvent = wixAdapter.parseEvent(eventType, wixSiteId, req.body);
+
+      // One trace per Wix ORDER, not per webhook. A single purchase arrives as
+      // several webhooks inside the same second -- orderUpdated (DRAFT/UNPAID x2),
+      // orderUpdated (ACTIVE/PAID), orderPurchased, orderStarted -- each with its
+      // own event id (verified in production webhook_log 2026-09-14), and later
+      // renewals / cancellation carry the same order id. Deriving the trace id
+      // from the order id folds all of them into one timeline in the Logs view.
+      // Events with no order id (bookings, member.deleted) keep the random id.
+      if (typeof standardEvent.wixOrderId === 'string' && standardEvent.wixOrderId.trim()) {
+        traceId = deriveTraceId('wix-order:' + standardEvent.wixOrderId.trim());
+      }
+
       standardEvent.platformClientIdHint = clientIdHint;
       standardEvent.traceId  = traceId;
       standardEvent.eventId  = eventId;

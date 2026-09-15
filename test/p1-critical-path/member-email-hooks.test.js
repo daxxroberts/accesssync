@@ -162,6 +162,45 @@ describe('[P1] DR-052 maybeSendGrantEmail — allow-list suppression', () => {
     expect(insert[1][3]).toBe(`${ACCESS}:sp-1:ord-1`);            // dedup key: renewal-safe (same order suppressed)
   });
 
+  test('one purchase = orderUpdated + orderPurchased + orderStarted → ONE dedup key (order id, never event id)', async () => {
+    // 2026-09-14: a member got three "access ready" emails for one purchase because the
+    // key fell back to the per-webhook eventKey. All three must collapse to the order id,
+    // even when the assignment row carries no wixOrderId (idempotent re-grant path).
+    const ORDER = 'df8d1946-a77a-3707-b2e1-e637c65cd8dc';
+    const noOrderOnAssignment = [{ mappingId: 'map-1', planName: 'Monthly', sourcePlanId: 'sp-1' }];
+    const webhooks = [
+      { eventType: 'plan.purchased', planId: 'sp-1', wixOrderId: ORDER, eventKey: 'evt-orderUpdated' },
+      { eventType: 'plan.purchased', planId: 'sp-1', wixOrderId: ORDER, eventKey: 'evt-orderPurchased' },
+      { eventType: 'plan.started',   planId: 'sp-1', wixOrderId: ORDER, eventKey: 'evt-orderStarted' },
+    ];
+    const keys = [];
+    for (const w of webhooks) {
+      mockDb({ memberRow: MEMBER, planRows: [{ plan_name: 'Monthly', door_name: 'Front' }] });
+      await mailer.maybeSendGrantEmail({
+        clientId: CLIENT, accessId: ACCESS,
+        standardEvent: { eventType: w.eventType, planId: w.planId, wixOrderId: w.wixOrderId },
+        assignments: noOrderOnAssignment, eventKey: w.eventKey,
+      });
+      const insert = db.query.mock.calls.find(c => /INSERT INTO member_email_log/.test(c[0]));
+      keys.push(insert[1][3]);
+      jest.clearAllMocks();
+      mockResendSend.mockResolvedValue({ data: { id: 'resend-abc' }, error: null });
+    }
+    expect(new Set(keys).size).toBe(1);
+    expect(keys[0]).toBe(`${ACCESS}:sp-1:${ORDER}`);
+  });
+
+  test('no order id anywhere → falls back to eventKey (never blocks the email)', async () => {
+    mockDb({ memberRow: MEMBER, planRows: [{ plan_name: 'Monthly', door_name: 'Front' }] });
+    await mailer.maybeSendGrantEmail({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'plan.purchased', planId: 'sp-1' },
+      assignments: [{ mappingId: 'map-1', sourcePlanId: 'sp-1' }], eventKey: 'evt-only',
+    });
+    const insert = db.query.mock.calls.find(c => /INSERT INTO member_email_log/.test(c[0]));
+    expect(insert[1][3]).toBe(`${ACCESS}:sp-1:evt-only`);
+  });
+
   test('reconcile-sourced synthetic → suppressed, no member lookup at all', async () => {
     mockDb({ memberRow: MEMBER });
     const r = await mailer.maybeSendGrantEmail({

@@ -258,7 +258,14 @@ async function maybeSendGrantEmail({ clientId, accessId, standardEvent, assignme
     }
 
     const planId  = (standardEvent && standardEvent.planId) || (assignments && assignments[0] && assignments[0].sourcePlanId) || 'na';
-    const orderId = (assignments && assignments[0] && assignments[0].wixOrderId) || eventKey || 'noorder';
+    // Dedup on the Wix ORDER, never the webhook event. One purchase arrives as
+    // orderUpdated + orderPurchased + orderStarted -- three event ids, one order
+    // id -- and each runs its own grant job. Keying on eventKey is what sent
+    // members three "access ready" emails for one purchase (2026-09-14).
+    const orderId =
+      (standardEvent && standardEvent.wixOrderId) ||
+      (assignments && assignments[0] && assignments[0].wixOrderId) ||
+      eventKey || 'noorder';
 
     if (m.sub_master_id) {
       // M3 — sub-member: "{holder} added you to {plan} at {gym}"
