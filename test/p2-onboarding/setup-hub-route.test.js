@@ -117,7 +117,7 @@ describe('POST /operator/:clientId/setup-state/copied', () => {
     expect(db.query).toHaveBeenCalledTimes(2);
     const upsertCall = db.query.mock.calls[1];
     expect(upsertCall[0]).toContain('installed_unverified');
-    expect(upsertCall[1]).toEqual(['client-1', 'velo_events_backend', 'v2.1.0']);
+    expect(upsertCall[1]).toEqual(['client-1', 'velo_events_backend', 'v2.2.0']);
   });
 
   test('400 when snippet_id missing', async () => {

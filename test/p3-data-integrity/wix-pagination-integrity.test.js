@@ -407,9 +407,11 @@ describe('[P3] listConfirmedBookings — contract unchanged', () => {
 
 describe('[P3] wix-plans-api exports', () => {
   test('listOrdersClassified is exported alongside the existing exports', () => {
+    // listStoreProducts joined 2026-09-14 (OB-98): day passes are sold as Wix Stores
+    // products, so products are mappable to a door alongside plans and services.
     expect(Object.keys(wixPlansApi).sort()).toEqual([
       'listActiveOrders', 'listAllMappable', 'listBookingServices', 'listConfirmedBookings',
-      'listOrdersClassified', 'listPricingPlans', 'testApiKey',
+      'listOrdersClassified', 'listPricingPlans', 'listStoreProducts', 'testApiKey',
     ]);
   });
 });

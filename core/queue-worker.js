@@ -82,7 +82,7 @@ async function _runDayPassGrant({ tenantId, memberId, mappings, standardEvent, e
   const clientId = tenantId;
   const planId = standardEvent.planId || null;
 
-  const endDate = grantRevokeLogic.dayPassEndDate(standardEvent);
+  const endDate = grantRevokeLogic.dayPassEndDate(standardEvent, mappings);
   if (!endDate) {
     logger.info('grant.day_pass.synthetic_skipped', {
       clientId, memberId, eventId,
@@ -152,6 +152,59 @@ async function _runDayPassGrant({ tenantId, memberId, mappings, standardEvent, e
     links: result.links, recipientEmail: identity.email,
     eventKey: eventId || job.id,
   }).catch(() => {});
+}
+
+/**
+ * OB-98 — which mapping does a Wix STORES order grant against?
+ *
+ * A plan order names exactly one plan. A store order is a basket: a day pass, two
+ * t-shirts and a protein bar all arrive on one `store.order_paid`. Only some of those
+ * are mapped to a door, and a shop that sells merchandise must not raise a
+ * PLAN_NOT_MAPPED alert every time somebody buys a shirt.
+ *
+ * So: try each line item's catalog id, take the first that resolves to a live mapping,
+ * and pin standardEvent.planId to it so every downstream write (source rows, billing,
+ * revoke scoping) keys off the product that actually granted access. Nothing mapped →
+ * `null`, and the caller returns quietly.
+ *
+ * One mapped day-pass product per order is the supported shape; a second mapped item in
+ * the same basket is logged and ignored rather than silently half-granted.
+ *
+ * @returns {Promise<Array|null>} mappings, or null when no line item is mapped
+ */
+async function _resolveStoreMappings(tenantId, standardEvent, logger) {
+  const ids = Array.isArray(standardEvent.lineItemPlanIds) && standardEvent.lineItemPlanIds.length
+    ? standardEvent.lineItemPlanIds
+    : [standardEvent.planId].filter(Boolean);
+
+  const matched = [];
+  for (const id of ids) {
+    const mappings = await planMappingResolver.resolve(tenantId, id);
+    if (Array.isArray(mappings) && mappings.length > 0) matched.push({ id, mappings });
+  }
+
+  if (matched.length === 0) {
+    logger.info('queue.grant.store.no_mapped_item', {
+      clientId: tenantId,
+      platformMemberId: standardEvent.platformMemberId,
+      wixOrderId: standardEvent.wixOrderId,
+      lineItemCount: ids.length,
+      stage: 'grant', result: 'skipped',
+    });
+    return null;
+  }
+  if (matched.length > 1) {
+    logger.warn('queue.grant.store.multiple_mapped_items', {
+      clientId: tenantId,
+      platformMemberId: standardEvent.platformMemberId,
+      wixOrderId: standardEvent.wixOrderId,
+      usingPlanId: matched[0].id,
+      ignoredPlanIds: matched.slice(1).map(m => m.id),
+      stage: 'grant', result: 'success',
+    });
+  }
+  standardEvent.planId = matched[0].id;
+  return matched[0].mappings;
 }
 
 /**
@@ -328,9 +381,17 @@ async function _processJobBody(job, traceId) {
         return;
       }
 
-      // Step 1: Resolve all active plan mappings for this plan (returns array, null, or empty array)
+      // Step 1: Resolve all active plan mappings for this plan (returns array, null, or empty array).
+      // OB-98: a Wix Stores order is a basket — resolve across its line items instead
+      // (see _resolveStoreMappings), and skip quietly when nothing in it is mapped.
       lastStep = 'grant.resolve_mappings';
-      const mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
+      let mappings;
+      if (standardEvent.eventType === 'store.order_paid') {
+        mappings = await _resolveStoreMappings(tenantId, standardEvent, logger);
+        if (mappings === null) return;
+      } else {
+        mappings = await planMappingResolver.resolve(tenantId, standardEvent.planId);
+      }
       logger.info('queue.grant.mappings_resolved', {
         clientId, eventId,
         platformMemberId: standardEvent.platformMemberId,

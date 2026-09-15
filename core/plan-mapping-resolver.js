@@ -46,6 +46,7 @@ class PlanMappingResolver {
               COALESCE(pmg.hardware_group_id, pm.hardware_group_id) AS hardware_group_id,
               pm.tier_name,
               pm.access_type,
+              pm.day_pass_hours,
               pm.plan_name,
               pm.door_name,
               cs.hardware_platform,
@@ -109,6 +110,10 @@ class PlanMappingResolver {
       hardwarePlatform: row.hardware_platform || 'kisi', // DR-035: read from DB. Fallback guards legacy rows.
       tierName:         row.tier_name,
       accessType:       row.access_type || 'group',
+      // OB-98: day-pass window in hours from purchase. NULL → use the order's own
+      // end date (Pricing Plans); set → AccessSync owns the window (Stores, or a
+      // 7-day Wix plan sold as a 24-hour pass).
+      dayPassHours:     row.day_pass_hours || null,
       apiKey:           row.hardware_api_key_enc ? decryptApiKey(row.hardware_api_key_enc) : null,
                           // DR-028: null means no API key configured — hardware calls will fail with a clear error
       kisiUserPattern:  row.kisi_user_pattern || null,

@@ -193,15 +193,47 @@ async function listBookingServices(apiKey, siteId) {
 }
 
 /**
- * List all mappable items (pricing plans + booking services) for a Wix site.
- * Calls both APIs in parallel and merges into a unified list.
+ * List all Wix Stores products for a site (OB-98).
+ *
+ * Day passes are sold as store products because Wix Pricing Plans cannot go below a
+ * 7-day length — so products have to be mappable to a door exactly like plans are.
+ * Same fail-soft contract as the two lists above: [] on error, never a throw, so one
+ * dark API never empties the Plan Mapping screen.
+ */
+async function listStoreProducts(apiKey, siteId) {
+  try {
+    const data = await wixFetch('/stores-reader/v1/products/query', apiKey, siteId, {
+      method: 'POST',
+      body: { query: {} },
+    });
+    const products = data.products || [];
+    log.info('wix.store_products.fetched', { siteId, count: products.length });
+    return products.map(p => ({
+      id: p.id || p._id,
+      name: p.name || 'Unnamed Product',
+      type: 'store_product',
+      description: p.description || '',
+      status: p.visible === false ? 'hidden' : 'active',
+      slug: p.slug || null,
+      wixPrice: (p.priceData && (p.priceData.formatted?.price || p.priceData.price)) || null,
+    }));
+  } catch (err) {
+    log.error('wix.store_products.fetch_failed', { siteId, httpStatus: err.statusCode }, err);
+    return [];
+  }
+}
+
+/**
+ * List all mappable items (pricing plans + booking services + store products) for a
+ * Wix site. Calls the APIs in parallel and merges into a unified list.
  */
 async function listAllMappable(apiKey, siteId) {
-  const [plans, services] = await Promise.all([
+  const [plans, services, products] = await Promise.all([
     listPricingPlans(apiKey, siteId),
     listBookingServices(apiKey, siteId),
+    listStoreProducts(apiKey, siteId),
   ]);
-  return [...plans, ...services];
+  return [...plans, ...services, ...products];
 }
 
 /**
@@ -449,4 +481,4 @@ async function testApiKey(apiKey, siteId) {
   }
 }
 
-module.exports = { listPricingPlans, listBookingServices, listAllMappable, testApiKey, listActiveOrders, listConfirmedBookings, listOrdersClassified };
+module.exports = { listPricingPlans, listBookingServices, listStoreProducts, listAllMappable, testApiKey, listActiveOrders, listConfirmedBookings, listOrdersClassified };

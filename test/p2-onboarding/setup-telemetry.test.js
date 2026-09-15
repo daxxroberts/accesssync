@@ -28,7 +28,7 @@ describe('core/setup-telemetry.recordSnippetTelemetry()', () => {
 
   test('no-op when clientId is missing', async () => {
     const telemetry = require('../../core/setup-telemetry');
-    await telemetry.recordSnippetTelemetry(null, 'velo_events_backend', 'v2.1.0');
+    await telemetry.recordSnippetTelemetry(null, 'velo_events_backend', 'v2.2.0');
     expect(db.query).not.toHaveBeenCalled();
   });
 
@@ -41,14 +41,14 @@ describe('core/setup-telemetry.recordSnippetTelemetry()', () => {
   test('writes verified when version matches registry current_version', async () => {
     db.query.mockResolvedValueOnce({ rowCount: 1 });
     const telemetry = require('../../core/setup-telemetry');
-    await telemetry.recordSnippetTelemetry('client-1', 'velo_events_backend', 'v2.1.0');
+    await telemetry.recordSnippetTelemetry('client-1', 'velo_events_backend', 'v2.2.0');
     expect(db.query).toHaveBeenCalledTimes(1);
     const [sql, params] = db.query.mock.calls[0];
     expect(sql).toContain('operator_setup_state');
     expect(params[0]).toBe('client-1');
     expect(params[1]).toBe('velo_events_backend');
     expect(params[2]).toBe('verified');
-    expect(params[3]).toBe('v2.1.0');
+    expect(params[3]).toBe('v2.2.0');
   });
 
   test('writes stale when version does not match registry current_version', async () => {
@@ -63,7 +63,7 @@ describe('core/setup-telemetry.recordSnippetTelemetry()', () => {
     db.query.mockRejectedValueOnce(new Error('db down'));
     const telemetry = require('../../core/setup-telemetry');
     await expect(
-      telemetry.recordSnippetTelemetry('client-1', 'velo_events_backend', 'v2.1.0')
+      telemetry.recordSnippetTelemetry('client-1', 'velo_events_backend', 'v2.2.0')
     ).resolves.toBeUndefined();
   });
 });

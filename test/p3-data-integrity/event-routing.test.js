@@ -31,7 +31,9 @@ const { GRANT_EVENT_TYPES, REVOKE_EVENT_TYPES, jobNameForEventType } = require('
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
-const EXPECTED_GRANT  = ['plan.purchased', 'plan.started', 'payment.recovered', 'booking.confirmed'];
+// 'store.order_paid' joined 2026-09-14 (OB-98): a day pass is sold as a Wix Stores
+// product because Pricing Plans cannot go below a 7-day length.
+const EXPECTED_GRANT  = ['plan.purchased', 'plan.started', 'payment.recovered', 'booking.confirmed', 'store.order_paid'];
 const EXPECTED_REVOKE = ['plan.cancelled', 'payment.failed', 'booking.cancelled', 'member.deleted'];
 
 describe('[P3] event-routing — jobNameForEventType', () => {
@@ -85,7 +87,7 @@ describe('[P3] event-routing — jobNameForEventType', () => {
 });
 
 describe('[P3] event-routing — the two lists', () => {
-  test('the grant list is exactly the four grant types', () => {
+  test('the grant list is exactly the five grant types', () => {
     expect([...GRANT_EVENT_TYPES].sort()).toEqual([...EXPECTED_GRANT].sort());
   });
 

@@ -585,3 +585,8 @@ link id lives in `member_access_sources.role_assignment_id` with `source_type='d
 | `member.day_pass.link_fetch_failed` | warn | Kisi GET /group_links/:id failed — response degrades to link-only |
 | `member.day_pass.error` / `member.day_pass.qr_error` | error | Unhandled failure in the lookup / image handler |
 | `kisi.group_link.fetch_failed` | error | GET /group_links/:id failed (non-404) |
+| `queue.grant.store.no_mapped_item` | info | A paid Wix Stores order contained nothing mapped to a door (merchandise-only basket) — skipped, no alert |
+| `queue.grant.store.multiple_mapped_items` | warn | More than one mapped item in one store order — the first grants, the rest are ignored |
+| `wix.parse.store_order_no_items` | warn | A `wixStores.orderPaid` payload carried no line items |
+| `wix.store_products.fetched` | info | Wix Stores product list pulled for the Plan Mapping picker |
+| `wix.store_products.fetch_failed` | error | Stores product list unavailable — Plan Mapping still renders plans and services |

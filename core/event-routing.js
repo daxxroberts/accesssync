@@ -37,6 +37,7 @@ const GRANT_EVENT_TYPES = Object.freeze([
   'plan.started',      // phase 2 of a delayed-start grant — Wix orderStarted
   'payment.recovered',
   'booking.confirmed',
+  'store.order_paid',  // OB-98 day pass sold as a Wix Stores product
 ]);
 
 const REVOKE_EVENT_TYPES = Object.freeze([

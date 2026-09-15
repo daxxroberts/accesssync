@@ -1933,6 +1933,7 @@ router.get('/:clientId/locations/:locationId/mappings', async (req, res) => {
         `SELECT pm.id, pm.source_plan_id, pm.plan_name, pm.door_name, pm.hardware_group_id,
                 pm.status, pm.source_status, pm.allow_multiple, pm.max_members, pm.created_at,
                 COALESCE(pm.access_type, 'group') AS access_type,
+                pm.day_pass_hours,
                 COUNT(DISTINCT ma.member_master_id)::int AS member_count
          FROM plan_mappings pm
          LEFT JOIN member_access_sources mas ON mas.mapping_id = pm.id
@@ -2084,9 +2085,17 @@ const PLAN_ACCESS_TYPES = new Set(['group', 'time_limited', 'day_pass']);
 
 router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
   const { clientId, mappingId } = req.params;
-  const { status, door_name, hardware_group_id, groups, allow_multiple, max_members, location_id, addGroupId, removeGroupId, access_type } = req.body;
+  const { status, door_name, hardware_group_id, groups, allow_multiple, max_members, location_id, addGroupId, removeGroupId, access_type, day_pass_hours } = req.body;
   if (access_type !== undefined && !PLAN_ACCESS_TYPES.has(access_type)) {
     return res.status(400).json({ error: 'Invalid access_type' });
+  }
+  // OB-98 — pass length in hours. 1..720 (30 days); null clears it and falls back
+  // to the order's own end date. Rejected rather than clamped so a typo is visible.
+  if (day_pass_hours !== undefined && day_pass_hours !== null) {
+    const h = Number(day_pass_hours);
+    if (!Number.isInteger(h) || h < 1 || h > 720) {
+      return res.status(400).json({ error: 'day_pass_hours must be a whole number of hours between 1 and 720' });
+    }
   }
   try {
     // Snapshot old groups + status BEFORE any changes — needed for member sync diff
@@ -2148,6 +2157,7 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     if (allow_multiple !== undefined)    { fields.push(`allow_multiple = $${vals.length + 1}`);    vals.push(!!allow_multiple); }
     if (max_members !== undefined)       { fields.push(`max_members = $${vals.length + 1}`);       vals.push(Math.max(1, Math.min(20, parseInt(max_members) || 1))); }
     if (access_type !== undefined)       { fields.push(`access_type = $${vals.length + 1}`);       vals.push(access_type); }
+    if (day_pass_hours !== undefined)    { fields.push(`day_pass_hours = $${vals.length + 1}`);    vals.push(day_pass_hours === null ? null : Number(day_pass_hours)); }
 
     // If groups array provided, use first group for backward compat on plan_mappings row
     if (groups && Array.isArray(groups) && groups.length > 0) {

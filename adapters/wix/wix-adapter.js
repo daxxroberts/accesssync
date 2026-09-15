@@ -59,8 +59,55 @@ class WixAdapter {
       'wixBookings.bookingCanceled':    'booking.cancelled',
       'wixBookings.bookingCancelled':   'booking.cancelled',
       'wixMembers.memberDeleted':       'member.deleted',
+      // OB-98 day pass: a one-off pass is sold as a Wix STORES product, because
+      // Pricing Plans cannot go below a 7-day length (verified 2026-09-14). A paid
+      // store order is a grant trigger exactly like a plan purchase — the mapped
+      // "plan" is the product, and the access window comes from the mapping's
+      // day_pass_hours, not from the order (a store order has no end date).
+      'wixStores.orderPaid':            'store.order_paid',
     };
     return map[eventType] || eventType;
+  }
+
+  /**
+   * OB-98 — pull the fields a Wix Stores order carries that a Pricing Plans order
+   * does not: the catalog item id of every line item (what Plan Mapping maps), and
+   * a buyer email that is actually present (plan webhooks omit it, which is why the
+   * day-pass grant has to recover the address from the Members API).
+   *
+   * Guest checkout is normal here: `buyerInfo.memberId` is absent for a visitor who
+   * never logs in, so the contact id is the identity anchor instead. Either way the
+   * value lands in platformMemberId and member_master keys off it as usual.
+   */
+  _parseStoreOrder(body) {
+    const d = body?.data;
+    const order = d?.order || d?.entity || d || {};
+    const buyer = order.buyerInfo || {};
+    const lineItems = Array.isArray(order.lineItems) ? order.lineItems : [];
+
+    const lineItemPlanIds = lineItems
+      .map(li =>
+        li?.catalogReference?.catalogItemId ||
+        li?.catalogItemId ||
+        li?.productId ||
+        li?.productName?.original && null ||
+        null
+      )
+      .filter(Boolean);
+
+    const lineItemNames = lineItems
+      .map(li => (typeof li?.productName === 'object' ? li.productName.original : li?.productName) || li?.name || null)
+      .filter(Boolean);
+
+    return {
+      memberId: buyer.memberId || buyer.contactId || order.memberId || null,
+      lineItemPlanIds,
+      planName: lineItemNames[0] || null,
+      orderId:  order._id || order.id || null,
+      email:    buyer.email || null,
+      name:     [buyer.firstName, buyer.lastName].filter(Boolean).join(' ') || null,
+      isGuest:  !buyer.memberId,
+    };
   }
 
   parseEvent(eventType, wixSiteId, body) {
@@ -220,14 +267,25 @@ class WixAdapter {
       body?.name                  ||
       null;
 
-    if (!memberId) {
+    // OB-98 — a Stores order carries its identity, its items and its buyer email in
+    // a completely different shape from a plan order. Overlay those fields rather
+    // than threading store paths through every resolver above.
+    let storeOrder = null;
+    if (normalizedEventType === 'store.order_paid') {
+      storeOrder = this._parseStoreOrder(body);
+      if (storeOrder.lineItemPlanIds.length === 0) {
+        log.warn('wix.parse.store_order_no_items', { eventType: normalizedEventType });
+      }
+    }
+
+    if (!memberId && !storeOrder) {
       log.warn('wix.parse.no_member_id', { eventType: normalizedEventType, dataKeys: d ? Object.keys(d).join(',') : 'null' });
     }
-    if (!planId && normalizedEventType && !normalizedEventType.includes('member.deleted')) {
+    if (!planId && !storeOrder && normalizedEventType && !normalizedEventType.includes('member.deleted')) {
       log.warn('wix.parse.no_plan_id', { eventType: normalizedEventType, dataKeys: d ? Object.keys(d).join(',') : 'null' });
     }
 
-    return {
+    const standardEvent = {
       eventType: normalizedEventType,
       wixSiteId,
       sourcePlatform: 'wix',         // DR-021
@@ -244,6 +302,23 @@ class WixAdapter {
       timestamp: new Date().toISOString(),
       rawPayload: body
     };
+
+    if (storeOrder) {
+      standardEvent.platformMemberId = storeOrder.memberId;
+      // planId is the FIRST line item; lineItemPlanIds carries them all so the
+      // worker can find whichever item is actually mapped in a mixed basket.
+      standardEvent.planId          = storeOrder.lineItemPlanIds[0] || null;
+      standardEvent.lineItemPlanIds = storeOrder.lineItemPlanIds;
+      standardEvent.planName        = storeOrder.planName;
+      standardEvent.wixOrderId      = storeOrder.orderId;
+      standardEvent.email           = storeOrder.email;
+      standardEvent.name            = storeOrder.name;
+      standardEvent.isGuestCheckout = storeOrder.isGuest;
+      // A store order has no end date — the window is the mapping's day_pass_hours.
+      standardEvent.endDate         = null;
+    }
+
+    return standardEvent;
   }
 }
 

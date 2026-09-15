@@ -417,18 +417,33 @@ class GrantRevokeLogic {
   }
 
   /**
-   * Day pass (OB-98 / OB-251) — the order's end date is the credential's expiry.
-   * Returns it, or null for a SYNTHETIC event that carries none (reconcile re-grants
-   * never do, and must be a no-op — throwing would flip the member inactive while the
-   * link is still live, and the expiry sweep could then never find the row). A REAL
-   * webhook without an end date is a payload defect: throw DAY_PASS_NO_END_DATE so
-   * it dead-letters visibly instead of issuing a credential with no expiry.
+   * Day pass (OB-98 / OB-251) — when does this credential expire?
+   *
+   * Precedence, and why:
+   *   1. The mapping's day_pass_hours → purchase time + N hours. Wix cannot sell a
+   *      one-day plan (Pricing Plans floors length at 7 days; a Stores order has no
+   *      end date at all), so for a day pass the window is AccessSync's to set. A
+   *      7-day Wix plan sold as a 24-hour pass expires here, not a week later.
+   *   2. Otherwise the order's own end date — the original Pricing-Plans behaviour.
+   *   3. Otherwise null for a SYNTHETIC event (reconcile re-grants carry no dates and
+   *      must be a no-op — throwing would flip the member inactive while the link is
+   *      live, and the sweep could then never find the row).
+   *   4. Otherwise throw: a real purchase with neither a configured window nor an end
+   *      date would mint a credential with no expiry. Dead-letter it visibly instead.
    */
-  dayPassEndDate(wixEvent) {
+  dayPassEndDate(wixEvent, mappings = []) {
+    const hours = (mappings || [])
+      .map(m => Number(m && m.dayPassHours))
+      .find(h => Number.isFinite(h) && h > 0);
+    if (hours) return new Date(Date.now() + hours * 3600_000).toISOString();
+
     const endDate = (wixEvent && wixEvent.endDate) || null;
     if (endDate) return endDate;
     if (wixEvent && wixEvent.synthetic) return null;
-    const err = new Error('Day pass grant requires an order end date (valid_until) — none on the event');
+
+    const err = new Error(
+      'Day pass grant needs an expiry: set a pass length on the plan mapping, or the order must carry an end date'
+    );
     err.code = 'DAY_PASS_NO_END_DATE';
     throw err;
   }
@@ -447,7 +462,7 @@ class GrantRevokeLogic {
    *   links       → member-mailer (linkUrl / qrImage* — bearer credentials, never logged)
    */
   async processDayPassGrant(tenantId, memberId, mappings, wixEvent, opts = {}) {
-    const endDate = this.dayPassEndDate(wixEvent);
+    const endDate = this.dayPassEndDate(wixEvent, mappings);
     const assignments = [];
     const links = [];
     if (!endDate) return { assignments, links };
