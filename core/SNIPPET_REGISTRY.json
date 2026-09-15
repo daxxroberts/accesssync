@@ -85,6 +85,27 @@
         "Paste the snippet below"
       ],
       "template": "// AccessSync My Access (Member Hub) — version {{VERSION}}\nimport { currentMember } from 'wix-members-frontend';\n\nconst ADMIN_HUB = '{{ADMIN_HUB_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\nconst SNIPPET_VERSION = '{{VERSION}}';\n\n$w.onReady(async function () {\n  const member = await currentMember.getMember();\n  if (!member?._id) { $w('#btnMyAccess').hide(); return; }\n  const url = ADMIN_HUB + '/member-hub'\n    + '?memberId=' + encodeURIComponent(member._id)\n    + '&clientId=' + encodeURIComponent(CLIENT_ID)\n    + '&v=' + encodeURIComponent(SNIPPET_VERSION);\n  $w('#btnMyAccess').link = url;\n  $w('#btnMyAccess').target = '_blank';\n  $w('#btnMyAccess').show();\n});\n"
+    },
+    {
+      "id": "thank_you_day_pass",
+      "name": "Thank You Page Day-Pass QR",
+      "display_group": "post_purchase_flow",
+      "category": "optional",
+      "criticality": "medium",
+      "description": "Shows a day-pass buyer their QR code and unlock link right on your Wix Thank You page, seconds after checkout — no waiting for the email. Two parts: a small Velo BACKEND file that asks AccessSync for the pass (signed with your webhook secret, so the door credential is only ever released to your own site's server, never to the browser on its own), and page code that polls it and fills in an image, a text, and a button. Nothing shows for purchases that aren't day passes.",
+      "wix_install_path": "Wix Editor → Dev Mode → Backend → new file accesssync-daypass.jsw; then your Thank You page → a Container (id boxDayPass) holding an Image (id imgDayPassQr), a Text (id txtDayPassExpiry) and a Button (id btnDayPassUnlock) → page code",
+      "current_version": "v1.0.0",
+      "required_env_vars": ["CORE_ENGINE_URL"],
+      "verify_via": "none",
+      "stale_after_days": 60,
+      "instructions": [
+        "Make sure the events.js snippet above is installed and the 'accesssync_webhook_secret' secret exists in Secrets Manager — this snippet signs with that same secret",
+        "In Dev Mode, click Backend → + New File → name it 'accesssync-daypass.jsw' and paste PART 1 of the snippet below",
+        "Open your Thank You page and add a Container box with ID 'boxDayPass'; inside it add an Image (ID 'imgDayPassQr'), a Text (ID 'txtDayPassExpiry') and a Button (ID 'btnDayPassUnlock', e.g. labeled \"Can't scan? Tap to unlock\"); set the box to Collapsed on load",
+        "Open the page's Velo code panel and paste PART 2 of the snippet below",
+        "Save and publish your Wix site"
+      ],
+      "template": "// ===== PART 1 — Backend → accesssync-daypass.jsw =====\n// AccessSync day-pass lookup (backend) — version {{VERSION}}\n// Runs on Wix's server: the member id comes from wix-members-backend and the\n// request is signed with your webhook secret, so a browser can never ask for\n// someone else's pass.\nimport { fetch } from 'wix-fetch';\nimport { getSecret } from 'wix-secrets-backend';\nimport { currentMember } from 'wix-members-backend';\nimport { createHmac } from 'crypto';\n\nconst CORE_ENGINE_URL = '{{CORE_ENGINE_URL}}';\nconst CLIENT_ID = '{{CLIENT_ID}}';\n\nexport async function getMyDayPass() {\n  try {\n    const member = await currentMember.getMember();\n    if (!member || !member._id) return { status: 'none' };\n    const body = JSON.stringify({ platformMemberId: member._id });\n    const secret = await getSecret('accesssync_webhook_secret');\n    const sig = createHmac('sha256', secret).update(body).digest('base64');\n    const res = await fetch(CORE_ENGINE_URL + '/member/day-pass', {\n      method: 'POST',\n      headers: {\n        'Content-Type': 'application/json',\n        'x-wix-signature': sig,\n        'x-accesssync-client-id': CLIENT_ID\n      },\n      body\n    });\n    return res.ok ? await res.json() : { status: 'none' };\n  } catch (e) {\n    console.error('AccessSync day pass lookup error:', e);\n    return { status: 'none' };\n  }\n}\n\n// ===== PART 2 — Thank You page code =====\n// AccessSync Thank You page day-pass QR — version {{VERSION}}\nimport { getMyDayPass } from 'backend/accesssync-daypass';\n\nconst POLL_MS = 3000;\nconst MAX_POLLS = 20;              // ~60s — the pass is usually ready a few seconds after checkout\nconst GIVE_UP_IF_NONE_AFTER = 5;   // ~15s of 'none' means this wasn't a day-pass purchase\n\n$w.onReady(async function () {\n  $w('#boxDayPass').collapse();\n  for (let i = 0; i < MAX_POLLS; i++) {\n    const pass = await getMyDayPass();\n    if (pass.status === 'ready') { showPass(pass); return; }\n    if (pass.status === 'expired') return;\n    if (pass.status === 'none' && i >= GIVE_UP_IF_NONE_AFTER) return;\n    await new Promise(r => setTimeout(r, POLL_MS));\n  }\n});\n\nfunction showPass(pass) {\n  if (pass.qrUrl) { $w('#imgDayPassQr').src = pass.qrUrl; $w('#imgDayPassQr').show(); }\n  else { $w('#imgDayPassQr').hide(); }\n  const until = pass.validUntil ? new Date(pass.validUntil).toLocaleString() : '';\n  $w('#txtDayPassExpiry').text = until\n    ? 'Your pass is good until ' + until + '. Show this code at the door.'\n    : 'Show this code at the door.';\n  if (pass.unlockUrl) {\n    $w('#btnDayPassUnlock').link = pass.unlockUrl;\n    $w('#btnDayPassUnlock').target = '_blank';\n    $w('#btnDayPassUnlock').show();\n  } else {\n    $w('#btnDayPassUnlock').hide();\n  }\n  $w('#boxDayPass').expand();\n}\n"
     }
   ]
 }

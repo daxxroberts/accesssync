@@ -161,6 +161,16 @@ class WixConnector {
   }
 
   /**
+   * OB-98 day pass: the member day-pass API (core/day-pass-api.js) accepts requests
+   * carrying the same trust as a webhook — HMAC-SHA256 over the raw body with the
+   * client's Wix webhook secret, sent by a Velo BACKEND module. Public wrapper so
+   * that module doesn't reach into an underscore method.
+   */
+  async verifySignedRequest(rawBody, signature, clientIdHint) {
+    return this._verifySignature(rawBody, signature, clientIdHint || null);
+  }
+
+  /**
    * Verifies the Wix HMAC-SHA256 signature.
    *
    * OB-238: tries per-client secret first (clients.wix_webhook_secret), falls

@@ -483,10 +483,11 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
     const attachments = [];
     let qrSrc = null;
     if (primary.qrImageBase64) {
+      const mime = primary.qrImageMime || 'image/png';
       attachments.push({
-        filename:    'day-pass-qr.png',
+        filename:    'day-pass-qr.' + (mime === 'image/svg+xml' ? 'svg' : mime.replace('image/', '')),
         content:     primary.qrImageBase64,
-        contentType: 'image/png',
+        contentType: mime,
         contentId:   DAY_PASS_QR_CID,
       });
       qrSrc = 'cid:' + DAY_PASS_QR_CID;

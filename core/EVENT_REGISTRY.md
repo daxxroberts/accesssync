@@ -578,3 +578,10 @@ link id lives in `member_access_sources.role_assignment_id` with `source_type='d
 | `day_pass_sweep.orphan_delete_failed` / `day_pass_sweep.list_links_failed` / `day_pass_sweep.key_decrypt_failed` | warn | Orphan pass skipped a client or a link |
 | `day_pass_sweep.fatal` | critical | Sweep process crashed (Railway Cron entry point) |
 | `admin.scheduler.day_pass_sweep_armed` / `_start` / `_complete` / `_failed` | warn / error | In-process 15-minute scheduler lifecycle (admin/server.js) |
+| `member.day_pass.lookup` | info | Thank-you page asked for a member's day pass (found / not, source status) — `core/day-pass-api.js` |
+| `member.day_pass.ready` | info | Pass returned to the thank-you page (whether a QR image and a link URL were available — never the values) |
+| `member.day_pass.qr_served` | info | QR image streamed from a valid short-lived signed URL |
+| `member.day_pass.rejected` | warn | POST /member/day-pass failed HMAC verification |
+| `member.day_pass.link_fetch_failed` | warn | Kisi GET /group_links/:id failed — response degrades to link-only |
+| `member.day_pass.error` / `member.day_pass.qr_error` | error | Unhandled failure in the lookup / image handler |
+| `kisi.group_link.fetch_failed` | error | GET /group_links/:id failed (non-404) |

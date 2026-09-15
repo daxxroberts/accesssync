@@ -72,6 +72,16 @@ app.get('/member/access-status', async (req, res) => {
     await memberSyncApi.getAccessStatus(req, res);
 });
 
+// Day pass (OB-98): thank-you-page QR. POST is HMAC-signed by a Velo backend module
+// (same secret as /webhooks/wix); GET serves the QR image from a 10-minute signed URL.
+const dayPassApi = require('./core/day-pass-api');
+app.post('/member/day-pass', async (req, res) => {
+    await dayPassApi.handleLookup(req, res);
+});
+app.get('/member/day-pass/qr.png', async (req, res) => {
+    await dayPassApi.handleQrImage(req, res);
+});
+
 // --- Boot Server ---
 const serverInstance = app.listen(PORT, () => {
     log.info('server.started', { port: PORT, env: process.env.NODE_ENV });

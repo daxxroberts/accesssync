@@ -59,11 +59,12 @@ function _normalizeGroupLink(data) {
   const rawImg = typeof d.quick_response_code_image === 'string' ? d.quick_response_code_image : null;
   let qrImageBase64 = null;
   let qrImageUrl = null;
+  let qrImageMime = null;
   if (rawImg) {
-    const dataUri = rawImg.match(/^data:image\/[a-z0-9+.-]+;base64,(.+)$/i);
-    if (dataUri) qrImageBase64 = dataUri[1];
+    const dataUri = rawImg.match(/^data:(image\/[a-z0-9+.-]+);base64,(.+)$/i);
+    if (dataUri) { qrImageMime = dataUri[1].toLowerCase(); qrImageBase64 = dataUri[2]; }
     else if (/^https?:\/\//i.test(rawImg)) qrImageUrl = rawImg;
-    else qrImageBase64 = rawImg;
+    else { qrImageMime = 'image/png'; qrImageBase64 = rawImg; }
   }
   const linkUrl = d.url || d.link || d.link_url || d.share_url || null;
   const marker = parseAccessSyncMarker(d.name);
@@ -75,6 +76,7 @@ function _normalizeGroupLink(data) {
     linkUrl:       typeof linkUrl === 'string' ? linkUrl : null,
     qrImageBase64,
     qrImageUrl,
+    qrImageMime,
     qrToken:       d.quick_response_code_token || null,
     validFrom:     d.valid_from || null,
     validUntil:    d.valid_until || null,
@@ -856,6 +858,22 @@ class KisiAdapter {
       responseKeys: (data && typeof data === 'object') ? Object.keys(data) : [],
     });
     return link;
+  }
+
+  /**
+   * Fetch one group link (day-pass thank-you page, core/day-pass-api.js). Returns the
+   * normalized link — including the QR image if Kisi returns it on GET (unverified
+   * live; the API degrades to link-only when it does not) — or null on 404.
+   */
+  async getGroupLink(apiKey, groupLinkId) {
+    try {
+      const data = await kisiConnector.makeRequest(`/group_links/${groupLinkId}`, { method: 'GET' }, apiKey);
+      return _normalizeGroupLink(data);
+    } catch (err) {
+      if (err.statusCode === 404) return null;
+      log.error('kisi.group_link.fetch_failed', { groupLinkId, statusCode: err.statusCode || null, code: err.code || null });
+      throw err;
+    }
   }
 
   /**

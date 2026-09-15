@@ -496,6 +496,7 @@ class GrantRevokeLogic {
           linkUrl:         link.linkUrl || null,
           qrImageBase64:   link.qrImageBase64 || null,
           qrImageUrl:      link.qrImageUrl || null,
+          qrImageMime:     link.qrImageMime || null,
           validFrom:       wixEvent.startDate || null,
           validUntil:      endDate,
         });

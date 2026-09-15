@@ -72,6 +72,7 @@ const _requiredFieldsByPlatform = {
     // Day pass (OB-98 / OB-251): a group link is the credential — no userId.
     createGroupLink: ['groupId', 'clientId', 'validUntil'],
     deleteGroupLink: ['groupLinkId'],
+    getGroupLink:    ['groupLinkId'],
   },
   seam: {
     // TODO: populated when Seam adapter is built (post-V1).
@@ -243,6 +244,12 @@ class HardwareAdapter {
   async deleteGroupLink(hardwarePlatform, apiKey, groupLinkId, options = {}) {
     this._validate(hardwarePlatform, 'deleteGroupLink', { groupLinkId });
     return this._getAdapterWith(hardwarePlatform, 'deleteGroupLink').deleteGroupLink(apiKey, groupLinkId, options);
+  }
+
+  /** One group link by id, normalized, or null on 404 (day-pass thank-you page). */
+  async getGroupLink(hardwarePlatform, apiKey, groupLinkId) {
+    this._validate(hardwarePlatform, 'getGroupLink', { groupLinkId });
+    return this._getAdapterWith(hardwarePlatform, 'getGroupLink').getGroupLink(apiKey, groupLinkId);
   }
 
   /** All group links in the org — [{ id, name, groupId, validUntil, ownerClientId }]. */
