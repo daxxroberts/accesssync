@@ -99,14 +99,21 @@ class WixAdapter {
       .map(li => (typeof li?.productName === 'object' ? li.productName.original : li?.productName) || li?.name || null)
       .filter(Boolean);
 
+    // Velo's wixStores_onOrderPaid sends buyerInfo as { id, identityType, email, ... }
+    // (verified against dev.wix.com 2026-09-18) — identityType 'MEMBER' is a logged-in
+    // site member, 'CONTACT' a guest checkout. The eCom REST shape uses memberId /
+    // contactId instead, so both are read.
+    const buyerId  = buyer.memberId || buyer.id || buyer.contactId || order.memberId || null;
+    const isMember = buyer.identityType ? buyer.identityType === 'MEMBER' : !!buyer.memberId;
+
     return {
-      memberId: buyer.memberId || buyer.contactId || order.memberId || null,
+      memberId: buyerId,
       lineItemPlanIds,
       planName: lineItemNames[0] || null,
       orderId:  order._id || order.id || null,
       email:    buyer.email || null,
       name:     [buyer.firstName, buyer.lastName].filter(Boolean).join(' ') || null,
-      isGuest:  !buyer.memberId,
+      isGuest:  !isMember,
     };
   }
 

@@ -94,6 +94,44 @@ describe('[P1] store order — routing and parsing', () => {
   });
 });
 
+describe('[P1] store order — the REAL Velo payload (wixStores_onOrderPaid)', () => {
+  // Shape verified against dev.wix.com 2026-09-18. events.js sends { eventType, data: <order> }:
+  // the order IS data, the buyer id is buyerInfo.id (+ identityType), and a line item
+  // carries productId + name. The first live purchase was rejected as invalid_structure
+  // because the parser only read buyerInfo.memberId.
+  function veloBody(identityType) {
+    return {
+      eventType: 'wixStores.orderPaid',
+      data: {
+        _id: 'd5d43d01-d9a4-4cc2-b257-61184b881447',
+        number: 10019,
+        paymentStatus: 'PAID',
+        buyerInfo: { id: 'f6c2c0f9-4e9f-a58d-a02d-9af2497294d9', identityType, firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' },
+        lineItems: [{ index: 1, quantity: 1, name: '1-Day Pass', productId: PRODUCT_ID, lineItemType: 'DIGITAL' }],
+      },
+    };
+  }
+
+  test('a logged-in member: id, order, product and email all resolve', () => {
+    const ev = wixAdapter.parseEvent('wixStores.orderPaid', 'site-1', veloBody('MEMBER'));
+    expect(ev.eventType).toBe('store.order_paid');
+    expect(ev.platformMemberId).toBe('f6c2c0f9-4e9f-a58d-a02d-9af2497294d9');
+    expect(ev.wixOrderId).toBe('d5d43d01-d9a4-4cc2-b257-61184b881447');
+    expect(ev.lineItemPlanIds).toEqual([PRODUCT_ID]);
+    expect(ev.planName).toBe('1-Day Pass');
+    expect(ev.email).toBe('jane@example.com');
+    expect(ev.name).toBe('Jane Doe');
+    expect(ev.isGuestCheckout).toBe(false);
+  });
+
+  test('a guest checkout (identityType CONTACT) still resolves — and is flagged', () => {
+    const ev = wixAdapter.parseEvent('wixStores.orderPaid', 'site-1', veloBody('CONTACT'));
+    expect(ev.platformMemberId).toBe('f6c2c0f9-4e9f-a58d-a02d-9af2497294d9');
+    expect(ev.email).toBe('jane@example.com');
+    expect(ev.isGuestCheckout).toBe(true);
+  });
+});
+
 describe('[P1] day pass window — dayPassEndDate precedence', () => {
   const NOW = 1789000000000;
   beforeEach(() => jest.spyOn(Date, 'now').mockReturnValue(NOW));
