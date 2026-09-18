@@ -922,7 +922,7 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
   const { clientId } = req.params;
   try {
     const clientResult = await db.query(
-      `SELECT cs.hardware_api_key FROM connector_subscriptions cs
+      `SELECT cs.hardware_api_key, cs.hardware_platform FROM connector_subscriptions cs
        WHERE cs.client_id = $1 AND cs.status = 'active' LIMIT 1`,
       [clientId]
     );
@@ -942,6 +942,9 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
         locks_count:   g.locks_count  ?? 0,
         members_count: g.members_count ?? 0,
       })),
+      // Day pass is a hardware capability (guest QR credential) — Plan Mapping hides
+      // the toggle when the connector cannot mint one.
+      capabilities: { dayPass: hardwareAdapter.supportsDayPass(clientResult.rows[0].hardware_platform) },
       count: groups.length,
       keyStatus: 'ok',
       noGroups: groups.length === 0,
@@ -2098,6 +2101,24 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     }
   }
   try {
+    // A day pass needs a connector that can mint a guest QR credential. Refused here
+    // so an operator finds out at setup — not when a paying guest gets no pass.
+    if (access_type === 'day_pass') {
+      const cs = await db.query(
+        `SELECT hardware_platform FROM connector_subscriptions
+         WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+        [clientId]
+      );
+      const platform = cs.rows[0] && cs.rows[0].hardware_platform;
+      if (!hardwareAdapter.supportsDayPass(platform)) {
+        log.warn('operator.plan_mapping.day_pass_unsupported', { clientId, mappingId, hardwarePlatform: platform || null });
+        return res.status(400).json({
+          error: 'Day passes are not available on your access control system. They require a connector that supports guest QR codes (Kisi).',
+          code: 'DAY_PASS_UNSUPPORTED',
+        });
+      }
+    }
+
     // Snapshot old groups + status BEFORE any changes — needed for member sync diff
     const [oldGroupsResult, oldMappingResult] = await Promise.all([
       db.query('SELECT hardware_group_id FROM plan_mapping_groups WHERE mapping_id = $1', [mappingId]),

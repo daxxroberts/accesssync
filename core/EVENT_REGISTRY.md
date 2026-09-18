@@ -590,3 +590,4 @@ link id lives in `member_access_sources.role_assignment_id` with `source_type='d
 | `wix.parse.store_order_no_items` | warn | A `wixStores.orderPaid` payload carried no line items |
 | `wix.store_products.fetched` | info | Wix Stores product list pulled for the Plan Mapping picker |
 | `wix.store_products.fetch_failed` | error | Stores product list unavailable — Plan Mapping still renders plans and services |
+| `operator.plan_mapping.day_pass_unsupported` | warn | Day-pass save refused — the client's connector cannot mint a guest QR credential |

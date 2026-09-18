@@ -231,6 +231,21 @@ class HardwareAdapter {
   }
 
   /**
+   * Can this hardware platform mint a day pass (guest QR credential)? Derived from
+   * the Layer 6 adapter's own methods rather than declared separately, so the answer
+   * cannot drift from what the adapter can actually do. Unknown platform → false.
+   */
+  supportsDayPass(hardwarePlatform) {
+    try {
+      const adapter = this._getAdapter(hardwarePlatform);
+      return ['createGroupLink', 'deleteGroupLink', 'getGroupLink']
+        .every(m => typeof adapter[m] === 'function');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
    * Day pass (OB-98 / OB-251): create a time-bounded group link (QR + access link).
    * params: { groupId, clientId, email?, validFrom?, validUntil, label? }
    * Returns the Layer 6 normalized link { id, linkUrl, qrImageBase64, qrImageUrl, secret, ... }.

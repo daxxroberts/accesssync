@@ -775,12 +775,14 @@
         '</div>';
 
       // ── Day pass toggle (OB-98 / OB-251) ──
-      bodyHTML +=
+      // A hardware capability: shown only when the connector can mint a guest QR
+      // credential (Kisi today). The server refuses the save too (DAY_PASS_UNSUPPORTED).
+      if (window._dayPassSupported !== false || plan.isDayPass) bodyHTML +=
         '<div class="toggle-row">' +
           '<div>' +
             '<div class="toggle-label">Day pass (QR code)</div>' +
             '<div class="toggle-sublabel">' + (plan.isDayPass
-              ? 'Buyers get a QR code and unlock link by email that expires with the order. No ' + platformName() + ' account or app. Map one ' + groupLabel().toLowerCase() + '.'
+              ? 'Buyers get a QR code by email to scan at the door. It stops working when the pass length below runs out. No ' + platformName() + ' account or app. Map one ' + groupLabel().toLowerCase() + '.'
               : 'Off. Members get a ' + platformName() + ' account and unlock with the app.') + '</div>' +
           '</div>' +
           '<label class="toggle-switch">' +
@@ -1346,6 +1348,8 @@
         .then(function(r) { return r.json().catch(function() { return { groups: [], keyStatus: 'error' }; }); })
         .then(function(d) {
           var keyStatus = d.keyStatus || (d.noKey ? 'missing' : 'ok');
+          // Hidden only on an explicit "no" — an errored load leaves the toggle alone.
+          window._dayPassSupported = !(d.capabilities && d.capabilities.dayPass === false);
 
           var bannerCfg = null;
           if (keyStatus === 'missing') {
@@ -1403,6 +1407,8 @@
               return { id: String(g.id), name: g.name, locksCount: g.locks_count || 0, membersCount: g.members_count || 0 };
             });
           }
+          // Cards drawn before this answer arrived still carry the day-pass toggle.
+          if (window._dayPassSupported === false && typeof plans !== 'undefined' && plans.length) render();
         }).catch(function(e) { console.error('Groups load error:', e); });
 
       // 2 + 3. Load Wix plans and mappings in parallel, then merge price/type data.
