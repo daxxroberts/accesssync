@@ -164,7 +164,8 @@ async function handleLookup(req, res) {
     });
     return res.json({
       status: 'ready', ...base,
-      unlockUrl: (link && link.linkUrl) || null,
+      // QR only — the access link unlocks from anywhere, so it is never put on a web page.
+      unlockUrl: null,
       qrUrl,
       qrAvailable,
     });

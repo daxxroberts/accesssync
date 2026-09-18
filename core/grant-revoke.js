@@ -483,7 +483,9 @@ class GrantRevokeLogic {
         const link = await hardwareAdapter.createGroupLink(mapping.hardwarePlatform, mapping.apiKey, {
           groupId:    mapping.hardwareGroupId,
           clientId:   tenantId,
-          email:      opts.email || null,
+          // No email to Kisi: it would send its own visitor email alongside ours, and
+          // Kisi meters visitor links "sent via email". AccessSync's email is the only one.
+          email:      null,
           validFrom:  wixEvent.startDate || null,
           validUntil: endDate,
           label,

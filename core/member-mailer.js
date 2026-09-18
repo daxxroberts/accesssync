@@ -446,8 +446,8 @@ function _durationLabel(validFrom, validUntil) {
  * ship-dark toggle (see sendMemberEmail's bypassEnabledGate note). Only ever fires
  * for a real purchase webhook: the claim mutex means exactly one job carries links,
  * and synthetic re-grants never reach here with any. The QR rides as an inline CID
- * attachment (Gmail strips base64 data URIs); the access link is the CTA and the
- * guaranteed fallback if inline images don't render.
+ * attachment (Gmail strips base64 data URIs). The email is QR only; the access link
+ * is included solely when Kisi returned no QR image.
  *
  * links: [{ mappingId, hardwareGroupId, linkUrl, qrImageBase64, qrImageUrl, validFrom, validUntil }]
  * Timezone for the expiry text: MEMBER_EMAIL_TIMEZONE (IANA), default UTC — no
@@ -519,7 +519,10 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
         doorName,
         validUntilText: _formatWhen(primary.validUntil, timeZone),
         durationLabel:  _durationLabel(primary.validFrom, primary.validUntil),
-        unlockUrl:      primary.linkUrl || null,
+        // QR only: the access link unlocks from anywhere (Kisi applies no geofence or
+        // reader-proximity check to it), the QR has to be at the terminal. The link is
+        // sent only when Kisi returned no QR, so a paying guest is never left with nothing.
+        unlockUrl:      qrSrc ? null : (primary.linkUrl || null),
         qrSrc,
       },
     });

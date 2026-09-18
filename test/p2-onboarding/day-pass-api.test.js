@@ -119,7 +119,7 @@ describe('[P2] POST /member/day-pass — states', () => {
     expect(hardwareAdapter.getGroupLink).not.toHaveBeenCalled();
   });
 
-  test("'ready' returns the unlock link and a signed QR URL that round-trips", async () => {
+  test("'ready' returns a signed QR URL that round-trips — and never the access link", async () => {
     db.query
       .mockResolvedValueOnce({ rows: [dayPassRow()] })
       .mockResolvedValueOnce({ rows: [hwRow] });
@@ -129,7 +129,8 @@ describe('[P2] POST /member/day-pass — states', () => {
     await api.handleLookup(mockReq(), res);
 
     expect(res.body.status).toBe('ready');
-    expect(res.body.unlockUrl).toBe(LINK_URL);
+    // QR only: the access link unlocks from anywhere, so it never reaches a web page.
+    expect(res.body.unlockUrl).toBeNull();
     expect(res.body.qrAvailable).toBe(true);
     expect(res.body.validUntil).toBe(FUTURE);
     expect(res.body.qrUrl).toMatch(/^https:\/\/core\.test\/member\/day-pass\/qr\.png\?t=/);
@@ -143,14 +144,14 @@ describe('[P2] POST /member/day-pass — states', () => {
     expect(res.headers['Cache-Control']).toBe('no-store');
   });
 
-  test("'ready' degrades to link-only when Kisi's GET carries no QR image", async () => {
+  test("'ready' with no QR image still withholds the access link (the email carries the fallback)", async () => {
     db.query
       .mockResolvedValueOnce({ rows: [dayPassRow()] })
       .mockResolvedValueOnce({ rows: [hwRow] });
     hardwareAdapter.getGroupLink.mockResolvedValue({ id: 777, linkUrl: LINK_URL, qrImageBase64: null, qrImageUrl: null });
     const res = mockRes();
     await api.handleLookup(mockReq(), res);
-    expect(res.body).toMatchObject({ status: 'ready', unlockUrl: LINK_URL, qrUrl: null, qrAvailable: false });
+    expect(res.body).toMatchObject({ status: 'ready', unlockUrl: null, qrUrl: null, qrAvailable: false });
   });
 
   test('never logs the link URL or the QR image', async () => {

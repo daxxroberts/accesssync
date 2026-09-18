@@ -87,7 +87,9 @@ describe('[P1] day pass — processDayPassGrant', () => {
     expect(platform).toBe('kisi');
     expect(apiKey).toBe('kisi-api-key');
     expect(params).toMatchObject({
-      groupId: GROUP_ID, clientId: TENANT_ID, email: 'buyer@example.com',
+      groupId: GROUP_ID, clientId: TENANT_ID,
+      // never handed to Kisi — it would send its own visitor email, which Kisi meters
+      email: null,
       validFrom: START, validUntil: END,
     });
     expect(params.label).toContain('Day Pass');
