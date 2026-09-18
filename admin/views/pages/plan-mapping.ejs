@@ -466,6 +466,16 @@
       <div class="plan-grid" id="mappedServicesGrid"></div>
     </div>
 
+    <!-- Mapped store products section (day passes) -->
+    <div id="mappedProductsSection" style="display:none;">
+      <div class="section-header">
+        <span class="section-title">Day Passes &amp; Store Products</span>
+        <span class="tooltip-icon" title="Products from your Wix Store. Sold as a day pass, the buyer is emailed a QR code that works for the pass length you set.">?</span>
+        <span class="section-count service" id="mappedProductsCount">0</span>
+      </div>
+      <div class="plan-grid" id="mappedProductsGrid"></div>
+    </div>
+
     <!-- Empty state -->
     <div id="emptyState" class="empty-state" style="display:none;">
       <div class="empty-state-icon">&#128203;</div>
@@ -583,6 +593,9 @@
       var unmapped = plans.filter(function(p) { return !p.groupIds || p.groupIds.length === 0; });
       var mappedPlans = plans.filter(function(p) { return p.groupIds && p.groupIds.length > 0 && p.planType === 'pricing_plan'; });
       var mappedServices = plans.filter(function(p) { return p.groupIds && p.groupIds.length > 0 && p.planType === 'booking_service'; });
+      // Anything mapped that is neither a plan nor a service (store products today) —
+      // a catch-all, so a new item type can never drop out of the page once mapped.
+      var mappedProducts = plans.filter(function(p) { return p.groupIds && p.groupIds.length > 0 && p.planType !== 'pricing_plan' && p.planType !== 'booking_service'; });
 
       // Unmapped alert
       var alertEl = document.getElementById('unmappedAlert');
@@ -600,11 +613,13 @@
       renderSection('unmapped', unmapped, document.getElementById('unmappedGrid'));
       renderSection('mapped', mappedPlans, document.getElementById('mappedPlansGrid'));
       renderSection('service', mappedServices, document.getElementById('mappedServicesGrid'));
+      renderSection('product', mappedProducts, document.getElementById('mappedProductsGrid'));
 
       // Section visibility + counts
       toggleSection('unmappedSection', 'unmappedCount', unmapped);
       toggleSection('mappedPlansSection', 'mappedPlansCount', mappedPlans);
       toggleSection('mappedServicesSection', 'mappedServicesCount', mappedServices);
+      toggleSection('mappedProductsSection', 'mappedProductsCount', mappedProducts);
 
       // Empty state
       document.getElementById('emptyState').style.display = plans.length === 0 ? 'block' : 'none';
