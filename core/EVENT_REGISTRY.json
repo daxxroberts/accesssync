@@ -55,6 +55,7 @@
     "day_pass_sweep.orphan_link_deleted":        { "persist": true },
     "wix.store_products.fetched":                { "persist": false },
     "queue.grant.store.no_mapped_item":          { "persist": false },
+    "queue.grant.store.multiple_mapped_items":   { "persist": false },
     "member.day_pass.lookup":                    { "persist": false },
     "member.day_pass.ready":                     { "persist": true },
     "member.day_pass.qr_served":                 { "persist": false },

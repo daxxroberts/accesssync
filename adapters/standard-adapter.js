@@ -373,7 +373,10 @@ class StandardAdapter {
    * resolveAndLock's row lock is released at COMMIT, so nothing else serializes the
    * Kisi round-trip. The A9 UNIQUE on member_access_sources does: exactly one job's
    * INSERT lands per (member × plan × group), and only that job creates the group
-   * link. Losers get [] and just recompute the rollup. The row starts
+   * link. Losers get [] and just recompute the rollup. `sourcePlanId` here is the CLAIM
+   * KEY — product#order#unit for an order-bearing purchase — so Wix's echoes of one
+   * order share a key (one code) while a second purchase of the same pass does not
+   * (a new code: the buyer paid for it). The row starts
    * 'pending_hardware' and completeGrant's ON CONFLICT upsert flips it 'active' with
    * the link id + valid_until.
    *
@@ -727,9 +730,12 @@ class StandardAdapter {
    */
   async _upsertSourceRow(memberId, tenantId, assignment, billingId) {
     const {
-      mappingId, roleAssignmentId, hardwareGroupId, sourcePlanId, sourceType,
+      mappingId, roleAssignmentId, hardwareGroupId, sourceType,
       planEndDate, effectiveStart,
     } = assignment;
+    // Day passes are stored under their claim key (product#order#unit) so each paid
+    // unit is its own row; everything else is stored under the plan id as before.
+    const sourcePlanId = assignment.sourceKey || assignment.sourcePlanId;
     await db.query(
       `INSERT INTO member_access_sources
          (client_id, access_id, billing_id, source_type, source_plan_id, hardware_group_id,

@@ -95,6 +95,18 @@ class WixAdapter {
       )
       .filter(Boolean);
 
+    // Per-item name + quantity: every unit bought gets its own door code, so the
+    // worker needs to know that "2-Day Pass x3" is three passes, not one.
+    const itemId = li =>
+      li?.catalogReference?.catalogItemId || li?.catalogItemId || li?.productId || null;
+    const lineItemDetails = lineItems
+      .map(li => ({
+        id:       itemId(li),
+        name:     (typeof li?.productName === 'object' ? li.productName.original : li?.productName) || li?.name || null,
+        quantity: Number.isInteger(li?.quantity) && li.quantity > 0 ? li.quantity : 1,
+      }))
+      .filter(d => d.id);
+
     const lineItemNames = lineItems
       .map(li => (typeof li?.productName === 'object' ? li.productName.original : li?.productName) || li?.name || null)
       .filter(Boolean);
@@ -109,6 +121,7 @@ class WixAdapter {
     return {
       memberId: buyerId,
       lineItemPlanIds,
+      lineItemDetails,
       planName: lineItemNames[0] || null,
       orderId:  order._id || order.id || null,
       email:    buyer.email || null,
@@ -316,6 +329,7 @@ class WixAdapter {
       // worker can find whichever item is actually mapped in a mixed basket.
       standardEvent.planId          = storeOrder.lineItemPlanIds[0] || null;
       standardEvent.lineItemPlanIds = storeOrder.lineItemPlanIds;
+      standardEvent.lineItemDetails = storeOrder.lineItemDetails;
       standardEvent.planName        = storeOrder.planName;
       standardEvent.wixOrderId      = storeOrder.orderId;
       standardEvent.email           = storeOrder.email;

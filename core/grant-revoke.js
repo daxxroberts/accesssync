@@ -45,6 +45,21 @@ const { logMemberAccessEvent } = require('./member-access-log');
 // the single-payment order is genuinely over, so its billing row flips 'cancelled'.
 const BILLING_CANCEL_ALLOWED_SYNTHETIC = new Set(['reconciliation.reconcile_member', 'day-pass-sweep.expired']);
 
+/**
+ * Does this day-pass source row belong to the pass a revoke event names? Rows are
+ * stored under a claim key — product#order#unit — so each paid unit expires alone:
+ *   - the expiry sweep names the exact key            → that one row
+ *   - a real Wix cancellation names the PRODUCT (and usually the order) → every unit
+ *     of that order; with no order on the event, every pass of that product
+ * A legacy row stored under the bare product id matches the product as before.
+ */
+function _dayPassRowMatches(rowKey, planId, wixOrderId) {
+  if (!planId || !rowKey) return true;          // unscoped event / legacy row: unchanged
+  if (rowKey === planId) return true;
+  if (!rowKey.startsWith(planId + '#')) return false;
+  return wixOrderId ? rowKey.startsWith(`${planId}#${wixOrderId}#`) : true;
+}
+
 function _isGenuineBillingCancellation(wixEvent) {
   if (!wixEvent || !wixEvent.synthetic) return true;
   return BILLING_CANCEL_ALLOWED_SYNTHETIC.has(wixEvent.syntheticSource);
@@ -455,7 +470,12 @@ class GrantRevokeLogic {
    * exactly the set this job owns. Same partial-failure rule as processGrant: return
    * what was created; throw only if nothing was (the caller releases failed claims).
    *
-   * @param {Object} opts  { email }  — recipient for Kisi's own record on the link
+   * @param {Object} opts  { email, sourceKey, unit, units }
+   *   sourceKey — the claim key this pass was claimed under (product#order#unit). It is
+   *               what the source row is stored under, so each paid unit is its own
+   *               row with its own expiry; sourcePlanId stays the real product id for
+   *               billing. Absent → the product id (one pass per product, legacy).
+   *   unit/units — "pass 2 of 3", for the Kisi label and the email.
    * @returns {{ assignments: Array, links: Array }}
    *   assignments → standardAdapter.completeGrant (roleAssignmentId = group link id,
    *                 sourceType 'day_pass', planEndDate = valid_until via RI-03)
@@ -468,7 +488,11 @@ class GrantRevokeLogic {
     if (!endDate) return { assignments, links };
 
     const failed = [];
-    const label = `Day pass · ${wixEvent.planName || opts.planName || wixEvent.planId || 'plan'}`;
+    const sourceKey = opts.sourceKey || wixEvent.planId || null;
+    const unit  = opts.unit  || 1;
+    const units = opts.units || 1;
+    const label = `Day pass · ${wixEvent.planName || opts.planName || wixEvent.planId || 'plan'}` +
+      (units > 1 ? ` (${unit} of ${units})` : '');
 
     for (const mapping of mappings) {
       if (!mapping.hardwareGroupId) continue;
@@ -497,6 +521,7 @@ class GrantRevokeLogic {
           hardwareGroupId:    mapping.hardwareGroupId,
           hardwarePlatform:   mapping.hardwarePlatform,
           sourcePlanId:       wixEvent.planId || null,
+          sourceKey,
           sourceType:         'day_pass',
           wixOrderId:         wixEvent.wixOrderId || null,
           wixSubscriptionId:  wixEvent.wixSubscriptionId || null,
@@ -510,6 +535,7 @@ class GrantRevokeLogic {
           hardwareGroupId: mapping.hardwareGroupId,
           groupLinkId:     link.id,
           sourcePlanId:    wixEvent.planId || null,
+          unit, units,
           linkUrl:         link.linkUrl || null,
           qrImageBase64:   link.qrImageBase64 || null,
           qrImageUrl:      link.qrImageUrl || null,
@@ -693,7 +719,7 @@ class GrantRevokeLogic {
           // crash between the two leaves a row to retry from, never an orphaned live
           // link. A 'pending_hardware' claim row (no link id yet) is just dropped.
           if (row.source_type === 'day_pass') {
-            if (planId && row.source_plan_id && row.source_plan_id !== planId) continue;
+            if (!_dayPassRowMatches(row.source_plan_id, planId, wixEvent.wixOrderId || null)) continue;
             if (raId) {
               await hardwareAdapter.deleteGroupLink(hardwarePlatform, apiKey, raId, { clientId: tenantId });
             }

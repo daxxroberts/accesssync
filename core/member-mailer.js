@@ -498,24 +498,34 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
       doorName = (pmRes.rows[0] && pmRes.rows[0].door_name) || null;
     }
 
+    // One code per paid unit — "2-Day Pass x3" is three codes in one email, each an
+    // inline CID image (Gmail strips base64 data URIs).
     const attachments = [];
-    let qrSrc = null;
-    if (primary.qrImageBase64) {
-      const mime = primary.qrImageMime || 'image/png';
-      attachments.push({
-        filename:    'day-pass-qr.' + (mime === 'image/svg+xml' ? 'svg' : mime.replace('image/', '')),
-        content:     primary.qrImageBase64,
-        contentType: mime,
-        contentId:   DAY_PASS_QR_CID,
-      });
-      qrSrc = 'cid:' + DAY_PASS_QR_CID;
-    } else if (primary.qrImageUrl) {
-      qrSrc = primary.qrImageUrl;
-    }
+    const codes = [];
+    links.forEach((link, i) => {
+      let src = null;
+      if (link.qrImageBase64) {
+        const mime = link.qrImageMime || 'image/png';
+        const cid  = DAY_PASS_QR_CID + (i + 1);
+        attachments.push({
+          filename:    'day-pass-qr-' + (i + 1) + '.' + (mime === 'image/svg+xml' ? 'svg' : mime.replace('image/', '')),
+          content:     link.qrImageBase64,
+          contentType: mime,
+          contentId:   cid,
+        });
+        src = 'cid:' + cid;
+      } else if (link.qrImageUrl) {
+        src = link.qrImageUrl;
+      }
+      codes.push({ qrSrc: src, unlockUrl: src ? null : (link.linkUrl || null) });
+    });
+    const qrSrc = codes[0].qrSrc;
 
     const timeZone = process.env.MEMBER_EMAIL_TIMEZONE || 'UTC';
     const planId  = (standardEvent && standardEvent.planId) || primary.sourcePlanId || 'na';
-    const orderId = (standardEvent && standardEvent.wixOrderId) || eventKey || 'noorder';
+    // eventKey carries the order AND the units this job minted, so a retry that
+    // finishes the remaining units is not deduped against the first email.
+    const orderId = eventKey || (standardEvent && standardEvent.wixOrderId) || 'noorder';
 
     return await sendMemberEmail({
       clientId, memberMasterId: m.member_master_id || null,
@@ -535,6 +545,8 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
         // sent only when Kisi returned no QR, so a paying guest is never left with nothing.
         unlockUrl:      qrSrc ? null : (primary.linkUrl || null),
         qrSrc,
+        codes,
+        planName:       (standardEvent && standardEvent.planName) || null,
       },
     });
   } catch (err) {

@@ -591,3 +591,6 @@ link id lives in `member_access_sources.role_assignment_id` with `source_type='d
 | `wix.store_products.fetched` | info | Wix Stores product list pulled for the Plan Mapping picker |
 | `wix.store_products.fetch_failed` | error | Stores product list unavailable — Plan Mapping still renders plans and services |
 | `operator.plan_mapping.day_pass_unsupported` | warn | Day-pass save refused — the client's connector cannot mint a guest QR credential |
+| `queue.grant.store.multiple_mapped_items` | info | A store basket held more than one mapped pass — each is granted |
+| `queue.grant.store.non_day_pass_item_skipped` | warn | A mapped store item that is not a day pass was skipped in a day-pass basket |
+| `grant.day_pass.units_capped` | warn | An order's quantity exceeded the 50-code sanity ceiling |

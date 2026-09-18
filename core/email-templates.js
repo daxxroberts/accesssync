@@ -365,17 +365,28 @@ function renderSubMemberInvite({ branding, member, holderName, plans, hardwarePl
  *   unlockUrl       Kisi access link (null → no CTA, QR only)
  *   qrSrc           'cid:…' for an inline attachment, an https URL, or null
  */
-function renderDayPassReady({ branding, member, doorName, validUntilText, durationLabel, unlockUrl, qrSrc }) {
+function renderDayPassReady({ branding, member, doorName, validUntilText, durationLabel, unlockUrl, qrSrc, codes, planName }) {
   const first    = (member && member.firstName) ? member.firstName : null;
   const gym      = branding.gymName;
   const door     = doorName || 'the door';
   const when     = validUntilText || 'your pass expires';
   const duration = durationLabel || '24 hours';
 
-  const qrHtml = qrSrc
-    ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;"><tr><td align="center">' +
-        '<img src="' + escapeHtml(qrSrc) + '" width="220" height="220" alt="Your door code" style="display:block;width:220px;height:220px;border:0;outline:none;" />' +
-      '</td></tr></table>'
+  // codes: one per paid unit ("1-Day Pass x3" is three codes). A single pass renders
+  // exactly as it did before `codes` existed.
+  const allCodes = (Array.isArray(codes) && codes.length ? codes : [{ qrSrc }]).filter(c => c && c.qrSrc);
+  const many = allCodes.length > 1;
+  const qrHtml = allCodes.map(function (c, i) {
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;"><tr><td align="center">' +
+        (many ? '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:bold;color:' + NEUTRAL_TEXT + ';margin-bottom:8px;">Pass ' + (i + 1) + ' of ' + allCodes.length + '</div>' : '') +
+        '<img src="' + escapeHtml(c.qrSrc) + '" width="220" height="220" alt="Your door code' + (many ? ' ' + (i + 1) : '') + '" style="display:block;width:220px;height:220px;border:0;outline:none;" />' +
+      '</td></tr></table>';
+  }).join('');
+  const manyHtml = many
+    ? '<p style="margin:0 0 12px 0;">You bought <strong>' + allCodes.length + ' passes</strong>' + (planName ? ' (' + escapeHtml(planName) + ')' : '') + '. Each code below is its own pass, one per person.</p>'
+    : '';
+  const manyText = many
+    ? 'You bought ' + allCodes.length + ' passes' + (planName ? ' (' + planName + ')' : '') + '. Each attached code is its own pass, one per person.\n\n'
     : '';
 
   const tapHtml = unlockUrl
@@ -386,24 +397,29 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
     : ' No app, no account.';
 
   // The pass is QR only unless Kisi returned no QR image — don't warn about a link that isn't there.
-  const whoCanOpen = unlockUrl ? 'Anyone with the code or the link' : 'Anyone with this code';
+  const whoCanOpen = unlockUrl ? 'Anyone with the code or the link' : (many ? 'Anyone with one of these codes' : 'Anyone with this code');
+  // Several passes are bought to be handed out — "don't forward" would be the wrong advice.
+  const warnTitle = many ? 'Share each code with one person only' : 'Don&rsquo;t forward this email';
+  const warnTitleText = many ? 'Share each code with one person only.' : 'Don\'t forward this email.';
 
   const bodyHtml =
     '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
     '<p style="margin:0 0 12px 0;">You&rsquo;re in at <strong>' + escapeHtml(gym) + '</strong> until <strong>' + escapeHtml(when) + '</strong>. That&rsquo;s ' + escapeHtml(duration) + ' from when you bought it, not the end of the day.</p>' +
+    manyHtml +
     qrHtml +
-    '<p style="margin:0 0 12px 0;">Hold this code up to the reader at ' + escapeHtml(door) + '.' + tapHtml + '</p>' +
+    '<p style="margin:0 0 12px 0;">Hold ' + (many ? 'a' : 'this') + ' code up to the reader at ' + escapeHtml(door) + '.' + tapHtml + '</p>' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr><td style="background-color:#FFF7E6;border-left:3px solid #D97706;border-radius:0 8px 8px 0;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
-      '<strong style="color:#B45309;font-size:11px;letter-spacing:.5px;text-transform:uppercase;">Don&rsquo;t forward this email</strong><br/>' +
+      '<strong style="color:#B45309;font-size:11px;letter-spacing:.5px;text-transform:uppercase;">' + warnTitle + '</strong><br/>' +
       whoCanOpen + ' can open the door until your pass expires.' +
     '</td></tr></table>';
 
   const bodyText =
     'Hi ' + (first || 'there') + ',\n\n' +
     'You\'re in at ' + gym + ' until ' + when + '. That\'s ' + duration + ' from when you bought it, not the end of the day.\n\n' +
-    (qrSrc ? 'Your door code is attached to this email as an image.\n\n' : '') +
-    'Hold this code up to the reader at ' + door + '.' + tapText + '\n\n' +
-    'Don\'t forward this email. ' + whoCanOpen + ' can open the door until your pass expires.';
+    manyText +
+    (allCodes.length ? (many ? 'Your door codes are attached to this email as images.\n\n' : 'Your door code is attached to this email as an image.\n\n') : '') +
+    'Hold ' + (many ? 'a' : 'this') + ' code up to the reader at ' + door + '.' + tapText + '\n\n' +
+    warnTitleText + ' ' + whoCanOpen + ' can open the door until your pass expires.';
 
   const { html, text } = renderLayout({
     branding, heading: 'Your day pass is ready', bodyHtml, bodyText,

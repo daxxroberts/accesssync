@@ -228,6 +228,51 @@ describe('[P1] day pass — processRevoke plan.cancelled', () => {
     expect(db.query.mock.calls.some(c => /DELETE FROM member_access_sources/.test(c[0]))).toBe(false);
   });
 
+  // Rows are stored under a claim key — product#order#unit — so every paid unit is its
+  // own pass. Revoke has to find the right ones from whichever id the event carries.
+  describe('order-keyed rows (one code per paid unit)', () => {
+    const keyed = (order, unit, linkId) => ({
+      ...dayPassRow, role_assignment_id: String(linkId), source_plan_id: `${PLAN_ID}#${order}#${unit}`,
+    });
+    const rows = [keyed('order-A', 1, 701), keyed('order-A', 2, 702), keyed('order-B', 1, 703)];
+    const deletedLinks = () => hardwareAdapter.deleteGroupLink.mock.calls.map(c => c[2]);
+
+    beforeEach(() => {
+      hardwareAdapter.deleteGroupLink.mockResolvedValue(undefined);
+      db.query.mockImplementation(async (sql) => {
+        if (/hardware_api_key/.test(sql)) return { rows: [{ hardware_api_key: null }] };
+        if (/SELECT role_assignment_id, hardware_group_id/.test(sql)) return { rows };
+        return { rows: [], rowCount: 1 };
+      });
+    });
+
+    test('the expiry sweep names ONE key → only that code goes; the buyer\'s other passes stay live', async () => {
+      await grantRevoke.processRevoke(TENANT_ID, MEMBER_ID, null, [], 'kisi', 'plan.cancelled', {
+        ...cancelEvent, planId: `${PLAN_ID}#order-A#2`, synthetic: true, syntheticSource: 'day-pass-sweep.expired',
+      });
+      expect(deletedLinks()).toEqual(['702']);
+    });
+
+    test('a real Wix cancellation names the product AND the order → every unit of that order, no other order', async () => {
+      await grantRevoke.processRevoke(TENANT_ID, MEMBER_ID, null, [], 'kisi', 'plan.cancelled', {
+        ...cancelEvent, wixOrderId: 'order-A',
+      });
+      expect(deletedLinks()).toEqual(['701', '702']);
+    });
+
+    test('a cancellation naming only the product → every pass of that product', async () => {
+      await grantRevoke.processRevoke(TENANT_ID, MEMBER_ID, null, [], 'kisi', 'plan.cancelled', cancelEvent);
+      expect(deletedLinks()).toEqual(['701', '702', '703']);
+    });
+
+    test('a product id that is merely a PREFIX of another is not a match', async () => {
+      await grantRevoke.processRevoke(TENANT_ID, MEMBER_ID, null, [], 'kisi', 'plan.cancelled', {
+        ...cancelEvent, planId: PLAN_ID.slice(0, -1),
+      });
+      expect(deletedLinks()).toEqual([]);
+    });
+  });
+
   test('role rows: remaining-count excludes day_pass, removeRole still fires when nothing else remains', async () => {
     const roleRow = {
       role_assignment_id: 'ra-99', hardware_group_id: GROUP_ID, mapping_id: MAPPING_ID,
