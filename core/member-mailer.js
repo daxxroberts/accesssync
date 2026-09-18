@@ -115,7 +115,17 @@ async function sendMemberEmail(p) {
       text,
     };
     if (client.notification_email) sendPayload.reply_to = client.notification_email;
-    if (Array.isArray(p.attachments) && p.attachments.length > 0) sendPayload.attachments = p.attachments;
+    // Inline (cid:) images: the Resend API reads content_id / content_type. The
+    // installed SDK (3.x) forwards attachment fields untranslated, so the camelCase
+    // names alone arrive as unknown keys and the image lands as a plain attachment
+    // (seen live 2026-09-18). Both spellings are sent so an SDK upgrade changes nothing.
+    if (Array.isArray(p.attachments) && p.attachments.length > 0) {
+      sendPayload.attachments = p.attachments.map(a => ({
+        ...a,
+        ...(a.contentId   ? { content_id:   a.contentId }   : {}),
+        ...(a.contentType ? { content_type: a.contentType } : {}),
+      }));
+    }
 
     const result = await resend.emails.send(sendPayload);
     const resendId = result && result.data && result.data.id ? result.data.id : null;
@@ -432,7 +442,8 @@ function _formatWhen(iso, timeZone) {
 }
 
 function _durationLabel(validFrom, validUntil) {
-  const start = validFrom ? Date.parse(validFrom) : NaN;
+  // A store-order pass has no start date — it runs from the purchase, i.e. now.
+  const start = validFrom ? Date.parse(validFrom) : Date.now();
   const end   = validUntil ? Date.parse(validUntil) : NaN;
   if (isNaN(start) || isNaN(end) || end <= start) return '24 hours';
   const hours = Math.round((end - start) / 3_600_000);

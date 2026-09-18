@@ -385,6 +385,9 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
     ? ' If the reader doesn\'t catch it, tap the link below on your phone. The door unlocks from your browser. No app, no account.'
     : ' No app, no account.';
 
+  // The pass is QR only unless Kisi returned no QR image — don't warn about a link that isn't there.
+  const whoCanOpen = unlockUrl ? 'Anyone with the code or the link' : 'Anyone with this code';
+
   const bodyHtml =
     '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
     '<p style="margin:0 0 12px 0;">You&rsquo;re in at <strong>' + escapeHtml(gym) + '</strong> until <strong>' + escapeHtml(when) + '</strong>. That&rsquo;s ' + escapeHtml(duration) + ' from when you bought it, not the end of the day.</p>' +
@@ -392,7 +395,7 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
     '<p style="margin:0 0 12px 0;">Hold this code up to the reader at ' + escapeHtml(door) + '.' + tapHtml + '</p>' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr><td style="background-color:#FFF7E6;border-left:3px solid #D97706;border-radius:0 8px 8px 0;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
       '<strong style="color:#B45309;font-size:11px;letter-spacing:.5px;text-transform:uppercase;">Don&rsquo;t forward this email</strong><br/>' +
-      'Anyone with the code or the link can open the door until your pass expires.' +
+      whoCanOpen + ' can open the door until your pass expires.' +
     '</td></tr></table>';
 
   const bodyText =
@@ -400,7 +403,7 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
     'You\'re in at ' + gym + ' until ' + when + '. That\'s ' + duration + ' from when you bought it, not the end of the day.\n\n' +
     (qrSrc ? 'Your door code is attached to this email as an image.\n\n' : '') +
     'Hold this code up to the reader at ' + door + '.' + tapText + '\n\n' +
-    'Don\'t forward this email. Anyone with the code or the link can open the door until your pass expires.';
+    'Don\'t forward this email. ' + whoCanOpen + ' can open the door until your pass expires.';
 
   const { html, text } = renderLayout({
     branding, heading: 'Your day pass is ready', bodyHtml, bodyText,
