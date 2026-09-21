@@ -378,15 +378,24 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
   const many = allCodes.length > 1;
   const qrHtml = allCodes.map(function (c, i) {
     return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;"><tr><td align="center">' +
-        (many ? '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:bold;color:' + NEUTRAL_TEXT + ';margin-bottom:8px;">Pass ' + (i + 1) + ' of ' + allCodes.length + '</div>' : '') +
+        (many ? '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:bold;color:' + NEUTRAL_TEXT + ';margin-bottom:8px;">Pass ' + (i + 1) + ' of ' + allCodes.length +
+          '<span style="font-weight:normal;"> &middot; one person &middot; works until ' + escapeHtml(c.validUntilText || when) + '</span></div>' : '') +
         '<img src="' + escapeHtml(c.qrSrc) + '" width="220" height="220" alt="Your door code' + (many ? ' ' + (i + 1) : '') + '" style="display:block;width:220px;height:220px;border:0;outline:none;" />' +
       '</td></tr></table>';
   }).join('');
+  // Every pass starts at purchase — Wix has no "start date" on a cart item — so N passes
+  // are N people for the same window, never N days in a row. Said outright, because a
+  // buyer who expected a week finds out at a locked door otherwise.
   const manyHtml = many
-    ? '<p style="margin:0 0 12px 0;">You bought <strong>' + allCodes.length + ' passes</strong>' + (planName ? ' (' + escapeHtml(planName) + ')' : '') + '. Each code below is its own pass, one per person.</p>'
+    ? '<p style="margin:0 0 12px 0;">You bought <strong>' + allCodes.length + ' passes</strong>' + (planName ? ' (' + escapeHtml(planName) + ')' : '') + '. Each code below is its own pass, for one person.</p>' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px 0;"><tr><td style="background-color:#EEF2FF;border-left:3px solid #4F6EF7;border-radius:0 8px 8px 0;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
+        '<strong>All ' + allCodes.length + ' passes started when you bought them and end at the same time.</strong> ' +
+        'They let ' + allCodes.length + ' people in for ' + escapeHtml(duration) + '. They don&rsquo;t add up to more days for one person. Need longer? Buy a longer pass.' +
+      '</td></tr></table>'
     : '';
   const manyText = many
-    ? 'You bought ' + allCodes.length + ' passes' + (planName ? ' (' + planName + ')' : '') + '. Each attached code is its own pass, one per person.\n\n'
+    ? 'You bought ' + allCodes.length + ' passes' + (planName ? ' (' + planName + ')' : '') + '. Each attached code is its own pass, for one person.\n\n' +
+      'All ' + allCodes.length + ' passes started when you bought them and end at the same time. They let ' + allCodes.length + ' people in for ' + duration + '. They don\'t add up to more days for one person. Need longer? Buy a longer pass.\n\n'
     : '';
 
   const tapHtml = unlockUrl
@@ -407,6 +416,11 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
     '<p style="margin:0 0 12px 0;">You&rsquo;re in at <strong>' + escapeHtml(gym) + '</strong> until <strong>' + escapeHtml(when) + '</strong>. That&rsquo;s ' + escapeHtml(duration) + ' from when you bought it, not the end of the day.</p>' +
     manyHtml +
     qrHtml +
+    (allCodes.length
+      ? '<p style="margin:0 0 12px 0;font-size:13px;color:' + NEUTRAL_TEXT + ';">' +
+          (many ? 'Each code is also attached to this email as its own image, so you can save it or send it to the person it&rsquo;s for.'
+                : 'The code is also attached to this email as an image, so you can save it to your phone.') + '</p>'
+      : '') +
     '<p style="margin:0 0 12px 0;">Hold ' + (many ? 'a' : 'this') + ' code up to the reader at ' + escapeHtml(door) + '.' + tapHtml + '</p>' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr><td style="background-color:#FFF7E6;border-left:3px solid #D97706;border-radius:0 8px 8px 0;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
       '<strong style="color:#B45309;font-size:11px;letter-spacing:.5px;text-transform:uppercase;">' + warnTitle + '</strong><br/>' +

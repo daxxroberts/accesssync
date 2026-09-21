@@ -500,6 +500,7 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
 
     // One code per paid unit — "2-Day Pass x3" is three codes in one email, each an
     // inline CID image (Gmail strips base64 data URIs).
+    const timeZone = process.env.MEMBER_EMAIL_TIMEZONE || 'UTC';
     const attachments = [];
     const codes = [];
     links.forEach((link, i) => {
@@ -507,22 +508,35 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
       if (link.qrImageBase64) {
         const mime = link.qrImageMime || 'image/png';
         const cid  = DAY_PASS_QR_CID + (i + 1);
+        const ext  = mime === 'image/svg+xml' ? 'svg' : mime.replace('image/', '');
         attachments.push({
-          filename:    'day-pass-qr-' + (i + 1) + '.' + (mime === 'image/svg+xml' ? 'svg' : mime.replace('image/', '')),
+          filename:    'day-pass-qr-' + (i + 1) + '.' + ext,
           content:     link.qrImageBase64,
           contentType: mime,
           contentId:   cid,
+        });
+        // The same code again as an ordinary file. Mail clients hide an inline (cid:)
+        // image from the attachment list, so without this copy a buyer has nothing to
+        // save, text, or hand to the person the pass is for.
+        attachments.push({
+          filename:    (links.length > 1 ? 'Day-Pass-' + (i + 1) + '-of-' + links.length : 'Day-Pass') + '-QR-Code.' + ext,
+          content:     link.qrImageBase64,
+          contentType: mime,
         });
         src = 'cid:' + cid;
       } else if (link.qrImageUrl) {
         src = link.qrImageUrl;
       }
-      codes.push({ qrSrc: src, unlockUrl: src ? null : (link.linkUrl || null) });
+      // Each code carries its own expiry so the email can say which code does what.
+      codes.push({
+        qrSrc: src,
+        unlockUrl: src ? null : (link.linkUrl || null),
+        validUntilText: _formatWhen(link.validUntil, timeZone),
+      });
     });
     const qrSrc = codes[0].qrSrc;
 
-    const timeZone = process.env.MEMBER_EMAIL_TIMEZONE || 'UTC';
-    const planId  = (standardEvent && standardEvent.planId) || primary.sourcePlanId || 'na';
+    const planId = (standardEvent && standardEvent.planId) || primary.sourcePlanId || 'na';
     // eventKey carries the order AND the units this job minted, so a retry that
     // finishes the remaining units is not deduped against the first email.
     const orderId = eventKey || (standardEvent && standardEvent.wixOrderId) || 'noorder';
