@@ -365,7 +365,7 @@ function renderSubMemberInvite({ branding, member, holderName, plans, hardwarePl
  *   unlockUrl       Kisi access link (null → no CTA, QR only)
  *   qrSrc           'cid:…' for an inline attachment, an https URL, or null
  */
-function renderDayPassReady({ branding, member, doorName, validUntilText, durationLabel, unlockUrl, qrSrc, codes, planName }) {
+function renderDayPassReady({ branding, member, doorName, validUntilText, durationLabel, unlockUrl, qrSrc, codes, planName, qrGuideAttached }) {
   const first    = (member && member.firstName) ? member.firstName : null;
   const gym      = branding.gymName;
   const door     = doorName || 'the door';
@@ -419,7 +419,8 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
     (allCodes.length
       ? '<p style="margin:0 0 12px 0;font-size:13px;color:' + NEUTRAL_TEXT + ';">' +
           (many ? 'Each code is also attached to this email as its own image, so you can save it or send it to the person it&rsquo;s for.'
-                : 'The code is also attached to this email as an image, so you can save it to your phone.') + '</p>'
+                : 'The code is also attached to this email as an image, so you can save it to your phone.') +
+          (qrGuideAttached ? ' First time? The attached <strong>How to get in</strong> PDF shows exactly where to hold your phone.' : '') + '</p>'
       : '') +
     '<p style="margin:0 0 12px 0;">Hold ' + (many ? 'a' : 'this') + ' code up to the reader at ' + escapeHtml(door) + '.' + tapHtml + '</p>' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr><td style="background-color:#FFF7E6;border-left:3px solid #D97706;border-radius:0 8px 8px 0;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
@@ -431,7 +432,8 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
     'Hi ' + (first || 'there') + ',\n\n' +
     'You\'re in at ' + gym + ' until ' + when + '. That\'s ' + duration + ' from when you bought it, not the end of the day.\n\n' +
     manyText +
-    (allCodes.length ? (many ? 'Your door codes are attached to this email as images.\n\n' : 'Your door code is attached to this email as an image.\n\n') : '') +
+    (allCodes.length ? (many ? 'Your door codes are attached to this email as images.' : 'Your door code is attached to this email as an image.') +
+      (qrGuideAttached ? ' First time? The attached "How to get in" PDF shows exactly where to hold your phone.' : '') + '\n\n' : '') +
     'Hold ' + (many ? 'a' : 'this') + ' code up to the reader at ' + door + '.' + tapText + '\n\n' +
     warnTitleText + ' ' + whoCanOpen + ' can open the door until your pass expires.';
 

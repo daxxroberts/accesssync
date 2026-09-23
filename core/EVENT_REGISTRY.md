@@ -594,3 +594,6 @@ link id lives in `member_access_sources.role_assignment_id` with `source_type='d
 | `queue.grant.store.multiple_mapped_items` | info | A store basket held more than one mapped pass — each is granted |
 | `queue.grant.store.non_day_pass_item_skipped` | warn | A mapped store item that is not a day pass was skipped in a day-pass basket |
 | `grant.day_pass.units_capped` | warn | An order's quantity exceeded the 50-code sanity ceiling |
+| `operator.email_branding.guide_uploaded` | info | Operator uploaded the QR entry guide PDF (attached to every QR-code email) |
+| `operator.email_branding.guide_removed` | info | Operator removed the QR entry guide PDF |
+| `operator.email_branding.guide_upload_failed` | error | Storage rejected the QR entry guide upload |

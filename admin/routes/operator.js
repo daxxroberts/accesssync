@@ -45,6 +45,12 @@ const logoUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 1024 * 1024, files: 1 },
 });
+// OB-98: the gym's "how to get in with your QR code" PDF — attached to every member
+// email that carries a QR code. 2 MB cap: it rides alongside the QR images.
+const guideUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+});
 
 // Global rate limiter on all operator read endpoints (500 req/min/IP)
 // Higher limit needed: plan-mapping page fires N parallel per-mapping requests on load
@@ -1100,7 +1106,7 @@ router.get('/clients/:clientId/email-branding', async (req, res) => {
   const { clientId } = req.params;
   try {
     const result = await db.query(
-      `SELECT email_logo_url, email_primary_color, email_secondary_color, member_emails_enabled
+      `SELECT email_logo_url, email_primary_color, email_secondary_color, member_emails_enabled, qr_guide_url
        FROM clients WHERE id = $1`,
       [clientId]
     );
@@ -1108,6 +1114,7 @@ router.get('/clients/:clientId/email-branding', async (req, res) => {
     const r = result.rows[0];
     res.json({
       logoUrl:        r.email_logo_url || null,
+      qrGuideUrl:     r.qr_guide_url || null,
       primaryColor:   r.email_primary_color || null,
       secondaryColor: r.email_secondary_color || null,
       enabled:        !!r.member_emails_enabled,
@@ -1170,6 +1177,69 @@ function logoUploadMiddleware(req, res, next) {
     next();
   });
 }
+// ── POST /operator/clients/:clientId/email-branding/qr-guide ───────
+// The gym's QR entry guide (PDF). Same storage pattern as the logo:
+// {clientId}/qr-guide.pdf, upserted, URL versioned so a replacement is picked up.
+function guideUploadMiddleware(req, res, next) {
+  guideUpload.single('guide')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'The guide must be 2 MB or smaller' });
+      log.warn('operator.email_branding.guide_multer_error', { code: err.code }, err);
+      return res.status(400).json({ error: 'Upload failed — check the file and try again' });
+    }
+    next();
+  });
+}
+router.post('/clients/:clientId/email-branding/qr-guide', guideUploadMiddleware, async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    if (!process.env.SUPABASE_SECRET_KEY) {
+      return res.status(503).json({ error: 'File storage is not configured yet (SUPABASE_SECRET_KEY missing). Ask your AccessSync admin.' });
+    }
+    const file = req.file;
+    if (!file || !file.buffer || !file.buffer.length) return res.status(400).json({ error: 'No file uploaded (field name: guide)' });
+    // A PDF starts with %PDF- — checked on the bytes, not the browser-supplied mimetype.
+    if (file.mimetype !== 'application/pdf' || file.buffer.slice(0, 5).toString() !== '%PDF-') {
+      return res.status(400).json({ error: 'The guide must be a PDF' });
+    }
+    const clientCheck = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    if (!clientCheck.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+    const objectPath = `${clientId}/qr-guide.pdf`;
+    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/email-assets/${objectPath}`, {
+      method: 'POST',
+      headers: { 'apikey': process.env.SUPABASE_SECRET_KEY, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
+      body: file.buffer,
+    });
+    if (!uploadRes.ok) {
+      const detail = await uploadRes.text().catch(() => '');
+      log.error('operator.email_branding.guide_upload_failed', { clientId, status: uploadRes.status, detail: detail.slice(0, 200) });
+      return res.status(502).json({ error: 'File storage upload failed' });
+    }
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/email-assets/${objectPath}?v=${Date.now()}`;
+    await db.query(`UPDATE clients SET qr_guide_url = $1, updated_at = NOW() WHERE id = $2`, [publicUrl, clientId]);
+    log.info('operator.email_branding.guide_uploaded', { clientId });
+    recordActivity(req, 'email_branding.guide_uploaded', { clientId });
+    res.json({ ok: true, qrGuideUrl: publicUrl });
+  } catch (err) {
+    log.error('operator.email_branding.guide_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/clients/:clientId/email-branding/qr-guide', async (req, res) => {
+  const { clientId } = req.params;
+  try {
+    await db.query(`UPDATE clients SET qr_guide_url = NULL, updated_at = NOW() WHERE id = $1`, [clientId]);
+    log.info('operator.email_branding.guide_removed', { clientId });
+    recordActivity(req, 'email_branding.guide_removed', { clientId });
+    res.json({ ok: true });
+  } catch (err) {
+    log.error('operator.email_branding.guide_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/clients/:clientId/email-branding/logo', logoUploadMiddleware, async (req, res) => {
   const { clientId } = req.params;
   try {

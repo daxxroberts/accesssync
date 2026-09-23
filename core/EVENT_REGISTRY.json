@@ -56,6 +56,8 @@
     "wix.store_products.fetched":                { "persist": false },
     "queue.grant.store.no_mapped_item":          { "persist": false },
     "queue.grant.store.multiple_mapped_items":   { "persist": false },
+    "operator.email_branding.guide_uploaded":    { "persist": true },
+    "operator.email_branding.guide_removed":     { "persist": true },
     "member.day_pass.lookup":                    { "persist": false },
     "member.day_pass.ready":                     { "persist": true },
     "member.day_pass.qr_served":                 { "persist": false },

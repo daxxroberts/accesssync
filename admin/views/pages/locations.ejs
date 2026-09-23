@@ -439,6 +439,18 @@
             </div>
             <div class="key-input-hint" style="margin-top:6px;">PNG or JPEG, up to 1&nbsp;MB. Shown in the email header.</div>
           </div>
+          <!-- QR entry guide (OB-98) -->
+          <div class="config-row" style="border-bottom:none;">
+            <div class="config-row-header">
+              <span class="config-row-label">QR entry guide</span>
+              <a id="eb-guide-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;color:var(--brand);font-weight:600;">View PDF</a>
+              <span class="config-row-status" id="eb-guide-status">None uploaded</span>
+              <button class="btn btn-sm btn-secondary" onclick="document.getElementById('eb-guide-file').click()">Upload</button>
+              <button class="btn btn-sm btn-secondary" id="eb-guide-remove" style="display:none;" onclick="ebRemoveGuide()">Remove</button>
+              <input type="file" id="eb-guide-file" accept="application/pdf" style="display:none;" onchange="ebUploadGuide(this)"/>
+            </div>
+            <div class="key-input-hint" style="margin-top:6px;">PDF, up to 2&nbsp;MB. Attached to every email that carries a QR door code, so members can forward the code and the instructions together.</div>
+          </div>
           <!-- Colors -->
           <div class="config-row" style="border-bottom:none;">
             <div class="config-row-header">
@@ -682,7 +694,7 @@
     }
 
     // ── Member email branding (DR-052) ─────────────────────────────────
-    var ebState = { enabled: false, logoUrl: null };
+    var ebState = { enabled: false, logoUrl: null, qrGuideUrl: null };
     var ebPreviewTimer = null;
 
     function ebLoad() {
@@ -691,6 +703,8 @@
         .then(function(data) {
           ebState.enabled = !!data.enabled;
           ebState.logoUrl = data.logoUrl || null;
+          ebState.qrGuideUrl = data.qrGuideUrl || null;
+          ebRenderGuide();
           if (data.primaryColor)   { ebSetColor('primary', data.primaryColor); }
           if (data.secondaryColor) { ebSetColor('secondary', data.secondaryColor); }
           ebRenderLogo();
@@ -805,6 +819,50 @@
           } else toast(data.error || 'Update failed', 'error');
         })
         .catch(function() { toast('Update failed — network error', 'error'); });
+    }
+
+    function ebRenderGuide() {
+      var link   = document.getElementById('eb-guide-link');
+      var status = document.getElementById('eb-guide-status');
+      var remove = document.getElementById('eb-guide-remove');
+      if (ebState.qrGuideUrl) {
+        link.href = ebState.qrGuideUrl; link.style.display = '';
+        remove.style.display = '';
+        status.textContent = '';
+      } else {
+        link.style.display = 'none'; remove.style.display = 'none';
+        status.textContent = 'None uploaded';
+      }
+    }
+
+    function ebUploadGuide(input) {
+      var file = input.files && input.files[0];
+      input.value = '';
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) { toast('The guide must be 2 MB or smaller', 'error'); return; }
+      var fd = new FormData();
+      fd.append('guide', file);
+      document.getElementById('eb-guide-status').textContent = 'Uploading\u2026';
+      apiFetch('/operator/clients/' + clientId + '/email-branding/qr-guide', { method: 'POST', body: fd })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) { ebState.qrGuideUrl = data.qrGuideUrl; toast('Guide uploaded', 'success'); }
+          else toast(data.error || 'Upload failed', 'error');
+          ebRenderGuide();
+        })
+        .catch(function() { ebRenderGuide(); toast('Upload failed \u2014 network error', 'error'); });
+    }
+
+    function ebRemoveGuide() {
+      if (!confirm('Remove the QR entry guide? Emails will go out without it.')) return;
+      apiFetch('/operator/clients/' + clientId + '/email-branding/qr-guide', { method: 'DELETE' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) { ebState.qrGuideUrl = null; toast('Guide removed', 'success'); }
+          else toast(data.error || 'Remove failed', 'error');
+          ebRenderGuide();
+        })
+        .catch(function() { toast('Remove failed \u2014 network error', 'error'); });
     }
 
     function ebUploadLogo(input) {

@@ -98,6 +98,7 @@ describe('[P2] DR-052 GET /operator/clients/:id/email-branding', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       logoUrl: BRANDING_ROW.email_logo_url,
+      qrGuideUrl: null,   // OB-98: the QR entry guide PDF, unset on this row
       primaryColor: '#112233',
       secondaryColor: '#445566',
       enabled: false,

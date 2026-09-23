@@ -30,13 +30,15 @@ const link = (n) => ({
   validFrom: null, validUntil: new Date(Date.now() + 24 * 3600_000).toISOString(),
 });
 
+let guideUrl = null;
 beforeEach(() => {
   jest.clearAllMocks();
+  guideUrl = null;
   mockSend.mockResolvedValue({ data: { id: 'resend-1' } });
   db.query.mockImplementation(async (sql) => {
     if (/FROM member_access ma JOIN member_master/.test(sql)) return { rows: [{ member_master_id: 'mm-1', email: 'buyer@example.com', first_name: 'Daxx' }] };
     if (/FROM plan_mappings/.test(sql))  return { rows: [{ door_name: 'Entrance Door' }] };
-    if (/FROM clients/.test(sql))        return { rows: [{ name: 'House of Gains', notification_email: 'gym@example.com', member_emails_enabled: false }] };
+    if (/FROM clients/.test(sql))        return { rows: [{ name: 'House of Gains', notification_email: 'gym@example.com', member_emails_enabled: false, qr_guide_url: guideUrl }] };
     if (/INSERT INTO member_email_log/.test(sql)) return { rows: [{ id: 'log-1' }] };
     return { rows: [], rowCount: 1 };
   });
@@ -71,6 +73,24 @@ describe('[P2] day-pass email — QR attachments', () => {
     ]);
     expect(html).toContain('Pass 2 of 3');
     expect(html).toContain('started when you bought them and end at the same time');
+  });
+
+  test('the gym\'s QR entry guide PDF rides along when one is set — fetched by Resend from its URL', async () => {
+    guideUrl = 'https://example.test/guides/qr.pdf';
+    await send([link(1), link(2)]);
+    const { attachments } = mockSend.mock.calls[0][0];
+    const guides = attachments.filter(a => a.path);
+    expect(guides).toHaveLength(1);                              // once per email, not per code
+    expect(guides[0]).toEqual({ filename: 'How-to-get-in-with-your-QR-code.pdf', path: guideUrl, content_type: 'application/pdf' });
+    expect(attachments).toHaveLength(5);                         // 2 inline + 2 files + 1 guide
+    expect(mockSend.mock.calls[0][0].html).toContain('How to get in');   // and the email says it's there
+  });
+
+  test('no guide set → no PDF, nothing else changes', async () => {
+    await send([link(1)]);
+    const { attachments } = mockSend.mock.calls[0][0];
+    expect(attachments.some(a => a.path)).toBe(false);
+    expect(attachments).toHaveLength(2);
   });
 
   test('QR only: the Kisi access link never appears when a QR image exists', async () => {

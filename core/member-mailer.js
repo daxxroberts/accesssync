@@ -56,6 +56,8 @@ const { brandingFromClientRow } = require('./email-templates');
  *                                     for nothing.
  * @param {Array}  [p.attachments]     Resend attachments passthrough
  *                                     [{ filename, content, contentType, contentId }]
+ * @param {boolean} [p.attachQrGuide]  also attach the gym's QR entry guide PDF (clients.qr_guide_url)
+ *                                     — set on every email that carries a QR door code
  * @returns {Promise<{sent: boolean, reason?: string}>}
  */
 async function sendMemberEmail(p) {
@@ -69,7 +71,7 @@ async function sendMemberEmail(p) {
     // 1. Branding + gate in one read.
     const clientRes = await db.query(
       `SELECT name, notification_email, member_emails_enabled,
-              email_logo_url, email_primary_color, email_secondary_color
+              email_logo_url, email_primary_color, email_secondary_color, qr_guide_url
        FROM clients WHERE id = $1`,
       [p.clientId]
     );
@@ -102,7 +104,8 @@ async function sendMemberEmail(p) {
 
     // 4. Render through the gym's branding and send.
     const branding = brandingFromClientRow(client);
-    const { subject, html, text } = p.render(Object.assign({ branding }, p.renderArgs || {}));
+    const qrGuideAttached = !!(p.attachQrGuide && client.qr_guide_url);
+    const { subject, html, text } = p.render(Object.assign({ branding, qrGuideAttached }, p.renderArgs || {}));
 
     const fromAddress = process.env.RESEND_MEMBER_FROM_EMAIL || process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
     const { Resend } = require('resend');
@@ -119,13 +122,18 @@ async function sendMemberEmail(p) {
     // installed SDK (3.x) forwards attachment fields untranslated, so the camelCase
     // names alone arrive as unknown keys and the image lands as a plain attachment
     // (seen live 2026-09-18). Both spellings are sent so an SDK upgrade changes nothing.
-    if (Array.isArray(p.attachments) && p.attachments.length > 0) {
-      sendPayload.attachments = p.attachments.map(a => ({
-        ...a,
-        ...(a.contentId   ? { content_id:   a.contentId }   : {}),
-        ...(a.contentType ? { content_type: a.contentType } : {}),
-      }));
+    const attachments = Array.isArray(p.attachments) ? p.attachments.map(a => ({
+      ...a,
+      ...(a.contentId   ? { content_id:   a.contentId }   : {}),
+      ...(a.contentType ? { content_type: a.contentType } : {}),
+    })) : [];
+    // OB-98: the gym's "how to get in with your QR code" PDF rides on every email that
+    // carries a QR code, so a forwarded code travels with its instructions. Resend
+    // fetches it from the public URL (`path`) — nothing is read here.
+    if (p.attachQrGuide && client.qr_guide_url) {
+      attachments.push({ filename: 'How-to-get-in-with-your-QR-code.pdf', path: client.qr_guide_url, content_type: 'application/pdf' });
     }
+    if (attachments.length > 0) sendPayload.attachments = attachments;
 
     const result = await resend.emails.send(sendPayload);
     const resendId = result && result.data && result.data.id ? result.data.id : null;
@@ -548,6 +556,7 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
       recipient,
       bypassEnabledGate: true,
       attachments,
+      attachQrGuide: true,
       render: templates.renderDayPassReady,
       renderArgs: {
         member:         { firstName: m.first_name || null },
