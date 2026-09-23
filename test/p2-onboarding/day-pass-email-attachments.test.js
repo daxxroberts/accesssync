@@ -82,8 +82,9 @@ describe('[P2] day-pass email — QR attachments', () => {
 
     expect(attachments.filter(a => a.content_id)).toHaveLength(1);
     expect(html).toContain('5 days from when you bought it');
-    expect(html).toContain('1-Day Pass × 5');
-    expect(html).toContain('5 passes = 5 days in a row.');
+    expect(html).toContain('1-Day Pass x5');
+    expect(html).toContain('1-Day Pass x5 = 5 days in a row.');
+    expect(html).not.toContain('passes =');
     expect(text).toContain('can\'t be paused or saved for later');
     expect(html).not.toContain('Code 1 of');
   });

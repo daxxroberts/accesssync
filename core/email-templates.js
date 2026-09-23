@@ -441,7 +441,8 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, validU
   const when     = validUntilText || 'your pass expires';
   const duration = durationLabel || '24 hours';
   const n        = Number.isInteger(units) && units > 1 ? units : 1;
-  const passName = (planName || 'Day Pass') + (n > 1 ? ' × ' + n : '');
+  // Same wording as the gym's website rules: "1-Day Pass x2" — quantity, not "2 passes".
+  const passName = (planName || 'Day Pass') + (n > 1 ? ' x' + n : '');
   const reader   = getConnectorBranding(hardwarePlatform).qrReader || null;
 
   const dark       = b.primaryColor;
@@ -498,7 +499,7 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, validU
   const daysStrip = n > 1
     ? '<tr><td style="padding:0 20px 20px 20px;">' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="background-color:' + accentTint + ';border-radius:10px;padding:14px 16px;font-family:' + DP_FONT + ';font-size:14px;line-height:1.55;color:' + NEUTRAL_TEXT + ';">' +
-          '<strong>' + n + ' passes = ' + safe.duration + ' in a row.</strong> Your time started at checkout and runs straight through. It can&rsquo;t be paused or saved for later. Bringing a friend? They buy their own pass and get their own code.' +
+          '<strong>' + safe.pass + ' = ' + safe.duration + ' in a row.</strong> Your time started at checkout and runs straight through. It can&rsquo;t be paused or saved for later. Bringing a friend? They buy their own pass and get their own code.' +
         '</td></tr></table>' +
       '</td></tr>'
     : '';
@@ -650,7 +651,7 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, validU
     (allCodes.length
       ? '  Your door code' + (many ? 's are' : ' is') + ' attached to this email as ' + (many ? 'images' : 'an image') + '.'
       : '  Unlock link: ' + (unlockUrl || '')),
-    n > 1 ? '\n' + n + ' passes = ' + duration + ' in a row. Your time started at checkout and runs straight through. It can\'t be paused or saved for later. Bringing a friend? They buy their own pass and get their own code.' : '',
+    n > 1 ? '\n' + passName + ' = ' + duration + ' in a row. Your time started at checkout and runs straight through. It can\'t be paused or saved for later. Bringing a friend? They buy their own pass and get their own code.' : '',
     '',
     'THREE STEPS AT THE DOOR',
     '  1. Open this email at the door. Turn your screen brightness all the way up.',
