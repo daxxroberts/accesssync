@@ -24,11 +24,23 @@
 // Kisi's own app-store icon, hosted by us rather than hot-linked — nominative
 // use to help a member recognize the app, not a screenshot of Kisi's product UI.
 const KISI_APP_ICON_URL = 'https://accesssync-admin.up.railway.app/kisi-app-icon.jpg';
+// Terminal Pro with a phone held below it — the same Kisi product image the QR
+// entry guide PDF uses (credited "image: Kisi"). Shown in the day-pass email so the
+// buyer knows what the reader looks like and where to hold the code.
+const KISI_QR_READER_IMAGE_URL = 'https://accesssync-admin.up.railway.app/kisi-terminal-pro-qr.png';
 
 const CONNECTORS = {
   kisi: {
     displayName: 'Kisi',
     iconUrl:     KISI_APP_ICON_URL,
+    // The reader a QR day pass is scanned at. Only Terminal Pro reads QR codes.
+    qrReader: {
+      name:     'Kisi Terminal Pro',
+      imageUrl: KISI_QR_READER_IMAGE_URL,
+      width:    280,
+      height:   682,
+      credit:   'image: Kisi',
+    },
     iosLink:     'https://apps.apple.com/us/app/kisi/id687291321',
     androidLink: 'https://play.google.com/store/apps/details?id=de.kisi.android',
     // Kisi unlocks doors over Bluetooth and uses location to confirm proximity
@@ -59,6 +71,7 @@ const CONNECTORS = {
     iconUrl:     null,
     iosLink:     null,
     androidLink: null,
+    qrReader:    null,
     requirements: null,
     usageTips:    null,
   },
@@ -72,4 +85,4 @@ function getConnectorBranding(hardwarePlatform) {
   return CONNECTORS[hardwarePlatform] || CONNECTORS.kisi;
 }
 
-module.exports = { CONNECTORS, getConnectorBranding, KISI_APP_ICON_URL };
+module.exports = { CONNECTORS, getConnectorBranding, KISI_APP_ICON_URL, KISI_QR_READER_IMAGE_URL };

@@ -536,6 +536,7 @@ class GrantRevokeLogic {
         links.push({
           mappingId:       mapping.mappingId,
           hardwareGroupId: mapping.hardwareGroupId,
+          hardwarePlatform: mapping.hardwarePlatform || null,
           groupLinkId:     link.id,
           sourcePlanId:    wixEvent.planId || null,
           units,

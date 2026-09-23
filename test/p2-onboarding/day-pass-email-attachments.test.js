@@ -82,7 +82,8 @@ describe('[P2] day-pass email — QR attachments', () => {
 
     expect(attachments.filter(a => a.content_id)).toHaveLength(1);
     expect(html).toContain('5 days from when you bought it');
-    expect(html).toContain('You bought 5 &times; 1-Day Pass, so your code works 5 days in a row.');
+    expect(html).toContain('1-Day Pass × 5');
+    expect(html).toContain('5 passes = 5 days in a row.');
     expect(text).toContain('can\'t be paused or saved for later');
     expect(html).not.toContain('Code 1 of');
   });
@@ -110,5 +111,64 @@ describe('[P2] day-pass email — QR attachments', () => {
     const { html, text } = mockSend.mock.calls[0][0];
     expect(html).not.toContain('kisi.example');
     expect(text).not.toContain('kisi.example');
+  });
+});
+
+describe('[P2] day-pass email — the redesigned body carries the entry guide', () => {
+  const t = require('../../core/email-templates');
+  const branding = t.brandingFromClientRow({
+    name: 'House of Gains', email_primary_color: '#333333', email_secondary_color: '#ffdb29',
+    notification_email: 'gym@example.com', source_site_url: 'https://www.houseofgainsthegym.com',
+  });
+  const render = (extra) => t.renderDayPassReady({
+    branding, member: { firstName: 'Daxx' }, doorName: 'Entrance Door', planName: '1-Day Pass',
+    validUntilText: 'Sep 24, 2026, 9:04 PM CDT', validUntilParts: { day: 'Thu, Sep 24', time: '9:04 PM CDT' },
+    durationLabel: '24 hours', codes: [{ qrSrc: 'cid:daypassqr1' }], qrSrc: 'cid:daypassqr1',
+    hardwarePlatform: 'kisi', ...extra,
+  });
+
+  test('the three door steps and the Terminal Pro image are in the email itself, not only the PDF', () => {
+    const { html, text } = render();
+    expect(html).toContain('Three steps at the door');
+    expect(html).toContain('Hold your phone 4&ndash;8 inches below the reader.');
+    expect(html).toContain('Wait for the green flash.');
+    expect(html).toContain('https://accesssync-admin.up.railway.app/kisi-terminal-pro-qr.png');
+    expect(html).toContain('If the reader doesn&rsquo;t catch it');
+    expect(text).toContain('THREE STEPS AT THE DOOR');
+  });
+
+  test('the pass card shows the split expiry, the length and the door', () => {
+    const { html } = render();
+    expect(html).toContain('Thu, Sep 24');
+    expect(html).toContain('9:04 PM CDT');
+    expect(html).toContain('Scan at <strong');
+    expect(html).toContain('Entrance Door');
+  });
+
+  test('text on the pale accent is dark, never white (HOG yellow)', () => {
+    const { html } = render();
+    expect(html).toMatch(/background-color:#ffdb29;font-family:[^;]+;font-size:15px;font-weight:bold;line-height:30px;color:#1a1a1a;/);
+  });
+
+  test('the keep-it-to-yourself note is always present (MEMBER_EMAILS_SPEC §3)', () => {
+    expect(render().html).toContain('Keep this code to yourself.');
+  });
+
+  test('footer links the gym site; a non-https site URL is dropped', () => {
+    expect(render().html).toContain('houseofgainsthegym.com</a>');
+    const plain = t.brandingFromClientRow({ name: 'Gym', source_site_url: 'http://insecure.example' });
+    expect(plain.siteUrl).toBeNull();
+  });
+
+  test('a stubbed connector with no reader image falls back to steps only, no broken image', () => {
+    const { html } = render({ hardwarePlatform: 'seam' });
+    expect(html).toContain('Three steps at the door');
+    expect(html).not.toContain('kisi-terminal-pro-qr.png');
+  });
+
+  test('hostile plan and door names are escaped', () => {
+    const { html } = render({ planName: '<script>x</script>', doorName: '"><img src=x>' });
+    expect(html).not.toContain('<script>x</script>');
+    expect(html).not.toContain('"><img src=x>');
   });
 });

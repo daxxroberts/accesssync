@@ -71,7 +71,8 @@ async function sendMemberEmail(p) {
     // 1. Branding + gate in one read.
     const clientRes = await db.query(
       `SELECT name, notification_email, member_emails_enabled,
-              email_logo_url, email_primary_color, email_secondary_color, qr_guide_url
+              email_logo_url, email_primary_color, email_secondary_color, qr_guide_url,
+              source_site_url
        FROM clients WHERE id = $1`,
       [p.clientId]
     );
@@ -449,6 +450,21 @@ function _formatWhen(iso, timeZone) {
   }
 }
 
+// The same moment as _formatWhen, split for the day-pass card: { day: 'Thu, Sep 24',
+// time: '9:04 PM CDT' }. Null when the instant is missing or unparseable.
+function _formatWhenParts(iso, timeZone) {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    const day  = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone }).format(d);
+    const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone, timeZoneName: 'short' }).format(d);
+    return { day, time };
+  } catch (_) {
+    return null;
+  }
+}
+
 function _durationLabel(validFrom, validUntil) {
   // A store-order pass has no start date — it runs from the purchase, i.e. now.
   const start = validFrom ? Date.parse(validFrom) : Date.now();
@@ -560,6 +576,8 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
         member:         { firstName: m.first_name || null },
         doorName,
         validUntilText: _formatWhen(primary.validUntil, timeZone),
+        validUntilParts: _formatWhenParts(primary.validUntil, timeZone),
+        hardwarePlatform: primary.hardwarePlatform || null,
         durationLabel:  _durationLabel(primary.validFrom, primary.validUntil),
         // QR only: the access link unlocks from anywhere (Kisi applies no geofence or
         // reader-proximity check to it), the QR has to be at the terminal. The link is
@@ -586,5 +604,6 @@ module.exports = {
   maybeSendAccessRestoredEmail,
   maybeSendDayPassEmail,
   _formatWhen,
+  _formatWhenParts,
   _durationLabel,
 };
