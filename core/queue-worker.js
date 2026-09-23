@@ -82,7 +82,10 @@ async function _runDayPassGrant({ tenantId, memberId, mappings, standardEvent, e
   const clientId = tenantId;
   const planId = standardEvent.planId || null;
 
-  const endDate = grantRevokeLogic.dayPassEndDate(standardEvent, mappings);
+  // Quantity buys consecutive days, not extra people (Builder rule, 2026-09-23): a 1-Day
+  // Pass x5 is ONE code good for 5 x 24 h from purchase.
+  const units   = _unitsBought(standardEvent, planId, logger);
+  const endDate = grantRevokeLogic.dayPassEndDate(standardEvent, mappings, units);
   if (!endDate) {
     logger.info('grant.day_pass.synthetic_skipped', {
       clientId, memberId, eventId,
@@ -106,60 +109,51 @@ async function _runDayPassGrant({ tenantId, memberId, mappings, standardEvent, e
     return;
   }
 
-  // Every paid unit gets its own door code. The claim key is the product PLUS the
-  // order and unit — so a second purchase of the same pass is a new pass (the buyer
-  // may be handing codes to other people), while Wix's 2-3 echoes of ONE order share
-  // a key and still collapse to a single code. No order id (legacy / synthetic) →
-  // the bare product id, i.e. the old one-pass-per-product behaviour.
-  const orderId = standardEvent.wixOrderId || null;
-  const units   = _unitsBought(standardEvent, planId, logger);
+  // Every paid ORDER gets its own door code. The claim key is the product PLUS the
+  // order — so a second purchase of the same pass is a new pass, while Wix's 2-3
+  // echoes of ONE order share a key and still collapse to a single code. The `#1`
+  // suffix keeps the product#order#unit shape older rows and revoke matching use;
+  // one order is one code now, however many days it bought. No order id (legacy /
+  // synthetic) → the bare product id, i.e. the old one-pass-per-product behaviour.
+  const orderId   = standardEvent.wixOrderId || null;
+  const sourceKey = orderId ? `${planId}#${orderId}#1` : planId;
   const billingSnapshot = extractBillingSnapshot(standardEvent.rawPayload);
 
-  const links = [];
-  const unitsGranted = [];
-  let firstError = null;
-
-  for (let unit = 1; unit <= units; unit++) {
-    const sourceKey = orderId ? `${planId}#${orderId}#${unit}` : planId;
-    const claimed = await standardAdapter.claimDayPassSources(memberId, tenantId, mappings, sourceKey);
-    if (claimed.length === 0) {
-      logger.info('grant.day_pass.claim_lost', {
-        clientId, memberId, eventId,
-        platformMemberId: standardEvent.platformMemberId, planId,
-        wixOrderId: orderId, unit, units,
-        mappingCount: mappings.length,
-        stage: 'grant', result: 'skipped',
-      });
-      continue;
-    }
-
-    // One unit failing must not strand the codes already minted for this order —
-    // they are emailed below, then the job throws so the retry finishes the rest.
-    let result;
-    try {
-      result = await grantRevokeLogic.processDayPassGrant(
-        tenantId, memberId, claimed, standardEvent,
-        { email: identity.email, sourceKey, unit, units }
-      );
-    } catch (err) {
-      await standardAdapter.releaseDayPassClaims(memberId, tenantId, claimed, sourceKey).catch(() => {});
-      firstError = firstError || err;
-      continue;
-    }
-    const okMappingIds = new Set(result.assignments.map(a => a.mappingId));
-    const failedClaims = claimed.filter(m => !okMappingIds.has(m.mappingId));
-    if (failedClaims.length > 0) {
-      await standardAdapter.releaseDayPassClaims(memberId, tenantId, failedClaims, sourceKey).catch(() => {});
-    }
-
-    await standardAdapter.completeGrant(memberId, tenantId, result.assignments, billingSnapshot);
-    links.push(...result.links);
-    unitsGranted.push(unit);
+  const claimed = await standardAdapter.claimDayPassSources(memberId, tenantId, mappings, sourceKey);
+  if (claimed.length === 0) {
+    logger.info('grant.day_pass.claim_lost', {
+      clientId, memberId, eventId,
+      platformMemberId: standardEvent.platformMemberId, planId,
+      wixOrderId: orderId, units,
+      mappingCount: mappings.length,
+      stage: 'grant', result: 'skipped',
+    });
+    await standardAdapter.rollupAccessStatus(memberId);
+    return;
   }
+
+  let result;
+  try {
+    result = await grantRevokeLogic.processDayPassGrant(
+      tenantId, memberId, claimed, standardEvent,
+      { email: identity.email, sourceKey, units }
+    );
+  } catch (err) {
+    await standardAdapter.releaseDayPassClaims(memberId, tenantId, claimed, sourceKey).catch(() => {});
+    await standardAdapter.rollupAccessStatus(memberId);
+    throw err;
+  }
+  const okMappingIds = new Set(result.assignments.map(a => a.mappingId));
+  const failedClaims = claimed.filter(m => !okMappingIds.has(m.mappingId));
+  if (failedClaims.length > 0) {
+    await standardAdapter.releaseDayPassClaims(memberId, tenantId, failedClaims, sourceKey).catch(() => {});
+  }
+
+  await standardAdapter.completeGrant(memberId, tenantId, result.assignments, billingSnapshot);
+  const links = result.links;
 
   if (links.length === 0) {
     await standardAdapter.rollupAccessStatus(memberId);
-    if (firstError) throw firstError;
     return;
   }
 
@@ -171,26 +165,23 @@ async function _runDayPassGrant({ tenantId, memberId, mappings, standardEvent, e
   logger.info('queue.grant.day_pass.complete', {
     clientId, memberId, eventId,
     platformMemberId: standardEvent.platformMemberId, planId,
-    wixOrderId: orderId, units, unitsGranted,
+    wixOrderId: orderId, units,
     links: links.length,
     validUntil: endDate,
     durationMs: Date.now() - jobStart,
     stage: 'grant', result: 'success',
   });
 
-  // Keyed on the units this job minted, so a retry that finishes the remaining units
-  // sends THEIR codes instead of being deduped against the first email.
+  // `:u1` keeps the dedup key shape of emails already sent under the per-unit model.
   memberMailer.maybeSendDayPassEmail({
     clientId: tenantId, accessId: memberId, standardEvent,
-    links, recipientEmail: identity.email,
-    eventKey: `${orderId || eventId || job.id}:u${unitsGranted.join('-')}`,
+    links, recipientEmail: identity.email, units,
+    eventKey: `${orderId || eventId || job.id}:u1`,
   }).catch(() => {});
-
-  if (firstError) throw firstError;
 }
 
-// A sanity ceiling, not a product rule: one order minting hundreds of Kisi links is a
-// malformed payload or an abuse case, not a group outing.
+// A sanity ceiling, not a product rule: quantity is days in a row, and a single code
+// good for months is a malformed payload or an abuse case, not a customer.
 const MAX_DAY_PASS_UNITS = 50;
 
 /** How many units of `planId` this order bought. Plan orders and legacy events → 1. */

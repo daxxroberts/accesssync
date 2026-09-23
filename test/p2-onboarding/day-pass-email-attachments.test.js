@@ -44,9 +44,9 @@ beforeEach(() => {
   });
 });
 
-const send = (links) => mailer.maybeSendDayPassEmail({
+const send = (links, units) => mailer.maybeSendDayPassEmail({
   clientId: 'client-1', accessId: 'access-1', links, recipientEmail: 'buyer@example.com',
-  standardEvent: { planId: 'prod-1', planName: '1-Day Pass', wixOrderId: 'order-1' }, eventKey: 'order-1:u1',
+  standardEvent: { planId: 'prod-1', planName: '1-Day Pass', wixOrderId: 'order-1' }, eventKey: 'order-1:u1', units,
 });
 
 describe('[P2] day-pass email — QR attachments', () => {
@@ -63,7 +63,7 @@ describe('[P2] day-pass email — QR attachments', () => {
     expect(html).toContain('cid:daypassqr1');
   });
 
-  test('three passes: three inline + three files, each file named for its pass', async () => {
+  test('three codes (a pass mapped to three doors): three inline + three files, each file numbered', async () => {
     await send([link(1), link(2), link(3)]);
     const { attachments, html } = mockSend.mock.calls[0][0];
 
@@ -71,8 +71,20 @@ describe('[P2] day-pass email — QR attachments', () => {
     expect(attachments.filter(a => !a.content_id).map(a => a.filename)).toEqual([
       'Day-Pass-1-of-3-QR-Code.png', 'Day-Pass-2-of-3-QR-Code.png', 'Day-Pass-3-of-3-QR-Code.png',
     ]);
-    expect(html).toContain('Pass 2 of 3');
-    expect(html).toContain('started when you bought them and end at the same time');
+    expect(html).toContain('Code 2 of 3');
+    expect(html).not.toContain('one person');   // codes are doors now, not people
+  });
+
+  test('quantity 5 of a 1-Day Pass: ONE code, and the email says 5 days in a row, no pausing', async () => {
+    const fiveDays = { ...link(1), validUntil: new Date(Date.now() + 5 * 24 * 3600_000).toISOString() };
+    await send([fiveDays], 5);
+    const { attachments, html, text } = mockSend.mock.calls[0][0];
+
+    expect(attachments.filter(a => a.content_id)).toHaveLength(1);
+    expect(html).toContain('5 days from when you bought it');
+    expect(html).toContain('You bought 5 &times; 1-Day Pass, so your code works 5 days in a row.');
+    expect(text).toContain('can\'t be paused or saved for later');
+    expect(html).not.toContain('Code 1 of');
   });
 
   test('the gym\'s QR entry guide PDF rides along when one is set — fetched by Resend from its URL', async () => {

@@ -365,37 +365,37 @@ function renderSubMemberInvite({ branding, member, holderName, plans, hardwarePl
  *   unlockUrl       Kisi access link (null → no CTA, QR only)
  *   qrSrc           'cid:…' for an inline attachment, an https URL, or null
  */
-function renderDayPassReady({ branding, member, doorName, validUntilText, durationLabel, unlockUrl, qrSrc, codes, planName, qrGuideAttached }) {
+function renderDayPassReady({ branding, member, doorName, validUntilText, durationLabel, unlockUrl, qrSrc, codes, planName, units, qrGuideAttached }) {
   const first    = (member && member.firstName) ? member.firstName : null;
   const gym      = branding.gymName;
   const door     = doorName || 'the door';
   const when     = validUntilText || 'your pass expires';
   const duration = durationLabel || '24 hours';
 
-  // codes: one per paid unit ("1-Day Pass x3" is three codes). A single pass renders
-  // exactly as it did before `codes` existed.
+  // codes: one per door the product is mapped to. Quantity does NOT add codes — it adds
+  // days (Builder rule, 2026-09-23). A single code renders as it did before `codes` existed.
   const allCodes = (Array.isArray(codes) && codes.length ? codes : [{ qrSrc }]).filter(c => c && c.qrSrc);
   const many = allCodes.length > 1;
   const qrHtml = allCodes.map(function (c, i) {
     return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;"><tr><td align="center">' +
-        (many ? '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:bold;color:' + NEUTRAL_TEXT + ';margin-bottom:8px;">Pass ' + (i + 1) + ' of ' + allCodes.length +
-          '<span style="font-weight:normal;"> &middot; one person &middot; works until ' + escapeHtml(c.validUntilText || when) + '</span></div>' : '') +
+        (many ? '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:bold;color:' + NEUTRAL_TEXT + ';margin-bottom:8px;">Code ' + (i + 1) + ' of ' + allCodes.length +
+          '<span style="font-weight:normal;"> &middot; works until ' + escapeHtml(c.validUntilText || when) + '</span></div>' : '') +
         '<img src="' + escapeHtml(c.qrSrc) + '" width="220" height="220" alt="Your door code' + (many ? ' ' + (i + 1) : '') + '" style="display:block;width:220px;height:220px;border:0;outline:none;" />' +
       '</td></tr></table>';
   }).join('');
-  // Every pass starts at purchase — Wix has no "start date" on a cart item — so N passes
-  // are N people for the same window, never N days in a row. Said outright, because a
-  // buyer who expected a week finds out at a locked door otherwise.
-  const manyHtml = many
-    ? '<p style="margin:0 0 12px 0;">You bought <strong>' + allCodes.length + ' passes</strong>' + (planName ? ' (' + escapeHtml(planName) + ')' : '') + '. Each code below is its own pass, for one person.</p>' +
-      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px 0;"><tr><td style="background-color:#EEF2FF;border-left:3px solid #4F6EF7;border-radius:0 8px 8px 0;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
-        '<strong>All ' + allCodes.length + ' passes started when you bought them and end at the same time.</strong> ' +
-        'They let ' + allCodes.length + ' people in for ' + escapeHtml(duration) + '. They don&rsquo;t add up to more days for one person. Need longer? Buy a longer pass.' +
+  // Quantity > 1 is days in a row from purchase — Wix has no "start date" on a cart item,
+  // so the days can't be spread out. Said outright, because a buyer who planned to use
+  // them one Saturday at a time finds out at a locked door otherwise.
+  const n = Number.isInteger(units) && units > 1 ? units : 1;
+  const daysHtml = n > 1
+    ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 12px 0;"><tr><td style="background-color:#EEF2FF;border-left:3px solid #4F6EF7;border-radius:0 8px 8px 0;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:' + NEUTRAL_TEXT + ';">' +
+        '<strong>You bought ' + n + (planName ? ' &times; ' + escapeHtml(planName) : ' passes') + ', so your code works ' + escapeHtml(duration) + ' in a row.</strong> ' +
+        'The time started when you bought it and runs straight through. It can&rsquo;t be paused or saved for later.' +
       '</td></tr></table>'
     : '';
-  const manyText = many
-    ? 'You bought ' + allCodes.length + ' passes' + (planName ? ' (' + planName + ')' : '') + '. Each attached code is its own pass, for one person.\n\n' +
-      'All ' + allCodes.length + ' passes started when you bought them and end at the same time. They let ' + allCodes.length + ' people in for ' + duration + '. They don\'t add up to more days for one person. Need longer? Buy a longer pass.\n\n'
+  const daysText = n > 1
+    ? 'You bought ' + n + (planName ? ' x ' + planName : ' passes') + ', so your code works ' + duration + ' in a row. ' +
+      'The time started when you bought it and runs straight through. It can\'t be paused or saved for later.\n\n'
     : '';
 
   const tapHtml = unlockUrl
@@ -407,18 +407,17 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
 
   // The pass is QR only unless Kisi returned no QR image — don't warn about a link that isn't there.
   const whoCanOpen = unlockUrl ? 'Anyone with the code or the link' : (many ? 'Anyone with one of these codes' : 'Anyone with this code');
-  // Several passes are bought to be handed out — "don't forward" would be the wrong advice.
-  const warnTitle = many ? 'Share each code with one person only' : 'Don&rsquo;t forward this email';
-  const warnTitleText = many ? 'Share each code with one person only.' : 'Don\'t forward this email.';
+  const warnTitle = 'Don&rsquo;t forward this email';
+  const warnTitleText = 'Don\'t forward this email.';
 
   const bodyHtml =
     '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
     '<p style="margin:0 0 12px 0;">You&rsquo;re in at <strong>' + escapeHtml(gym) + '</strong> until <strong>' + escapeHtml(when) + '</strong>. That&rsquo;s ' + escapeHtml(duration) + ' from when you bought it, not the end of the day.</p>' +
-    manyHtml +
+    daysHtml +
     qrHtml +
     (allCodes.length
       ? '<p style="margin:0 0 12px 0;font-size:13px;color:' + NEUTRAL_TEXT + ';">' +
-          (many ? 'Each code is also attached to this email as its own image, so you can save it or send it to the person it&rsquo;s for.'
+          (many ? 'Each code is also attached to this email as its own image, so you can save them to your phone.'
                 : 'The code is also attached to this email as an image, so you can save it to your phone.') +
           (qrGuideAttached ? ' First time? The attached <strong>How to get in</strong> PDF shows exactly where to hold your phone.' : '') + '</p>'
       : '') +
@@ -431,7 +430,7 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, durati
   const bodyText =
     'Hi ' + (first || 'there') + ',\n\n' +
     'You\'re in at ' + gym + ' until ' + when + '. That\'s ' + duration + ' from when you bought it, not the end of the day.\n\n' +
-    manyText +
+    daysText +
     (allCodes.length ? (many ? 'Your door codes are attached to this email as images.' : 'Your door code is attached to this email as an image.') +
       (qrGuideAttached ? ' First time? The attached "How to get in" PDF shows exactly where to hold your phone.' : '') + '\n\n' : '') +
     'Hold ' + (many ? 'a' : 'this') + ' code up to the reader at ' + door + '.' + tapText + '\n\n' +

@@ -472,7 +472,7 @@ function _durationLabel(validFrom, validUntil) {
  * Timezone for the expiry text: MEMBER_EMAIL_TIMEZONE (IANA), default UTC — no
  * per-client timezone column exists yet.
  */
-async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links, recipientEmail, eventKey }) {
+async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links, recipientEmail, eventKey, units }) {
   try {
     if (!Array.isArray(links) || links.length === 0) return { sent: false, reason: 'no_links' };
     if (standardEvent && standardEvent.synthetic) {
@@ -506,7 +506,7 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
       doorName = (pmRes.rows[0] && pmRes.rows[0].door_name) || null;
     }
 
-    // One code per paid unit — "2-Day Pass x3" is three codes in one email, each an
+    // One code per door the pass is mapped to (quantity adds days, not codes), each an
     // inline CID image (Gmail strips base64 data URIs).
     const timeZone = process.env.MEMBER_EMAIL_TIMEZONE || 'UTC';
     const attachments = [];
@@ -545,8 +545,6 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
     const qrSrc = codes[0].qrSrc;
 
     const planId = (standardEvent && standardEvent.planId) || primary.sourcePlanId || 'na';
-    // eventKey carries the order AND the units this job minted, so a retry that
-    // finishes the remaining units is not deduped against the first email.
     const orderId = eventKey || (standardEvent && standardEvent.wixOrderId) || 'noorder';
 
     return await sendMemberEmail({
@@ -570,6 +568,7 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
         qrSrc,
         codes,
         planName:       (standardEvent && standardEvent.planName) || null,
+        units:          units || 1,
       },
     });
   } catch (err) {

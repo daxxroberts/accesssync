@@ -47,9 +47,10 @@ const BILLING_CANCEL_ALLOWED_SYNTHETIC = new Set(['reconciliation.reconcile_memb
 
 /**
  * Does this day-pass source row belong to the pass a revoke event names? Rows are
- * stored under a claim key — product#order#unit — so each paid unit expires alone:
+ * stored under a claim key — product#order#unit (unit is always 1 since quantity became
+ * consecutive days; older rows may carry 2..N) — so each paid order expires alone:
  *   - the expiry sweep names the exact key            → that one row
- *   - a real Wix cancellation names the PRODUCT (and usually the order) → every unit
+ *   - a real Wix cancellation names the PRODUCT (and usually the order) → every row
  *     of that order; with no order on the event, every pass of that product
  * A legacy row stored under the bare product id matches the product as before.
  */
@@ -435,10 +436,12 @@ class GrantRevokeLogic {
    * Day pass (OB-98 / OB-251) — when does this credential expire?
    *
    * Precedence, and why:
-   *   1. The mapping's day_pass_hours → purchase time + N hours. Wix cannot sell a
-   *      one-day plan (Pricing Plans floors length at 7 days; a Stores order has no
-   *      end date at all), so for a day pass the window is AccessSync's to set. A
-   *      7-day Wix plan sold as a 24-hour pass expires here, not a week later.
+   *   1. The mapping's day_pass_hours → purchase time + hours x units. Wix cannot
+   *      sell a one-day plan (Pricing Plans floors length at 7 days; a Stores order
+   *      has no end date at all), so for a day pass the window is AccessSync's to set.
+   *      A 7-day Wix plan sold as a 24-hour pass expires here, not a week later.
+   *      Quantity is consecutive days (Builder rule, 2026-09-23): a 1-Day Pass x5 is
+   *      one code good for 5 x 24 h from purchase.
    *   2. Otherwise the order's own end date — the original Pricing-Plans behaviour.
    *   3. Otherwise null for a SYNTHETIC event (reconcile re-grants carry no dates and
    *      must be a no-op — throwing would flip the member inactive while the link is
@@ -446,11 +449,12 @@ class GrantRevokeLogic {
    *   4. Otherwise throw: a real purchase with neither a configured window nor an end
    *      date would mint a credential with no expiry. Dead-letter it visibly instead.
    */
-  dayPassEndDate(wixEvent, mappings = []) {
+  dayPassEndDate(wixEvent, mappings = [], units = 1) {
     const hours = (mappings || [])
       .map(m => Number(m && m.dayPassHours))
       .find(h => Number.isFinite(h) && h > 0);
-    if (hours) return new Date(Date.now() + hours * 3600_000).toISOString();
+    const n = Number.isInteger(units) && units > 1 ? units : 1;
+    if (hours) return new Date(Date.now() + hours * n * 3600_000).toISOString();
 
     const endDate = (wixEvent && wixEvent.endDate) || null;
     if (endDate) return endDate;
@@ -470,29 +474,28 @@ class GrantRevokeLogic {
    * exactly the set this job owns. Same partial-failure rule as processGrant: return
    * what was created; throw only if nothing was (the caller releases failed claims).
    *
-   * @param {Object} opts  { email, sourceKey, unit, units }
-   *   sourceKey — the claim key this pass was claimed under (product#order#unit). It is
-   *               what the source row is stored under, so each paid unit is its own
+   * @param {Object} opts  { email, sourceKey, units }
+   *   sourceKey — the claim key this pass was claimed under (product#order#1). It is
+   *               what the source row is stored under, so each paid order is its own
    *               row with its own expiry; sourcePlanId stays the real product id for
    *               billing. Absent → the product id (one pass per product, legacy).
-   *   unit/units — "pass 2 of 3", for the Kisi label and the email.
+   *   units     — quantity bought; stretches the window (hours x units), one code.
    * @returns {{ assignments: Array, links: Array }}
    *   assignments → standardAdapter.completeGrant (roleAssignmentId = group link id,
    *                 sourceType 'day_pass', planEndDate = valid_until via RI-03)
    *   links       → member-mailer (linkUrl / qrImage* — bearer credentials, never logged)
    */
   async processDayPassGrant(tenantId, memberId, mappings, wixEvent, opts = {}) {
-    const endDate = this.dayPassEndDate(wixEvent, mappings);
+    const units = opts.units || 1;
+    const endDate = this.dayPassEndDate(wixEvent, mappings, units);
     const assignments = [];
     const links = [];
     if (!endDate) return { assignments, links };
 
     const failed = [];
     const sourceKey = opts.sourceKey || wixEvent.planId || null;
-    const unit  = opts.unit  || 1;
-    const units = opts.units || 1;
     const label = `Day pass · ${wixEvent.planName || opts.planName || wixEvent.planId || 'plan'}` +
-      (units > 1 ? ` (${unit} of ${units})` : '');
+      (units > 1 ? ` x${units}` : '');
 
     for (const mapping of mappings) {
       if (!mapping.hardwareGroupId) continue;
@@ -535,7 +538,7 @@ class GrantRevokeLogic {
           hardwareGroupId: mapping.hardwareGroupId,
           groupLinkId:     link.id,
           sourcePlanId:    wixEvent.planId || null,
-          unit, units,
+          units,
           linkUrl:         link.linkUrl || null,
           qrImageBase64:   link.qrImageBase64 || null,
           qrImageUrl:      link.qrImageUrl || null,

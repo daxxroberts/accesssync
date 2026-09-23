@@ -9,12 +9,12 @@
  * │  the customer paid and received nothing, silently. A quantity of 3      │
  * │  likewise produced one code.                                            │
  * │                                                                         │
- * │  Builder rule: if they paid for it, they get a code. Buyers may be      │
- * │  handing codes to other people; AccessSync does not second-guess.       │
+ * │  Builder rule: if they paid for it, they get a code.                    │
+ * │  Builder rule (2026-09-23): quantity is consecutive DAYS, not people.   │
  * │                                                                         │
- * │  The claim key is now product#order#unit:                               │
+ * │  The claim key is product#order#1:                                      │
  * │    - a second ORDER of the same pass        → a new key  → a new code   │
- * │    - quantity 3 on one order                → three keys → three codes  │
+ * │    - quantity 5 on one order                → ONE code, 5 x the hours   │
  * │    - Wix's echoes of ONE order              → same key   → one code     │
  * │    - each code expires alone                (revoke matches by key)     │
  * └─────────────────────────────────────────────────────────────────────────┘
@@ -94,7 +94,7 @@ beforeEach(() => {
   });
 });
 
-describe('[P1] day pass — one code per paid order', () => {
+describe('[P1] day pass — one code per paid order, quantity is days', () => {
   test('REGRESSION: a second order of the SAME pass while the first is active still gets a code', async () => {
     await run(event('order-A'));
     await run(event('order-B'));
@@ -113,39 +113,37 @@ describe('[P1] day pass — one code per paid order', () => {
     expect(standardAdapter.rollupAccessStatus).toHaveBeenCalledTimes(1);   // the echo just recomputes
   });
 
-  test('quantity 3 → three codes, three source rows, ONE email carrying all three', async () => {
-    await run(event('order-Q', 3));
+  test('quantity 5 → ONE code, one source row, one email; the window is 5 x the pass length', async () => {
+    await run(event('order-Q', 5));
 
-    expect([...claimedKeys]).toEqual([1, 2, 3].map(u => `${PRODUCT}#order-Q#${u}`));
-    expect(standardAdapter.completeGrant).toHaveBeenCalledTimes(3);
+    expect([...claimedKeys]).toEqual([`${PRODUCT}#order-Q#1`]);
+    expect(grantRevokeLogic.dayPassEndDate).toHaveBeenCalledWith(expect.anything(), [mapping], 5);
+    expect(grantRevokeLogic.processDayPassGrant).toHaveBeenCalledTimes(1);
+    expect(grantRevokeLogic.processDayPassGrant.mock.calls[0][4]).toMatchObject({ units: 5 });
+    expect(standardAdapter.completeGrant).toHaveBeenCalledTimes(1);
     expect(memberMailer.maybeSendDayPassEmail).toHaveBeenCalledTimes(1);
     const mail = memberMailer.maybeSendDayPassEmail.mock.calls[0][0];
-    expect(mail.links).toHaveLength(3);
-    expect(mail.eventKey).toBe('order-Q:u1-2-3');
+    expect(mail.links).toHaveLength(1);
+    expect(mail.units).toBe(5);
+    expect(mail.eventKey).toBe('order-Q:u1');
   });
 
   test('the source row is stored under the claim key; the event keeps the real product id for billing', async () => {
     await run(event('order-A'));
     const call = grantRevokeLogic.processDayPassGrant.mock.calls[0];
-    expect(call[4]).toMatchObject({ sourceKey: `${PRODUCT}#order-A#1`, unit: 1, units: 1 });
+    expect(call[4]).toMatchObject({ sourceKey: `${PRODUCT}#order-A#1`, units: 1 });
     expect(call[3].planId).toBe(PRODUCT);
   });
 
-  test('one unit failing: codes already minted are emailed, then the job throws so the retry finishes the rest', async () => {
+  test('Kisi failing: the claim is released so the retry can mint it, the job throws, nothing is emailed', async () => {
     const boom = Object.assign(new Error('kisi 500'), { statusCode: 500 });
-    grantRevokeLogic.processDayPassGrant
-      .mockImplementationOnce(async (_t, _m, c, _e, o) => ({
-        assignments: [{ mappingId: c[0].mappingId, roleAssignmentId: '901', sourceKey: o.sourceKey }],
-        links: [{ groupLinkId: 901, qrImageBase64: 'QUJD' }],
-      }))
-      .mockImplementationOnce(async () => { throw boom; });
+    grantRevokeLogic.processDayPassGrant.mockImplementationOnce(async () => { throw boom; });
 
     await expect(run(event('order-P', 2))).rejects.toBe(boom);
 
-    expect(standardAdapter.releaseDayPassClaims).toHaveBeenCalledWith(MEMBER, TENANT, [mapping], `${PRODUCT}#order-P#2`);
-    const mail = memberMailer.maybeSendDayPassEmail.mock.calls[0][0];
-    expect(mail.links).toHaveLength(1);
-    expect(mail.eventKey).toBe('order-P:u1');   // the retry's email (u2) is a different dedup key
+    expect(standardAdapter.releaseDayPassClaims).toHaveBeenCalledWith(MEMBER, TENANT, [mapping], `${PRODUCT}#order-P#1`);
+    expect(standardAdapter.rollupAccessStatus).toHaveBeenCalledTimes(1);
+    expect(memberMailer.maybeSendDayPassEmail).not.toHaveBeenCalled();
   });
 
   test('no order id (legacy event) → the bare product id, one pass per product as before', async () => {

@@ -152,6 +152,13 @@ describe('[P1] day pass window — dayPassEndDate precedence', () => {
     expect(Date.parse(out)).toBeLessThan(Date.parse(weekOut));
   });
 
+  test('quantity is consecutive days: 1-Day Pass x5 → 120 h; 2-Day Pass x3 → 144 h; bad units → 1', () => {
+    expect(Date.parse(grantRevoke.dayPassEndDate({}, [{ dayPassHours: 24 }], 5))).toBe(NOW + 120 * 3600_000);
+    expect(Date.parse(grantRevoke.dayPassEndDate({}, [{ dayPassHours: 48 }], 3))).toBe(NOW + 144 * 3600_000);
+    expect(Date.parse(grantRevoke.dayPassEndDate({}, [{ dayPassHours: 24 }], 0))).toBe(NOW + 24 * 3600_000);
+    expect(Date.parse(grantRevoke.dayPassEndDate({}, [{ dayPassHours: 24 }], undefined))).toBe(NOW + 24 * 3600_000);
+  });
+
   test('no pass length → the order end date (unchanged Pricing-Plans behaviour)', () => {
     expect(grantRevoke.dayPassEndDate({ endDate: '2026-10-01T00:00:00.000Z' }, [{}]))
       .toBe('2026-10-01T00:00:00.000Z');
