@@ -1,0 +1,10 @@
+# Never line-ending-convert binaries (git warned it would on the first committed PDF, 2026-09-22).
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
