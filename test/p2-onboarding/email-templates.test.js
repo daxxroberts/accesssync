@@ -320,3 +320,67 @@ describe('[P2] DR-052 content renderers — escaping, subjects, text part', () =
     }
   });
 });
+
+describe('[P2] access-ready redesign — download the app first, readable colors', () => {
+  const HOG = t.brandingFromClientRow({
+    name: 'House of Gains', email_primary_color: '#333333', email_secondary_color: '#ffdb29',
+    notification_email: 'gym@example.com',
+  });
+  const ready = (extra) => t.renderAccessReady({
+    branding: HOG, member: { firstName: 'Jane' },
+    plans: [{ planName: 'Individual', doorName: 'Entrance Door' }], hardwarePlatform: 'kisi', ...extra,
+  });
+
+  test('the Kisi download card is the main call to action, with both store buttons', () => {
+    const { html } = ready();
+    expect(html).toContain('Download the Kisi app');
+    expect(html).toMatch(/href="https:\/\/apps\.apple\.com\/us\/app\/kisi\/id687291321"[^>]*>Download for iPhone/);
+    expect(html).toMatch(/href="https:\/\/play\.google\.com\/store\/apps\/details\?id=de\.kisi\.android"[^>]*>Download for Android/);
+    expect(html.indexOf('Download the Kisi app')).toBeLessThan(html.indexOf('Important requirements'));
+  });
+
+  test('setup steps walk through download, sign-in, Bluetooth + Location; sign-in is said once', () => {
+    const { html, text } = ready();
+    expect(html).toContain('Set up in 3 steps');
+    expect(html).toContain('Sign in with your checkout email.');
+    expect(html).toContain('Turn on Bluetooth and Location.');
+    expect((html.match(/Sign in with your checkout email/g) || []).length).toBe(1);
+    expect(text).toContain('SET UP IN 3 STEPS');
+  });
+
+  test('requirements callout says why, so a member knows the door fails silently', () => {
+    const { html, text } = ready();
+    expect(html).toContain('Keep these on, always');
+    expect(html).toMatch(/door just won(&#39;|')t open/);
+    expect(text).toMatch(/door just won't open/);
+  });
+
+  test('a pale accent (HOG yellow) is never white-text or link text on white', () => {
+    const { html } = ready();
+    expect(html).not.toMatch(/background-color:#ffdb29;[^"]*color:#ffffff/);
+    expect(html).not.toMatch(/<a [^>]*style="color:#ffdb29/);
+  });
+
+  test('shared layout emails: footer link falls back to a readable color; CTA text contrasts with the accent', () => {
+    const removed = t.renderAccessRemoved({ branding: HOG, member: { firstName: 'Jane' }, planName: 'Individual' });
+    expect(removed.html).toContain('style="color:#333333;">gym@example.com</a>');
+    const withCta = t.renderLayout({ branding: HOG, heading: 'H', bodyHtml: '', bodyText: '', ctaText: 'Go', ctaUrl: 'https://example.com' });
+    expect(withCta.html).toMatch(/background-color:#ffdb29;color:#1a1a1a;/);
+  });
+
+  test('an accent that is readable on white stays the link color', () => {
+    const blue = t.brandingFromClientRow({ name: 'Gym', email_primary_color: '#111111', email_secondary_color: '#1d4ed8', notification_email: 'g@x.com' });
+    const out = t.renderAccessRemoved({ branding: blue, member: {}, planName: 'P' });
+    expect(out.html).toContain('style="color:#1d4ed8;">g@x.com</a>');
+  });
+
+  test('sub-member invite gets the same app-first body, crediting the holder', () => {
+    const out = t.renderSubMemberInvite({
+      branding: HOG, member: { firstName: 'Sam' }, holderName: 'Daxx Roberts',
+      plans: [{ planName: 'Family', doorName: 'Entrance Door' }], hardwarePlatform: 'kisi',
+    });
+    expect(out.html).toContain('Daxx Roberts');
+    expect(out.html).toContain('Download the Kisi app');
+    expect(out.html).toContain('Set up in 3 steps');
+  });
+});

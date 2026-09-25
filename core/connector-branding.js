@@ -46,11 +46,27 @@ const CONNECTORS = {
     // Kisi unlocks doors over Bluetooth and uses location to confirm proximity
     // to a reader — both have to stay on (not just "while using the app"), or
     // taps fail silently with no error a member can self-diagnose. Surfaced by
-    // renderStepGuideTable/Text (core/email-templates.js) in every email that
-    // tells a member to install the app.
+    // the access-ready / sub-member emails (core/email-templates.js) in every email
+    // that tells a member to install the app.
     requirements: [
       'Bluetooth on (Android: NFC on)',
       'Location set to "Always" for the Kisi app',
+    ],
+    // Why the requirements matter, in one line a member can act on (same source as
+    // the comment above). Shown under the requirements callout.
+    requirementsWhy: 'Kisi uses Bluetooth to talk to the reader and your location to confirm you are at the door. If either one is off, the door just won\'t open, and you won\'t see an error.',
+    // First-run setup, in order, for the access-ready email. Same facts as
+    // requirements + usageTips[0], written as steps; sign-in stays member-initiated.
+    // usageTips minus the sign-in line — for emails that already walk through sign-in
+    // as a setup step, so the "at the door" list doesn't repeat it.
+    doorTips: [
+      'No need to open the app to get in. Keep your phone on you.',
+      'At the door, hold your phone to the reader until it unlocks.',
+    ],
+    setupSteps: [
+      { title: 'Download the Kisi app.', body: 'It\'s free on iPhone and Android. Use the buttons above.' },
+      { title: 'Sign in with your checkout email.', body: 'Open Kisi and enter the email you used to buy your plan. Kisi emails you a sign-in link. Tap it on this phone. No password.' },
+      { title: 'Turn on Bluetooth and Location.', body: 'Keep Bluetooth on (on Android, NFC too) and set Location to "Always" for Kisi, not "While using".' },
     ],
     // How to get in, day to day. Every line traces to docs.kisi.io or our own
     // createUser path (PARSE 2026-09-13). Sign-in is a member-initiated action
@@ -73,6 +89,9 @@ const CONNECTORS = {
     androidLink: null,
     qrReader:    null,
     requirements: null,
+    requirementsWhy: null,
+    doorTips:     null,
+    setupSteps:   null,
     usageTips:    null,
   },
 };
