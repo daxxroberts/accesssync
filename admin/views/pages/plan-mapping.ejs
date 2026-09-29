@@ -644,7 +644,8 @@
       var icon = isUnmapped ? '&#128279;' : (typeClass === 'booking_service' ? '&#128197;' : (plan.isMultiMember ? '&#128101;' : '&#128100;'));
       var iconClass = isUnmapped ? 'unlinked' : (typeClass === 'booking_service' ? 'service' : (plan.isMultiMember ? 'multi' : 'single'));
 
-      var archivedBadge = plan.sourceStatus === 'archived' ? '<span class="plan-badge-archived">Archived</span>' : '';
+      var archivedBadge = plan.sourceStatus === 'archived' ? '<span class="plan-badge-archived">Archived</span>'
+        : (plan.missingFromWix ? '<span class="plan-badge-archived" title="Wix no longer lists this product. Nothing new can be sold on it; existing access is untouched.">Removed from Wix</span>' : '');
       var staleWarning = getStaleGroupIds(plan).length > 0 ? '<span class="plan-summary-stale" title="Stale group detected">&#9888;</span>' : '';
 
       // Summary stat pills
@@ -1436,6 +1437,7 @@
 
         window._wixPlanTypes  = {};
         window._wixPlanPrices = {};
+        window._wixListLoaded = wixPlans.length > 0;
         wixPlans.forEach(function(p) {
           window._wixPlanTypes[p.id]  = p.type;
           if (p.wixPrice) window._wixPlanPrices[p.id] = p.wixPrice;
@@ -1480,13 +1482,29 @@
               var groupMap = {};
               groupResults.forEach(function(gr) { groupMap[gr.mappingId] = gr.groups; });
 
+              // Retired: the product is gone from Wix, the mapping is switched off, and
+              // nobody holds access through it. Nothing to act on — hide it. Anything
+              // still active or still in use stays, badged "Removed from Wix". Only
+              // trusted when the Wix list actually loaded: an empty list is a failed
+              // fetch, not a mass deletion.
+              var isRetired = function(m) {
+                var inWix = !!(window._wixPlanTypes && Object.prototype.hasOwnProperty.call(window._wixPlanTypes, m.source_plan_id));
+                return !!window._wixListLoaded && !inWix && m.status !== 'active' && !m.member_count;
+              };
+              var retired = d.mappings.filter(isRetired);
+              if (retired.length) {
+                console.info('[plan-mapping] hiding ' + retired.length + ' retired product(s) no longer in Wix:',
+                  retired.map(function(m) { return m.plan_name; }).join(', '));
+              }
+              var liveMappings = d.mappings.filter(function(m) { return !isRetired(m); });
+
               // DR-025 amendment: disambiguate duplicate plan_names with last-6
               // of source_plan_id suffix. Helper lives in operator-nav.js.
               var nameMap = (typeof disambiguatePlanNames === 'function')
-                ? disambiguatePlanNames(d.mappings)
+                ? disambiguatePlanNames(liveMappings)
                 : new Map();
 
-              plans = d.mappings.map(function(m) {
+              plans = liveMappings.map(function(m) {
                 var mGroups = groupMap[m.id] || [];
                 var groupIds = mGroups.length > 0
                   ? mGroups.map(function(g) { return String(g.hardware_group_id); })
@@ -1500,7 +1518,11 @@
                   if (g.health_status === 'not_found' && g.affected_members) staleAffectedMembers += g.affected_members;
                 });
 
-                var planType = (window._wixPlanTypes && window._wixPlanTypes[m.source_plan_id]) || 'pricing_plan';
+                // Still-used product Wix no longer returns → "Removed from Wix" badge.
+                var inWix = !!(window._wixPlanTypes && Object.prototype.hasOwnProperty.call(window._wixPlanTypes, m.source_plan_id));
+                var missingFromWix = !!window._wixListLoaded && !inWix;
+                var planType = (window._wixPlanTypes && window._wixPlanTypes[m.source_plan_id])
+                  || (m.access_type === 'day_pass' ? 'store_product' : 'pricing_plan');
 
                 return {
                   id: m.id,
@@ -1514,6 +1536,7 @@
                   groupIds: groupIds,
                   status: m.status || 'inactive',
                   sourceStatus: m.source_status || 'active',
+                  missingFromWix: missingFromWix,
                   _groupHealthMap: groupHealthMap,
                   _staleAffectedMembers: staleAffectedMembers,
                   activeHolders: 0,
