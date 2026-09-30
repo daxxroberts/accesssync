@@ -1,7 +1,7 @@
 # FUTURE BUILD — Day-pass QR: fetch or resend after the email
 
-**Status:** PAUSED (Builder, 2026-09-24). OB number: **TBD** — KEEPER to assign and
-mirror into vault `open_items.md`.
+**Status:** PAUSED (Builder, 2026-09-24). OB number: **OB-259** (KEEPER assigned 2026-09-30; in vault
+`open_items.md`, decision record DR-055).
 **Related:** OB-98 / OB-251 (day passes), `core/day-pass-api.js`, `core/SNIPPET_REGISTRY.json`.
 
 ## Problem
