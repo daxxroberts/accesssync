@@ -1,6 +1,7 @@
 /**
  * P2 — OB-238 per-client wix_webhook_secret.
- * Covers: wix-connector HMAC verification flow (per-client → env fallback),
+ * Covers: wix-connector HMAC verification flow (per-client ONLY — the
+ * platform-wide WIX_WEBHOOK_SECRET fallback was removed for tenant isolation),
  * rotate endpoint, setup-state hmacSource field.
  */
 
@@ -83,48 +84,47 @@ describe('wix-connector — _verifySignature per-client flow (OB-238)', () => {
     expect(result).toBe(false);  // per-client takes precedence; env fallback NOT tried
   });
 
-  test('falls back to platform env secret when per-client secret not set', async () => {
+  // Tenant isolation: a platform-wide secret would let any holder sign webhooks
+  // for every gym. With WIX_WEBHOOK_SECRET still set in the env, none of these
+  // may verify.
+  test('rejects a platform-secret signature when the client has no per-client secret', async () => {
     process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
     db.query.mockResolvedValueOnce({ rows: [{ wix_webhook_secret: null }] });
 
     const connector = require('../../adapters/wix/wix-connector');
     const body = '{"test":1}';
     const sig = sign('platform-secret', body);
-    const result = await connector._verifySignature(body, sig, 'client-1');
-    expect(result).toBe(true);
+    expect(await connector._verifySignature(body, sig, 'client-1')).toBe(false);
   });
 
-  test('falls back to env when client row not found', async () => {
+  test('rejects when the named client does not exist', async () => {
     process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
     db.query.mockResolvedValueOnce({ rows: [] });
 
     const connector = require('../../adapters/wix/wix-connector');
     const body = '{"test":1}';
     const sig = sign('platform-secret', body);
-    const result = await connector._verifySignature(body, sig, 'unknown-client');
-    expect(result).toBe(true);
+    expect(await connector._verifySignature(body, sig, 'unknown-client')).toBe(false);
   });
 
-  test('falls back to env when clientIdHint is null (legacy webhook without header)', async () => {
+  test('rejects a request with no client id header, without touching the DB', async () => {
     process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
 
     const connector = require('../../adapters/wix/wix-connector');
     const body = '{"test":1}';
     const sig = sign('platform-secret', body);
-    const result = await connector._verifySignature(body, sig, null);
-    expect(result).toBe(true);
-    expect(db.query).not.toHaveBeenCalled();  // no DB lookup when no hint
+    expect(await connector._verifySignature(body, sig, null)).toBe(false);
+    expect(db.query).not.toHaveBeenCalled();
   });
 
-  test('falls back to env when DB lookup throws (DR-037 never-throws)', async () => {
+  test('rejects when the secret lookup throws (fails closed, never throws)', async () => {
     process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
     db.query.mockRejectedValueOnce(new Error('db down'));
 
     const connector = require('../../adapters/wix/wix-connector');
     const body = '{"test":1}';
     const sig = sign('platform-secret', body);
-    const result = await connector._verifySignature(body, sig, 'client-1');
-    expect(result).toBe(true);  // fell back to env
+    expect(await connector._verifySignature(body, sig, 'client-1')).toBe(false);
   });
 
   test('returns false when neither per-client nor env secret available', async () => {
@@ -226,8 +226,8 @@ describe('GET /operator/:clientId/setup-state — hmacSource field (OB-238)', ()
 
   test('auto-generates per-client secret on first visit when NULL', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: null }] })                       // SELECT client
-      .mockResolvedValueOnce({ rows: [{ wix_webhook_secret: 'ENC[autogen-newvalue]' }], rowCount: 1 });      // UPDATE auto-gen
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1', wix_webhook_secret: null }] })  // SELECT client
+      .mockResolvedValueOnce({ rows: [{ id: 'client-1' }], rowCount: 1 });            // UPDATE auto-gen won
 
     const router = require('../../admin/routes/operator');
     const handler = findRouteHandler(router, 'get', '/:clientId/setup-state');
@@ -235,10 +235,13 @@ describe('GET /operator/:clientId/setup-state — hmacSource field (OB-238)', ()
     const res = mockRes();
     await handler(req, res);
 
-    expect(res.body.hmacSource).toBe('per_client');
-    expect(res.body.hmacSecret).toBe('autogen-newvalue');
     const updateCall = db.query.mock.calls[1];
     expect(updateCall[0]).toContain('wix_webhook_secret IS NULL');
+    // The operator is shown exactly the value that was stored (encrypted) for this client.
+    const storedPlaintext = updateCall[1][0].replace(/^ENC\[(.+)\]$/, '$1');
+    expect(res.body.hmacSource).toBe('per_client');
+    expect(res.body.hmacSecret).toBe(storedPlaintext);
+    expect(storedPlaintext.length).toBeGreaterThanOrEqual(32);
   });
 
   test('auto-gen race: re-reads existing value when UPDATE returns 0 rows', async () => {
@@ -355,3 +358,42 @@ function mockRes() {
     json(payload) { this.body = payload; return this; },
   };
 }
+
+describe('POST /operator/clients — every new client gets its own webhook secret', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  function call(body) {
+    const router = require('../../admin/routes/operator');
+    const handler = findRouteHandler(router, 'post', '/clients');
+    const res = mockRes();
+    return handler({ body, headers: {} }, res).then(() => res);
+  }
+
+  test('a brand-new client is created with a secret, returned once for onboarding', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'client-new', name: 'Gym B' }] })  // INSERT clients
+      .mockResolvedValueOnce({ rows: [] })                                       // connector_subscriptions
+      .mockResolvedValueOnce({ rows: [{ id: 'client-new' }], rowCount: 1 });   // secret UPDATE won
+
+    const res = await call({ name: 'Gym B', tier: 'Connect', source_site_id: 'site-b' });
+
+    expect(res.statusCode).toBe(201);
+    const update = db.query.mock.calls.find(([sql]) => /SET wix_webhook_secret/.test(sql));
+    expect(update[0]).toContain('wix_webhook_secret IS NULL');
+    expect(update[1][1]).toBe('client-new');
+    const stored = update[1][0].replace(/^ENC\[(.+)\]$/, '$1');
+    expect(res.body.webhook_secret).toBe(stored);
+  });
+
+  test('re-running onboarding for an existing client never replaces its secret', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'client-hog', name: 'House of Gains' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });  // already had a secret → no-op
+
+    const res = await call({ name: 'House of Gains', tier: 'Connect', source_site_id: 'site-hog' });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.webhook_secret).toBeNull();
+  });
+});

@@ -929,8 +929,15 @@ html, body {
             <li>In your Wix Editor, click <strong>Dev Mode</strong> in the top menu bar to enable it</li>
             <li>Go to <strong>Dashboard → Developer Tools → Secrets Manager</strong> and add a new secret:
               <br>• <strong>Name:</strong> <code style="background:#F1F5F9;padding:1px 5px;border-radius:4px;font-size:12px">accesssync_webhook_secret</code>
-              <br>• <strong>Value:</strong> a secure random string (32+ characters — use a password generator)
-              <br>• <span style="color:var(--muted);font-size:11px">Copy this value — your AccessSync admin needs it to verify incoming webhooks.</span>
+              <br>• <strong>Value:</strong> the secret AccessSync generated for your account:
+              <span id="webhook-secret-wrap" class="hidden">
+                <br><code id="webhook-secret-display" style="background:#F1F5F9;padding:2px 6px;border-radius:4px;font-size:12px;word-break:break-all"></code>
+                <button class="btn-copy-code" type="button" onclick="copyWebhookSecret()">Copy</button>
+                <br><span style="color:var(--muted);font-size:11px">Shown once here. You can always view or rotate it later in System Config → Wix Setup Guide.</span>
+              </span>
+              <span id="webhook-secret-elsewhere">
+                <br><span style="color:var(--muted);font-size:11px">Copy it from <strong>System Config → Wix Setup Guide</strong> in your AccessSync dashboard. Don't make up your own value — webhooks signed with any other secret are rejected.</span>
+              </span>
             </li>
             <li>In the left panel, click <strong>Backend</strong> → <strong>+ New File</strong> → name it <strong>events.js</strong><br><span style="color:var(--muted);font-size:11px">(If events.js already exists, replace its contents entirely)</span></li>
             <li>Paste the code below, then click <strong>Publish</strong></li>
@@ -1442,8 +1449,12 @@ async function _provisionClient() {
     const j = await clientRes.json().catch(() => ({}));
     throw new Error(j.error || 'Failed to create account — please try again');
   }
-  const { client } = await clientRes.json();
+  const created = await clientRes.json();
+  const { client } = created;
   state.clientId = client.id;
+  // Per-client webhook secret, generated server-side at creation and returned once
+  // (null if this account already had one — e.g. onboarding re-run).
+  state.webhookSecret = created.webhook_secret || null;
 
   const locRes = await apiFetch(`/operator/clients/${state.clientId}/locations`, {
     method:  'POST',
@@ -1673,6 +1684,12 @@ async function goToDone() {
 
   const code = _buildEventsCode(state.clientId);
   document.getElementById('events-code-display').textContent = code;
+
+  if (state.webhookSecret) {
+    document.getElementById('webhook-secret-display').textContent = state.webhookSecret;
+    document.getElementById('webhook-secret-wrap').classList.remove('hidden');
+    document.getElementById('webhook-secret-elsewhere').classList.add('hidden');
+  }
   document.getElementById('member-hub-code-display').textContent = _buildMemberHubCode(state.clientId);
 
   if (state.locations.length) {
@@ -1814,6 +1831,13 @@ async function runValidation() {
     if (btnDashIncomplete) btnDashIncomplete.classList.remove('hidden');
     incompleteBanner.classList.remove('hidden');
   }
+}
+
+function copyWebhookSecret() {
+  const v = document.getElementById('webhook-secret-display').textContent;
+  navigator.clipboard.writeText(v)
+    .then(() => toast('Secret copied', 'success'))
+    .catch(() => toast('Copy failed — select and copy manually', 'error'));
 }
 
 function copyEventsCode() {

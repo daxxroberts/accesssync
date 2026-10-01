@@ -410,15 +410,21 @@ router.get('/webhook-url', (req, res) => {
 // ── GET /operator/:clientId/setup-snippets ────────────────────────
 // Returns pre-populated Wix setup data for the Setup Guide tab:
 // webhook URL, HMAC secret, and clientId — all operator-scoped.
-// HMAC secret comes from WIX_WEBHOOK_SECRET env var (single secret per deployment).
+// HMAC secret is this client's own (clients.wix_webhook_secret) — never a
+// platform-wide value, which would let one gym sign webhooks for another.
 router.get('/:clientId/setup-snippets', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const result = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    const result = await db.query('SELECT id, wix_webhook_secret FROM clients WHERE id = $1', [clientId]);
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     const base = (process.env.CORE_ENGINE_URL || '').replace(/\/$/, '');
     const webhookUrl   = base ? `${base}/webhooks/wix` : null;
-    const hmacSecret   = process.env.WIX_WEBHOOK_SECRET || null;
+    let hmacSecret = null;
+    try {
+      hmacSecret = result.rows[0].wix_webhook_secret ? decryptKey(result.rows[0].wix_webhook_secret) : null;
+    } catch (e) {
+      log.error('operator.setup_snippets.secret_decrypt_failed', { clientId }, e);
+    }
     const adminHubBase = (process.env.ADMIN_HUB_URL || base || '').replace(/\/$/, '');
     res.json({ clientId, webhookUrl, hmacSecret, adminHubBase });
   } catch (err) {
@@ -428,14 +434,15 @@ router.get('/:clientId/setup-snippets', async (req, res) => {
 });
 
 // ── GET /operator/:clientId/setup-state ───────────────────────────
-// Registry-driven Setup Hub data. Returns webhook URL + HMAC secret
-// (with source — per-client or env fallback) + per-snippet metadata
+// Registry-driven Setup Hub data. Returns webhook URL + this client's HMAC
+// secret (per-client only — no platform fallback) + per-snippet metadata
 // + rendered body. No install_state, no aggregate, no env-issue banner
 // — the synthetic status indicators were removed 2026-05-30 because
 // we can't actually test snippets without a real Wix event firing.
 // Operator gets clean docs + working snippets; nothing pretending to
 // know whether a snippet is installed/broken/etc.
 const snippetRegistry = require('../../core/snippet-registry');
+const { ensureWebhookSecret } = require('../../core/webhook-secret');
 
 router.get('/:clientId/setup-state', async (req, res) => {
   const { clientId } = req.params;
@@ -450,44 +457,29 @@ router.get('/:clientId/setup-state', async (req, res) => {
     const adminHubUrl   = (process.env.ADMIN_HUB_URL   || '').replace(/\/$/, '');
     const webhookUrl    = coreEngineUrl ? `${coreEngineUrl}/webhooks/wix` : null;
 
-    // Auto-generate per-client secret if NULL. Race-safe via WHERE
-    // wix_webhook_secret IS NULL clause + RETURNING to detect winner.
-    let storedEncryptedSecret = client.rows[0].wix_webhook_secret;
-    if (!storedEncryptedSecret) {
-      const plaintext = crypto.randomBytes(32).toString('base64');
-      const encrypted = encryptApiKey(plaintext);
-      const upd = await db.query(
-        `UPDATE clients SET wix_webhook_secret = $1, updated_at = NOW()
-         WHERE id = $2 AND wix_webhook_secret IS NULL
-         RETURNING wix_webhook_secret`,
-        [encrypted, clientId]
-      );
-      if (upd.rowCount > 0) {
-        storedEncryptedSecret = upd.rows[0].wix_webhook_secret;
-        log.warn('clients.wix_webhook_secret.auto_generated', { clientId, stage: 'setup_hub_first_visit' });
-      } else {
-        // Lost the race — re-read what won
-        const reread = await db.query(
-          'SELECT wix_webhook_secret FROM clients WHERE id = $1', [clientId]
-        );
-        storedEncryptedSecret = reread.rows[0]?.wix_webhook_secret || null;
-      }
-    }
-
-    // Per-client secret takes precedence over env fallback
+    // Per-client secret only. Clients created before secrets were generated at
+    // creation get one on first Setup Hub visit. There is deliberately NO fallback to
+    // a platform-wide secret: showing it here would hand one gym a secret that can
+    // sign webhooks for others.
     let hmacSecret = null;
     let hmacSource = 'none';
-    if (storedEncryptedSecret) {
-      try {
-        hmacSecret = decryptKey(storedEncryptedSecret);
-        hmacSource = 'per_client';
-      } catch (e) {
-        log.error('operator.setup_state.per_client_secret_decrypt_failed', { clientId }, e);
+    try {
+      const stored = client.rows[0].wix_webhook_secret;
+      if (stored) {
+        hmacSecret = decryptKey(stored);
+      } else {
+        hmacSecret = await ensureWebhookSecret(clientId);
+        if (!hmacSecret) {
+          // Lost the race to a concurrent first visit — read what won.
+          const reread = await db.query('SELECT wix_webhook_secret FROM clients WHERE id = $1', [clientId]);
+          const enc = reread.rows[0]?.wix_webhook_secret || null;
+          hmacSecret = enc ? decryptKey(enc) : null;
+        }
       }
-    }
-    if (!hmacSecret && process.env.WIX_WEBHOOK_SECRET) {
-      hmacSecret = process.env.WIX_WEBHOOK_SECRET;
-      hmacSource = 'platform_env_fallback';
+      if (hmacSecret) hmacSource = 'per_client';
+    } catch (e) {
+      hmacSecret = null;
+      log.error('operator.setup_state.per_client_secret_decrypt_failed', { clientId }, e);
     }
 
     const snippets = snippetRegistry.listSnippets().map(meta => {
@@ -540,8 +532,8 @@ router.get('/:clientId/setup-state', async (req, res) => {
 // OB-238 — generate a new per-client wix_webhook_secret, encrypt via DR-028,
 // store in clients.wix_webhook_secret. Returns plaintext ONCE so operator
 // can paste into their Wix Secrets Manager. Encrypted at rest; future GETs
-// must decrypt. Replaces the platform-wide WIX_WEBHOOK_SECRET fallback for
-// this client. Logged to activity_event.
+// must decrypt. Takes effect immediately — webhooks signed with the old value
+// are rejected until the new one is in Wix. Logged to activity_event.
 router.post('/:clientId/wix-webhook-secret/rotate', async (req, res) => {
   const { clientId } = req.params;
   try {
@@ -799,6 +791,11 @@ router.post('/clients', requireInviteToken, async (req, res) => {
       );
     }
 
+    // Every client signs webhooks with its own secret — created here, never shared.
+    // Returned ONCE (null when re-running onboarding for a client that already has one)
+    // so the onboarding page can show the exact value to paste into Wix Secrets Manager.
+    const webhookSecret = await ensureWebhookSecret(clientRow.id);
+
     log.info('operator.setup.client_upserted', { clientId: clientRow.id, name: clientRow.name });
     res.status(201).json({
       ok: true,
@@ -807,6 +804,7 @@ router.post('/clients', requireInviteToken, async (req, res) => {
         billing:   tier ? { tier } : null,
         connector: derivedHardware ? { platform: derivedHardware, has_key: false } : null,
       },
+      webhook_secret: webhookSecret,
     });
   } catch (err) {
     log.error('operator.setup.client_create_failed', {}, err);
@@ -989,11 +987,20 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
 router.get('/clients/:clientId/api-key/status', async (req, res) => {
   const { clientId } = req.params;
   try {
+    // One hardware key per client (connector_subscriptions) — every location uses it.
+    // platform lets the UI name the key after the door system ("Kisi API Key").
     const result = await db.query(
-      `SELECT hardware_api_key FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+      `SELECT hardware_api_key, hardware_platform, key_last_verified, key_last_error
+         FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
       [clientId]
     );
-    res.json({ hasKey: !!(result.rows[0]?.hardware_api_key) });
+    const cs = result.rows[0] || {};
+    res.json({
+      hasKey:          !!cs.hardware_api_key,
+      platform:        cs.hardware_platform || null,
+      keyLastVerified: cs.key_last_verified || null,
+      keyLastError:    cs.key_last_error || null,
+    });
   } catch (err) {
     log.error('operator.apikey.status_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -1663,7 +1670,7 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
     // Wix-first flow: auto-retry any members parked as pending_hardware
     const retried = await retryPendingHardwareMembers(clientId);
 
-    res.json({ ok: true, message: 'Location API key saved', pendingRetried: retried });
+    res.json({ ok: true, message: 'API key saved — it applies to every location of this client', pendingRetried: retried });
 
     // GAP 6: validate new key can reach all active groups at this location
     validateApiKeyGroups(clientId, apiKey.trim(), hwPlatform)

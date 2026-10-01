@@ -25,9 +25,6 @@ const { log } = require('../../core/logger');
 const { deriveTraceId } = require('../../core/trace-context');
 
 class WixConnector {
-  constructor() {
-    this.webhookSecret = process.env.WIX_WEBHOOK_SECRET;
-  }
 
   /**
    * Express-compatible HTTP handler.
@@ -188,9 +185,11 @@ class WixConnector {
   /**
    * Verifies the Wix HMAC-SHA256 signature.
    *
-   * OB-238: tries per-client secret first (clients.wix_webhook_secret), falls
-   * back to platform-wide env var for legacy clients without per-client secret.
-   * One operator's leaked secret no longer forges webhooks for other operators.
+   * OB-238 / tenant isolation: the request must name its client
+   * (x-accesssync-client-id) and is verified ONLY with that client's own secret
+   * (clients.wix_webhook_secret). There is no platform-wide fallback secret —
+   * a shared secret would let any holder sign webhooks for every gym. A client
+   * without a secret, or a request without a client id, is rejected.
    *
    * @param {string} rawBody
    * @param {string} signature
@@ -198,22 +197,10 @@ class WixConnector {
    * @returns {Promise<boolean>}
    */
   async _verifySignature(rawBody, signature, clientIdHint) {
-    if (!signature) return false;
-
-    // Try per-client secret first if hint present
-    if (clientIdHint) {
-      const perClientSecret = await this._resolvePerClientSecret(clientIdHint);
-      if (perClientSecret) {
-        return this._checkHmac(rawBody, signature, perClientSecret);
-      }
-    }
-
-    // Fall back to platform-wide env var (legacy clients during transition)
-    if (this.webhookSecret) {
-      return this._checkHmac(rawBody, signature, this.webhookSecret);
-    }
-
-    return false;
+    if (!signature || !clientIdHint) return false;
+    const perClientSecret = await this._resolvePerClientSecret(clientIdHint);
+    if (!perClientSecret) return false;
+    return this._checkHmac(rawBody, signature, perClientSecret);
   }
 
   /**

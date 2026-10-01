@@ -9,8 +9,10 @@
  *   1. In Wix Editor, click Dev Mode in the top menu bar to enable it
  *   2. Go to Dashboard → Developer Tools → Secrets Manager and add:
  *        Name:  accesssync_webhook_secret
- *        Value: a secure random string (32+ characters)
- *      Then share this same secret with your AccessSync admin.
+ *        Value: the webhook secret AccessSync generated for your account
+ *               (AccessSync dashboard → System Config → Wix Setup Guide).
+ *      Don't invent your own value — AccessSync only accepts webhooks signed
+ *      with your account's secret.
  *   3. In the left panel, click Backend → + New File → name it events.js
  *      (If events.js already exists, replace its contents entirely)
  *   4. Replace {{CLIENT_ID}} below with your AccessSync client ID

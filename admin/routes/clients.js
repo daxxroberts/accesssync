@@ -19,6 +19,7 @@ const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { logAdminAction } = require('../middleware/audit');
 const { log } = require('../../core/logger');
+const { ensureWebhookSecret } = require('../../core/webhook-secret');
 const hardwareAdapter = require('../../adapters/hardware-adapter');
 const { getTraceId, getActor } = require('../../core/trace-context');
 
@@ -126,6 +127,9 @@ router.post('/', async (req, res) => {
       );
     }
 
+    // Per-client webhook signing secret, created with the client (no shared fallback).
+    const webhookSecret = await ensureWebhookSecret(clientRow.id);
+
     log.info('admin.client_created', { name: clientRow.name, clientId: clientRow.id });
     res.status(201).json({
       ok: true,
@@ -134,6 +138,7 @@ router.post('/', async (req, res) => {
         billing:   tier ? { tier } : null,
         connector: derivedHardware ? { platform: derivedHardware, has_key: false } : null,
       },
+      webhook_secret: webhookSecret,
     });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Site ID already in use' });

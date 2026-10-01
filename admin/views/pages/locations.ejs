@@ -392,6 +392,30 @@
           </div>
         </div>
 
+        <!-- Door system API key — ONE per client (connector_subscriptions), used by every
+             location. Label follows the connected platform ("Kisi API Key"). -->
+        <div class="config-row" id="hw-key-row">
+          <div class="config-row-header">
+            <span class="config-row-label" id="hw-key-label">Door System API Key</span>
+            <span class="config-row-status" id="hw-key-status">Checking…</span>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-sm btn-ghost" id="hw-test-btn" onclick="testHwKey()" style="display:none;">Test</button>
+              <button class="btn btn-sm btn-secondary" id="hw-key-btn" onclick="toggleHwKeyForm()">Set Key</button>
+            </div>
+          </div>
+          <div class="test-result" id="hw-key-testres"></div>
+          <div class="key-form" id="hw-key-form">
+            <div class="key-form-inner" style="margin-top:10px;">
+              <div class="key-input-hint" id="hw-key-hint">Stored securely — write-only. Used for every location.</div>
+              <input type="password" class="key-input" id="hw-key-input" placeholder="Paste your API key…" autocomplete="off"/>
+              <div class="key-form-actions">
+                <button class="btn btn-ghost btn-sm" onclick="toggleHwKeyForm()">Cancel</button>
+                <button class="btn btn-primary btn-sm" onclick="saveHwKey()">Save Key</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Rollup Alert Email -->
         <div class="config-row">
           <div class="config-row-header">
@@ -619,6 +643,7 @@
     var state = {
       locations: [],
       wixHasKey: false,
+      hwKey: null,   // { hasKey, platform, keyLastVerified, keyLastError }
       client: null,
     };
 
@@ -630,6 +655,7 @@
       }
       loadClientProfile();
       loadWixKeyStatus();
+      loadHwKeyStatus();
       loadNotifEmail();
       ebLoad();
       loadLocations();
@@ -1016,6 +1042,121 @@
         .finally(function() { btn.disabled = false; btn.textContent = 'Test'; });
     }
 
+    // ── Door system API key (one per client, used by every location) ────
+    var PLATFORM_KEY_INFO = {
+      kisi: { name: 'Kisi', docs: 'https://docs.kisi.io/dashboard/account/generate_api_key/' },
+      seam: { name: 'Seam', docs: null },
+    };
+    function platformInfo(platform) {
+      return PLATFORM_KEY_INFO[platform] || { name: platform ? platform.charAt(0).toUpperCase() + platform.slice(1) : null, docs: null };
+    }
+    // "Kisi API Key" once the platform is known; generic until then.
+    function hwKeyLabel() {
+      var info = platformInfo(state.hwKey && state.hwKey.platform);
+      return info.name ? info.name + ' API Key' : 'Door System API Key';
+    }
+
+    function loadHwKeyStatus() {
+      apiFetch('/operator/clients/' + clientId + '/api-key/status')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          state.hwKey = data || {};
+          // A client with no connector row yet is Kisi-by-default (the only live platform).
+          if (!state.hwKey.platform) state.hwKey.platform = 'kisi';
+          renderHwKeyStatus();
+          renderLocations();
+        })
+        .catch(function() {
+          document.getElementById('hw-key-status').textContent = 'Unable to check';
+        });
+    }
+
+    function renderHwKeyStatus() {
+      var k       = state.hwKey || {};
+      var info    = platformInfo(k.platform);
+      var label   = hwKeyLabel();
+      var statusEl = document.getElementById('hw-key-status');
+      document.getElementById('hw-key-label').textContent = label;
+      document.getElementById('hw-key-input').placeholder = 'Paste your ' + label + '…';
+      document.getElementById('hw-key-hint').innerHTML =
+        'Stored securely — write-only. Every location uses this key.' +
+        (info.docs ? ' <a href="' + info.docs + '" target="_blank" rel="noopener" style="color:var(--brand)">How to create a ' + esc(info.name) + ' API key</a>' : '');
+      var btnEl   = document.getElementById('hw-key-btn');
+      var testBtn = document.getElementById('hw-test-btn');
+      if (k.hasKey) {
+        var sub = k.keyLastError
+          ? '<span style="display:block;font-size:10px;color:var(--red);margin-top:2px;">Verification failed: ' + esc(k.keyLastError) + '</span>'
+          : k.keyLastVerified
+            ? '<span style="display:block;font-size:10px;color:var(--muted);margin-top:2px;">Last verified ' + esc(formatRelativeTime(k.keyLastVerified)) + '</span>'
+            : '<span style="display:block;font-size:10px;color:var(--amber);margin-top:2px;">● Never verified</span>';
+        statusEl.innerHTML    = '<span style="color:var(--sage-dark)">✓ Key configured</span>' + sub;
+        btnEl.textContent     = 'Rotate Key';
+        testBtn.style.display = '';
+      } else {
+        statusEl.innerHTML    = '<span style="color:var(--red)">✗ No key set</span>';
+        btnEl.textContent     = 'Set Key';
+        testBtn.style.display = 'none';
+      }
+    }
+
+    function toggleHwKeyForm() {
+      var form = document.getElementById('hw-key-form');
+      form.classList.toggle('open');
+      if (form.classList.contains('open')) {
+        setTimeout(function() { document.getElementById('hw-key-input').focus(); }, 50);
+      }
+    }
+
+    function saveHwKey() {
+      var key = document.getElementById('hw-key-input').value.trim();
+      if (!key) { toast('Key cannot be empty', 'error'); return; }
+      if (state.hwKey && state.hwKey.hasKey && state.locations.length > 1 &&
+          !confirm('This replaces the ' + hwKeyLabel() + ' for all ' + state.locations.length + ' locations. Continue?')) return;
+      apiFetch('/operator/clients/' + clientId + '/api-key', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ apiKey: key }),
+      })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.ok) {
+            toast(hwKeyLabel() + ' saved — used for all locations', 'success');
+            document.getElementById('hw-key-form').classList.remove('open');
+            document.getElementById('hw-key-input').value = '';
+            loadHwKeyStatus();
+            setTimeout(testHwKey, 800);
+          } else {
+            toast(data.error || 'Save failed', 'error');
+          }
+        })
+        .catch(function() { toast('Save failed', 'error'); });
+    }
+
+    function testHwKey() {
+      var btn   = document.getElementById('hw-test-btn');
+      var resEl = document.getElementById('hw-key-testres');
+      btn.disabled = true; btn.textContent = 'Testing…';
+      resEl.style.display = 'none';
+      apiFetch('/operator/clients/' + clientId + '/api-key/test')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          resEl.style.display = '';
+          if (data.valid) {
+            resEl.className   = 'test-result pass';
+            resEl.textContent = '✓ Connected to ' + (platformInfo(state.hwKey && state.hwKey.platform).name || 'your door system');
+          } else {
+            resEl.className   = 'test-result fail';
+            resEl.textContent = '✗ ' + (data.error || 'Key invalid');
+          }
+        })
+        .catch(function() {
+          resEl.style.display = '';
+          resEl.className   = 'test-result fail';
+          resEl.textContent = '✗ Test failed — network error';
+        })
+        .finally(function() { btn.disabled = false; btn.textContent = 'Test'; });
+    }
+
     // ── Client profile ────────────────────────────────────────────────
     function loadClientProfile() {
       apiFetch('/operator/' + clientId)
@@ -1186,29 +1327,15 @@
                 ) +
               '</div>' +
             '</div>' +
-            // Row: Hardware API Key
+            // Row: door system key — read-only here. There is ONE key per client
+            // (connector_subscriptions); it is managed in the profile card above.
             '<div class="config-row">' +
               '<div class="config-row-header">' +
-                '<span class="config-row-label">Hardware Key</span>' +
+                '<span class="config-row-label">' + esc(hwKeyLabel()) + '</span>' +
                 keyStatusLabel +
-                '<div style="display:flex;gap:6px;">' +
-                  '<button class="btn btn-sm btn-ghost" id="test-' + loc.id + '" onclick="testLocKey(\'' + loc.id + '\')">Test</button>' +
-                  '<button class="btn btn-sm btn-secondary" onclick="toggleLocKeyForm(\'' + loc.id + '\')">' +
-                    (hasKey ? 'Rotate' : 'Set Key') +
-                  '</button>' +
-                '</div>' +
+                '<a href="#hw-key-row" class="btn btn-sm btn-ghost" onclick="document.getElementById(\'hw-key-row\').scrollIntoView({behavior:\'smooth\'});return false;">Manage</a>' +
               '</div>' +
-              '<div class="test-result" id="testres-' + loc.id + '"></div>' +
-              '<div class="key-form" id="keyform-' + loc.id + '">' +
-                '<div class="key-form-inner">' +
-                  '<div class="key-input-hint">Write-only — encrypted at rest (AES-256-GCM).</div>' +
-                  '<input type="password" class="key-input" id="keyinput-' + loc.id + '" placeholder="Paste your hardware API key…" autocomplete="off"/>' +
-                  '<div class="key-form-actions">' +
-                    '<button class="btn btn-ghost btn-sm" onclick="toggleLocKeyForm(\'' + loc.id + '\')">Cancel</button>' +
-                    '<button class="btn btn-primary btn-sm" onclick="saveLocKey(\'' + loc.id + '\')">Save Key</button>' +
-                  '</div>' +
-                '</div>' +
-              '</div>' +
+              '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Shared by all locations — set or rotate it in the business card above.</div>' +
             '</div>' +
             // Row: Alert Email
             '<div class="config-row">' +
@@ -1422,66 +1549,6 @@
       if (status === 'active') return '<span class="pill pill-active" title="This location is actively provisioning members.">Active</span>';
       if (status === 'lapsed') return '<span class="pill pill-lapsed" title="Subscription lapsed. Members at this location have been suspended.">Lapsed</span>';
       return '<span class="pill pill-inactive" title="Location not yet activated. Members won\'t be provisioned until active.">Inactive</span>';
-    }
-
-    function toggleLocKeyForm(locationId) {
-      var form = document.getElementById('keyform-' + locationId);
-      form.classList.toggle('open');
-      if (form.classList.contains('open')) {
-        setTimeout(function() { document.getElementById('keyinput-' + locationId).focus(); }, 50);
-      }
-    }
-
-    function saveLocKey(locationId) {
-      var key = document.getElementById('keyinput-' + locationId).value.trim();
-      if (!key) { toast('Key cannot be empty', 'error'); return; }
-      apiFetch('/operator/' + clientId + '/locations/' + locationId + '/api-key', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ apiKey: key }),
-      })
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-          if (data.ok) {
-            toast('Location API key override saved', 'success');
-            var loc = state.locations.find(function(l) { return l.id === locationId; });
-            if (loc) {
-              loc.connector = loc.connector || { platform: 'kisi' };
-              loc.connector.has_key = true;
-              renderLocations();
-            }
-            renderLocations();
-            document.getElementById('keyinput-' + locationId).value = '';
-          } else {
-            toast(data.error || 'Save failed', 'error');
-          }
-        })
-        .catch(function() { toast('Save failed', 'error'); });
-    }
-
-    function testLocKey(locationId) {
-      var btn   = document.getElementById('test-' + locationId);
-      var resEl = document.getElementById('testres-' + locationId);
-      btn.disabled = true; btn.textContent = 'Testing…';
-      resEl.style.display = 'none';
-      apiFetch('/operator/' + clientId + '/locations/' + locationId + '/api-key/test')
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-          resEl.style.display = '';
-          if (data.valid) {
-            resEl.className   = 'test-result pass';
-            resEl.textContent = '✓ Connected — using ' + (data.source === 'location' ? 'location key' : 'client key');
-          } else {
-            resEl.className   = 'test-result fail';
-            resEl.textContent = '✗ ' + (data.error || 'Key invalid');
-          }
-        })
-        .catch(function() {
-          resEl.style.display = '';
-          resEl.className   = 'test-result fail';
-          resEl.textContent = '✗ Test failed — network error';
-        })
-        .finally(function() { btn.disabled = false; btn.textContent = 'Test'; });
     }
 
     function suspendLocation(locationId) {
