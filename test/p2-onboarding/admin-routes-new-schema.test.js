@@ -102,7 +102,7 @@ function makeApp(router, mountPath = '/') {
   app.use(express.json());
   // Inject a minimal req.admin for operator.js routes that read clientId
   app.use((req, _res, next) => {
-    req.admin = { clientId: 'test-client', userId: 'test-user' };
+    req.admin = { role: 'admin', clientId: 'test-client', userId: 'test-user' };
     next();
   });
   app.use(mountPath, router);

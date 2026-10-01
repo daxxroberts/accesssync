@@ -61,7 +61,9 @@ function verifySignedInstance(instance) {
     .replace(/\//g, '_')
     .replace(/=/g, '');
 
-  if (signature !== expected) {
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
     throw new Error('Wix instance signature invalid');
   }
 
@@ -157,18 +159,35 @@ async function requireWixInstance(req, res, next) {
       : null;
 
     if (siteId) {
+      // The authorizationCode is read WITHOUT signature verification, so its siteId
+      // is attacker-controllable. It may only claim a client that has never been
+      // wired to an instance — otherwise anyone with a valid instance for their own
+      // Wix site could forge another gym's siteId, overwrite that gym's
+      // platform_instance_id and walk away with an operator session for it.
+      // A legitimate reinstall on an already-wired client needs the owner to clear
+      // platform_instance_id first.
       const bySite = await db.query(
-        'SELECT id, source_site_id FROM clients WHERE source_site_id = $1 LIMIT 1',
+        `SELECT id, source_site_id FROM clients
+          WHERE source_site_id = $1
+            AND (platform_instance_id IS NULL OR platform_instance_id = '')
+          LIMIT 1`,
         [siteId]
       );
 
       if (bySite.rows.length) {
         const clientId = bySite.rows[0].id;
-        // Wire up platform_instance_id so future loads hit Path A
-        await db.query(
-          'UPDATE clients SET platform_instance_id = $1, updated_at = NOW() WHERE id = $2',
+        // Wire up platform_instance_id so future loads hit Path A. Re-checked in the
+        // UPDATE so two concurrent claims can't both win.
+        const wired = await db.query(
+          `UPDATE clients SET platform_instance_id = $1, updated_at = NOW()
+            WHERE id = $2 AND (platform_instance_id IS NULL OR platform_instance_id = '')
+            RETURNING id`,
           [instanceId, clientId]
         );
+        if (!wired.rows.length) {
+          log.warn('admin.wix_instance_wire_refused', { clientId, instanceId });
+          return res.status(403).send('Access denied: this site is already connected to a different Wix installation');
+        }
         log.info('admin.wix_instance_wired', { clientId });
         req.wixOperator = { clientId, instanceId, siteId, uid: payload.uid };
         recordWixAdminSeen(clientId, payload.uid, payload.permissions);

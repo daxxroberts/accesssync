@@ -77,6 +77,21 @@ router.use(function operatorAuth(req, res, next) {
   return requireAuthOrOperator(req, res, next);
 });
 
+// Tenant isolation: an operator session is scoped to exactly one client. Every
+// route carrying :clientId is checked here, so an operator cannot read or change
+// another gym's data by editing the URL. Owner (admin) sessions are unscoped.
+// Invite-token onboarding requests carry no session (req.admin unset) and are
+// gated by requireInviteToken on their own routes.
+router.param('clientId', function enforceOperatorClientScope(req, res, next, clientId) {
+  if (req.admin && req.admin.role !== 'admin' && req.admin.clientId !== clientId) {
+    log.warn('operator.auth.client_scope_denied', {
+      sessionClientId: req.admin.clientId || null, requestedClientId: clientId, path: req.path,
+    });
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+});
+
 /**
  * Resolves the hardware API key for a client via connector_subscriptions.
  * Used by syncMappingMembers for direct hardware calls.
@@ -1915,16 +1930,16 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
                 error_code, user_message, action_text, resolution,
                 occurred_count, last_occurred_at
          FROM error_queue
-         WHERE location_id = $1 AND status = 'failed'
+         WHERE location_id = $1 AND client_id = $2 AND status = 'failed'
          ORDER BY last_occurred_at DESC NULLS LAST, created_at DESC`,
-        [locationId]
+        [locationId, clientId]
       ),
       db.query(
         `SELECT id, source_plan_id, hardware_group_id, plan_name, door_name, status, created_at
          FROM plan_mappings
-         WHERE location_id = $1
+         WHERE location_id = $1 AND client_id = $2
          ORDER BY plan_name`,
-        [locationId]
+        [locationId, clientId]
       ),
       db.query(
         `SELECT mal.id, mal.event_type, mal.credential_type, mal.created_at,
@@ -3558,7 +3573,10 @@ router.post('/:clientId/members/:memberId/resend-welcome-email', async (req, res
 // Runs _syncClient() for the logged-in client only — bypasses the
 // recurrence gate and nightly digest. Returns { granted, revoked }.
 router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
-  const clientId = req.admin?.clientId || req.body?.clientId || req.query?.clientId;
+  // Operators are pinned to their own client; only the owner may name one in the request.
+  const clientId = req.admin?.role === 'admin'
+    ? (req.body?.clientId || req.query?.clientId)
+    : req.admin?.clientId;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
   try {
     const clientResult = await db.query(

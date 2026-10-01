@@ -58,25 +58,9 @@ class TenantResolver {
       );
 
       if (result.rows.length === 0) {
-        // Phase 1 fallback — DEFAULT_TENANT_ID bootstraps HOG before source_site_id is registered.
-        // On first use, auto-wires the real source_site_id to that client so future lookups resolve
-        // normally. Remove DEFAULT_TENANT_ID from env after first successful webhook.
-        const fallback = process.env.DEFAULT_TENANT_ID || null;
-        if (fallback) {
-          log.warn('tenant.fallback_used', { wixSiteId });
-          // Auto-wire: write this source_site_id to the fallback client row (only if not already set)
-          try {
-            await db.query(
-              `UPDATE clients SET source_site_id = $1 WHERE id = $2 AND (source_site_id IS NULL OR source_site_id = '')`,
-              [wixSiteId, fallback]
-            );
-            log.info('tenant.auto_wired', { wixSiteId, clientId: fallback });
-          } catch (wireErr) {
-            log.error('tenant.auto_wire_failed', { wixSiteId, clientId: fallback }, wireErr);
-          }
-          this._cache.set(wixSiteId, { clientId: fallback, cachedAt: Date.now() });
-          return fallback;
-        }
+        // No DEFAULT_TENANT_ID fallback: routing an unknown site to a fixed client
+        // would provision another gym's members into that client's doors and send
+        // them that client's emails. Unknown site → drop + alert (webhook-processor).
         log.warn('tenant.not_found', { wixSiteId });
         return null;
       }

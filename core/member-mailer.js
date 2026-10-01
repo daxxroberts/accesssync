@@ -220,8 +220,8 @@ async function _lookupRecipientAndPlan(accessId, standardEvent, clientId) {
   const memberRes = await db.query(
     `SELECT mm.id AS member_master_id, mm.email, mm.first_name
      FROM member_access ma JOIN member_master mm ON mm.id = ma.member_master_id
-     WHERE ma.id = $1`,
-    [accessId]
+     WHERE ma.id = $1 AND ma.client_id = $2`,
+    [accessId, clientId]
   );
   const m = memberRes.rows[0];
   if (!m || !m.email) return null;
@@ -256,8 +256,8 @@ async function maybeSendGrantEmail({ clientId, accessId, standardEvent, assignme
     const memberRes = await db.query(
       `SELECT mm.id AS member_master_id, mm.email, mm.first_name, ma.sub_master_id
        FROM member_access ma JOIN member_master mm ON mm.id = ma.member_master_id
-       WHERE ma.id = $1`,
-      [accessId]
+       WHERE ma.id = $1 AND ma.client_id = $2`,
+      [accessId, clientId]
     );
     const m = memberRes.rows[0];
     if (!m || !m.email) {
@@ -270,8 +270,8 @@ async function maybeSendGrantEmail({ clientId, accessId, standardEvent, assignme
     let plans = (assignments || []).map(a => ({ planName: a.planName || null, doorName: null }));
     if (mappingIds.length) {
       const pmRes = await db.query(
-        `SELECT plan_name, door_name FROM plan_mappings WHERE id = ANY($1::uuid[])`,
-        [mappingIds]
+        `SELECT plan_name, door_name FROM plan_mappings WHERE id = ANY($1::uuid[]) AND client_id = $2`,
+        [mappingIds, clientId]
       ).catch(() => ({ rows: [] }));
       if (pmRes.rows.length) plans = pmRes.rows.map(r => ({ planName: r.plan_name, doorName: r.door_name }));
     }
@@ -289,8 +289,8 @@ async function maybeSendGrantEmail({ clientId, accessId, standardEvent, assignme
     if (m.sub_master_id) {
       // M3 — sub-member: "{holder} added you to {plan} at {gym}"
       const holderRes = await db.query(
-        `SELECT first_name, last_name, display_name FROM member_master WHERE id = $1`,
-        [m.sub_master_id]
+        `SELECT first_name, last_name, display_name FROM member_master WHERE id = $1 AND client_id = $2`,
+        [m.sub_master_id, clientId]
       ).catch(() => ({ rows: [] }));
       const h = holderRes.rows[0] || {};
       const holderName = [h.first_name, h.last_name].filter(Boolean).join(' ') || h.display_name || 'The plan holder';
@@ -338,8 +338,8 @@ async function captureAccessRemovedContext({ clientId, accessId, standardEvent }
     const memberRes = await db.query(
       `SELECT mm.id AS member_master_id, mm.email, mm.first_name
        FROM member_access ma JOIN member_master mm ON mm.id = ma.member_master_id
-       WHERE ma.id = $1`,
-      [accessId]
+       WHERE ma.id = $1 AND ma.client_id = $2`,
+      [accessId, clientId]
     );
     const m = memberRes.rows[0];
     if (!m || !m.email) return null;
@@ -502,8 +502,8 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
     const memberRes = await db.query(
       `SELECT mm.id AS member_master_id, mm.email, mm.first_name
        FROM member_access ma JOIN member_master mm ON mm.id = ma.member_master_id
-       WHERE ma.id = $1`,
-      [accessId]
+       WHERE ma.id = $1 AND ma.client_id = $2`,
+      [accessId, clientId]
     );
     const m = memberRes.rows[0] || {};
     const recipient = recipientEmail || m.email || null;
@@ -516,8 +516,8 @@ async function maybeSendDayPassEmail({ clientId, accessId, standardEvent, links,
     let doorName = null;
     if (primary.mappingId) {
       const pmRes = await db.query(
-        `SELECT door_name FROM plan_mappings WHERE id = $1`,
-        [primary.mappingId]
+        `SELECT door_name FROM plan_mappings WHERE id = $1 AND client_id = $2`,
+        [primary.mappingId, clientId]
       ).catch(() => ({ rows: [] }));
       doorName = (pmRes.rows[0] && pmRes.rows[0].door_name) || null;
     }
