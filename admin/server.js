@@ -23,6 +23,7 @@ const clientsRoutes  = require('./routes/clients');
 const operatorRoutes    = require('./routes/operator');
 const multiMemberRoutes = require('./routes/multi-member');
 const portalRoutes      = require('./routes/portal');
+const onboardingRoutes  = require('./routes/onboarding');
 const logsRoutes        = require('./routes/logs');
 const systemHealthRoutes = require('./routes/system-health');
 const wixAdminsRoutes    = require('./routes/wix-admins');
@@ -156,12 +157,10 @@ app.get('/admin-panel',  requireAuthPage, (req, res) => res.render('pages/admin-
 // Admin error queue — full cross-tenant view with raw payload, owner only
 app.get('/admin-errors', requireAuthPage, (req, res) => res.render('pages/admin-errors', { activeTab: 'admin', ...sessionMeta(req) }));
 // Onboarding — server-rendered so invite token is injected securely (never in URL)
-app.get('/onboard', allowWixFrame, (req, res) =>
-  res.render('pages/onboard', {
-    clientId:    req.admin?.clientId   || req.query.clientId || '',
-    instanceId:  req.admin?.instanceId && req.admin.instanceId !== 'undefined' ? req.admin.instanceId : '',
-    inviteToken: process.env.OPERATOR_INVITE_TOKEN || '',
-  }));
+// /onboard: owner-issued, client-bound invite → operator session (admin/routes/onboarding.js).
+// The page never receives a shared secret; with no invite and no session it shows a
+// "you need a setup link" screen instead of the wizard.
+app.use('/onboard', allowWixFrame, onboardingRoutes);
 // Member-facing pages — no auth required
 // allowMemberFrame: removes X-Frame-Options and opens frame-ancestors so member pages
 // can be embedded in Wix member area pages (any origin — member-facing public pages)

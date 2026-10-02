@@ -185,7 +185,25 @@
       margin-bottom: 16px; box-sizing: border-box;
     }
     .modal-input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-dim); }
-    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+    .modal-sub { font-size: 13px; color: var(--text2, #475569); line-height: 1.5; margin-bottom: 14px; }
+    .modal-field { margin-bottom: 12px; }
+    .modal-field .modal-input { margin-bottom: 4px; font-family: inherit; }
+    .modal-hint { font-size: 11px; color: var(--muted, #64748b); line-height: 1.45; }
+    .modal-error {
+      display: none; background: #fef2f2; border-left: 3px solid #ef4444; color: #7f1d1d;
+      padding: 8px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;
+    }
+    .modal-error.show { display: block; }
+    .invite-link-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .invite-link-row .modal-input { margin-bottom: 0; flex: 1; min-width: 0; text-overflow: ellipsis; }
+    .invite-note {
+      background: var(--surface, #f8fafc); border: 1px solid var(--border, #e2e8f0);
+      border-radius: 6px; padding: 10px 12px; font-size: 12px; color: var(--text2, #475569);
+      line-height: 1.55; margin-bottom: 16px;
+    }
+    .invite-note strong { color: var(--text); }
+    .clients-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
     @media (max-width: 640px) {
       .page-title { font-size: 20px; }
@@ -242,10 +260,13 @@
           <div class="section-title">Clients</div>
           <div class="section-subtitle" id="clientsSubtitle">Loading&hellip;</div>
         </div>
+        <div class="clients-header-actions">
+        <button type="button" class="btn btn-sm btn-primary" onclick="openNewClientModal()">New client</button>
         <div class="clients-filter-group" role="tablist" aria-label="Filter clients by status">
           <button type="button" class="clients-filter-btn active" data-status="active"   onclick="setClientsFilter('active')">Active</button>
           <button type="button" class="clients-filter-btn"        data-status="archived" onclick="setClientsFilter('archived')">Archived</button>
           <button type="button" class="clients-filter-btn"        data-status="all"      onclick="setClientsFilter('all')">All</button>
+        </div>
         </div>
       </div>
       <div class="clients-grid" id="clientsGrid"></div>
@@ -275,6 +296,54 @@
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" onclick="closeDeleteClientModal()">Cancel</button>
         <button type="button" class="btn btn-danger" id="deleteClientConfirmBtn" disabled onclick="confirmDeleteClient()">Delete forever</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New client: the OWNER creates the account shell; the gym finishes setup from a link. -->
+  <div class="modal-backdrop" id="newClientModal" role="dialog" aria-modal="true" aria-labelledby="newClientTitle">
+    <div class="modal-dialog">
+      <div class="modal-title" id="newClientTitle">New client</div>
+      <div class="modal-sub">Create the account, then send the gym a setup link. They add their own keys and doors.</div>
+      <div class="modal-error" id="newClientError" role="alert"></div>
+      <div class="modal-field">
+        <label class="modal-label" for="ncName">Gym / business name *</label>
+        <input type="text" class="modal-input" id="ncName" autocomplete="off" placeholder="e.g. House of Gains" />
+      </div>
+      <div class="modal-field">
+        <label class="modal-label" for="ncEmail">Their email *</label>
+        <input type="email" class="modal-input" id="ncEmail" autocomplete="off" placeholder="owner@theirgym.com" />
+        <div class="modal-hint">Alerts for this gym go here. Also used to address the setup-link email draft.</div>
+      </div>
+      <div class="modal-field">
+        <label class="modal-label" for="ncSite">Wix site ID (optional)</label>
+        <input type="text" class="modal-input" id="ncSite" autocomplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+        <div class="modal-hint">Leave blank and they enter it during setup.</div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeNewClientModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" id="ncSubmit" onclick="submitNewClient()">Create and get setup link</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Setup link: copy it, or open an email draft. Delivery is yours — see the note. -->
+  <div class="modal-backdrop" id="inviteModal" role="dialog" aria-modal="true" aria-labelledby="inviteTitle">
+    <div class="modal-dialog">
+      <div class="modal-title" id="inviteTitle">Setup link</div>
+      <div class="modal-sub" id="inviteSub"></div>
+      <div class="modal-error" id="inviteError" role="alert"></div>
+      <div class="invite-link-row">
+        <input type="text" class="modal-input" id="inviteUrl" readonly aria-label="Setup link" />
+        <button type="button" class="btn btn-primary" id="inviteCopy" onclick="copyInviteLink()">Copy</button>
+      </div>
+      <div class="invite-note">
+        <strong>Send it any way that reaches them</strong> — text, chat or email. If they don't get it, just make a new one.<br>
+        Opening the link doesn't use it up, so it's safe if an email scanner clicks it first. It only ever opens <em>this</em> gym's setup. To cancel every link for a gym, archive it.
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeInviteModal()">Done</button>
+        <a class="btn btn-secondary" id="inviteMailto" href="#">Open email draft</a>
       </div>
     </div>
   </div>
@@ -545,12 +614,15 @@
       var lastSync = c.last_sync_at ? formatRelativeTime(c.last_sync_at)            : '—';
       var members  = (c.member_count != null) ? c.member_count : 0;
       var active   = (c.active_count != null) ? c.active_count : 0;
-      var nameAttr = (c.name || '').replace(/"/g, '&quot;');
-      var idAttr   = escapeHtml(c.id);
+      // Client names are operator-editable, so they never go into an inline handler or a
+      // JS string: buttons carry data-* (HTML-escaped) and one delegated listener reads them.
+      var dataAttrs = ' data-id="' + escapeHtml(c.id) + '" data-name="' + escapeHtml(c.name || '') + '"';
 
       var actionBtn = statusKey === 'archived'
-        ? '<button type="button" class="btn btn-sm btn-secondary" onclick="restoreClient(\'' + idAttr + '\', \'' + nameAttr + '\')">Restore</button>'
-        : '<button type="button" class="btn btn-sm btn-secondary" onclick="archiveClient(\'' + idAttr + '\', \'' + nameAttr + '\')">Archive</button>';
+        ? '<button type="button" class="btn btn-sm btn-secondary" data-action="restore"' + dataAttrs + '>Restore</button>'
+        : '<button type="button" class="btn btn-sm btn-secondary" data-action="archive"' + dataAttrs + '>Archive</button>';
+      var inviteBtn = statusKey === 'archived' ? ''
+        : '<button type="button" class="btn btn-sm btn-primary" data-action="invite"' + dataAttrs + '>Setup link</button>';
 
       return '<div class="client-card">' +
         '<div class="client-card-main">' +
@@ -566,9 +638,10 @@
           '</div>' +
         '</div>' +
         '<div class="client-card-actions">' +
+          inviteBtn +
           '<a class="btn btn-sm btn-outline" href="/dashboard?clientId=' + encodeURIComponent(c.id) + '">View Dashboard</a>' +
           actionBtn +
-          '<button type="button" class="btn btn-sm btn-danger" onclick="openDeleteClientModal(\'' + idAttr + '\', \'' + nameAttr + '\')">Delete</button>' +
+          '<button type="button" class="btn btn-sm btn-danger" data-action="delete"' + dataAttrs + '>Delete</button>' +
         '</div>' +
       '</div>';
     }
@@ -584,7 +657,7 @@
         })
         .then(function(r) {
           if (!r.res.ok) throw new Error(r.body.error || ('HTTP ' + r.res.status));
-          if (typeof showToast === 'function') showToast('success', 'Archived "' + name + '"');
+          if (typeof showToast === 'function') showToast('success', 'Archived "' + escapeHtml(name) + '"');
           loadClients();
         })
         .catch(function(err) {
@@ -602,7 +675,7 @@
         })
         .then(function(r) {
           if (!r.res.ok) throw new Error(r.body.error || ('HTTP ' + r.res.status));
-          if (typeof showToast === 'function') showToast('success', 'Restored "' + name + '"');
+          if (typeof showToast === 'function') showToast('success', 'Restored "' + escapeHtml(name) + '"');
           loadClients();
         })
         .catch(function(err) {
@@ -651,7 +724,7 @@
         })
         .then(function(r) {
           if (!r.res.ok) throw new Error(r.body.error || ('HTTP ' + r.res.status));
-          if (typeof showToast === 'function') showToast('success', 'Deleted "' + pending.name + '"');
+          if (typeof showToast === 'function') showToast('success', 'Deleted "' + escapeHtml(pending.name) + '"');
           closeDeleteClientModal();
           loadClients();
         })
@@ -661,13 +734,120 @@
         });
     }
 
+    // ── New client + setup link ──────────────────────────────────
+    var _inviteState = null; // { url, clientName, email, ttlHours }
+
+    function _showErr(id, msg) {
+      var el = document.getElementById(id);
+      el.textContent = msg || '';
+      el.classList.toggle('show', !!msg);
+    }
+
+    function openNewClientModal() {
+      ['ncName', 'ncEmail', 'ncSite'].forEach(function(id) { document.getElementById(id).value = ''; });
+      _showErr('newClientError', '');
+      document.getElementById('ncSubmit').disabled = false;
+      document.getElementById('newClientModal').classList.add('open');
+      setTimeout(function() { document.getElementById('ncName').focus(); }, 50);
+    }
+    function closeNewClientModal() { document.getElementById('newClientModal').classList.remove('open'); }
+
+    function submitNewClient() {
+      var name  = document.getElementById('ncName').value.trim();
+      var email = document.getElementById('ncEmail').value.trim();
+      var site  = document.getElementById('ncSite').value.trim();
+      if (!name)  return _showErr('newClientError', 'Enter the gym or business name.');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return _showErr('newClientError', 'Enter a valid email address.');
+      if (site && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(site)) {
+        return _showErr('newClientError', 'That Wix site ID doesn’t look right — it should look like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx, or leave it blank.');
+      }
+      _showErr('newClientError', '');
+      var btn = document.getElementById('ncSubmit');
+      btn.disabled = true;
+      fetch('/admin/clients', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, notification_email: email, source_site_id: site || null }),
+      })
+        .then(function(res) { return res.json().then(function(b) { return { res: res, body: b }; }); })
+        .then(function(r) {
+          if (!r.res.ok) throw new Error(r.body.error || ('HTTP ' + r.res.status));
+          closeNewClientModal();
+          loadClients();
+          openInviteModal(r.body.client.id, r.body.client.name);
+        })
+        .catch(function(err) {
+          btn.disabled = false;
+          _showErr('newClientError', err.message === 'Site ID already in use'
+            ? 'That Wix site is already connected to another client.'
+            : 'Could not create the client: ' + err.message);
+        });
+    }
+
+    function openInviteModal(id, name) {
+      _inviteState = null;
+      _showErr('inviteError', '');
+      document.getElementById('inviteTitle').textContent = 'Setup link for ' + name;
+      document.getElementById('inviteSub').textContent = 'Creating link…';
+      document.getElementById('inviteUrl').value = '';
+      document.getElementById('inviteCopy').disabled = true;
+      document.getElementById('inviteMailto').setAttribute('href', '#');
+      document.getElementById('inviteModal').classList.add('open');
+      fetch('/admin/clients/' + encodeURIComponent(id) + '/invite', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      })
+        .then(function(res) { return res.json().then(function(b) { return { res: res, body: b }; }); })
+        .then(function(r) {
+          if (!r.res.ok) throw new Error(r.body.error || ('HTTP ' + r.res.status));
+          var b = r.body;
+          _inviteState = { url: b.url, clientName: b.clientName || name, email: b.notificationEmail || '', ttlHours: b.ttlHours };
+          document.getElementById('inviteSub').textContent =
+            'Send this to the gym. They open it, press Start setup, and finish onboarding themselves. Works for ' +
+            b.ttlHours + ' hours (until ' + new Date(b.expiresAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) + ').';
+          document.getElementById('inviteUrl').value = b.url;
+          document.getElementById('inviteCopy').disabled = false;
+          var subject = 'Set up AccessSync for ' + _inviteState.clientName;
+          var body = 'Hi,\n\nHere is your AccessSync setup link. Open it and press “Start setup” — it takes about five minutes.\n\n' +
+            b.url + '\n\nThe link works for ' + b.ttlHours + ' hours. If it expires, tell me and I’ll send a new one.';
+          document.getElementById('inviteMailto').setAttribute('href',
+            'mailto:' + encodeURIComponent(_inviteState.email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body));
+        })
+        .catch(function(err) {
+          document.getElementById('inviteSub').textContent = '';
+          _showErr('inviteError', 'Could not create a setup link: ' + err.message);
+        });
+    }
+    function closeInviteModal() { document.getElementById('inviteModal').classList.remove('open'); _inviteState = null; }
+
+    function copyInviteLink() {
+      var input = document.getElementById('inviteUrl');
+      if (!input.value) return;
+      var done = function() { if (typeof showToast === 'function') showToast('success', 'Setup link copied'); };
+      var fallback = function() { input.select(); try { document.execCommand('copy'); done(); } catch (e) { _showErr('inviteError', 'Copy failed — select the link and copy it manually.'); } };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(done, fallback);
+      else fallback();
+    }
+
+    // One delegated listener for every client-card button (see renderClientCard).
+    document.getElementById('clientsGrid').addEventListener('click', function(e) {
+      var b = e.target.closest('button[data-action]');
+      if (!b) return;
+      var id = b.getAttribute('data-id'), name = b.getAttribute('data-name');
+      if (b.dataset.action === 'archive')      archiveClient(id, name);
+      else if (b.dataset.action === 'restore') restoreClient(id, name);
+      else if (b.dataset.action === 'delete')  openDeleteClientModal(id, name);
+      else if (b.dataset.action === 'invite')  openInviteModal(id, name);
+    });
+
     // wire input listener + ESC-to-close
     document.addEventListener('DOMContentLoaded', function() {
       var inp = document.getElementById('deleteClientInput');
       if (inp) inp.addEventListener('input', onDeleteClientInputChange);
       document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && document.getElementById('deleteClientModal').classList.contains('open')) {
-          closeDeleteClientModal();
+        if (e.key === 'Escape') {
+          if (document.getElementById('deleteClientModal').classList.contains('open')) closeDeleteClientModal();
+          if (document.getElementById('newClientModal').classList.contains('open'))    closeNewClientModal();
+          if (document.getElementById('inviteModal').classList.contains('open'))       closeInviteModal();
         }
       });
       var backdrop = document.getElementById('deleteClientModal');

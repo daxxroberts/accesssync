@@ -435,8 +435,8 @@ key_facts:
         </tr>
         <tr data-feature="F036" data-status="live">
           <td>F036</td>
-          <td>Invite Token Auth</td>
-          <td class="desc">Onboarding signup endpoints protected by OPERATOR_INVITE_TOKEN + 5 req/IP/min rate limiter</td>
+          <td>Owner-issued setup links</td>
+          <td class="desc">Onboarding runs on a signed, expiring link the owner issues for ONE client (core/invite-token.js). The gym exchanges it for a session scoped to that client; there is no shared token. Redeem is rate limited.</td>
           <td><span class="status status-live">Live</span></td>
           <td class="refs">OB-24</td>
         </tr>

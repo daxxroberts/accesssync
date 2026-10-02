@@ -20,6 +20,8 @@ const { suspendLocationMembers } = require('../../core/location-lapse');
 const { logAdminAction } = require('../middleware/audit');
 const { log } = require('../../core/logger');
 const { ensureWebhookSecret } = require('../../core/webhook-secret');
+const { signInvite, ttlMs } = require('../../core/invite-token');
+const { recordActivity } = require('../middleware/activity');
 const hardwareAdapter = require('../../adapters/hardware-adapter');
 const { getTraceId, getActor } = require('../../core/trace-context');
 
@@ -128,7 +130,8 @@ router.post('/', async (req, res) => {
     }
 
     // Per-client webhook signing secret, created with the client (no shared fallback).
-    const webhookSecret = await ensureWebhookSecret(clientRow.id);
+    // Not echoed here: the client sees it in its own Setup Hub / onboarding step 5.
+    await ensureWebhookSecret(clientRow.id);
 
     log.info('admin.client_created', { name: clientRow.name, clientId: clientRow.id });
     res.status(201).json({
@@ -138,11 +141,52 @@ router.post('/', async (req, res) => {
         billing:   tier ? { tier } : null,
         connector: derivedHardware ? { platform: derivedHardware, has_key: false } : null,
       },
-      webhook_secret: webhookSecret,
     });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Site ID already in use' });
     log.error('admin.clients_create_error', {}, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /admin/clients/:id/invite — issue an onboarding link ──────
+// Owner-only (this router is mounted behind requireAuth). Returns a link bound to this
+// ONE client, valid for INVITE_TTL_HOURS (default 72). Delivery is deliberately NOT done
+// here: email is not guaranteed to arrive (or to survive a link scanner), so the owner
+// copies the link and sends it however works — the UI offers copy and a mailto: draft.
+// Issuing again never breaks an earlier link; revoke by archiving the client.
+router.post('/:id/invite', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const found = await db.query(
+      `SELECT id, name, status, notification_email FROM clients WHERE id = $1`, [id]
+    );
+    if (!found.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const c = found.rows[0];
+    if (c.status === 'archived') {
+      return res.status(409).json({ error: 'Restore this client before sending a setup link.' });
+    }
+
+    const { token, expiresAt } = signInvite({ clientId: c.id });
+    const base = (process.env.ADMIN_HUB_URL || `https://${req.get('host')}`).replace(/\/$/, '');
+    const url = `${base}/onboard?invite=${encodeURIComponent(token)}`;
+
+    recordActivity(req, 'client.invite_issued', { clientId: c.id, expiresAt: new Date(expiresAt).toISOString() });
+    log.info('admin.client.invite_issued', { clientId: c.id });
+    res.json({
+      ok: true,
+      url,
+      expiresAt: new Date(expiresAt).toISOString(),
+      ttlHours: Math.round(ttlMs() / 3_600_000),
+      clientName: c.name,
+      notificationEmail: c.notification_email || null,
+    });
+  } catch (err) {
+    if (err.code === 'INVITE_SECRET_MISSING') {
+      log.error('admin.client.invite_secret_missing', { clientId: id }, err);
+      return res.status(503).json({ error: 'Invite signing is not configured on the server.' });
+    }
+    log.error('admin.client.invite_failed', { clientId: id }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -7,7 +7,7 @@
 const { test, expect } = require('@playwright/test');
 
 const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || 'http://localhost:3001';
-const OWNER_PIN      = process.env.OWNER_PIN       || '2096';
+const OWNER_PIN      = process.env.OWNER_PIN;   // required — never committed
 
 async function postPin(pin) {
   return fetch(`${ADMIN_BASE_URL}/auth/pin`, {

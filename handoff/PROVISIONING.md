@@ -50,28 +50,28 @@ RETURNING id
 
 ---
 
-## Step 2 — Generate Invite Token
+## Step 2 — Issue the Setup Link
 
-Generate a time-limited invite token for the operator to access the onboarding wizard. This token gates the onboarding endpoints before the operator has a JWT.
+The OWNER sends the gym a setup link. There is no shared token and no public wizard.
 
-```sql
--- Token is generated in-memory (crypto.randomBytes) and stored temporarily.
--- Current implementation: invite token is a URL param on the onboarding link.
--- Token is validated by requireInviteToken middleware on /operator/clients/* endpoints.
-```
+1. Owner panel → **New client** (name, the gym's email, optional Wix site ID) → `POST /admin/clients`.
+   This creates the client row and its per-client webhook secret.
+2. The panel then calls `POST /admin/clients/:id/invite` and shows the link
+   `https://<admin-server>/onboard?invite=<signed token>` with **Copy** and **Open email draft**.
+   Use **Setup link** on any client card to issue another one.
+3. The owner sends it however reaches the gym (text, chat, email). Email is never the only channel.
 
-**Invite link format:**
-```
-https://<admin-server>/onboard?clientId=<UUID>&token=<invite-token>
-```
-
-**Send to:** Gym owner email (via Resend or manual).
+The token (`core/invite-token.js`) is HMAC-signed, bound to that one client, and expires after
+`INVITE_TTL_HOURS` (default 72). Opening it changes nothing; the gym presses **Start setup**, which
+`POST /onboard/redeem` exchanges for an 8h `operatorToken` cookie scoped to that client. It is not
+single-use: that is deliberate (link scanners, a second device, a lost response and a re-sent email all
+break burn-on-first-use). To cancel every link for a gym, archive it. See `handoff/ONBOARDING_INVITES.md`.
 
 ---
 
 ## Step 3 — Operator Completes Onboarding (S02 Onboarding Flow)
 
-The operator opens the invite link and completes the multi-step wizard.
+The operator opens the setup link, presses Start setup, and completes the multi-step wizard.
 
 ### Step 3a — Hardware Platform Selection
 `PATCH /operator/clients/:clientId/hardware-platform`
@@ -79,7 +79,7 @@ The operator opens the invite link and completes the multi-step wizard.
 Updates `clients.hardware_platform`. No side effects.
 
 ### Step 3b — API Key Entry and Test
-`POST /operator/clients/:clientId/api-key` (onboarding variant — invite token auth)
+`POST /operator/clients/:clientId/api-key` (onboarding — session scoped to the client)
 
 1. Validates API key format
 2. AES-256-GCM encrypts with `ENCRYPTION_KEY`
@@ -88,7 +88,7 @@ Updates `clients.hardware_platform`. No side effects.
 5. Returns `{ ok: true, pendingRetried: N }`
 
 ### Step 3c — Location Creation
-`POST /operator/clients/:clientId/locations` (invite token auth)
+`POST /operator/clients/:clientId/locations` (session scoped to the client)
 
 1. Creates location row: name, city, state, tier
 2. Sets `subscription_status = 'inactive'` (default)
@@ -127,7 +127,7 @@ Configure Wix to send webhooks to the AccessSync Core Engine.
 - `payment/failed`
 - `payment/recovered`
 
-**HMAC:** Wix signs webhooks with HMAC-SHA256. AccessSync validates signature in `wix-connector.js`. The shared secret is stored in env var `WIX_WEBHOOK_SECRET`.
+**HMAC:** Every webhook names its client (`x-accesssync-client-id`) and is signed with that client's OWN secret (`clients.wix_webhook_secret`, generated when the client is created). There is no platform-wide secret; `WIX_WEBHOOK_SECRET` is retired.
 
 **Wix Site ID → Client mapping:** First webhook auto-wires `site_id` to the client via TenantResolver if `DEFAULT_TENANT_ID` was used. With portal auth: `site_id` is set during `/operator-portal` verification.
 
@@ -187,7 +187,7 @@ Member purchases plan on Wix
 | `DATABASE_URL` | Both | PostgreSQL connection string (Railway) |
 | `REDIS_URL` | Core Engine | BullMQ queue backing |
 | `ENCRYPTION_KEY` | Both | AES-256-GCM key for API key storage |
-| `WIX_WEBHOOK_SECRET` | Core Engine | HMAC validation for inbound webhooks |
+| `WIX_WEBHOOK_SECRET` | — | **Retired.** Per-client secrets only; delete from Railway |
 | `RESEND_API_KEY` | Admin Server | Email alert sending |
 | `CORE_ENGINE_URL` | Admin Server | Used to generate webhook URL in onboarding |
 | `ADMIN_ALLOWED_EMAILS` | Admin Server | Comma-separated list of allowed Google OAuth emails (Daxx only) |

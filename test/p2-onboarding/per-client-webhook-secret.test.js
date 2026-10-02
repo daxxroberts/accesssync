@@ -359,41 +359,41 @@ function mockRes() {
   };
 }
 
-describe('POST /operator/clients — every new client gets its own webhook secret', () => {
+describe('POST /operator/:clientId/onboarding/profile — secret safety net', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  function call(body) {
+  function call(clientId, body) {
     const router = require('../../admin/routes/operator');
-    const handler = findRouteHandler(router, 'post', '/clients');
+    const handler = findRouteHandler(router, 'post', '/:clientId/onboarding/profile');
     const res = mockRes();
-    return handler({ body, headers: {} }, res).then(() => res);
+    return handler({ params: { clientId }, body }, res).then(() => res);
   }
 
-  test('a brand-new client is created with a secret, returned once for onboarding', async () => {
+  test('a client that predates secret generation gets one when its profile is saved', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'client-new', name: 'Gym B' }] })  // INSERT clients
-      .mockResolvedValueOnce({ rows: [] })                                       // connector_subscriptions
-      .mockResolvedValueOnce({ rows: [{ id: 'client-new' }], rowCount: 1 });   // secret UPDATE won
+      .mockResolvedValueOnce({ rows: [{ id: 'client-new', source_site_id: null }] })                // SELECT client
+      .mockResolvedValueOnce({ rows: [{ id: 'client-new', name: 'Gym B' }] })                        // UPDATE clients
+      .mockResolvedValueOnce({ rows: [] })                                                          // connector_subscriptions
+      .mockResolvedValueOnce({ rows: [{ id: 'client-new' }], rowCount: 1 });                        // secret UPDATE won
 
-    const res = await call({ name: 'Gym B', tier: 'Connect', source_site_id: 'site-b' });
+    const res = await call('client-new', { name: 'Gym B', tier: 'Connect' });
 
-    expect(res.statusCode).toBe(201);
+    expect(res.statusCode).toBe(200);
     const update = db.query.mock.calls.find(([sql]) => /SET wix_webhook_secret/.test(sql));
-    expect(update[0]).toContain('wix_webhook_secret IS NULL');
+    expect(update[0]).toContain('wix_webhook_secret IS NULL');   // never overwrites an existing secret
     expect(update[1][1]).toBe('client-new');
-    const stored = update[1][0].replace(/^ENC\[(.+)\]$/, '$1');
-    expect(res.body.webhook_secret).toBe(stored);
+    // The plaintext is never echoed from this route; the client reads it in its own Setup Hub.
+    expect(JSON.stringify(res.body)).not.toContain(update[1][0].replace(/^ENC\[(.+)\]$/, '$1'));
   });
 
-  test('re-running onboarding for an existing client never replaces its secret', async () => {
+  test('re-running the wizard never replaces an existing secret', async () => {
     db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'client-hog', source_site_id: 'site-hog' }] })
       .mockResolvedValueOnce({ rows: [{ id: 'client-hog', name: 'House of Gains' }] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 });  // already had a secret → no-op
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });                                            // already had one → no-op
 
-    const res = await call({ name: 'House of Gains', tier: 'Connect', source_site_id: 'site-hog' });
-
-    expect(res.statusCode).toBe(201);
-    expect(res.body.webhook_secret).toBeNull();
+    const res = await call('client-hog', { name: 'House of Gains', tier: 'Connect', source_site_id: 'site-hog' });
+    expect(res.statusCode).toBe(200);
   });
 });

@@ -4,17 +4,30 @@
  *
  * Admin hub:   PIN auth → httpOnly adminToken cookie
  * Member hub:  x-internal-proxy: 1 header bypass
- * Webhooks:    HMAC-SHA256 over rawBody → x-wix-signature header
+ * Webhooks:    HMAC-SHA256 over rawBody with the client's own secret → x-wix-signature,
+ *              plus x-accesssync-client-id naming that client
  */
 
 const crypto = require('crypto');
 
 const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || 'https://accesssync-admin.up.railway.app';
-const OWNER_PIN      = process.env.OWNER_PIN       || '2096';
-// Read lazily so env vars set after module load (e.g. dotenv in global-setup) are picked up
-function getWixWebhookSecret() {
-  return process.env.WIX_WEBHOOK_SECRET || 'ad6d52c6bd2c2b968c4d95d820cf1198d1e25c16f39a3fa3f389fa4c7f713b44';
+
+// No credential literals in the repo. These come from the environment of whoever runs the
+// suite:
+//   OWNER_PIN            the owner PIN for /auth/pin
+//   E2E_WEBHOOK_SECRET   the per-client webhook secret of the client the specs post to
+//                        (System Config -> Wix Setup Guide shows it). The platform-wide
+//                        WIX_WEBHOOK_SECRET no longer exists: every webhook must name its
+//                        client and be signed with that client's own secret.
+//   E2E_CLIENT_ID        optional; defaults to the House of Gains client the specs target
+function _required(name) {
+  const v = process.env[name];
+  if (!v) throw new Error(`${name} is not set — see e2e/helpers/auth.js for what each variable is.`);
+  return v;
 }
+function getOwnerPin()         { return _required('OWNER_PIN'); }
+function getWixWebhookSecret() { return _required('E2E_WEBHOOK_SECRET'); }
+function getWebhookClientId()  { return process.env.E2E_CLIENT_ID || require('./constants').HOG_CLIENT_ID; }
 
 // Cached cookie string per process — valid 24h so one mint per test run is fine
 let _adminCookieCache = null;
@@ -30,7 +43,7 @@ async function getAdminCookie() {
   const res = await fetch(`${ADMIN_BASE_URL}/auth/pin`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ pin: OWNER_PIN }),
+    body:    JSON.stringify({ pin: getOwnerPin() }),
   });
 
   if (!res.ok) {
@@ -85,7 +98,6 @@ function getMemberHubHeaders(wixMemberId) {
  */
 function buildWebhookSignature(rawBody, secret) {
   const s = secret || getWixWebhookSecret();
-  if (!s) throw new Error('WIX_WEBHOOK_SECRET not set — cannot build webhook signature');
   const hmac = crypto.createHmac('sha256', s);
   hmac.update(rawBody, 'utf8');
   return hmac.digest('base64');
@@ -102,6 +114,8 @@ function buildWebhookHeaders(body, opts = {}) {
     'Content-Type':      'application/json',
     'x-wix-signature':   signature,
     'x-wix-site-id':     opts.siteId || 'test-site-id',
+    // The signing client. The server verifies the signature with THIS client's secret only.
+    'x-accesssync-client-id': opts.clientId || getWebhookClientId(),
   };
 }
 

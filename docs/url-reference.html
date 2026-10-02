@@ -224,7 +224,7 @@ key_facts:
     <strong>Auth key:</strong>
     &nbsp;<span class="auth-badge auth-none">None</span> public &nbsp;
     <span class="auth-badge auth-jwt">Admin JWT</span> Google OAuth cookie (your internal admin panel) &nbsp;
-    <span class="auth-badge auth-invite">Invite Token</span> <code>OPERATOR_INVITE_TOKEN</code> env var + rate limited &nbsp;
+    <span class="auth-badge auth-invite">Setup link</span> owner-issued, signed, bound to one client, expires &nbsp;
     <span class="auth-badge auth-hmac">HMAC</span> Wix webhook signature &nbsp;
     <span class="auth-badge auth-wixjwt">Wix JWT</span> RS256 from Wix JWKS
   </div>
@@ -242,14 +242,14 @@ key_facts:
     </div>
 
     <div class="url-card">
-      <a href="https://accesssync-admin.up.railway.app/onboard.html?invite=2096" target="_blank" class="url-row" style="background: var(--green-dim); border-left: 3px solid var(--green);">
+      <div class="url-row" style="background: var(--green-dim); border-left: 3px solid var(--green);">
         <span class="type-badge type-page">Page</span>
         <div>
-          <div class="url-path">/onboard.html<span class="param">?invite=2096</span></div>
-          <div class="url-desc" style="font-weight:600;">5-step setup wizard — account creation → location → Kisi API key → plan mapping → go-live check. This is the main entry point for every new client. Share this exact URL.</div>
+          <div class="url-path">/onboard<span class="param">?invite=&lt;signed link&gt;</span></div>
+          <div class="url-desc" style="font-weight:600;">5-step setup wizard — profile &rarr; location &rarr; door-system API key &rarr; plan mapping &rarr; go-live check. There is no shared URL: the owner creates the client in the Owner panel (New client) and sends that gym its own setup link (Setup link button). Each link is bound to one gym and expires.</div>
         </div>
-        <span class="auth-badge auth-invite">Invite Token</span>
-      </a>
+        <span class="auth-badge auth-invite">Owner-issued link</span>
+      </div>
     </div>
   </div>
 

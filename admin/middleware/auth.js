@@ -117,4 +117,23 @@ function requireAuthPageOrOperator(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, requireAuthOrOperator, requireAuthPage, requireAuthPageOrOperator, signToken, signOperatorToken };
+/**
+ * Non-redirecting session read for pages that render different states per caller
+ * (e.g. /onboard). Returns the verified JWT payload ({ role: 'admin' } or
+ * { role: 'operator', clientId }) or null. An owner cookie wins over an operator one,
+ * matching requireAuthOrOperator.
+ */
+function readSession(req) {
+  const token = req.cookies?.adminToken || req.cookies?.operatorToken;
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.role === 'admin') return payload;
+    if (payload.role === 'operator' && payload.clientId) return payload;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { requireAuth, requireAuthOrOperator, requireAuthPage, requireAuthPageOrOperator, readSession, signToken, signOperatorToken };

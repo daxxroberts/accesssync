@@ -225,6 +225,10 @@ html, body {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
+/* Grid tracks and flex items default to min-width:auto, so an <input>'s intrinsic width
+   pushed the page past 320px (DR-015 baseline). Let them shrink. */
+.form-grid > *, .field input, .field select { min-width: 0; }
+.field input, .field select { width: 100%; }
 .form-grid .full { grid-column: 1 / -1; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label {
@@ -657,6 +661,30 @@ html, body {
 .val-icon { flex-shrink: 0; font-size: 16px; width: 22px; text-align: center; }
 .val-label { flex: 1; }
 
+/* ── Gate screens: invite, blocked, session lost ──────────────── */
+.gate-card { text-align: center; }
+.gate-icon {
+  width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 18px; background: var(--brand-dim); color: var(--brand);
+}
+.gate-icon.warn { background: #FEF3C7; color: #B45309; }
+.gate-icon.err  { background: #FEE2E2; color: #B91C1C; }
+.gate-icon svg  { width: 26px; height: 26px; }
+.gate-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 24px; }
+.gate-actions .btn { width: 100%; max-width: 300px; justify-content: center; }
+.gate-help {
+  margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--text2); line-height: 1.6; text-align: left;
+}
+.gate-help a { color: var(--brand); }
+.gate-note { font-size: 12px; color: var(--text2); margin-top: 10px; line-height: 1.5; }
+#session-lost {
+  position: fixed; inset: 0; z-index: 50; padding: 16px;
+  background: rgba(15,23,42,0.55); display: flex; align-items: center; justify-content: center;
+}
+#session-lost .card { max-width: 420px; width: 100%; }
+
 /* ── Utilities ────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 
@@ -693,6 +721,13 @@ html, body {
   </header>
 
   <main class="main">
+
+    <!-- ── Gate: invite / blocked screens. Filled in by showGate()/showInviteGate().
+         Shown instead of the wizard whenever the visitor has no session yet. ───── -->
+    <div id="gate" class="card gate-card hidden" role="status" aria-live="polite"></div>
+
+    <!-- Wizard: revealed only for a visitor with a session scoped to a client. -->
+    <div id="wizard-root" class="hidden">
 
     <!-- ── Step indicator ──────────────────────────────────────── -->
     <div class="steps-bar">
@@ -933,7 +968,7 @@ html, body {
               <span id="webhook-secret-wrap" class="hidden">
                 <br><code id="webhook-secret-display" style="background:#F1F5F9;padding:2px 6px;border-radius:4px;font-size:12px;word-break:break-all"></code>
                 <button class="btn-copy-code" type="button" onclick="copyWebhookSecret()">Copy</button>
-                <br><span style="color:var(--muted);font-size:11px">Shown once here. You can always view or rotate it later in System Config → Wix Setup Guide.</span>
+                <br><span style="color:var(--muted);font-size:11px">You can view or rotate it any time in System Config → Wix Setup Guide.</span>
               </span>
               <span id="webhook-secret-elsewhere">
                 <br><span style="color:var(--muted);font-size:11px">Copy it from <strong>System Config → Wix Setup Guide</strong> in your AccessSync dashboard. Don't make up your own value — webhooks signed with any other secret are rejected.</span>
@@ -1028,10 +1063,27 @@ html, body {
       </div>
     </div>
 
+    </div><!-- /#wizard-root -->
+
   </main>
 </div>
 
 <div id="toast"></div>
+
+<!-- Session lost mid-wizard: an overlay, so nothing the person typed is thrown away. -->
+<div id="session-lost" class="hidden" role="alertdialog" aria-modal="true" aria-labelledby="sl-title">
+  <div class="card gate-card">
+    <div class="gate-icon warn" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    </div>
+    <div class="card-title" id="sl-title" style="text-align:center">Your setup session ended</div>
+    <div class="card-sub" style="text-align:center">For your security, setup sessions last 8 hours. Nothing you've already saved is lost.</div>
+    <div class="gate-actions">
+      <button class="btn btn-primary" id="sl-reopen" onclick="reopenSetupLink()">Continue setup</button>
+    </div>
+    <div class="gate-help" id="sl-help"></div>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -1044,7 +1096,9 @@ const state = {
   tier:      null,   // 'Base' | 'Pro' | 'Connect'
   hardwarePlatform: null, // 'kisi' | 'seam' — explicit selection from Step 2
   siteId:        null,   // Wix meta-site ID — for Wix REST API calls (wix-site-id header)
-  instanceId:    null,   // Wix app instanceId — for portal auth lookup (platform_instance_id in DB)
+  siteIdLocked:  false,  // true when the account already has a Wix site ID (can't be changed here)
+  hasWixKey:     false,  // server already holds this account's Wix API key
+  provisioned:   false,  // profile + location + activation done (makes provisioning safe to retry)
   siteIdVerified: false, // true only after Test button returns valid on manual path
   siteName:      null,   // Wix site name (from URL param)
   clientId:      null,   // set after _provisionClient() completes
@@ -1057,17 +1111,16 @@ const state = {
   prefill:       {},     // URL params read on load
 };
 
-// OB-24: Invite token injected server-side at render time (secure — never in URL)
-const _inviteToken = '<%= inviteToken %>';
-// instanceId injected server-side from Wix signed instance (portal path) — empty string on owner path
-const _instanceId  = '<%= instanceId %>' === 'undefined' ? '' : '<%= instanceId %>';
+// Server-computed from the invite link / session (admin/routes/onboarding.js). It carries
+// no secret: { mode: 'invite' | 'wizard' | 'blocked', reason?, clientId?, clientName?, expiresAt? }.
+// The invite token itself is read from the URL only when the person clicks "Start setup".
+const BOOT = <%- JSON.stringify(boot).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026') %>;
 
 // ── Read URL params (set by Velo redirect or portal middleware) ──────
 (function initFromParams() {
   const p = new URLSearchParams(window.location.search);
   state.prefill = {
     siteId:     p.get('siteId')     || '',
-    instanceId: p.get('instanceId') || '',   // Wix app instanceId — for portal auth lookup
     siteName:   p.get('siteName')   || '',
     ownerEmail: p.get('ownerEmail') || '',
     city:       p.get('city')       || '',
@@ -1092,7 +1145,6 @@ const _instanceId  = '<%= instanceId %>' === 'undefined' ? '' : '<%= instanceId 
     state.name       = state.prefill.siteName   || '';
     state.email      = state.prefill.ownerEmail || null;
     state.siteId     = state.prefill.siteId     || null;   // meta-site ID for Wix API calls
-    state.instanceId = state.prefill.instanceId || null;   // app instanceId for portal auth
     state.siteName   = state.prefill.siteName   || null;
   } else {
     document.getElementById('found-panel').classList.add('hidden');
@@ -1109,31 +1161,23 @@ const _instanceId  = '<%= instanceId %>' === 'undefined' ? '' : '<%= instanceId 
 
 // ── Site ID field — show only when instanceId not auto-injected ─────
 (function initSiteIdField() {
-  if (_instanceId) {
-    // Portal path: instanceId baked into JWT, no user input needed.
-    // _instanceId is the Wix app instanceId (portal auth), NOT the meta-site ID.
-    // state.siteId (meta-site ID for Wix API calls) comes from the siteId URL param.
-    state.instanceId     = state.instanceId || _instanceId;
-    state.siteIdVerified = true; // server-verified via Wix signed instance
-  } else {
-    // Manual path: show the field, pre-fill from URL param if available
-    const row = document.getElementById('site-id-row');
-    if (row) row.style.display = '';
-    const input = document.getElementById('c-site-id');
-    if (input && state.prefill.siteId) {
-      input.value = state.prefill.siteId;
-      state.siteId = state.prefill.siteId;
-    }
-    // Reset verified flag if operator changes the input after a successful test
-    if (input) {
-      input.addEventListener('input', () => { state.siteIdVerified = false; });
-    }
+  // Show the field and pre-fill it from the URL param if available. resumeFromServer()
+  // locks it when the account is already linked to a Wix site.
+  const row = document.getElementById('site-id-row');
+  if (row) row.style.display = '';
+  const input = document.getElementById('c-site-id');
+  if (input && state.prefill.siteId) {
+    input.value = state.prefill.siteId;
+    state.siteId = state.prefill.siteId;
+  }
+  // Reset verified flag if the person changes the input after a successful test
+  if (input) {
+    input.addEventListener('input', () => { state.siteIdVerified = false; });
   }
 
   const btn = document.getElementById('btn-test-site');
   if (!btn) return;
   btn.addEventListener('click', async () => {
-    const input = document.getElementById('c-site-id');
     const siteId = (input?.value || '').trim();
     if (!siteId) return;
     state.siteId = siteId;
@@ -1148,42 +1192,13 @@ async function testSiteId(siteId) {
   el.style.color = 'var(--muted)';
   el.textContent = 'Testing…';
   try {
-    const res = await apiFetch(`/operator/site-id/verify?siteId=${encodeURIComponent(siteId)}`);
+    const res = await apiFetch(`/operator/site-id/verify?siteId=${encodeURIComponent(siteId)}&clientId=${encodeURIComponent(state.clientId || '')}`);
+    if (res.status === 401) { el.style.display = 'none'; return; }   // session overlay explains it
     const data = await res.json();
     if (data.valid) {
       el.style.color = 'var(--green, #22C55E)';
       el.textContent = '✓ ' + (data.message || 'Site ID accepted');
       state.siteIdVerified = true;
-    } else if (data.alreadyRegistered) {
-      // Site exists — load client data into state and resume from correct step
-      state.clientId         = data.client.id;
-      state.name             = data.client.name;
-      state.tier             = data.client.tier;
-      state.hardwarePlatform = data.client.hardware_platform;
-      state.locations        = data.locations || [];
-      state.siteIdVerified   = true;
-
-      if (data.client.has_api_key && data.locations.length) {
-        // Fully configured — issue session cookie then go to dashboard
-        el.style.color = 'var(--green, #22C55E)';
-        el.textContent = '✓ Site found — loading your dashboard…';
-        await apiFetch('/operator/issue-session', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ clientId: data.client.id, siteId: state.siteId }),
-        });
-        window.location.href = '/dashboard';
-      } else if (!data.client.has_api_key) {
-        // Has client (+ possibly location) but no API key — jump to Step 4
-        el.style.color = 'var(--green, #22C55E)';
-        el.textContent = '✓ Site found — resuming your setup';
-        showStep(4);
-      } else {
-        // Has client + API key but no location — jump to Step 3
-        el.style.color = 'var(--green, #22C55E)';
-        el.textContent = '✓ Site found — resuming your setup';
-        showStep(3);
-      }
     } else {
       el.style.color = 'var(--red, #EF4444)';
       el.textContent = '✗ ' + (data.error || 'Invalid Site ID');
@@ -1221,21 +1236,11 @@ function setBusy(btnId, busy, idleHtml) {
 }
 
 async function apiFetch(url, opts = {}) {
-  const headers = { ...(opts.headers || {}) };
-  if (_inviteToken) headers['X-Invite-Token'] = _inviteToken;
-  const res = await fetch(url, { ...opts, headers, credentials: 'include' });
+  const res = await fetch(url, { ...opts, credentials: 'include' });
   if (res.status === 401) {
-    // On the onboard page, a 401 means the invite token is missing or the endpoint still requires
-    // JWT. Do not redirect — the page itself is auth-exempt. Surface as an error instead.
-    toast('Session error (401). Please reload the page and try again.', 'error');
-    return res;
-  }
-  if (res.status === 403) {
-    const data = await res.clone().json().catch(() => ({}));
-    if (data.error === 'Valid invite link required') {
-      toast('This onboarding link is invalid or expired. Contact support.', 'error');
-      return res;
-    }
+    // The setup session ended (8h) or the browser isn't sending its cookie.
+    // Overlay, don't wipe the form: what the person typed stays on screen.
+    showSessionLost();
   }
   return res;
 }
@@ -1252,7 +1257,12 @@ function showStep(n) {
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
   // Persist wizard progress
-  try { sessionStorage.setItem('accesssync-onboard', JSON.stringify({ step: n, state })); } catch(e) {}
+  // Persist progress for a reload — but never secrets (Wix API key, webhook secret), and
+  // nothing that can be re-fetched from the server.
+  try {
+    const { wixApiKey, webhookSecret, kisiGroups, prefill, locations, ...safe } = state;
+    sessionStorage.setItem('accesssync-onboard', JSON.stringify({ step: n, state: safe }));
+  } catch(e) {}
 }
 
 // Restore wizard state on page load
@@ -1262,7 +1272,9 @@ function showStep(n) {
     if (!saved) return;
     const { step, state: savedState } = JSON.parse(saved);
     if (!savedState || !step || step >= 4) return; // don't restore past provisioning step
+    delete savedState.wixApiKey; delete savedState.webhookSecret; // older builds stored these
     Object.assign(state, savedState);
+    state._restoredStep = step;
     // Pre-fill form fields from restored state
     if (state.name) { const el = document.getElementById('biz-name'); if (el) el.value = state.name; }
     if (state.email) { const el = document.getElementById('biz-email'); if (el) el.value = state.email; }
@@ -1305,12 +1317,12 @@ function nextStep1() {
     state.name  = name;
     state.email = email;
   }
-  // Collect Wix API key
+  // Collect Wix API key (not needed again if the server already holds this account's key)
   const wixKey = document.getElementById('c-wix-api-key')?.value.trim();
-  if (!wixKey) { toast('Please enter your Wix API key', 'error'); return; }
-  state.wixApiKey = wixKey;
-  // Site ID gate — required on manual path (portal path sets it automatically via _instanceId)
-  if (!_instanceId) {
+  if (!wixKey && !state.hasWixKey) { toast('Please enter your Wix API key', 'error'); return; }
+  if (wixKey) state.wixApiKey = wixKey;
+  // Site ID gate — skipped when the account is already linked to a Wix site
+  if (!state.siteIdLocked) {
     const manualSiteId = document.getElementById('c-site-id')?.value.trim();
     if (manualSiteId) state.siteId = manualSiteId;
     if (!state.siteId) { toast('Please enter your Wix Site ID', 'error'); return; }
@@ -1428,59 +1440,66 @@ async function nextStep3() {
   showStep(4);
 }
 
-// ── Provision client + location (called at Step 4 completion) ─────
-// Nothing hits the DB until the operator finishes the full flow.
+// ── Provision profile + location (called at Step 4 completion) ────
+// The client row already exists (the owner created it); this fills in ITS profile, adds
+// the first location and activates it. Safe to call twice: once `provisioned` is set
+// (or the server already has a location) it does nothing, so a retry after a failed
+// door-key save never creates a duplicate location.
 async function _provisionClient() {
-  const clientRes = await apiFetch('/operator/clients', {
+  if (state.provisioned) return;
+  if (!state.clientId) throw new Error('Your setup session is missing — open your setup link again.');
+  if (!state.wixApiKey && !state.hasWixKey) {
+    // Secrets aren't kept across page loads, so a reload at this point drops the key.
+    showStep(1);
+    throw new Error('Please enter your Wix API key again — we do not keep it between page loads.');
+  }
+
+  const profileRes = await apiFetch(`/operator/${state.clientId}/onboarding/profile`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name:               state.name,
       tier:               state.tier,
       hardware_platform:  state.hardwarePlatform || (state.tier === 'Connect' ? 'kisi' : 'seam'),
-      source_site_id:         state.siteId      || null,   // Source platform site ID (for API calls + webhook routing)
-      platform_instance_id:   state.instanceId  || null,   // Platform app installation ID (for portal auth)
+      source_site_id:     state.siteId      || null,
       source_site_name:   state.siteName    || null,
       notification_email: state.email       || null,
-      source_api_key:     state.wixApiKey   || null,
+      source_api_key:     state.wixApiKey   || undefined,
     }),
   });
-  if (!clientRes.ok) {
-    const j = await clientRes.json().catch(() => ({}));
-    throw new Error(j.error || 'Failed to create account — please try again');
+  if (!profileRes.ok) {
+    const j = await profileRes.json().catch(() => ({}));
+    throw new Error(j.error || 'Failed to save your details — please try again');
   }
-  const created = await clientRes.json();
-  const { client } = created;
-  state.clientId = client.id;
-  // Per-client webhook secret, generated server-side at creation and returned once
-  // (null if this account already had one — e.g. onboarding re-run).
-  state.webhookSecret = created.webhook_secret || null;
+  state.wixApiKey = null;   // sent; don't hold the secret in memory any longer than needed
+  state.hasWixKey = true;
 
-  const locRes = await apiFetch(`/operator/clients/${state.clientId}/locations`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name:  state.locName,
-      city:  state.locCity,
-      state: state.locState,
-      tier:  state.tier,
-    }),
-  });
-  if (!locRes.ok) {
-    const j = await locRes.json().catch(() => ({}));
-    throw new Error(j.error || 'Failed to add location — please try again');
-  }
-  const { location } = await locRes.json();
-  state.locations.push(location);
+  if (!state.locations.length) {
+    const locRes = await apiFetch(`/operator/clients/${state.clientId}/locations`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name:  state.locName,
+        city:  state.locCity,
+        state: state.locState,
+        tier:  state.tier,
+      }),
+    });
+    if (!locRes.ok) {
+      const j = await locRes.json().catch(() => ({}));
+      throw new Error(j.error || 'Failed to add location — please try again');
+    }
+    const { location } = await locRes.json();
+    state.locations.push(location);
 
-  // OB-44/OB-45: Auto-activate location so provisioning fires (DR-027 gate).
-  const actRes = await apiFetch(`/operator/clients/${state.clientId}/locations/${location.id}/activate`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (actRes.ok) {
-    console.log(`[onboard] Location ${location.id} activated`);
+    // OB-44/OB-45: Auto-activate location so provisioning fires (DR-027 gate).
+    const actRes = await apiFetch(`/operator/clients/${state.clientId}/locations/${location.id}/activate`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!actRes.ok) console.warn('[onboard] location activation did not complete');
   }
+  state.provisioned = true;
 }
 
 // ── Step 4: API key ────────────────────────────────────────────────
@@ -1516,10 +1535,7 @@ async function nextStep4() {
 
   setBusy('btn-s4', true, 'Connecting…');
   try {
-    // Skip provisioning if client already exists (resume path from alreadyRegistered)
-    if (!state.clientId) {
-      await _provisionClient();
-    }
+    await _provisionClient();   // no-op when already provisioned (retry / resumed setup)
 
     const res = await apiFetch(`/operator/clients/${state.clientId}/api-key`, {
       method:  'POST',
@@ -1545,15 +1561,6 @@ async function nextStep4() {
           }
         }
       } catch (e) { /* non-blocking */ }
-    }
-
-    // Issue operatorToken cookie so dashboard pages load correctly after onboarding
-    if (state.siteId) {
-      await apiFetch('/operator/issue-session', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ clientId: state.clientId, siteId: state.siteId }),
-      }).catch(() => {}); // non-blocking — dashboard will still load
     }
 
     goToDone();
@@ -1677,7 +1684,7 @@ function _buildMemberHubCode(clientId) {
 async function goToDone() {
   const hwLabel = state.tier === 'Connect' ? 'Kisi' : 'Seam';
   document.getElementById('done-headline').textContent =
-    `Account created, ${esc(state.name)}!`;
+    `Account created, ${state.name}!`;   // textContent: already inert, no esc() (it showed "&amp;")
 
   const dashUrl = `/dashboard?clientId=${state.clientId}`;
   document.getElementById('btn-dashboard').href = dashUrl;
@@ -1685,11 +1692,17 @@ async function goToDone() {
   const code = _buildEventsCode(state.clientId);
   document.getElementById('events-code-display').textContent = code;
 
-  if (state.webhookSecret) {
-    document.getElementById('webhook-secret-display').textContent = state.webhookSecret;
-    document.getElementById('webhook-secret-wrap').classList.remove('hidden');
-    document.getElementById('webhook-secret-elsewhere').classList.add('hidden');
-  }
+  // This client's own webhook secret (per-client; there is no shared one). Fetched with the
+  // session rather than kept in page state, so it is never written to sessionStorage.
+  apiFetch(`/operator/${state.clientId}/setup-state`)
+    .then(r => (r && r.ok ? r.json() : null))
+    .then(d => {
+      if (!d || !d.hmacSecret) return;
+      document.getElementById('webhook-secret-display').textContent = d.hmacSecret;
+      document.getElementById('webhook-secret-wrap').classList.remove('hidden');
+      document.getElementById('webhook-secret-elsewhere').classList.add('hidden');
+    })
+    .catch(() => { /* the fallback text points to System Config → Wix Setup Guide */ });
   document.getElementById('member-hub-code-display').textContent = _buildMemberHubCode(state.clientId);
 
   if (state.locations.length) {
@@ -1859,6 +1872,178 @@ function copyMemberHubCode() {
     toast('Select the code and copy it manually', 'error');
   });
 }
+
+// ══ Gate screens, invite redemption, resume ═══════════════════════════════
+// Everything below decides what the visitor sees BEFORE the wizard: the "Start setup"
+// screen for an invite link, a reason-specific screen when there is no valid access,
+// and the resume logic that drops a returning visitor on the right step.
+
+const GATE_ICONS = {
+  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  err:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>',
+};
+
+const GATES = {
+  invite_expired: { tone: 'warn', title: 'This setup link has expired',
+    sub: 'Setup links stay valid for a limited time. Nothing was changed on your account.',
+    help: 'Ask your AccessSync contact to send you a new link — it only takes them a moment.' },
+  invite_invalid: { tone: 'err', title: 'This setup link isn’t complete',
+    sub: 'It may have been cut off when it was copied or forwarded.',
+    help: 'Open the full link from the original message again. If that doesn’t work, ask your AccessSync contact for a new one.' },
+  invite_revoked: { tone: 'err', title: 'This setup link is no longer active',
+    sub: 'The account it was created for has been paused or removed.',
+    help: 'Contact your AccessSync contact and they will sort it out.' },
+  no_access: { tone: 'info', title: 'You need a setup link',
+    sub: 'AccessSync accounts are set up from a personal link sent to you by your AccessSync contact.',
+    help: 'Installed AccessSync from your Wix dashboard? Open AccessSync there instead. Otherwise, ask your AccessSync contact to send you a setup link.' },
+  owner_no_client: { tone: 'info', title: 'Choose a client to set up',
+    sub: 'Open the Owner panel, then use New client or Send setup link on the client you want to onboard.',
+    action: { href: '/admin-panel', label: 'Open Owner panel' } },
+  unavailable: { tone: 'warn', title: 'Setup is temporarily unavailable',
+    sub: 'Something on our side didn’t respond. Nothing you entered is lost.',
+    action: { reload: true, label: 'Try again' } },
+  cookies_blocked: { tone: 'warn', title: 'Your browser blocked the setup session',
+    sub: 'AccessSync couldn’t keep you signed in for setup.',
+    help: 'Open your setup link in a regular browser window — not a private/incognito window and not inside another app — and allow cookies for this site.' },
+};
+
+function _showGateShell(html) {
+  document.getElementById('wizard-root').classList.add('hidden');
+  document.getElementById('session-lost').classList.add('hidden');
+  const g = document.getElementById('gate');
+  g.innerHTML = html;
+  g.classList.remove('hidden');
+  window.scrollTo({ top: 0 });
+  return g;
+}
+
+function showGate(reason) {
+  const d = GATES[reason] || GATES.unavailable;
+  let action = '';
+  if (d.action && d.action.href)   action = `<div class="gate-actions"><a class="btn btn-primary" href="${d.action.href}">${d.action.label}</a></div>`;
+  if (d.action && d.action.reload) action = `<div class="gate-actions"><button class="btn btn-primary" onclick="location.reload()">${d.action.label}</button></div>`;
+  _showGateShell(
+    `<div class="gate-icon ${d.tone === 'info' ? '' : d.tone}" aria-hidden="true">${GATE_ICONS[d.tone]}</div>` +
+    `<div class="card-title" style="text-align:center">${d.title}</div>` +
+    `<div class="card-sub" style="text-align:center;margin-bottom:0">${d.sub}</div>` +
+    action +
+    (d.help ? `<div class="gate-help">${d.help}</div>` : '')
+  );
+}
+
+function showInviteGate() {
+  _showGateShell(
+    `<div class="gate-icon" aria-hidden="true">${GATE_ICONS.info}</div>` +
+    '<div class="card-eyebrow" style="text-align:center">You’re invited</div>' +
+    '<div class="card-title" id="gate-title" style="text-align:center"></div>' +
+    '<div class="card-sub" style="text-align:center;margin-bottom:0">Setup takes about five minutes. Have your Wix API key and your door system’s API key ready.</div>' +
+    '<div class="gate-actions"><button class="btn btn-primary" id="btn-redeem" onclick="redeemInvite()">Start setup</button></div>' +
+    '<div class="gate-note" id="gate-note"></div>'
+  );
+  // Gym name is data, not markup: textContent only.
+  document.getElementById('gate-title').textContent = 'Set up AccessSync for ' + (BOOT.clientName || 'your gym');
+  if (BOOT.expiresAt) {
+    document.getElementById('gate-note').textContent =
+      'This link works until ' + new Date(BOOT.expiresAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) + '.';
+  }
+}
+
+// "Start setup": exchange the link for a session scoped to this one client. Only a
+// person clicking does this — merely opening the link (an email scanner, a preview
+// card, a second device) changes nothing, so the link survives all of them.
+async function redeemInvite() {
+  const token = new URLSearchParams(window.location.search).get('invite') || '';
+  setBusy('btn-redeem', true, 'Start setup');
+  try {
+    const res = await fetch('/onboard/redeem', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      // The link is a bearer credential: take it out of the address bar and history.
+      history.replaceState(null, '', window.location.pathname);
+      BOOT.mode = 'wizard'; BOOT.clientId = data.clientId; BOOT.clientName = data.clientName;
+      await resumeFromServer(data.clientId, { afterRedeem: true });
+      return;
+    }
+    if (data.error && GATES[data.error]) { showGate(data.error); return; }
+    toast(data.message || 'Could not start setup — please try again.', 'error');
+  } catch {
+    toast('Network error — check your connection and try again.', 'error');
+  } finally {
+    setBusy('btn-redeem', false, 'Start setup');
+  }
+}
+
+let _sessionLostShown = false;
+function showSessionLost() {
+  if (_sessionLostShown) return;
+  _sessionLostShown = true;
+  document.getElementById('sl-help').innerHTML =
+    'If this keeps happening, open your setup link again from the original message — it stays valid for several days — or ask your AccessSync contact for a new one.';
+  document.getElementById('sl-reopen').textContent = 'Reload and continue';
+  document.getElementById('session-lost').classList.remove('hidden');
+}
+// Reloading re-checks the session and puts a returning visitor back on the right step.
+function reopenSetupLink() { window.location.reload(); }
+
+function _setVal(id, v) { const el = document.getElementById(id); if (el && v) el.value = v; }
+
+// Ask the server where this account got to, so a reload, a second device or a re-opened
+// link lands on the right step without anyone re-entering what is already saved.
+async function resumeFromServer(clientId, opts = {}) {
+  state.clientId = clientId;
+  let s;
+  try {
+    const r = await fetch(`/operator/${clientId}/onboarding-status`, { credentials: 'include' });
+    if (r.status === 401 || r.status === 403) { showGate(opts.afterRedeem ? 'cookies_blocked' : 'no_access'); return; }
+    if (!r.ok) { showGate('unavailable'); return; }
+    s = await r.json();
+  } catch { showGate('unavailable'); return; }
+  if (s.archived) { showGate('invite_revoked'); return; }
+
+  state.name     = state.name  || s.name;
+  state.email    = state.email || s.notificationEmail;
+  state.siteName = state.siteName || s.siteName;
+  state.hasWixKey = !!s.hasWixKey;
+  state.hardwarePlatform = s.hardwarePlatform || state.hardwarePlatform;
+  state.locations = s.locations || [];
+  const withTier = state.locations.find(l => l.tier);
+  state.tier = state.tier || (withTier && withTier.tier) || (s.hardwarePlatform === 'kisi' ? 'Connect' : null);
+
+  _setVal('c-name', state.name);
+  _setVal('c-email', state.email);
+  if (s.siteId) {
+    state.siteId = s.siteId; state.siteIdLocked = true; state.siteIdVerified = true;
+    const input = document.getElementById('c-site-id');
+    if (input) { input.value = s.siteId; input.readOnly = true; }
+  }
+  if (state.hasWixKey) {
+    const k = document.getElementById('c-wix-api-key');
+    if (k) k.placeholder = 'Already saved — leave blank to keep it';
+  }
+
+  document.getElementById('gate').classList.add('hidden');
+  document.getElementById('wizard-root').classList.remove('hidden');
+
+  if (state.locations.length) {
+    state.provisioned = true;
+    if (s.hasHardwareKey) { goToDone(); return; }
+    _configureStep4();
+    showStep(4);
+    return;
+  }
+  showStep(state._restoredStep && state._restoredStep < 4 ? state._restoredStep : 1);
+}
+
+(function boot() {
+  if (BOOT.mode === 'invite') return showInviteGate();
+  if (BOOT.mode === 'wizard') return resumeFromServer(BOOT.clientId);
+  showGate(BOOT.reason || 'no_access');
+})();
 </script>
 
 </body>

@@ -21,7 +21,7 @@ const TEST_PLAN_INDIVIDUAL_ID = '00000000-e2e0-4000-a000-000000000010';
 const TEST_PLAN_COUPLES_ID    = '00000000-e2e0-4000-a000-000000000011';
 
 // HOG client (read-only reference — never deleted by teardown)
-const HOG_CLIENT_ID   = '15962eac-c767-46ad-8056-094f35a4a193';
+const { HOG_CLIENT_ID } = require('./constants');
 const HOG_LOCATION_ID = '1c6a8aee-4c71-4c11-9e15-5cd8a33ccef0';
 
 // HOG plan_mapping IDs from memory (reference_hog_seed_values.md)

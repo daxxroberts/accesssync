@@ -388,8 +388,8 @@ key_facts:
           <td>Owner bypass PIN for onboarding Step 4. Allows location activation without a Kisi key (demo/testing). Short numeric PIN stored in Railway Admin Hub service vars.</td>
         </tr>
         <tr>
-          <td>OPERATOR_INVITE_TOKEN <span class="env-required req-gen">Generate</span></td>
-          <td>Shared secret protecting onboarding signup endpoints (OB-24). Operator receives link with ?invite=TOKEN. Generate: <code>node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"</code></td>
+          <td>INVITE_SIGNING_SECRET <span class="env-required req-gen">Optional</span></td>
+          <td>Signs owner-issued setup links (core/invite-token.js). If unset, a key is derived from ADMIN_JWT_SECRET, so nothing needs configuring. Set it to rotate links independently of sessions. <code>INVITE_TTL_HOURS</code> (default 72, 1&ndash;168) sets link lifetime. <strong>OPERATOR_INVITE_TOKEN is retired &mdash; delete it from Railway.</strong></td>
         </tr>
         <tr>
           <td>CORE_ENGINE_URL <span class="env-required req-yes">Required</span></td>

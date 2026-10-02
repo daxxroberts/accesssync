@@ -1,37 +1,37 @@
-# Graph Report - accesssync  (2026-10-01)
+# Graph Report - accesssync  (2026-10-02)
 
 ## Corpus Check
-- 401 files · ~684,051 words
+- 410 files · ~697,285 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: (none) 3, .css 3, .toml 3)
 
 ## Summary
-- 3337 nodes · 5151 edges · 311 communities (198 shown, 113 thin omitted)
-- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 312 edges (avg confidence: 0.88)
+- 3433 nodes · 5349 edges · 296 communities (186 shown, 110 thin omitted)
+- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 337 edges (avg confidence: 0.88)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `6f9969b5`
+- Built from commit: `a8e58c83`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - revoke-policy.test.js
 - trace.js
-- hardware-adapter.js
+- HardwareAdapter
 - PlanMappingPanel.svelte
 - queue-worker.js
 - Pass this entire file to the AI building the frontend.
 - Active Decisions
 - bundle-assembler.js
-- PROVISIONING — New Client Onboarding Atomic Sequence
+- HANDOFF BRIEF — AccessSync v1.0.0
 - reconciliation.js
 - DECISION REGISTER — AccessSync
 - reconcile-revoke-gate.test.js
 - operator.js
 - ref_path
 - StandardAdapter
-- recordActivity
+- mintTraceId
 - seed.js
 - getTraceId
 - wix-members-api.js
@@ -49,7 +49,7 @@
 - db.js
 - helpers/seed.js
 - KisiAdapter
-- standard-adapter.js
+- plan-mapping-resolver.js
 - member-incident-drawer.js
 - CLAUDE.md — AccessSync (repo)
 - Layer-to-File Map
@@ -76,8 +76,8 @@
 - server.js
 - Elements
 - members-bridge.js
-- hmac-monitor.js
-- log
+- onboarding-invite-scenarios.test.js
+- onboarding.js
 - member-sync-api.js
 - kisi-read-integrity.test.js
 - Svelte Component Library — AccessSync Owner Dashboard
@@ -85,21 +85,21 @@
 - decryptApiKey
 - members.js
 - APP_CONTEXT — AccessSync
-- operator-email-templates.js
-- plan-mapping-resolver-new-schema.test.js
+- Onboarding invites — decision record, blast radius, deploy checklist
+- queue-worker-coordination.test.js
 - reconcile-member-phase1.test.js
-- portal.js
+- routes/auth.js
 - members-parts.jsx
 - operator-nav.js
 - errors.js
 - multi-member.js
 - system-health.js
 - day-pass-api.js
-- retry-engine.js
+- Step 6 — Cron Starters: Trace Context at Process Start
 - FLOW REPORT — AccessSync
 - IRIS Map — S03: Dashboard Overview
 - IRIS Map — S08: Access Log
-- clients-kisi-user-pattern.test.js
+- schema-concepts-new.test.js
 - reconcile-phase1-migrations.test.js
 - kisi-connector.js
 - tweaks-panel.jsx
@@ -123,12 +123,12 @@
 - IRIS Map — S09: Sync Status (Operator)
 - IRIS Map — S11: Admin Panel
 - IRIS Map — S12: Multi-Member Editor
-- queue-worker-coordination.test.js
+- multi-member-synthetic-origin-actor.test.js
 - kisi/kisi-adapter.js
 - day-pass-sweep.js
-- grant-revoke.js
+- hardware-adapter.js
 - source-retry-probe.js
-- eventQueue
+- webhook-processor.js
 - logging-revoke-flow.spec.js
 - member-multi-member-remove.spec.js
 - IRIS Map — S13: Sync Status Widget (Member-Facing)
@@ -137,11 +137,11 @@
 - day-pass-api.test.js
 - queue-grant-complete-cycle-index.test.js
 - Interactive
-- day-pass-sweep.test.js
+- CIRCUIT REVIEW — AccessSync Architecture Assessment
 - simulate.js
-- location-lapse.js
-- tenant-resolver.js
-- webhook-processor.js
+- PROVISIONING — New Client Onboarding Atomic Sequence
+- TenantResolver
+- logging-payment-failed.spec.js
 - api-webhook-grant.spec.js
 - IRIS Map — S02: Onboarding Flow
 - Step 4 — Express Middleware: Trace + Actor Mint on Every Request
@@ -149,21 +149,21 @@
 - supabase-2-dump-data.js
 - dr-023-boundary-ratchet.test.js
 - dr-054-no-unregistered-events.test.js
-- routes/auth.js
+- Structural Risks
 - Bundle Instruction Block
 - _meta
 - api-member-widget-data.spec.js
 - member-multi-member-add.spec.js
 - IRIS Map — S01: Portal Setup Welcome
 - IRIS Map — S14: Admin Hub Login
-- Logging Foundation Sprint — Handoff Package
+- Step 3 — Operator Completes Onboarding (S02 Onboarding Flow)
 - Step 7 — `admin/middleware/activity.js` Universal Activity Logger
-- member-cancels-loses-access.test.js
+- e2e-webhook-helper.test.js
 - log-table-trace-id.test.js
 - member-table-client-id.test.js
-- multi-member-synthetic-origin-actor.test.js
-- wix-instance.js
-- registerTrace
+- config-alert-log-dismiss.test.js
+- tenant-isolation.test.js
+- recordActivity
 - api-member-access-status.spec.js
 - api-webhook-payment.spec.js
 - api-webhook-unpaid.spec.js
@@ -171,76 +171,69 @@
 - member-manage-members.spec.js
 - member-my-access.spec.js
 - member-plan-holders.spec.js
-- member-pays-gets-access.test.js
-- ob-125-source-tag-guard.test.js
+- retryPendingHardwareMembers
+- admin-dashboard.spec.js
 - dr-051-holder-seated-durable-leave.test.js
 - member-email-hooks.test.js
-- res
+- admin-empty-states.spec.js
 - members-page-resend-status-visibility.test.js
 - reconcile-auto-revoke-migration.test.js
-- reconciliation-new-schema.test.js
-- WixConnector
-- WebhookProcessor
+- logging-error-queue.spec.js
+- api-operator-stats.spec.js
+- setTraceContext
 - admin-members-detail.spec.js
 - admin-members-filter.spec.js
-- admin-members-list.spec.js
+- Phase 0 — Vault hygiene + documentation
 - admin-metrics-vs-db.spec.js
 - @playwright/test
 - api-webhook-delayed-start.spec.js
 - api-webhook-idempotency.spec.js
 - logging-grant-flow.spec.js
-- logging-payment-failed.spec.js
+- setup-hub-route.test.js
 - IRIS Map — S10: Error Queue Component (Operator)
-- schema-concepts-new.test.js
-- day-pass-grant.test.js
+- billing-subscriptions-wix-app-market-columns.test.js
+- admin.activate_location_done
 - members-bridge-billing.test.js
-- multi-member-new-schema.test.js
-- not-paying-strike-primitives.test.js
+- admin.client.invite_issued
+- admin.client_restored
 - operator-members-query-shape.test.js
-- operator-sync-metrics.test.js
+- admin.holder_release_slot_queued
 - reconciliation-pass2-source-lookup.test.js
 - getConnectorBranding
 - admin-operator-overview.spec.js
 - FUTURE BUILD — Day-pass QR: fetch or resend after the email
 - IRIS Screen Map Index — AccessSync
-- build.js
+- admin.sub_members_submitted
 - supabase-3-apply-data.js
-- admin-routes-new-schema.test.js
+- email.member.skipped_disabled
 - day-pass-email-attachments.test.js
 - per-client-webhook-secret.test.js
-- source-retry-probe.test.js
-- config-alert-log-dismiss.test.js
+- admin-location-list.spec.js
+- grant.day_pass.link_created
 - event-registry-sync.test.js
 - no-raw-console.test.js
 - SeamConnector
-- admin-access-log.spec.js
+- operator.member_sync.run
 - admin-error-queue.spec.js
 - admin-ui-walkthrough.spec.js
-- api-operator-locations.spec.js
-- logging-error-queue.spec.js
-- schema-constraints.spec.js
-- schema-indexes.spec.js
+- operator.member.unlock
+- operator.member.welcome_email_resent
+- queue.grant.identity_resolved
+- reconciliation.sweep_start
 - member-access-sources-unique-constraint.test.js
 - .clearNotPayingObservation
-- WixAdapter
+- wix.parse.event_type_normalized
 - members-app.jsx
 - members-data.jsx
-- ._reconcileMemberBody
-- devDependencies
-- operator-email-templates.test.js
 - PrioritySequencer
 - email-templates.test.js
 - adapter.identity_creating
 - adapter.identity_found
 - adapter.identity.gate2_recovered
-- adapter.identity.parked
 - admin.api_key_set
 - admin.client_created
-- admin.client_deleted
-- admin.holder_claim_slot_queued
 - admin.lapse_trigger
 - admin.location_activated
-- admin.location_api_key_set
 - admin.location_created
 - admin.location_reactivated
 - admin.scheduler.armed
@@ -251,7 +244,6 @@
 - admin.sub_member_deleted
 - admin.sub_member_grant_queued
 - admin.sub_member_removed
-- admin.sub_member_revoke_queued
 - admin.sub_member_updated
 - admin.wix_instance_wired
 - day_pass_sweep.complete
@@ -259,9 +251,7 @@
 - day_pass_sweep.revoke_queued
 - day_pass_sweep.start
 - email.member.sent
-- email.member.suppressed
 - email.operator.sent
-- grant.day_pass.claim_lost
 - grant.day_pass.link_creating
 - grant.day_pass.synthetic_skipped
 - grant.log.skipped_duplicate
@@ -280,14 +270,10 @@
 - kisi.user.deleted
 - kisi.user.deleting
 - member.day_pass.lookup
-- member.day_pass.qr_served
-- member.day_pass.ready
-- operator.apikey.rotated
 - operator.email_branding.guide_removed
 - operator.email_branding.guide_uploaded
 - operator.location.apikey_set
 - operator.location.reactivated
-- operator.notification.updated
 - operator.retry.pending_hardware
 - operator.setup.apikey_set
 - operator.setup.bypass_accepted
@@ -306,7 +292,6 @@
 - queue.grant.parked.no_api_key
 - queue.grant.parked.no_mapping
 - queue.grant.store.multiple_mapped_items
-- queue.grant.store.no_mapped_item
 - queue.job.start
 - reconciliation.kisi_user_disappeared_confirmed
 - reconciliation.requeued
@@ -323,8 +308,8 @@
 - wix.store_products.fetched
 
 ## God Nodes (most connected - your core abstractions)
-1. `overrides` - 106 edges
-2. `log` - 62 edges
+1. `overrides` - 107 edges
+2. `log` - 64 edges
 3. `getTraceId()` - 47 edges
 4. `getActor()` - 43 edges
 5. `@playwright/test` - 41 edges
@@ -335,21 +320,21 @@
 10. `StandardAdapter` - 35 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Webhook Processor Events` --references--> `listOrdersClassified()`  [INFERRED]
-  core/EVENT_REGISTRY.md → adapters/wix/wix-plans-api.js
-- `Files in this folder` --references--> `recordActivity()`  [INFERRED]
-  handoff/logging-sprint/README.md → admin/middleware/activity.js
 - `FELIX validation checklist` --references--> `recordActivity()`  [INFERRED]
   handoff/logging-sprint/STEP_07_activity_middleware.md → admin/middleware/activity.js
 - `What this step delivers` --references--> `recordActivity()`  [INFERRED]
   handoff/logging-sprint/STEP_07_activity_middleware.md → admin/middleware/activity.js
-- `Repository State` --references--> `allowWixFrame()`  [INFERRED]
-  CLAUDE.md → admin/server.js
+- `CIRCUIT Sign-Off` --references--> `retryPendingHardwareMembers()`  [INFERRED]
+  handoff/CIRCUIT_REVIEW.md → admin/routes/operator.js
+- `RISK-02 — pending_hardware Auto-Resolution [RESOLVED]` --references--> `retryPendingHardwareMembers()`  [INFERRED]
+  handoff/CIRCUIT_REVIEW.md → admin/routes/operator.js
+- `Step 3d — Plan Mapping` --references--> `retryPendingHardwareMembers()`  [INFERRED]
+  handoff/PROVISIONING.md → admin/routes/operator.js
 
 ## Import Cycles
 - None detected.
 
-## Communities (311 total, 113 thin omitted)
+## Communities (296 total, 110 thin omitted)
 
 ### Community 0 - "revoke-policy.test.js"
 Cohesion: 0.05
@@ -358,10 +343,6 @@ Nodes (66): ANOMALY_HOLD_REASONS, _byDataSource(), CLASSIFICATION_REQUIRED_SOURC
 ### Community 1 - "trace.js"
 Cohesion: 0.05
 Nodes (40): pg, { Pool }, { Pool }, { Pool }, { Client }, dumpConstraints(), dumpExtensions(), dumpIndexes() (+32 more)
-
-### Community 2 - "hardware-adapter.js"
-Cohesion: 0.06
-Nodes (22): HardwareAdapter, kisiAdapter, _requiredFieldsByPlatform, _requireFields(), seamAdapter, db, grantRevoke, hardwareAdapter (+14 more)
 
 ### Community 3 - "PlanMappingPanel.svelte"
 Cohesion: 0.10
@@ -383,13 +364,13 @@ Nodes (44): Active Decisions, Change history, Condensed Decision Ledger, DR-001 
 Cohesion: 0.08
 Nodes (34): { buildTraceBundle, buildMemberBundle }, db, { log }, router, VALID_SOURCES, buildMemberBundle(), buildTraceBundle(), cp (+26 more)
 
-### Community 8 - "PROVISIONING — New Client Onboarding Atomic Sequence"
-Cohesion: 0.05
-Nodes (41): retryPendingHardwareMembers(), Architecture Assessment, CIRCUIT REVIEW — AccessSync Architecture Assessment, CIRCUIT Sign-Off, Integration Surface Assessment, Queue Architecture Assessment, RISK-02 — pending_hardware Auto-Resolution [RESOLVED], RISK-03 — U-09: Hardcoded "Kisi app" Strings [BLOCKING — Pre-HOG] (+33 more)
+### Community 8 - "HANDOFF BRIEF — AccessSync v1.0.0"
+Cohesion: 0.22
+Nodes (8): Architecture in One Paragraph, HANDOFF BRIEF — AccessSync v1.0.0, Key Files Quick Reference, Read This First, Tests, Two Servers — Critical Routing Rule, What NOT to Touch Without a DR, What You're Working On
 
 ### Community 9 - "reconciliation.js"
-Cohesion: 0.07
-Nodes (34): ANOMALY_ALERT_TYPE, buildWixPayingView(), CLASS_RANK, countByClassification(), countByDataSource(), countBySource(), crypto, db (+26 more)
+Cohesion: 0.06
+Nodes (36): ANOMALY_ALERT_TYPE, buildWixPayingView(), CLASS_RANK, countByClassification(), countByDataSource(), countBySource(), crypto, db (+28 more)
 
 ### Community 10 - "DECISION REGISTER — AccessSync"
 Cohesion: 0.05
@@ -401,43 +382,43 @@ Nodes (23): clientRow(), conns, cryptoUtils, db, { eventQueue }, grantCalls(), g
 
 ### Community 12 - "operator.js"
 Cohesion: 0.06
-Nodes (29): crypto, db, { diagnoseMember, getTimeline }, emailTemplates, { encryptApiKey, decryptApiKey: decryptKey }, { eventQueue }, express, { getTraceId, getActor, runWith, mintTraceId } (+21 more)
+Nodes (28): bypassLimiter, crypto, db, { diagnoseMember, getTimeline }, emailTemplates, { encryptApiKey, decryptApiKey: decryptKey }, { ensureWebhookSecret }, { eventQueue } (+20 more)
 
 ### Community 13 - "ref_path"
-Cohesion: 0.08
-Nodes (21): fs, path, fs, path, fs, MIGRATION_PATH, path, fs (+13 more)
-
-### Community 15 - "recordActivity"
 Cohesion: 0.09
-Nodes (23): getDb(), { getTraceId, getActor }, recordActivity(), { resolveActor }, resolveActor(), { runWith, mintTraceId, registerTrace }, traceContextMiddleware(), FELIX validation checklist (+15 more)
+Nodes (18): fs, path, fs, path, fs, path, fs, path (+10 more)
+
+### Community 15 - "mintTraceId"
+Cohesion: 0.13
+Nodes (15): getDb(), { getTraceId, getActor }, { resolveActor }, resolveActor(), { runWith, mintTraceId, registerTrace }, traceContextMiddleware(), mintTraceId(), { resolveActor, traceContextMiddleware } (+7 more)
 
 ### Community 16 - "seed.js"
 Cohesion: 0.14
 Nodes (12): AAL, ALERT, db, ERR, LOC, M, MAS, MEMBERS (+4 more)
 
 ### Community 17 - "getTraceId"
-Cohesion: 0.13
-Nodes (19): db, { getTraceId, getActor }, { log }, logAdminAction(), validateApiKeyGroups(), Repository State, GrantRevokeLogic, emit() (+11 more)
+Cohesion: 0.10
+Nodes (21): validateApiKeyGroups(), Repository State, GrantRevokeLogic, db, { decryptApiKey }, { getTraceId, getActor }, hardwareAdapter, { log } (+13 more)
 
 ### Community 18 - "wix-members-api.js"
-Cohesion: 0.09
-Nodes (18): _collectContactEmails(), _extractName(), _getContactById(), getMemberById(), _isSyntheticEmail(), limiter, { log }, { RateLimiter } (+10 more)
+Cohesion: 0.12
+Nodes (13): _collectContactEmails(), _extractName(), _getContactById(), getMemberById(), _isSyntheticEmail(), limiter, { log }, { RateLimiter } (+5 more)
 
 ### Community 19 - "overrides"
 Cohesion: 0.07
 Nodes (29): persist, persist, persist, persist, persist, persist, persist, persist (+21 more)
 
 ### Community 20 - "wix-plans-api.js"
-Cohesion: 0.13
-Nodes (23): { classifyOrder }, extractWixPrice(), _fetchAllOrders(), limiter, listActiveOrders(), listAllMappable(), listBookingServices(), listConfirmedBookings() (+15 more)
+Cohesion: 0.12
+Nodes (24): { classifyOrder }, extractWixPrice(), _fetchAllOrders(), limiter, listActiveOrders(), listAllMappable(), listBookingServices(), listConfirmedBookings() (+16 more)
 
 ### Community 21 - "admin/server.js"
 Cohesion: 0.07
-Nodes (24): allowWixFrame(), app, authRoutes, clientsRoutes, { CONNECTORS }, cookieParser, errorsRoutes, express (+16 more)
+Nodes (25): allowWixFrame(), app, authRoutes, clientsRoutes, { CONNECTORS }, cookieParser, errorsRoutes, express (+17 more)
 
 ### Community 22 - "QUERY PATTERNS — AccessSync"
-Cohesion: 0.07
-Nodes (26): Correct query (GROUP BY full DR-046 UNIQUE tuple), Diagnostic checklist when a sweep flags "duplicates", Pattern 10 — Event Deduplication, Pattern 11 — Error Queue Write, Pattern 12 — Error Queue Dismiss, Pattern 13 — Member Access Log Write, Pattern 14 — Client Activity Summary UPSERT, Pattern 15 — Config Alert Log Write (+18 more)
+Cohesion: 0.06
+Nodes (31): Correct query (GROUP BY full DR-046 UNIQUE tuple), Diagnostic checklist when a sweep flags "duplicates", Pattern 10 — Event Deduplication, Pattern 11 — Error Queue Write, Pattern 12 — Error Queue Dismiss, Pattern 13 — Member Access Log Write, Pattern 14 — Client Activity Summary UPSERT, Pattern 15 — Config Alert Log Write (+23 more)
 
 ### Community 23 - "admin-retry-routing.test.js"
 Cohesion: 0.09
@@ -448,8 +429,8 @@ Cohesion: 0.14
 Nodes (23): deriveIntent(), describeSqlstate(), findEvent(), humanize(), isSqlstate(), severityOf(), ALL_SOURCES, App() (+15 more)
 
 ### Community 25 - "hardware-health-check.js"
-Cohesion: 0.13
-Nodes (22): _checkLocation(), db, { decryptApiKey }, _diagnose(), hardwareAdapter, { log }, _maybeNotifyFailure(), _notifyArchivedPlans() (+14 more)
+Cohesion: 0.05
+Nodes (55): adminQueue, { getRedisConnection }, { log }, { Queue }, router, _checkLocation(), db, { decryptApiKey } (+47 more)
 
 ### Community 26 - "email-templates.js"
 Cohesion: 0.22
@@ -457,31 +438,31 @@ Nodes (23): _brandFrame(), _button(), connectorNoteSections(), _contrast(), _dpN
 
 ### Community 27 - "member-mailer.js"
 Cohesion: 0.13
-Nodes (23): { brandingFromClientRow }, captureAccessRemovedContext(), db, _durationLabel(), _formatWhen(), _formatWhenParts(), { getTraceId }, GRANT_ALLOWED_SYNTHETIC (+15 more)
+Nodes (24): Operator Routes Events (PERSISTED via EVENT_REGISTRY.json override, 2026-05-27), { brandingFromClientRow }, captureAccessRemovedContext(), db, _durationLabel(), _formatWhen(), _formatWhenParts(), { getTraceId } (+16 more)
 
 ### Community 28 - "express"
-Cohesion: 0.10
-Nodes (19): db, express, { log }, router, express, supertest, BRANDING_ROW, db (+11 more)
+Cohesion: 0.07
+Nodes (27): db, express, { log }, router, express, supertest, db, express (+19 more)
 
 ### Community 29 - "core/trace-context.js"
-Cohesion: 0.12
-Nodes (17): als, { AsyncLocalStorage }, crypto, getContext(), mintTraceId(), setActor(), TRACE_NAMESPACE, VALID_ACTOR_TYPES (+9 more)
+Cohesion: 0.11
+Nodes (17): als, { AsyncLocalStorage }, crypto, getContext(), getDb(), registerTrace(), setActor(), TRACE_NAMESPACE (+9 more)
 
 ### Community 30 - "db.js"
-Cohesion: 0.12
-Nodes (9): getLog(), healthCheck(), query(), adapter, db, db, adapter, db (+1 more)
+Cohesion: 0.06
+Nodes (23): db, { getTraceId, setTraceContext, getActor }, hardwareAdapter, { log }, getLog(), healthCheck(), query(), db (+15 more)
 
 ### Community 31 - "helpers/seed.js"
-Cohesion: 0.12
-Nodes (15): { end }, fs, path, { seedTestClient }, end(), buildOrderCancelledPayload(), buildOrderPausedPayload(), buildOrderPurchasedPayload() (+7 more)
+Cohesion: 0.10
+Nodes (16): { end }, fs, path, { seedTestClient }, end(), buildOrderCancelledPayload(), buildOrderPausedPayload(), buildOrderPurchasedPayload() (+8 more)
 
 ### Community 32 - "KisiAdapter"
 Cohesion: 0.14
 Nodes (7): buildAccessSyncMarker(), _fetchAllKisiPages(), findElevatedAssignments(), KisiAdapter, _kisiPageIntegrityError(), _normalizeGroupLink(), parseAccessSyncMarker()
 
-### Community 33 - "standard-adapter.js"
-Cohesion: 0.10
-Nodes (17): db, { getTraceId, setTraceContext, getActor }, hardwareAdapter, { log }, db, { decryptApiKey }, { getTraceId, getActor, setTraceContext }, { log } (+9 more)
+### Community 33 - "plan-mapping-resolver.js"
+Cohesion: 0.13
+Nodes (12): db, { decryptApiKey }, { getTraceId, getActor, setTraceContext }, { log }, db, { getTraceId, getActor, runWith, mintTraceId }, grantRevoke, makeJob() (+4 more)
 
 ### Community 34 - "member-incident-drawer.js"
 Cohesion: 0.19
@@ -500,20 +481,20 @@ Cohesion: 0.18
 Nodes (5): Reconciliation actor format (OB-227, 2026-05-27), Reconciliation Events, Reconciliation Phase 1 — observation-only sweep (2026-09-10), alertRef(), NightlyReconciliation
 
 ### Community 38 - "runWith"
-Cohesion: 0.12
-Nodes (21): runWith(), Current pattern (preserved), FELIX validation checklist, New addition, Output files (after PARSE clearance), PARSE pre-step — AXIOM A1 verification, Retry engine — preserve original traceId, Sign-off format (+13 more)
+Cohesion: 0.11
+Nodes (22): runWith(), Spec — Mount in `server.js` (core engine), Current pattern (preserved), FELIX validation checklist, New addition, Output files (after PARSE clearance), PARSE pre-step — AXIOM A1 verification, Retry engine — preserve original traceId (+14 more)
 
 ### Community 39 - "EVENT_REGISTRY.md — AccessSync Log Event Taxonomy"
-Cohesion: 0.10
-Nodes (20): Activity Events (admin mutation actions), Admin client/location mutation events (PERSISTED via EVENT_REGISTRY.json override, 2026-05-27), Admin Server Events, Admin sub-member mutation events (PERSISTED via EVENT_REGISTRY.json override, 2026-05-27), Day Pass Events (OB-98 / OB-101 / OB-251, 2026-09-14), Email Branding Activity Events (DR-052), EVENT_REGISTRY.md — AccessSync Log Event Taxonomy, Grant / Revoke Events (+12 more)
+Cohesion: 0.11
+Nodes (18): Activity Events (admin mutation actions), Admin client/location mutation events (PERSISTED via EVENT_REGISTRY.json override, 2026-05-27), Admin Server Events, Admin sub-member mutation events (PERSISTED via EVENT_REGISTRY.json override, 2026-05-27), Day Pass Events (OB-98 / OB-101 / OB-251, 2026-09-14), Email Branding Activity Events (DR-052), EVENT_REGISTRY.md — AccessSync Log Event Taxonomy, Grant / Revoke Events (+10 more)
 
 ### Community 40 - "Granting and managing access"
 Cohesion: 0.10
 Nodes (20): A member has the app but can't sign in., A member says they never got an email after signing up. What do I tell them?, AccessSync — Operator FAQ, Can I give myself access through AccessSync if I'm an admin in my access control system?, Granting and managing access, How do I add the member screen to my Wix site?, I bought a multi-member plan. Why don't I have access yet?, I want to give a contractor / employee / friend access without a paid membership. How do I do that in AccessSync? (+12 more)
 
 ### Community 41 - "Logging Foundation Sprint — Master Plan"
-Cohesion: 0.10
-Nodes (21): Build sequence — 12 steps, Communication protocol during sprint, Day-1 Checkpoint Protocol (C3 mitigation), Handoff sequence (REX coordinates), Logging Foundation Sprint — Master Plan, Open items spawned by this sprint, Phase 0 gate, Phase 0 — Vault hygiene + documentation (+13 more)
+Cohesion: 0.12
+Nodes (16): Build sequence — 12 steps, Communication protocol during sprint, Day-1 Checkpoint Protocol (C3 mitigation), Handoff sequence (REX coordinates), Logging Foundation Sprint — Master Plan, Open items spawned by this sprint, Pre-Conditions (REQUIRED before sprint starts), Primitive 1 — Universal context (AsyncLocalStorage) (+8 more)
 
 ### Community 42 - "Produced by QUILL · AccessSync BOT Team · 2026-04-26"
 Cohesion: 0.10
@@ -528,32 +509,32 @@ Cohesion: 0.15
 Nodes (14): redact(), redactObject(), redactString(), redactValue(), registerSecretField(), SECRET_PATTERNS, SENSITIVE_FIELDS, ACTOR_OPERATOR (+6 more)
 
 ### Community 45 - "withTrace"
-Cohesion: 0.11
-Nodes (19): withTrace(), FELIX validation checklist, Output files, Sign-off format, Spec — `core/log-redaction.js`, Step 3 — Refactor `core/logger.js` to Auto-Read Context from ALS, Test cases (must all pass), What this step delivers (+11 more)
+Cohesion: 0.22
+Nodes (9): withTrace(), FELIX validation checklist, Output files, Sign-off format, Spec — `core/log-redaction.js`, Step 3 — Refactor `core/logger.js` to Auto-Read Context from ALS, Test cases (must all pass), What this step delivers (+1 more)
 
 ### Community 46 - "snippet-registry.js"
 Cohesion: 0.12
 Nodes (12): db, { log }, snippetRegistry, fs, getRegistry(), getSnippet(), listSnippets(), path (+4 more)
 
 ### Community 47 - "helpers/db.js"
-Cohesion: 0.11
-Nodes (14): auth, db, seed, { test, expect }, auth, db, seed, { test, expect } (+6 more)
+Cohesion: 0.09
+Nodes (15): auth, db, seed, { test, expect }, { Pool }, query(), queryOne(), queryRows() (+7 more)
 
 ### Community 48 - "wix-connector.js"
-Cohesion: 0.12
-Nodes (16): crypto, db, { decryptApiKey }, { deriveTraceId }, hmacMonitor, { log }, setupTelemetry, tenantResolver (+8 more)
+Cohesion: 0.10
+Nodes (17): crypto, db, { decryptApiKey }, { deriveTraceId }, hmacMonitor, { log }, setupTelemetry, tenantResolver (+9 more)
 
 ### Community 49 - "helpers/auth.js"
 Cohesion: 0.13
-Nodes (14): auth, seed, { test, expect, devices }, auth, db, seed, { test, expect }, buildWebhookHeaders() (+6 more)
+Nodes (17): auth, db, seed, { test, expect }, auth, seed, { test, expect, devices }, buildWebhookHeaders() (+9 more)
 
 ### Community 50 - "SAGE pre-gate checklist"
 Cohesion: 0.11
 Nodes (18): 1. The deliverable matches the plan, 2. The mitigations are in place, 3. The bug that triggered this sprint is fixed, 4. Documentation is complete, 5. Open items are queued, not lost, 6. AXIOM has no unresolved findings, 7. CIRCUIT has no unresolved findings, 8. PARSE findings are filed (+10 more)
 
 ### Community 51 - "package.json"
-Cohesion: 0.11
-Nodes (17): description, engines, node, main, name, version, @anthropic-ai/sdk, cookie-parser (+9 more)
+Cohesion: 0.08
+Nodes (24): description, devDependencies, jest, @playwright/test, supertest, engines, node, main (+16 more)
 
 ### Community 52 - "dependencies"
 Cohesion: 0.11
@@ -564,20 +545,20 @@ Cohesion: 0.12
 Nodes (12): db, grantRevoke, groupAlertWrites(), groupFlagWrites(), hardwareAdapter, { log }, mappingA, mappingB (+4 more)
 
 ### Community 54 - "wix/wix-adapter.js"
-Cohesion: 0.14
-Nodes (12): { log }, { PAYING_PAYMENT_STATUSES }, DECLINED_PAYMENT_STATUSES, ENDED_ORDER_STATUSES, isPayingOrder(), ORDER_CLASS, PAYING_PAYMENT_STATUSES, PENDING_ORDER_STATUSES (+4 more)
+Cohesion: 0.12
+Nodes (13): { log }, { PAYING_PAYMENT_STATUSES }, WixAdapter, DECLINED_PAYMENT_STATUSES, ENDED_ORDER_STATUSES, isPayingOrder(), ORDER_CLASS, PAYING_PAYMENT_STATUSES (+5 more)
 
 ### Community 55 - "logger.js"
-Cohesion: 0.12
-Nodes (15): deriveService(), getDb(), { getTraceId, getActor }, KEDB, persistToDiagnosticLog(), { redact }, _warnedUnregisteredEvents, Add: import trace context (+7 more)
+Cohesion: 0.05
+Nodes (37): db, { log }, router, deriveService(), emit(), getDb(), { getTraceId, getActor }, KEDB (+29 more)
 
 ### Community 56 - "scripts"
 Cohesion: 0.11
 Nodes (18): scripts, build, cron, start, test, test:coverage, test:deploy, test:e2e (+10 more)
 
 ### Community 57 - "server.js"
-Cohesion: 0.17
-Nodes (11): { Pool }, app, dayPassApi, db, express, { log }, memberSyncApi, { startWorker } (+3 more)
+Cohesion: 0.11
+Nodes (12): { Pool }, app, dayPassApi, db, express, { log }, memberSyncApi, { startWorker } (+4 more)
 
 ### Community 58 - "Elements"
 Cohesion: 0.12
@@ -587,13 +568,13 @@ Nodes (16): loadClients(), Data Contracts (Sampling), Elements, IRIS Map — S15
 Cohesion: 0.27
 Nodes (15): attachErrors(), buildMembersArray(), deriveExpiresLabel(), fetchJSON(), formatCouponLine(), formatDate(), formatRate(), loadMembers() (+7 more)
 
-### Community 60 - "hmac-monitor.js"
-Cohesion: 0.15
-Nodes (14): adminQueue, { getRedisConnection }, { log }, { Queue }, router, { getRedisConnection }, { log }, recordFailure() (+6 more)
+### Community 60 - "onboarding-invite-scenarios.test.js"
+Cohesion: 0.08
+Nodes (23): signOperatorToken(), signToken(), cookie-parser, cookieParser, crypto, db, express, jwt (+15 more)
 
-### Community 61 - "log"
-Cohesion: 0.13
-Nodes (12): db, { log }, router, log, db, handleAppMarketWebhook(), { log }, db (+4 more)
+### Community 61 - "onboarding.js"
+Cohesion: 0.15
+Nodes (18): readSession(), computeBoot(), db, findClient(), { log }, rateLimit, { recordActivity }, redeemLimiter (+10 more)
 
 ### Community 62 - "member-sync-api.js"
 Cohesion: 0.15
@@ -608,12 +589,12 @@ Cohesion: 0.12
 Nodes (15): pill(), File Structure, Layout, `CodeChip.svelte`, `DataTable.svelte`, `EmptyState.svelte`, `LoadingState.svelte`, `Pagination.svelte` (+7 more)
 
 ### Community 65 - "clients.js"
-Cohesion: 0.12
-Nodes (11): db, EDITABLE_FIELDS, { encryptApiKey, decryptApiKey }, { getTraceId, getActor }, hardwareAdapter, kisiConnector, { log }, { logAdminAction } (+3 more)
+Cohesion: 0.11
+Nodes (17): db, { getTraceId, getActor }, { log }, logAdminAction(), db, EDITABLE_FIELDS, { encryptApiKey, decryptApiKey }, { ensureWebhookSecret } (+9 more)
 
 ### Community 66 - "decryptApiKey"
-Cohesion: 0.20
-Nodes (11): activateLocationMembersAdmin(), crypto, decryptApiKey(), encryptApiKey(), _getKey(), DR-028 — API Key Storage: AES-256-GCM Encrypted, db, { decryptApiKey } (+3 more)
+Cohesion: 0.14
+Nodes (17): activateLocationMembersAdmin(), crypto, decryptApiKey(), encryptApiKey(), _getKey(), crypto, db, { encryptApiKey } (+9 more)
 
 ### Community 67 - "members.js"
 Cohesion: 0.14
@@ -623,31 +604,30 @@ Nodes (12): db, { decryptApiKey }, { diagnoseMember, getTimeline }, eventQueue, 
 Cohesion: 0.12
 Nodes (15): Admin Hub (Platform Admin — Daxx), APP_CONTEXT — AccessSync, Architecture — 7 Layers, Completion Logic — Setup Check, Configuration Flags, Key Design Principles, Known Gaps Relevant to Build, Member Widget (Wix-Embedded) (+7 more)
 
-### Community 69 - "operator-email-templates.js"
-Cohesion: 0.37
-Nodes (14): adminHubUrl(), describeConfigAlert(), describeFailedJob(), escapeHtml(), hubLink(), humanDate(), members(), renderArchivedPlansAlert() (+6 more)
+### Community 69 - "Onboarding invites — decision record, blast radius, deploy checklist"
+Cohesion: 0.18
+Nodes (10): 1. What was wrong (verified with the real routers and real auth middleware), 2. The design, 3. "What if it doesn't work?" — scenario matrix, 4. Blast radius of this change, 5. Not fixed here (open items for the Builder), 6. Deploy checklist (order matters), 8. KEEPER sync (repo `CLAUDE.md` + vault — not edited here, per its own rule), Onboarding invites — decision record, blast radius, deploy checklist (+2 more)
 
-### Community 70 - "plan-mapping-resolver-new-schema.test.js"
-Cohesion: 0.15
-Nodes (8): db, { decryptApiKey }, {
+### Community 70 - "queue-worker-coordination.test.js"
+Cohesion: 0.09
+Nodes (17): db, grantRevokeLogic, hardwareAdapter, {
   HOG_CLIENT_ID,
   CONNECT_PLAN_ID,
   KISI_GROUP_ID,
+  KISI_API_KEY_PLAINTEXT,
+  KISI_HARDWARE_USER_ID,
+  MEMBER_INTERNAL_ID,
   ENCRYPTED_API_KEY_DB_VALUE,
-}, planMappingResolver, db, { decryptApiKey }, {
-  HOG_CLIENT_ID,
-  CONNECT_PLAN_ID,
-  KISI_GROUP_ID,
-  ENCRYPTED_API_KEY_DB_VALUE,
-}, planMappingResolver
+  planPurchasedEvent,
+}, planMappingResolver, { processJob }, resolvedMappings, retryEngine (+9 more)
 
 ### Community 71 - "reconcile-member-phase1.test.js"
 Cohesion: 0.15
 Nodes (12): db, { eventQueue }, fs, hardwareAdapter, installDb(), { log }, noPlanButDoorWorld(), path (+4 more)
 
-### Community 72 - "portal.js"
-Cohesion: 0.16
-Nodes (12): jwt, requireAuth(), requireAuthOrOperator(), requireAuthPage(), requireAuthPageOrOperator(), signOperatorToken(), db, { log } (+4 more)
+### Community 72 - "routes/auth.js"
+Cohesion: 0.18
+Nodes (10): client, crypto, { log }, loginLimiter, { OAuth2Client }, rateLimit, router, { signToken, requireAuth } (+2 more)
 
 ### Community 73 - "members-parts.jsx"
 Cohesion: 0.23
@@ -662,8 +642,8 @@ Cohesion: 0.16
 Nodes (12): db, eventQueue, { getRedisConnection }, { jobNameForEventType }, { log }, { mintTraceId }, planRetry(), { Queue } (+4 more)
 
 ### Community 76 - "multi-member.js"
-Cohesion: 0.16
-Nodes (11): countHolderSlots(), countOccupiedSlots(), countSubSlots(), crypto, db, { eventQueue }, express, { log } (+3 more)
+Cohesion: 0.11
+Nodes (16): countHolderSlots(), countOccupiedSlots(), countSubSlots(), crypto, db, { eventQueue }, express, { log } (+8 more)
 
 ### Community 77 - "system-health.js"
 Cohesion: 0.15
@@ -673,9 +653,9 @@ Nodes (9): db, { log }, router, STATE_PRIORITY, db, express, makeApp(), request 
 Cohesion: 0.22
 Nodes (13): _baseUrl(), _clientHardware(), crypto, db, { decryptApiKey }, handleLookup(), handleQrImage(), hardwareAdapter (+5 more)
 
-### Community 79 - "retry-engine.js"
-Cohesion: 0.14
-Nodes (9): { log }, db, { getTraceId, getActor }, { log }, { renderMemberFailureAlert }, { sendOperatorEmail }, db, mockLog (+1 more)
+### Community 79 - "Step 6 — Cron Starters: Trace Context at Process Start"
+Cohesion: 0.20
+Nodes (10): Current state, ⚠️ Day-1 Checkpoint trigger, Output files, Required change, Sign-off format, Spec — `core/hardware-health-check.js` changes, Spec — `core/reconciliation.js` changes, Step 6 — Cron Starters: Trace Context at Process Start (+2 more)
 
 ### Community 80 - "FLOW REPORT — AccessSync"
 Cohesion: 0.14
@@ -689,19 +669,19 @@ Nodes (13): Client Header Card, Data Contracts, Elements, IRIS Map — S03: Dash
 Cohesion: 0.14
 Nodes (13): Bar Chart, CSV Export, Data Contracts, Elements, Filter Tags, IRIS Map — S08: Access Log, Known Gaps, Layout (+5 more)
 
-### Community 83 - "clients-kisi-user-pattern.test.js"
-Cohesion: 0.16
-Nodes (8): db, hardwareAdapter, {
+### Community 83 - "schema-concepts-new.test.js"
+Cohesion: 0.09
+Nodes (18): db, hardwareAdapter, {
   HOG_CLIENT_ID,
   MEMBER_INTERNAL_ID,
   KISI_HARDWARE_USER_ID,
   KISI_API_KEY_PLAINTEXT,
-}, standardAdapter, db, hardwareAdapter, {
+}, standardAdapter, db, grantRevoke, hardwareAdapter, {
   HOG_CLIENT_ID,
   MEMBER_INTERNAL_ID,
   KISI_HARDWARE_USER_ID,
-  KISI_API_KEY_PLAINTEXT,
-}, standardAdapter
+  ENCRYPTED_API_KEY_DB_VALUE,
+} (+10 more)
 
 ### Community 84 - "reconcile-phase1-migrations.test.js"
 Cohesion: 0.14
@@ -732,7 +712,7 @@ Cohesion: 0.15
 Nodes (12): Data Contracts, Elements, Filter Strip, IRIS Map — S07: Members, Known Gaps, Layout, Member List (one row per member), Navigation (+4 more)
 
 ### Community 91 - "00_SPRINT_PLAN.md"
-Cohesion: 0.15
+Cohesion: 0.17
 Nodes (7): Output files, Required test cases, Sign-off format, Spec — `core/trace-context.js`, Spec — propagation test harness, Step 2 — `core/trace-context.js` AsyncLocalStorage Wrapper, What this step delivers
 
 ### Community 92 - "Step 1 — Migration: Schema Additions + activity_event + v_trace_timeline"
@@ -752,16 +732,8 @@ Cohesion: 0.23
 Nodes (6): BusinessRiskReporter, formatDivider(), getTierForPath(), path, priorities, TIER_MAP
 
 ### Community 96 - "fixtures.js"
-Cohesion: 0.22
-Nodes (9): wixMemberDeletedPayload, wixPaymentFailedPayload, wixPlanCancelledPayload, wixPlanPurchasedPayload, wixRestMemberDeletedPayload, wixRestOrderCreatedPayload, wixRestOrderStartedPayload, {
-  WIX_MEMBER_ID,
-  CONNECT_PLAN_ID,
-  wixPlanPurchasedPayload,
-  wixMemberDeletedPayload,
-  wixRestOrderCreatedPayload,
-  wixRestOrderStartedPayload,
-  wixRestMemberDeletedPayload,
-} (+1 more)
+Cohesion: 0.09
+Nodes (23): activeMappings, activeMappingsMultiDoor, paymentFailedEvent, paymentRecoveredEvent, planCancelledEvent, planPurchasedEvent, wixMemberDeletedPayload, wixPaymentFailedPayload (+15 more)
 
 ### Community 97 - "finalize-revoke-guards.test.js"
 Cohesion: 0.17
@@ -799,38 +771,29 @@ Nodes (11): Admin List, Data Contracts, Elements, Info Toggle, IRIS Map — S11:
 Cohesion: 0.17
 Nodes (11): Add Sub-Member Form, Data Contracts, Elements, GATE STATUS, IRIS Map — S12: Multi-Member Editor, Key Rules (DR-029 – DR-032), Layout, Navigation (+3 more)
 
-### Community 107 - "queue-worker-coordination.test.js"
-Cohesion: 0.17
-Nodes (9): db, grantRevokeLogic, hardwareAdapter, {
-  HOG_CLIENT_ID,
-  CONNECT_PLAN_ID,
-  KISI_GROUP_ID,
-  KISI_API_KEY_PLAINTEXT,
-  KISI_HARDWARE_USER_ID,
-  MEMBER_INTERNAL_ID,
-  ENCRYPTED_API_KEY_DB_VALUE,
-  planPurchasedEvent,
-}, planMappingResolver, { processJob }, resolvedMappings, retryEngine (+1 more)
+### Community 107 - "multi-member-synthetic-origin-actor.test.js"
+Cohesion: 0.25
+Nodes (5): db, express, makeApp(), mockQueueAdd, request
 
 ### Community 108 - "kisi/kisi-adapter.js"
 Cohesion: 0.20
 Nodes (8): adapter, ALLOWED_MEMBER_ROLE_IDS, ELEVATED_SCOPES, _isUserGroupBasicAssignment(), kisiConnector, { log }, _normEmail(), _roleConflictUnresolvedError()
 
 ### Community 109 - "day-pass-sweep.js"
-Cohesion: 0.24
-Nodes (10): db, { decryptApiKey }, _deleteOrphanLinks(), _enqueueExpired(), { eventQueue }, hardwareAdapter, { log }, runDayPassSweep() (+2 more)
+Cohesion: 0.11
+Nodes (18): db, { decryptApiKey }, _deleteOrphanLinks(), _enqueueExpired(), { eventQueue }, hardwareAdapter, { log }, runDayPassSweep() (+10 more)
 
-### Community 110 - "grant-revoke.js"
-Cohesion: 0.18
-Nodes (10): BILLING_CANCEL_ALLOWED_SYNTHETIC, _dayPassRowMatches(), db, { decryptApiKey }, { getTraceId, getActor }, hardwareAdapter, _isGenuineBillingCancellation(), { log } (+2 more)
+### Community 110 - "hardware-adapter.js"
+Cohesion: 0.05
+Nodes (34): kisiAdapter, _requiredFieldsByPlatform, _requireFields(), seamAdapter, BILLING_CANCEL_ALLOWED_SYNTHETIC, _dayPassRowMatches(), db, { decryptApiKey } (+26 more)
 
 ### Community 111 - "source-retry-probe.js"
-Cohesion: 0.24
-Nodes (10): db, { decryptApiKey }, hardwareAdapter, { log }, _recordSuccess(), _retryOne(), runProbe(), _runProbeBody() (+2 more)
+Cohesion: 0.14
+Nodes (15): db, { decryptApiKey }, hardwareAdapter, { log }, _recordFailure(), _recordSuccess(), _retryOne(), runProbe() (+7 more)
 
-### Community 112 - "eventQueue"
-Cohesion: 0.18
-Nodes (8): eventQueue, db, { eventQueue }, recon, capturedActors, { eventQueue }, reconciliation, wixPlansApi
+### Community 112 - "webhook-processor.js"
+Cohesion: 0.08
+Nodes (24): connection, db, eventQueue, { getRedisConnection }, { getTraceId, getActor, setTraceContext }, { GRANT_EVENT_TYPES, REVOKE_EVENT_TYPES }, instance, { log } (+16 more)
 
 ### Community 113 - "logging-revoke-flow.spec.js"
 Cohesion: 0.18
@@ -849,12 +812,12 @@ Cohesion: 0.18
 Nodes (10): 1. Test suite — DEPLOY SAFE, 2. Performance benchmark (E4 mitigation), 3. End-to-end smoke test — reproduce the original incident, 4. Regression sweep, 5. KEEPER vault audit, FELIX final report — required format, Sign-off format, Step 11 — Full Validation + Performance Benchmark (+2 more)
 
 ### Community 117 - "queue-worker-failure-modes.test.js"
-Cohesion: 0.18
-Nodes (9): db, grantRevoke, mappingResolver, { mintTraceId }, { processJob }, retryEngine, standardAdapter, stdoutLines (+1 more)
+Cohesion: 0.17
+Nodes (10): db, grantRevoke, makeJob(), mappingResolver, { mintTraceId }, { processJob }, retryEngine, standardAdapter (+2 more)
 
 ### Community 118 - "day-pass-api.test.js"
-Cohesion: 0.18
-Nodes (9): api, db, { decryptApiKey }, FUTURE, hardwareAdapter, hwRow, { log }, PAST (+1 more)
+Cohesion: 0.11
+Nodes (11): api, db, { decryptApiKey }, FUTURE, hardwareAdapter, hwRow, { log }, mockRes() (+3 more)
 
 ### Community 119 - "queue-grant-complete-cycle-index.test.js"
 Cohesion: 0.18
@@ -867,25 +830,21 @@ Nodes (8): db, grantRevokeLogic, {
 Cohesion: 0.20
 Nodes (9): closeDrawer(), openDrawer(), showModal(), toast(), Interactive, `ConfirmModal.svelte`, `Drawer.svelte`, `SearchBar.svelte` (+1 more)
 
-### Community 121 - "day-pass-sweep.test.js"
-Cohesion: 0.20
-Nodes (8): db, { decryptApiKey }, { eventQueue }, fs, hardwareAdapter, path, ROOT, { runDayPassSweep, SYNTHETIC_SOURCE }
+### Community 121 - "CIRCUIT REVIEW — AccessSync Architecture Assessment"
+Cohesion: 0.25
+Nodes (7): Architecture Assessment, CIRCUIT REVIEW — AccessSync Architecture Assessment, CIRCUIT Sign-Off, Integration Surface Assessment, Queue Architecture Assessment, Strengths, System Classification
 
 ### Community 122 - "simulate.js"
 Cohesion: 0.22
 Nodes (5): crypto, grantRevoke, kisiAdapter, webhookProcessor, wixAdapter
 
-### Community 123 - "location-lapse.js"
-Cohesion: 0.22
-Nodes (9): db, { decryptApiKey }, { getTraceId, getActor }, hardwareAdapter, { log }, { logMemberAccessEvent }, _setLocationStatus(), standardAdapter (+1 more)
+### Community 123 - "PROVISIONING — New Client Onboarding Atomic Sequence"
+Cohesion: 0.25
+Nodes (7): Key Environment Variables (Both Services), Prerequisites (Before Any Client Is Onboarded), PROVISIONING — New Client Onboarding Atomic Sequence, Step 1 — Create Client Record, Step 4 — Wix Webhook Configuration, Step 5 — Wix Portal App Installation, Step 6 — First Member Webhook (Validation)
 
-### Community 124 - "tenant-resolver.js"
-Cohesion: 0.20
-Nodes (3): db, { log }, TenantResolver
-
-### Community 125 - "webhook-processor.js"
-Cohesion: 0.20
-Nodes (9): connection, db, { getRedisConnection }, { getTraceId, getActor, setTraceContext }, { GRANT_EVENT_TYPES, REVOKE_EVENT_TYPES }, instance, { log }, { Queue } (+1 more)
+### Community 125 - "logging-payment-failed.spec.js"
+Cohesion: 0.29
+Nodes (4): auth, db, seed, { test, expect }
 
 ### Community 126 - "api-webhook-grant.spec.js"
 Cohesion: 0.20
@@ -896,8 +855,8 @@ Cohesion: 0.20
 Nodes (9): Data Contracts, Elements (All Steps), IRIS Map — S02: Onboarding Flow, Known Gaps / Issues, Layout, Navigation, Purpose, States (+1 more)
 
 ### Community 128 - "Step 4 — Express Middleware: Trace + Actor Mint on Every Request"
-Cohesion: 0.20
-Nodes (10): FELIX validation checklist, LENS verification protocol, Output files, Sign-off format, Spec — `admin/middleware/trace-context.js`, Spec — Mount in `admin/server.js`, Spec — Mount in `server.js` (core engine), Step 4 — Express Middleware: Trace + Actor Mint on Every Request (+2 more)
+Cohesion: 0.22
+Nodes (9): FELIX validation checklist, LENS verification protocol, Output files, Sign-off format, Spec — `admin/middleware/trace-context.js`, Spec — Mount in `admin/server.js`, Step 4 — Express Middleware: Trace + Actor Mint on Every Request, Test cases — `test/p2-onboarding/trace-middleware.test.js` (+1 more)
 
 ### Community 129 - "Step 8 — `core/EVENT_REGISTRY.md` Initial Taxonomy + Redaction Allowlist"
 Cohesion: 0.20
@@ -915,9 +874,9 @@ Nodes (9): ALLOWLIST, fs, L3_FILE, path, REPO_ROOT, scan(), SCAN_DIRS, walkJsFil
 Cohesion: 0.24
 Nodes (9): collectEmittedInfoEvents(), fs, path, REGISTRY_JSON_PATH, ROOT, SCAN_DIRS, stripComments(), TRIAGE_BACKLOG (+1 more)
 
-### Community 133 - "routes/auth.js"
-Cohesion: 0.22
-Nodes (8): signToken(), client, crypto, { log }, { OAuth2Client }, router, { signToken, requireAuth }, google-auth-library
+### Community 133 - "Structural Risks"
+Cohesion: 0.29
+Nodes (7): RISK-02 — pending_hardware Auto-Resolution [RESOLVED], RISK-03 — U-09: Hardcoded "Kisi app" Strings [BLOCKING — Pre-HOG], RISK-04 — Kisi valid_until and Duplicate POST Behavior Unknown [Monitor — Pre-HOG], RISK-05 — DEFAULT_TENANT_ID Removed [RESOLVED], RISK-06 — webhook_log Retention [Deferred — Pre-Scale], RISK-07 — adapter_admin_log Dual Purpose [Deferred — Post-V1], Structural Risks
 
 ### Community 134 - "Bundle Instruction Block"
 Cohesion: 0.22
@@ -943,27 +902,17 @@ Nodes (8): Data Contracts, Elements, IRIS Map — S01: Portal Setup Welcome, Kno
 Cohesion: 0.22
 Nodes (8): Auth Flow, Data Contracts, Elements, IRIS Map — S14: Admin Hub Login, Layout, Navigation, Purpose, States
 
-### Community 140 - "Logging Foundation Sprint — Handoff Package"
-Cohesion: 0.22
-Nodes (8): Critical-path summary, Files in this folder, Last updated, Logging Foundation Sprint — Handoff Package, Open items spawned by this sprint, Owners at a glance, Read order, What if the sprint stalls?
+### Community 140 - "Step 3 — Operator Completes Onboarding (S02 Onboarding Flow)"
+Cohesion: 0.33
+Nodes (6): Step 3 — Operator Completes Onboarding (S02 Onboarding Flow), Step 3a — Hardware Platform Selection, Step 3b — API Key Entry and Test, Step 3c — Location Creation, Step 3d — Plan Mapping, Step 3e — Confirmation
 
 ### Community 141 - "Step 7 — `admin/middleware/activity.js` Universal Activity Logger"
 Cohesion: 0.22
 Nodes (8): AXIOM review checklist, FELIX validation checklist, Output files, Sign-off format, Spec — `admin/middleware/activity.js`, Step 7 — `admin/middleware/activity.js` Universal Activity Logger, Test cases, What this step delivers
 
-### Community 142 - "member-cancels-loses-access.test.js"
-Cohesion: 0.22
-Nodes (7): paymentFailedEvent, paymentRecoveredEvent, planCancelledEvent, db, grantRevoke, hardwareAdapter, {
-  HOG_CLIENT_ID,
-  MEMBER_INTERNAL_ID,
-  KISI_HARDWARE_USER_ID,
-  KISI_ROLE_ASSIGNMENT_ID,
-  KISI_API_KEY_PLAINTEXT,
-  ENCRYPTED_API_KEY_DB_VALUE,
-  planCancelledEvent,
-  paymentFailedEvent,
-  paymentRecoveredEvent,
-}
+### Community 142 - "e2e-webhook-helper.test.js"
+Cohesion: 0.33
+Nodes (4): db, ENV_KEYS, fs, path
 
 ### Community 143 - "log-table-trace-id.test.js"
 Cohesion: 0.22
@@ -973,17 +922,17 @@ Nodes (7): collectJsFiles(), walk(), fs, LOG_TABLES, path, SCAN_ROOTS, SKIP_FILE
 Cohesion: 0.22
 Nodes (7): collectJsFiles(), walk(), fs, MEMBER_TABLES, path, SCAN_ROOTS, SKIP_FILES
 
-### Community 145 - "multi-member-synthetic-origin-actor.test.js"
-Cohesion: 0.25
-Nodes (5): db, express, makeApp(), mockQueueAdd, request
+### Community 145 - "config-alert-log-dismiss.test.js"
+Cohesion: 0.40
+Nodes (5): db, express, makeApp(), mockRecordActivity, request
 
-### Community 146 - "wix-instance.js"
-Cohesion: 0.36
-Nodes (7): crypto, db, extractSiteIdFromAuthCode(), { log }, recordWixAdminSeen(), requireWixInstance(), verifySignedInstance()
+### Community 146 - "tenant-isolation.test.js"
+Cohesion: 0.09
+Nodes (30): jwt, requireAuth(), requireAuthOrOperator(), requireAuthPage(), requireAuthPageOrOperator(), crypto, db, extractSiteIdFromAuthCode() (+22 more)
 
-### Community 147 - "registerTrace"
-Cohesion: 0.25
-Nodes (8): getDb(), registerTrace(), Pattern N.1 — Trace Timeline: events feed (paginated), Pattern N.2 — Trace Timeline: typeahead search, Pattern N.3 — Trace Timeline: full trace by ID, Pattern N.4 — Trace Timeline: source breakdown for stat strip, Pattern N.6 — trace_context enrichment (write side), Pattern N — Trace Timeline (v_trace_timeline)
+### Community 147 - "recordActivity"
+Cohesion: 0.12
+Nodes (18): recordActivity(), Critical-path summary, Files in this folder, Last updated, Logging Foundation Sprint — Handoff Package, Open items spawned by this sprint, Owners at a glance, Read order (+10 more)
 
 ### Community 148 - "api-member-access-status.spec.js"
 Cohesion: 0.25
@@ -1013,28 +962,13 @@ Nodes (4): auth, db, seed, { test, expect }
 Cohesion: 0.25
 Nodes (4): auth, db, seed, { test, expect }
 
-### Community 155 - "member-pays-gets-access.test.js"
-Cohesion: 0.25
-Nodes (7): activeMappings, activeMappingsMultiDoor, planPurchasedEvent, db, grantRevoke, hardwareAdapter, {
-  HOG_CLIENT_ID,
-  MEMBER_INTERNAL_ID,
-  KISI_HARDWARE_USER_ID,
-  KISI_ROLE_ASSIGNMENT_ID,
-  KISI_GROUP_ID,
-  KISI_API_KEY_PLAINTEXT,
-  activeMappings,
-  activeMappingsMultiDoor,
-  planPurchasedEvent,
-}
+### Community 155 - "retryPendingHardwareMembers"
+Cohesion: 0.40
+Nodes (5): retryPendingHardwareMembers(), Current Build Status, Open Questions for Daxx Before HOG Launch, Known Onboarding Gaps, Re-Onboarding (Existing Client, New Setup)
 
-### Community 156 - "ob-125-source-tag-guard.test.js"
-Cohesion: 0.25
-Nodes (5): db, grantRevoke, hardwareAdapter, {
-  HOG_CLIENT_ID,
-  MEMBER_INTERNAL_ID,
-  KISI_HARDWARE_USER_ID,
-  ENCRYPTED_API_KEY_DB_VALUE,
-}, memberDeletedEvent
+### Community 156 - "admin-dashboard.spec.js"
+Cohesion: 0.40
+Nodes (4): auth, db, seed, { test, expect }
 
 ### Community 157 - "dr-051-holder-seated-durable-leave.test.js"
 Cohesion: 0.25
@@ -1044,6 +978,10 @@ Nodes (4): adapter, db, fs, path
 Cohesion: 0.25
 Nodes (6): db, ENABLED_CLIENT_ROW, fs, mailer, mockResendSend, path
 
+### Community 159 - "admin-empty-states.spec.js"
+Cohesion: 0.40
+Nodes (4): auth, db, seed, { test, expect }
+
 ### Community 160 - "members-page-resend-status-visibility.test.js"
 Cohesion: 0.25
 Nodes (6): appSrc, bridgeSrc, ejsSrc, fs, path, serverSrc
@@ -1052,9 +990,13 @@ Nodes (6): appSrc, bridgeSrc, ejsSrc, fs, path, serverSrc
 Cohesion: 0.25
 Nodes (5): FORWARD_PATH, fs, MIGRATIONS_DIR, path, ROLLBACK_PATH
 
-### Community 162 - "reconciliation-new-schema.test.js"
-Cohesion: 0.25
-Nodes (7): db, { eventQueue }, hardwareAdapter, { log }, planMappingResolver, reconciliation, wixPlansApi
+### Community 162 - "logging-error-queue.spec.js"
+Cohesion: 0.40
+Nodes (4): auth, db, seed, { test, expect }
+
+### Community 163 - "api-operator-stats.spec.js"
+Cohesion: 0.33
+Nodes (4): auth, db, seed, { test, expect }
 
 ### Community 165 - "admin-members-detail.spec.js"
 Cohesion: 0.29
@@ -1064,17 +1006,17 @@ Nodes (4): auth, db, seed, { test, expect }
 Cohesion: 0.29
 Nodes (4): auth, db, seed, { test, expect }
 
-### Community 167 - "admin-members-list.spec.js"
-Cohesion: 0.29
-Nodes (4): auth, db, seed, { test, expect }
+### Community 167 - "Phase 0 — Vault hygiene + documentation"
+Cohesion: 0.40
+Nodes (5): Phase 0 gate, Phase 0 — Vault hygiene + documentation, Phase 0a — Vault hygiene (KEEPER + QUILL · ~2 hours), Phase 0b — DR drafting + new vault docs (KEEPER + QUILL · ~3 hours), Phase 0c — Process gate restoration (SAGE · 15 min)
 
 ### Community 168 - "admin-metrics-vs-db.spec.js"
 Cohesion: 0.29
 Nodes (4): auth, db, seed, { test, expect }
 
 ### Community 170 - "@playwright/test"
-Cohesion: 0.08
-Nodes (17): auth, db, seed, { test, expect }, auth, db, seed, { test, expect } (+9 more)
+Cohesion: 0.07
+Nodes (17): auth, db, seed, { test, expect }, { test, expect }, auth, db, seed (+9 more)
 
 ### Community 171 - "api-webhook-delayed-start.spec.js"
 Cohesion: 0.29
@@ -1088,46 +1030,19 @@ Nodes (4): auth, db, seed, { test, expect }
 Cohesion: 0.29
 Nodes (4): auth, db, seed, { test, expect }
 
-### Community 174 - "logging-payment-failed.spec.js"
-Cohesion: 0.29
-Nodes (4): auth, db, seed, { test, expect }
-
 ### Community 175 - "IRIS Map — S10: Error Queue Component (Operator)"
 Cohesion: 0.29
 Nodes (6): Dismiss Flow, Elements, IRIS Map — S10: Error Queue Component (Operator), Purpose, Retry Flow, States
 
-### Community 176 - "schema-concepts-new.test.js"
-Cohesion: 0.29
-Nodes (5): db, grantRevoke, hardwareAdapter, {
-  HOG_CLIENT_ID,
-  MEMBER_INTERNAL_ID,
-  KISI_HARDWARE_USER_ID,
-  KISI_ROLE_ASSIGNMENT_ID,
-  KISI_GROUP_ID,
-  ENCRYPTED_API_KEY_DB_VALUE,
-}, standardAdapter
-
-### Community 177 - "day-pass-grant.test.js"
-Cohesion: 0.29
-Nodes (6): dayPassEvent, dayPassMapping, db, grantRevoke, hardwareAdapter, dayPassRow()
+### Community 176 - "billing-subscriptions-wix-app-market-columns.test.js"
+Cohesion: 0.50
+Nodes (3): fs, MIGRATION_PATH, path
 
 ### Community 178 - "members-bridge-billing.test.js"
 Cohesion: 0.48
 Nodes (6): buildMembersArray(), formatCouponLine(), formatRate(), HOG_SNAPSHOT, shapeBilling(), shapeMemberMinimal()
 
-### Community 179 - "multi-member-new-schema.test.js"
-Cohesion: 0.33
-Nodes (5): db, express, makeApp(), mockQueueAdd, request
-
-### Community 180 - "not-paying-strike-primitives.test.js"
-Cohesion: 0.29
-Nodes (3): adapter, db, { log }
-
 ### Community 181 - "operator-members-query-shape.test.js"
-Cohesion: 0.33
-Nodes (4): db, express, makeApp(), request
-
-### Community 182 - "operator-sync-metrics.test.js"
 Cohesion: 0.33
 Nodes (4): db, express, makeApp(), request
 
@@ -1151,29 +1066,21 @@ Nodes (5): Done when, FUTURE BUILD — Day-pass QR: fetch or resend after the em
 Cohesion: 0.33
 Nodes (5): Admin Hub (admin/server.js — Daxx-only), Entry Points, IRIS Screen Map Index — AccessSync, Member-Facing (Core Engine — core/server.js), Operator Portal (admin/server.js — Wix Dashboard iframe)
 
-### Community 188 - "build.js"
-Cohesion: 0.33
-Nodes (5): playwright, { chromium }, OUT, path, SRC
-
 ### Community 189 - "supabase-3-apply-data.js"
 Cohesion: 0.33
 Nodes (5): { Client }, DATA_FILE, expectedCounts, fs, path
-
-### Community 190 - "admin-routes-new-schema.test.js"
-Cohesion: 0.40
-Nodes (4): db, express, makeApp(), request
 
 ### Community 191 - "day-pass-email-attachments.test.js"
 Cohesion: 0.33
 Nodes (3): db, mailer, mockSend
 
-### Community 193 - "source-retry-probe.test.js"
-Cohesion: 0.33
-Nodes (4): db, hardwareAdapter, { log }, { runProbe }
+### Community 192 - "per-client-webhook-secret.test.js"
+Cohesion: 0.38
+Nodes (5): call(), crypto, db, findRouteHandler(), mockRes()
 
-### Community 194 - "config-alert-log-dismiss.test.js"
+### Community 193 - "admin-location-list.spec.js"
 Cohesion: 0.40
-Nodes (5): db, express, makeApp(), mockRecordActivity, request
+Nodes (4): auth, db, seed, { test, expect }
 
 ### Community 195 - "event-registry-sync.test.js"
 Cohesion: 0.33
@@ -1183,10 +1090,6 @@ Nodes (4): fs, path, REGISTRY_JSON_PATH, REGISTRY_MD_PATH
 Cohesion: 0.33
 Nodes (4): collectJsFiles(), walk(), fs, path
 
-### Community 198 - "admin-access-log.spec.js"
-Cohesion: 0.40
-Nodes (4): auth, db, seed, { test, expect }
-
 ### Community 199 - "admin-error-queue.spec.js"
 Cohesion: 0.40
 Nodes (4): auth, db, seed, { test, expect }
@@ -1195,45 +1098,29 @@ Nodes (4): auth, db, seed, { test, expect }
 Cohesion: 0.40
 Nodes (3): auth, seed, { test, expect }
 
-### Community 201 - "api-operator-locations.spec.js"
-Cohesion: 0.40
-Nodes (4): auth, db, seed, { test, expect }
-
-### Community 202 - "logging-error-queue.spec.js"
-Cohesion: 0.40
-Nodes (4): auth, db, seed, { test, expect }
-
-### Community 204 - "schema-indexes.spec.js"
-Cohesion: 0.40
-Nodes (3): db, EXPECTED_INDEXES, { test, expect }
-
 ### Community 205 - "member-access-sources-unique-constraint.test.js"
 Cohesion: 0.40
 Nodes (4): BOOTSTRAP_FILE, EXPECTED_COLUMNS, fs, path
 
-### Community 211 - "devDependencies"
-Cohesion: 0.50
-Nodes (4): devDependencies, jest, @playwright/test, supertest
-
 ## Knowledge Gaps
-- **1695 isolated node(s):** `kisiAdapter`, `seamAdapter`, `_requiredFieldsByPlatform`, `kisiConnector`, `{ log }` (+1690 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2069 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **113 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **1745 isolated node(s):** `kisiAdapter`, `seamAdapter`, `_requiredFieldsByPlatform`, `kisiConnector`, `{ log }` (+1740 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2125 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **110 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
+- **Why does `overrides` connect `overrides` to `_meta`, `admin.activate_location_done`, `admin.client.invite_issued`, `admin.client_restored`, `admin.holder_release_slot_queued`, `admin.sub_members_submitted`, `email.member.skipped_disabled`, `grant.day_pass.link_created`, `operator.member_sync.run`, `operator.member.unlock`, `operator.member.welcome_email_resent`, `queue.grant.identity_resolved`, `reconciliation.sweep_start`, `wix.parse.event_type_normalized`, `adapter.identity_creating`, `adapter.identity_found`, `adapter.identity.gate2_recovered`, `admin.api_key_set`, `admin.client_created`, `admin.lapse_trigger`, `admin.location_activated`, `admin.location_created`, `admin.location_reactivated`, `admin.scheduler.armed`, `admin.scheduler.reconcile_complete`, `admin.scheduler.reconcile_failed`, `admin.scheduler.reconcile_start`, `admin.sub_member_added`, `admin.sub_member_deleted`, `admin.sub_member_grant_queued`, `admin.sub_member_removed`, `admin.sub_member_updated`, `admin.wix_instance_wired`, `day_pass_sweep.complete`, `day_pass_sweep.orphan_link_deleted`, `day_pass_sweep.revoke_queued`, `day_pass_sweep.start`, `email.member.sent`, `email.operator.sent`, `grant.day_pass.link_creating`, `grant.day_pass.synthetic_skipped`, `grant.log.skipped_duplicate`, `grant.role.assigning`, `grant.role.reused`, `grant.role.source_exists`, `health.alert_suppressed`, `kisi.group_link.created`, `kisi.group_link.creating`, `kisi.group_link.delete_skipped_already_gone`, `kisi.group_link.deleted`, `kisi.role.recovery_succeeded`, `kisi.user.created`, `kisi.user.delete_guard_check`, `kisi.user.delete_skipped_already_gone`, `kisi.user.deleted`, `kisi.user.deleting`, `member.day_pass.lookup`, `operator.email_branding.guide_removed`, `operator.email_branding.guide_uploaded`, `operator.location.apikey_set`, `operator.location.reactivated`, `operator.retry.pending_hardware`, `operator.setup.apikey_set`, `operator.setup.bypass_accepted`, `operator.setup.client_upserted`, `operator.setup.location_activated`, `operator.setup.location_created`, `operator.sync.granted`, `operator.sync.manual_run`, `operator.sync.revoke_skipped`, `operator.sync.revoked`, `queue.grant.complete`, `queue.grant.day_pass.complete`, `queue.grant.hardware_calls_complete`, `queue.grant.lock_acquired`, `queue.grant.mappings_resolved`, `queue.grant.parked.no_api_key`, `queue.grant.parked.no_mapping`, `queue.grant.store.multiple_mapped_items`, `queue.job.start`, `reconciliation.kisi_user_disappeared_confirmed`, `reconciliation.requeued`, `reconciliation.role_assignment_drifted`, `reconciliation.stale_reset`, `reconciliation.sub_member_holder_lapsed`, `revoke.billing_cancelled`, `revoke.billing_status_preserved`, `revoke.day_pass.link_deleted`, `revoke.group.skipped`, `revoke.start`, `source_retry.success`, `wix.member.resolved`, `wix.store_products.fetched`?**
+  _High betweenness centrality (0.095) - this node is a cross-community bridge._
 - **Why does `REGISTRY_OVERRIDES` connect `_meta` to `logger.js`?**
-  _High betweenness centrality (0.091) - this node is a cross-community bridge._
-- **Why does `overrides` connect `overrides` to `_meta`, `adapter.identity_creating`, `adapter.identity_found`, `adapter.identity.gate2_recovered`, `adapter.identity.parked`, `admin.api_key_set`, `admin.client_created`, `admin.client_deleted`, `admin.holder_claim_slot_queued`, `admin.lapse_trigger`, `admin.location_activated`, `admin.location_api_key_set`, `admin.location_created`, `admin.location_reactivated`, `admin.scheduler.armed`, `admin.scheduler.reconcile_complete`, `admin.scheduler.reconcile_failed`, `admin.scheduler.reconcile_start`, `admin.sub_member_added`, `admin.sub_member_deleted`, `admin.sub_member_grant_queued`, `admin.sub_member_removed`, `admin.sub_member_revoke_queued`, `admin.sub_member_updated`, `admin.wix_instance_wired`, `day_pass_sweep.complete`, `day_pass_sweep.orphan_link_deleted`, `day_pass_sweep.revoke_queued`, `day_pass_sweep.start`, `email.member.sent`, `email.member.suppressed`, `email.operator.sent`, `grant.day_pass.claim_lost`, `grant.day_pass.link_creating`, `grant.day_pass.synthetic_skipped`, `grant.log.skipped_duplicate`, `grant.role.assigning`, `grant.role.reused`, `grant.role.source_exists`, `health.alert_suppressed`, `kisi.group_link.created`, `kisi.group_link.creating`, `kisi.group_link.delete_skipped_already_gone`, `kisi.group_link.deleted`, `kisi.role.recovery_succeeded`, `kisi.user.created`, `kisi.user.delete_guard_check`, `kisi.user.delete_skipped_already_gone`, `kisi.user.deleted`, `kisi.user.deleting`, `member.day_pass.lookup`, `member.day_pass.qr_served`, `member.day_pass.ready`, `operator.apikey.rotated`, `operator.email_branding.guide_removed`, `operator.email_branding.guide_uploaded`, `operator.location.apikey_set`, `operator.location.reactivated`, `operator.notification.updated`, `operator.retry.pending_hardware`, `operator.setup.apikey_set`, `operator.setup.bypass_accepted`, `operator.setup.client_upserted`, `operator.setup.location_activated`, `operator.setup.location_created`, `operator.sync.granted`, `operator.sync.manual_run`, `operator.sync.revoke_skipped`, `operator.sync.revoked`, `queue.grant.complete`, `queue.grant.day_pass.complete`, `queue.grant.hardware_calls_complete`, `queue.grant.lock_acquired`, `queue.grant.mappings_resolved`, `queue.grant.parked.no_api_key`, `queue.grant.parked.no_mapping`, `queue.grant.store.multiple_mapped_items`, `queue.grant.store.no_mapped_item`, `queue.job.start`, `reconciliation.kisi_user_disappeared_confirmed`, `reconciliation.requeued`, `reconciliation.role_assignment_drifted`, `reconciliation.stale_reset`, `reconciliation.sub_member_holder_lapsed`, `revoke.billing_cancelled`, `revoke.billing_status_preserved`, `revoke.day_pass.link_deleted`, `revoke.group.skipped`, `revoke.start`, `source_retry.success`, `wix.member.resolved`, `wix.store_products.fetched`?**
-  _High betweenness centrality (0.084) - this node is a cross-community bridge._
+  _High betweenness centrality (0.094) - this node is a cross-community bridge._
 - **Why does `pg` connect `trace.js` to `supabase-2-dump-data.js`, `helpers/db.js`, `package.json`, `supabase-3-apply-data.js`, `db.js`?**
-  _High betweenness centrality (0.052) - this node is a cross-community bridge._
+  _High betweenness centrality (0.068) - this node is a cross-community bridge._
 - **Are the 6 inferred relationships involving `getTraceId()` (e.g. with `Repository State` and `core/trace-context.js`) actually correct?**
   _`getTraceId()` has 6 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 5 inferred relationships involving `getActor()` (e.g. with `Repository State` and `core/trace-context.js`) actually correct?**
   _`getActor()` has 5 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `kisiAdapter`, `seamAdapter`, `_requiredFieldsByPlatform` to the rest of the system?**
-  _1695 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _1745 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `revoke-policy.test.js` be split into smaller, more focused modules?**
   _Cohesion score 0.05331510594668489 - nodes in this community are weakly interconnected._
