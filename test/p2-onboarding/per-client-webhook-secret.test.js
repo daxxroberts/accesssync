@@ -1,8 +1,8 @@
 /**
  * P2 — OB-238 per-client wix_webhook_secret.
- * Covers: wix-connector HMAC verification flow (per-client ONLY — the
- * platform-wide WIX_WEBHOOK_SECRET fallback was removed for tenant isolation),
- * rotate endpoint, setup-state hmacSource field.
+ * Covers: wix-connector HMAC verification flow (a named client with its own secret is
+ * checked against that secret ONLY; otherwise the platform-wide Wix developer-dashboard
+ * secret WIX_WEBHOOK_SECRET), rotate endpoint, setup-state hmacSource field.
  */
 
 'use strict';
@@ -84,47 +84,56 @@ describe('wix-connector — _verifySignature per-client flow (OB-238)', () => {
     expect(result).toBe(false);  // per-client takes precedence; env fallback NOT tried
   });
 
-  // Tenant isolation: a platform-wide secret would let any holder sign webhooks
-  // for every gym. With WIX_WEBHOOK_SECRET still set in the env, none of these
-  // may verify.
-  test('rejects a platform-secret signature when the client has no per-client secret', async () => {
+  // The platform secret (Wix developer dashboard) verifies webhooks that name no client, and
+  // clients that have no secret of their own yet.
+  test('falls back to platform env secret when per-client secret not set', async () => {
     process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
     db.query.mockResolvedValueOnce({ rows: [{ wix_webhook_secret: null }] });
 
     const connector = require('../../adapters/wix/wix-connector');
     const body = '{"test":1}';
     const sig = sign('platform-secret', body);
-    expect(await connector._verifySignature(body, sig, 'client-1')).toBe(false);
+    expect(await connector._verifySignature(body, sig, 'client-1')).toBe(true);
   });
 
-  test('rejects when the named client does not exist', async () => {
+  test('falls back to env when client row not found', async () => {
     process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
     db.query.mockResolvedValueOnce({ rows: [] });
 
     const connector = require('../../adapters/wix/wix-connector');
     const body = '{"test":1}';
     const sig = sign('platform-secret', body);
-    expect(await connector._verifySignature(body, sig, 'unknown-client')).toBe(false);
+    expect(await connector._verifySignature(body, sig, 'unknown-client')).toBe(true);
   });
 
-  test('rejects a request with no client id header, without touching the DB', async () => {
+  test('falls back to env when no client is named (Wix-native webhook) — no DB lookup', async () => {
     process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
 
     const connector = require('../../adapters/wix/wix-connector');
     const body = '{"test":1}';
     const sig = sign('platform-secret', body);
-    expect(await connector._verifySignature(body, sig, null)).toBe(false);
+    expect(await connector._verifySignature(body, sig, null)).toBe(true);
     expect(db.query).not.toHaveBeenCalled();
   });
 
-  test('rejects when the secret lookup throws (fails closed, never throws)', async () => {
+  test('falls back to env when DB lookup throws (DR-037 never-throws)', async () => {
     process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
     db.query.mockRejectedValueOnce(new Error('db down'));
 
     const connector = require('../../adapters/wix/wix-connector');
     const body = '{"test":1}';
     const sig = sign('platform-secret', body);
-    expect(await connector._verifySignature(body, sig, 'client-1')).toBe(false);
+    expect(await connector._verifySignature(body, sig, 'client-1')).toBe(true);
+  });
+
+  test('isolation: gym B\'s own secret cannot sign a webhook that names gym A', async () => {
+    process.env.WIX_WEBHOOK_SECRET = 'platform-secret';
+    db.query.mockResolvedValueOnce({ rows: [{ wix_webhook_secret: 'ENC[gym-a-secret]' }] });  // gym A's row
+
+    const connector = require('../../adapters/wix/wix-connector');
+    const body = '{"test":1}';
+    const forgedByGymB = sign('gym-b-secret', body);
+    expect(await connector._verifySignature(body, forgedByGymB, 'gym-a')).toBe(false);
   });
 
   test('returns false when neither per-client nor env secret available', async () => {

@@ -32,7 +32,21 @@ afterEach(() => { ENV_KEYS.forEach(k => { if (saved[k] === undefined) delete pro
 
 function helper() { jest.resetModules(); return require('../../e2e/helpers/auth'); }
 
-test('a webhook from the helper names its client and verifies with that client\'s own secret', async () => {
+test('default (as before): signed with the platform secret, names no client, verifies and routes by site id', async () => {
+  process.env.WIX_WEBHOOK_SECRET = 'the-wix-dashboard-secret-from-the-environment';
+  delete process.env.E2E_WEBHOOK_SECRET; delete process.env.E2E_CLIENT_ID;
+  const body = JSON.stringify({ eventType: 'wixPricingPlans.orderPurchased', data: {} });
+  const headers = helper().buildWebhookHeaders(body, { siteId: 'site-hog' });
+  expect(headers['x-accesssync-client-id']).toBeUndefined();
+  expect(headers['x-wix-site-id']).toBe('site-hog');
+
+  jest.resetModules();
+  process.env.WIX_WEBHOOK_SECRET = 'the-wix-dashboard-secret-from-the-environment';
+  const connector = require('../../adapters/wix/wix-connector');
+  expect(await connector._verifySignature(body, headers['x-wix-signature'], null)).toBe(true);
+});
+
+test('per-client path: E2E_CLIENT_ID + that client\'s secret → names the client and verifies with it', async () => {
   process.env.E2E_WEBHOOK_SECRET = SECRET;
   process.env.E2E_CLIENT_ID = HOG_CLIENT;
   const body = JSON.stringify({ eventType: 'wixPricingPlans.orderPurchased', data: {} });
@@ -44,20 +58,12 @@ test('a webhook from the helper names its client and verifies with that client\'
   db2.query.mockResolvedValueOnce({ rows: [{ wix_webhook_secret: `ENC[${SECRET}]` }] });
   const connector = require('../../adapters/wix/wix-connector');
   expect(await connector._verifySignature(body, headers['x-wix-signature'], headers['x-accesssync-client-id'])).toBe(true);
-  expect(db2.query.mock.calls[0][1]).toEqual([HOG_CLIENT]);   // looked up THIS client's secret, nobody else's
+  expect(db2.query.mock.calls[0][1]).toEqual([HOG_CLIENT]);
 });
 
-test('defaults to the House of Gains client the specs target when E2E_CLIENT_ID is unset', () => {
-  process.env.E2E_WEBHOOK_SECRET = SECRET;
-  delete process.env.E2E_CLIENT_ID;
-  const headers = helper().buildWebhookHeaders('{}', { siteId: 'site-hog' });
-  expect(headers['x-accesssync-client-id']).toBe(HOG_CLIENT);
-});
-
-test('no secret in the environment = a loud error, never a silent default', () => {
-  delete process.env.E2E_WEBHOOK_SECRET;
-  process.env.WIX_WEBHOOK_SECRET = 'a-platform-secret-that-must-not-be-used';
-  expect(() => helper().buildWebhookHeaders('{}', {})).toThrow(/E2E_WEBHOOK_SECRET is not set/);
+test('no secret in the environment = a loud error, never a committed default', () => {
+  delete process.env.E2E_WEBHOOK_SECRET; delete process.env.WIX_WEBHOOK_SECRET;
+  expect(() => helper().buildWebhookHeaders('{}', {})).toThrow(/is not set/);
 });
 
 test('no OWNER_PIN in the environment = a loud error', async () => {

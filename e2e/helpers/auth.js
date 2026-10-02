@@ -4,8 +4,8 @@
  *
  * Admin hub:   PIN auth → httpOnly adminToken cookie
  * Member hub:  x-internal-proxy: 1 header bypass
- * Webhooks:    HMAC-SHA256 over rawBody with the client's own secret → x-wix-signature,
- *              plus x-accesssync-client-id naming that client
+ * Webhooks:    HMAC-SHA256 over rawBody → x-wix-signature (platform secret + site id, or a
+ *              client's own secret + x-accesssync-client-id)
  */
 
 const crypto = require('crypto');
@@ -15,19 +15,23 @@ const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || 'https://accesssync-admin.u
 // No credential literals in the repo. These come from the environment of whoever runs the
 // suite:
 //   OWNER_PIN            the owner PIN for /auth/pin
-//   E2E_WEBHOOK_SECRET   the per-client webhook secret of the client the specs post to
-//                        (System Config -> Wix Setup Guide shows it). The platform-wide
-//                        WIX_WEBHOOK_SECRET no longer exists: every webhook must name its
-//                        client and be signed with that client's own secret.
-//   E2E_CLIENT_ID        optional; defaults to the House of Gains client the specs target
+//   E2E_WEBHOOK_SECRET   the secret the specs sign webhooks with. Defaults to WIX_WEBHOOK_SECRET
+//                        (the Wix developer-dashboard secret): the specs post with the HOG site
+//                        id and no client id, which is verified with that platform secret and
+//                        routed by site id. Set it to HOG's per-client secret together with
+//                        E2E_CLIENT_ID to exercise the per-client path instead.
+//   E2E_CLIENT_ID        optional; when set, webhooks also send x-accesssync-client-id
 function _required(name) {
   const v = process.env[name];
   if (!v) throw new Error(`${name} is not set — see e2e/helpers/auth.js for what each variable is.`);
   return v;
 }
-function getOwnerPin()         { return _required('OWNER_PIN'); }
-function getWixWebhookSecret() { return _required('E2E_WEBHOOK_SECRET'); }
-function getWebhookClientId()  { return process.env.E2E_CLIENT_ID || require('./constants').HOG_CLIENT_ID; }
+function getOwnerPin() { return _required('OWNER_PIN'); }
+function getWixWebhookSecret() {
+  const v = process.env.E2E_WEBHOOK_SECRET || process.env.WIX_WEBHOOK_SECRET;
+  if (!v) throw new Error('E2E_WEBHOOK_SECRET (or WIX_WEBHOOK_SECRET) is not set — see e2e/helpers/auth.js.');
+  return v;
+}
 
 // Cached cookie string per process — valid 24h so one mint per test run is fine
 let _adminCookieCache = null;
@@ -110,13 +114,15 @@ function buildWebhookSignature(rawBody, secret) {
 function buildWebhookHeaders(body, opts = {}) {
   const rawBody = typeof body === 'string' ? body : JSON.stringify(body);
   const signature = buildWebhookSignature(rawBody, opts.secret);
-  return {
+  const headers = {
     'Content-Type':      'application/json',
     'x-wix-signature':   signature,
     'x-wix-site-id':     opts.siteId || 'test-site-id',
-    // The signing client. The server verifies the signature with THIS client's secret only.
-    'x-accesssync-client-id': opts.clientId || getWebhookClientId(),
   };
+  // Only when asked: naming a client makes the server verify with THAT client's own secret.
+  const clientId = opts.clientId || process.env.E2E_CLIENT_ID;
+  if (clientId) headers['x-accesssync-client-id'] = clientId;
+  return headers;
 }
 
 /**

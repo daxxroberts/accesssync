@@ -25,6 +25,12 @@ const { log } = require('../../core/logger');
 const { deriveTraceId } = require('../../core/trace-context');
 
 class WixConnector {
+  constructor() {
+    // The Wix developer-dashboard HMAC secret (member-level Pricing Plans webhooks). Held by
+    // AccessSync/Wix only — it is never shown to a gym (see operator.js setup-state).
+    this.webhookSecret = process.env.WIX_WEBHOOK_SECRET;
+  }
+
 
   /**
    * Express-compatible HTTP handler.
@@ -185,11 +191,11 @@ class WixConnector {
   /**
    * Verifies the Wix HMAC-SHA256 signature.
    *
-   * OB-238 / tenant isolation: the request must name its client
-   * (x-accesssync-client-id) and is verified ONLY with that client's own secret
-   * (clients.wix_webhook_secret). There is no platform-wide fallback secret —
-   * a shared secret would let any holder sign webhooks for every gym. A client
-   * without a secret, or a request without a client id, is rejected.
+   * OB-238: if the request names a client (x-accesssync-client-id) AND that client has its
+   * own secret, ONLY that secret is accepted — another gym's secret, or the platform one,
+   * cannot sign for it. Otherwise (no client named, or a client with no secret of its own)
+   * the platform-wide Wix developer-dashboard secret (WIX_WEBHOOK_SECRET) is used: that is
+   * the path for Wix-native webhooks, which carry a site id rather than a client id.
    *
    * @param {string} rawBody
    * @param {string} signature
@@ -197,10 +203,22 @@ class WixConnector {
    * @returns {Promise<boolean>}
    */
   async _verifySignature(rawBody, signature, clientIdHint) {
-    if (!signature || !clientIdHint) return false;
-    const perClientSecret = await this._resolvePerClientSecret(clientIdHint);
-    if (!perClientSecret) return false;
-    return this._checkHmac(rawBody, signature, perClientSecret);
+    if (!signature) return false;
+
+    // Per-client secret first when the request names a client
+    if (clientIdHint) {
+      const perClientSecret = await this._resolvePerClientSecret(clientIdHint);
+      if (perClientSecret) {
+        return this._checkHmac(rawBody, signature, perClientSecret);
+      }
+    }
+
+    // Platform-wide Wix secret
+    if (this.webhookSecret) {
+      return this._checkHmac(rawBody, signature, this.webhookSecret);
+    }
+
+    return false;
   }
 
   /**

@@ -72,8 +72,8 @@ Every row is an automated test in `onboarding-invite-scenarios.test.js` unless n
 | Owner panel | **New client** + **Setup link**; card buttons use `data-*` + one delegated listener. | Owner. |
 | `/auth/pin`, `/auth/google`, `/operator/verify-bypass`, `/onboard/redeem` | Rate limited (10 failures / 15 min; redeem 10/min). | The owner after 10 failed PINs from one IP. |
 | e2e suite | Needs `OWNER_PIN`, `E2E_WEBHOOK_SECRET` (HOG's per-client secret) in the environment; sends `x-accesssync-client-id`. **Not run here** (it targets production). | Whoever runs e2e. |
-| Webhooks (earlier commit) | Per-client secret only; client id header required. | Any client still on the shared secret (HOG has its own). |
-| Env | `OPERATOR_INVITE_TOKEN`, `WIX_WEBHOOK_SECRET` retired. `INVITE_SIGNING_SECRET` optional. | Railway config. |
+| Webhooks | Unchanged verification: a named client with its own secret is checked against that secret only; otherwise the Wix developer-dashboard secret. Added: a signed webhook naming client A cannot be routed to client B by its site-id header. | Nobody — production's 368 accepted webhooks all name a client. |
+| Env | `OPERATOR_INVITE_TOKEN` retired. `WIX_WEBHOOK_SECRET` is **kept** (Wix developer-dashboard secret; webhooks that name no client are verified with it). `INVITE_SIGNING_SECRET` optional. | Railway config. |
 | Email | Unchanged. Invites don't use it. | — |
 
 ## 5. Not fixed here (open items for the Builder)
@@ -91,7 +91,7 @@ Every row is an automated test in `onboarding-invite-scenarios.test.js` unless n
 2. **Before deploy:** rotate `OWNER_PIN` in the Admin Hub service. Confirm every real client has a `wix_webhook_secret` (HOG does; query `SELECT id,name,(wix_webhook_secret IS NOT NULL) FROM clients`).
 3. Deploy Core Engine **and** Admin Hub together (both changed).
 4. Smoke test: owner panel loads; **Setup link** on a test client; open it in a private window; **Start setup**; wizard shows step 1 prefilled; HOG dashboard still loads via the Wix portal.
-5. After it is healthy: delete `OPERATOR_INVITE_TOKEN` and `WIX_WEBHOOK_SECRET` from Railway (both services).
+5. After it is healthy: delete `OPERATOR_INVITE_TOKEN` from Railway (both services). **Do not delete `WIX_WEBHOOK_SECRET`.**
 6. Optionally set `INVITE_SIGNING_SECRET` (random 32+ bytes) so invites rotate independently of sessions.
 7. Update e2e runner env (`OWNER_PIN`, `E2E_WEBHOOK_SECRET`).
 
@@ -118,6 +118,6 @@ Keep the interface (`signInvite` / `verifyInvite`) and add a `consume()` step. I
 
 ## 8. KEEPER sync (repo `CLAUDE.md` + vault — not edited here, per its own rule)
 
-- Env list: remove `OPERATOR_INVITE_TOKEN` and `WIX_WEBHOOK_SECRET`; add `INVITE_SIGNING_SECRET` (optional) and `INVITE_TTL_HOURS` (optional); change `OWNER_PIN` description (it is the owner login PIN, not just an onboarding bypass).
+- Env list: remove `OPERATOR_INVITE_TOKEN` (keep `WIX_WEBHOOK_SECRET`); add `INVITE_SIGNING_SECRET` (optional) and `INVITE_TTL_HOURS` (optional); change `OWNER_PIN` description (it is the owner login PIN, not just an onboarding bypass).
 - Key files: add `core/invite-token.js`, `core/webhook-secret.js`, `admin/routes/onboarding.js`.
 - Decision to log: *Onboarding is owner-initiated and invite-only; invites are stateless signed bearer links bound to one client (v1); true single-use is a deferred v2.*

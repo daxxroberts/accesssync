@@ -127,7 +127,7 @@ Configure Wix to send webhooks to the AccessSync Core Engine.
 - `payment/failed`
 - `payment/recovered`
 
-**HMAC:** Every webhook names its client (`x-accesssync-client-id`) and is signed with that client's OWN secret (`clients.wix_webhook_secret`, generated when the client is created). There is no platform-wide secret; `WIX_WEBHOOK_SECRET` is retired.
+**HMAC:** A webhook that names its client (`x-accesssync-client-id`) is verified with that client's OWN secret (`clients.wix_webhook_secret`, generated when the client is created) — and only that one. A webhook that names no client (Wix-native webhooks, which carry a site id) is verified with the platform-wide Wix developer-dashboard secret, `WIX_WEBHOOK_SECRET`, and routed by site id. That platform secret is never shown to a gym.
 
 **Wix Site ID → Client mapping:** First webhook auto-wires `site_id` to the client via TenantResolver if `DEFAULT_TENANT_ID` was used. With portal auth: `site_id` is set during `/operator-portal` verification.
 
@@ -187,7 +187,7 @@ Member purchases plan on Wix
 | `DATABASE_URL` | Both | PostgreSQL connection string (Railway) |
 | `REDIS_URL` | Core Engine | BullMQ queue backing |
 | `ENCRYPTION_KEY` | Both | AES-256-GCM key for API key storage |
-| `WIX_WEBHOOK_SECRET` | — | **Retired.** Per-client secrets only; delete from Railway |
+| `WIX_WEBHOOK_SECRET` | Core Engine | HMAC validation for inbound webhooks (Wix developer-dashboard secret). **Keep.** |
 | `RESEND_API_KEY` | Admin Server | Email alert sending |
 | `CORE_ENGINE_URL` | Admin Server | Used to generate webhook URL in onboarding |
 | `ADMIN_ALLOWED_EMAILS` | Admin Server | Comma-separated list of allowed Google OAuth emails (Daxx only) |
