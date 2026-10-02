@@ -294,15 +294,22 @@ describe('[P3] tenant isolation — forged authorizationCode cannot claim a wire
     return requireWixInstance(req, res, next).then(() => ({ res, next }));
   }
 
-  test('Path B only considers clients with no platform_instance_id yet', async () => {
+  test('Path B only considers clients with no platform_instance_id yet — a forged siteId never reaches a wired gym', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [] })  // Path A: unknown instance
-      .mockResolvedValueOnce({ rows: [] }); // Path B: HOG is already wired → not claimable
+      .mockResolvedValueOnce({ rows: [] })  // Path B: HOG is already wired → not claimable
+      .mockResolvedValueOnce({ rows: [{ id: GYM_B }] }) // Path C: the attacker's OWN installation gets its own shell client
+      .mockResolvedValue({ rows: [] });
     const { res, next } = await run('site-hog');
-    expect(next).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalled();
     expect(db.query.mock.calls[1][0]).toMatch(/platform_instance_id IS NULL/);
     expect(db.query.mock.calls.some(([sql]) => /UPDATE clients SET platform_instance_id/.test(sql))).toBe(false);
+    // The session is for a brand-new client, never HOG; the forged site id is not stored anywhere.
+    expect(next).toHaveBeenCalled();
+    expect(res.redirect).not.toHaveBeenCalled();
+    const insert = db.query.mock.calls.find(([sql]) => /INSERT INTO clients/.test(sql));
+    expect(insert[1]).toEqual(['New Wix site', 'attacker-instance']);
+    const writes = db.query.mock.calls.filter(([sql]) => /^\s*(INSERT|UPDATE)/.test(sql));
+    expect(JSON.stringify(writes)).not.toContain('site-hog');
   });
 
   test('a lost race on the wiring UPDATE is refused, not granted', async () => {

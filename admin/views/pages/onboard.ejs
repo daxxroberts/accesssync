@@ -2005,7 +2005,9 @@ async function resumeFromServer(clientId, opts = {}) {
   } catch { showGate('unavailable'); return; }
   if (s.archived) { showGate('invite_revoked'); return; }
 
-  state.name     = state.name  || s.name;
+  // 'New Wix site' is the placeholder wix-instance.js gives a client auto-created on
+  // first open after install — leave the field empty so the gym types its real name.
+  state.name     = state.name  || (s.name === 'New Wix site' ? '' : s.name);
   state.email    = state.email || s.notificationEmail;
   state.siteName = state.siteName || s.siteName;
   state.hasWixKey = !!s.hasWixKey;

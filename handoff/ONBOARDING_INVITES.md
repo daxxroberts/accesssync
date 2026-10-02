@@ -61,11 +61,24 @@ Every row is an automated test in `onboarding-invite-scenarios.test.js` unless n
 - "First redeemer wins" does not apply: any holder can redeem repeatedly during that window.
 - No "link used at …" display in the owner panel. (Each issue and redeem **is** written to `activity_event`.)
 
+## 2a. Wix install = the invitation (second, equal entry)
+
+The app is not in the Wix marketplace; the AccessSync owner installs it on each customer's Wix site. So no link is needed for those customers:
+
+1. Customer's Wix **site owner** opens AccessSync from the Wix dashboard → `GET /operator-portal?instance=<signed>`.
+2. `requireWixInstance` verifies the signature with `WIX_APP_SECRET`, rejects anonymous viewers and non-owners.
+3. Path A (known `platform_instance_id`) → their dashboard. Path B (unwired client with a matching site id) → wires it. **Path C (new)**: nothing matched → `INSERT INTO clients (name='New Wix site', platform_instance_id=<verified instanceId>, status='active')`; a unique-index race re-reads the winner's row (one installation can never become two clients). A webhook secret is generated. `source_site_id` stays NULL — the authorizationCode site id is unsigned, so the wizard collects and verifies it.
+4. The portal issues the scoped `operatorToken` and sends a client with no key and no locations to `/operator-portal/setup` → wizard (placeholder name is left blank for the gym to fill in).
+
+Nothing from the URL (siteId, clientId, authorizationCode) is trusted or stored on this path. A shell client has no Kisi/Wix key, so reconciliation (`source_api_key` + `source_site_id` required) skips it; the nightly interval gate now orders by `last_sync_at DESC NULLS LAST` so a new shell can't be picked in place of HOG. Invite links (§2) remain the way to onboard a customer without a Wix install.
+
+Unchanged: only the Wix **site owner** gets in (staff/co-admins get 401, as before this branch).
+
 ## 4. Blast radius of this change
 
 | Surface | Change | Who is affected |
 |---|---|---|
-| `/onboard` | No longer a public wizard. Needs an invite or a session. | Anyone who bookmarked it. **Wix App Market self-signup is off** until OB-66 (Path C in `wix-instance.js` lands on "You need a setup link"). |
+| `/onboard` | No longer a public wizard. Needs an invite or a session. | Anyone who bookmarked it. **The Wix install path is unchanged in effect:** the AccessSync owner installs the app on a customer's Wix site; that customer's owner opens it from the Wix dashboard → Path C in `wix-instance.js` creates the client from the Wix-signed instance and lands in setup (see §2a). |
 | `/operator/*` | Every route requires a session; `x-invite-token` removed; `issue-session`, `POST /clients`, old `site-id/verify` behaviour removed. | Nothing in the repo calls them except the wizard (updated). |
 | `POST /operator/clients/:id/{locations,api-key,locations/:l/activate}` | Session-scoped instead of token-scoped. | The wizard. |
 | Wizard | Updates the owner-created client instead of creating one; site ID cannot be repointed; no `platform_instance_id` from the page. | New gyms. |
