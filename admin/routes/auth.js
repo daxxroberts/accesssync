@@ -10,6 +10,7 @@
 
 const crypto  = require('crypto');
 const router  = require('express').Router();
+const rateLimit = require('express-rate-limit');
 const { OAuth2Client } = require('google-auth-library');
 const { signToken, requireAuth } = require('../middleware/auth');
 const { log } = require('../../core/logger');
@@ -18,6 +19,22 @@ const client = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET
 );
+
+// Owner login is the highest-value credential in the platform (it sees every
+// client). OWNER_PIN is short by nature, so without a throttle it can be walked
+// through in minutes. 10 failed attempts per IP per 15 minutes; successful logins
+// don't count against the budget.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  handler: (req, res) => {
+    log.warn('auth.login_rate_limited', { path: req.path });
+    res.status(429).json({ error: 'Too many sign-in attempts. Try again in 15 minutes.' });
+  },
+});
 
 // ── GET /auth/config ────────────────────────────────────────────
 // Returns Google Client ID to the frontend so GIS can initialize.
@@ -32,7 +49,7 @@ router.get('/config', (req, res) => {
 });
 
 // ── POST /auth/google ───────────────────────────────────────────
-router.post('/google', async (req, res) => {
+router.post('/google', loginLimiter, async (req, res) => {
   try {
     const { credential } = req.body;
     if (!credential) {
@@ -78,7 +95,7 @@ router.post('/google', async (req, res) => {
 
 // ── GET /auth/google/callback ───────────────────────────────────
 // Handles OAuth redirect flow (fallback when GIS button is blocked by origin).
-router.get('/google/callback', async (req, res) => {
+router.get('/google/callback', loginLimiter, async (req, res) => {
   const { code, error } = req.query;
   if (error) {
     log.error('auth.oauth_callback_error', { error });
@@ -119,7 +136,7 @@ router.get('/google/callback', async (req, res) => {
 });
 
 // ── POST /auth/pin ──────────────────────────────────────────────
-router.post('/pin', (req, res) => {
+router.post('/pin', loginLimiter, (req, res) => {
   const { pin } = req.body;
   const ownerPin = process.env.OWNER_PIN;
   if (!ownerPin) {

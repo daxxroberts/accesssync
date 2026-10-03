@@ -11,8 +11,10 @@ const E2E_ENV = {
   BASE_URL,
   ADMIN_BASE_URL,
   DATABASE_URL:        process.env.DATABASE_URL,
-  WIX_WEBHOOK_SECRET:  process.env.WIX_WEBHOOK_SECRET  || 'ad6d52c6bd2c2b968c4d95d820cf1198d1e25c16f39a3fa3f389fa4c7f713b44',
-  OWNER_PIN:           process.env.OWNER_PIN            || '2096',
+  // No credential defaults in the repo — supply these in the environment (see e2e/helpers/auth.js).
+  E2E_WEBHOOK_SECRET:  process.env.E2E_WEBHOOK_SECRET,
+  E2E_CLIENT_ID:       process.env.E2E_CLIENT_ID,
+  OWNER_PIN:           process.env.OWNER_PIN,
 };
 
 module.exports = defineConfig({

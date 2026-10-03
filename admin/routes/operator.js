@@ -26,7 +26,7 @@ const db = require('../../db');
 const { eventQueue } = require('../../core/webhook-processor');
 const { encryptApiKey, decryptApiKey: decryptKey } = require('../../core/crypto-utils');
 const wixPlansApi = require('../../adapters/wix/wix-plans-api');
-const { requireAuth, requireAuthOrOperator, signOperatorToken } = require('../middleware/auth');
+const { requireAuth, requireAuthOrOperator } = require('../middleware/auth');
 const hardwareAdapter = require('../../adapters/hardware-adapter');
 const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
 const standardAdapter = require('../../adapters/standard-adapter');
@@ -56,25 +56,28 @@ const guideUpload = multer({
 // Higher limit needed: plan-mapping page fires N parallel per-mapping requests on load
 router.use(rateLimit({ windowMs: 60_000, max: 500, standardHeaders: true, legacyHeaders: false }));
 
-// Auth gate: require admin JWT on all operator routes EXCEPT onboarding signup.
-// Onboarding endpoints use requireInviteToken middleware (validates token value).
-// Only specific POST paths are exempt — all other routes require JWT even if
-// x-invite-token header is present (H-1 security fix).
-const ONBOARDING_PATHS = new Set(['/verify-bypass', '/issue-session']);
-const ONBOARDING_PREFIX = /^\/clients(\/[^/]+\/(locations(\/[^/]+\/activate)?|api-key))?$/;
-router.use(function operatorAuth(req, res, next) {
-  if (req.method === 'POST' && req.headers['x-invite-token'] &&
-      (ONBOARDING_PATHS.has(req.path) || ONBOARDING_PREFIX.test(req.path))) {
-    return next(); // Auth handled by requireInviteToken on these routes
+// Auth gate: EVERY operator route requires a session (owner or client-scoped operator).
+// There is no pre-session exception. Onboarding no longer runs on a shared invite
+// token: an owner-issued, client-bound invite is exchanged for an operator session at
+// POST /onboard/redeem (admin/routes/onboarding.js), and the wizard then calls these
+// routes with that cookie like any other operator page. The old header check
+// (`x-invite-token` present => skip auth) accepted ANY value, and the shared token it
+// guarded was printed into the public /onboard page.
+router.use(requireAuthOrOperator);
+
+// Tenant isolation: an operator session is scoped to exactly one client. Every
+// route carrying :clientId is checked here, so an operator cannot read or change
+// another gym's data by editing the URL. Owner (admin) sessions are unscoped.
+// Fails closed: no session at all is a 401, never a pass-through.
+router.param('clientId', function enforceOperatorClientScope(req, res, next, clientId) {
+  if (!req.admin) return res.status(401).json({ error: 'Unauthorized' });
+  if (req.admin.role !== 'admin' && req.admin.clientId !== clientId) {
+    log.warn('operator.auth.client_scope_denied', {
+      sessionClientId: req.admin.clientId || null, requestedClientId: clientId, path: req.path,
+    });
+    return res.status(403).json({ error: 'Forbidden' });
   }
-  if (req.method === 'POST' && req.path === '/verify-bypass') return next();
-  // Site ID verification is a GET with invite token — exempt from JWT auth
-  if (req.method === 'GET' && req.path === '/site-id/verify' && req.headers['x-invite-token']) return next();
-  // Onboarding GET endpoints — invite token auth (new operator has no JWT cookie yet)
-  if (req.method === 'GET' && /^\/clients\/[^/]+\/(kisi-groups|api-key\/status|api-key\/test)$/.test(req.path) && req.headers['x-invite-token']) return next();
-  // Location and mapping data fetched during onboarding completion
-  if (req.method === 'GET' && /^\/[^/]+\/locations(\/[^/]+\/mappings)?$/.test(req.path) && req.headers['x-invite-token']) return next();
-  return requireAuthOrOperator(req, res, next);
+  next();
 });
 
 /**
@@ -395,15 +398,21 @@ router.get('/webhook-url', (req, res) => {
 // ── GET /operator/:clientId/setup-snippets ────────────────────────
 // Returns pre-populated Wix setup data for the Setup Guide tab:
 // webhook URL, HMAC secret, and clientId — all operator-scoped.
-// HMAC secret comes from WIX_WEBHOOK_SECRET env var (single secret per deployment).
+// HMAC secret is this client's own (clients.wix_webhook_secret) — never a
+// platform-wide value, which would let one gym sign webhooks for another.
 router.get('/:clientId/setup-snippets', async (req, res) => {
   const { clientId } = req.params;
   try {
-    const result = await db.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+    const result = await db.query('SELECT id, wix_webhook_secret FROM clients WHERE id = $1', [clientId]);
     if (!result.rows.length) return res.status(404).json({ error: 'Client not found' });
     const base = (process.env.CORE_ENGINE_URL || '').replace(/\/$/, '');
     const webhookUrl   = base ? `${base}/webhooks/wix` : null;
-    const hmacSecret   = process.env.WIX_WEBHOOK_SECRET || null;
+    let hmacSecret = null;
+    try {
+      hmacSecret = result.rows[0].wix_webhook_secret ? decryptKey(result.rows[0].wix_webhook_secret) : null;
+    } catch (e) {
+      log.error('operator.setup_snippets.secret_decrypt_failed', { clientId }, e);
+    }
     const adminHubBase = (process.env.ADMIN_HUB_URL || base || '').replace(/\/$/, '');
     res.json({ clientId, webhookUrl, hmacSecret, adminHubBase });
   } catch (err) {
@@ -413,14 +422,15 @@ router.get('/:clientId/setup-snippets', async (req, res) => {
 });
 
 // ── GET /operator/:clientId/setup-state ───────────────────────────
-// Registry-driven Setup Hub data. Returns webhook URL + HMAC secret
-// (with source — per-client or env fallback) + per-snippet metadata
+// Registry-driven Setup Hub data. Returns webhook URL + this client's HMAC
+// secret (per-client only — no platform fallback) + per-snippet metadata
 // + rendered body. No install_state, no aggregate, no env-issue banner
 // — the synthetic status indicators were removed 2026-05-30 because
 // we can't actually test snippets without a real Wix event firing.
 // Operator gets clean docs + working snippets; nothing pretending to
 // know whether a snippet is installed/broken/etc.
 const snippetRegistry = require('../../core/snippet-registry');
+const { ensureWebhookSecret } = require('../../core/webhook-secret');
 
 router.get('/:clientId/setup-state', async (req, res) => {
   const { clientId } = req.params;
@@ -435,44 +445,29 @@ router.get('/:clientId/setup-state', async (req, res) => {
     const adminHubUrl   = (process.env.ADMIN_HUB_URL   || '').replace(/\/$/, '');
     const webhookUrl    = coreEngineUrl ? `${coreEngineUrl}/webhooks/wix` : null;
 
-    // Auto-generate per-client secret if NULL. Race-safe via WHERE
-    // wix_webhook_secret IS NULL clause + RETURNING to detect winner.
-    let storedEncryptedSecret = client.rows[0].wix_webhook_secret;
-    if (!storedEncryptedSecret) {
-      const plaintext = crypto.randomBytes(32).toString('base64');
-      const encrypted = encryptApiKey(plaintext);
-      const upd = await db.query(
-        `UPDATE clients SET wix_webhook_secret = $1, updated_at = NOW()
-         WHERE id = $2 AND wix_webhook_secret IS NULL
-         RETURNING wix_webhook_secret`,
-        [encrypted, clientId]
-      );
-      if (upd.rowCount > 0) {
-        storedEncryptedSecret = upd.rows[0].wix_webhook_secret;
-        log.warn('clients.wix_webhook_secret.auto_generated', { clientId, stage: 'setup_hub_first_visit' });
-      } else {
-        // Lost the race — re-read what won
-        const reread = await db.query(
-          'SELECT wix_webhook_secret FROM clients WHERE id = $1', [clientId]
-        );
-        storedEncryptedSecret = reread.rows[0]?.wix_webhook_secret || null;
-      }
-    }
-
-    // Per-client secret takes precedence over env fallback
+    // Per-client secret only. Clients created before secrets were generated at
+    // creation get one on first Setup Hub visit. There is deliberately NO fallback to
+    // a platform-wide secret: showing it here would hand one gym a secret that can
+    // sign webhooks for others.
     let hmacSecret = null;
     let hmacSource = 'none';
-    if (storedEncryptedSecret) {
-      try {
-        hmacSecret = decryptKey(storedEncryptedSecret);
-        hmacSource = 'per_client';
-      } catch (e) {
-        log.error('operator.setup_state.per_client_secret_decrypt_failed', { clientId }, e);
+    try {
+      const stored = client.rows[0].wix_webhook_secret;
+      if (stored) {
+        hmacSecret = decryptKey(stored);
+      } else {
+        hmacSecret = await ensureWebhookSecret(clientId);
+        if (!hmacSecret) {
+          // Lost the race to a concurrent first visit — read what won.
+          const reread = await db.query('SELECT wix_webhook_secret FROM clients WHERE id = $1', [clientId]);
+          const enc = reread.rows[0]?.wix_webhook_secret || null;
+          hmacSecret = enc ? decryptKey(enc) : null;
+        }
       }
-    }
-    if (!hmacSecret && process.env.WIX_WEBHOOK_SECRET) {
-      hmacSecret = process.env.WIX_WEBHOOK_SECRET;
-      hmacSource = 'platform_env_fallback';
+      if (hmacSecret) hmacSource = 'per_client';
+    } catch (e) {
+      hmacSecret = null;
+      log.error('operator.setup_state.per_client_secret_decrypt_failed', { clientId }, e);
     }
 
     const snippets = snippetRegistry.listSnippets().map(meta => {
@@ -525,8 +520,8 @@ router.get('/:clientId/setup-state', async (req, res) => {
 // OB-238 — generate a new per-client wix_webhook_secret, encrypt via DR-028,
 // store in clients.wix_webhook_secret. Returns plaintext ONCE so operator
 // can paste into their Wix Secrets Manager. Encrypted at rest; future GETs
-// must decrypt. Replaces the platform-wide WIX_WEBHOOK_SECRET fallback for
-// this client. Logged to activity_event.
+// must decrypt. Takes effect immediately — webhooks signed with the old value
+// are rejected until the new one is in Wix. Logged to activity_event.
 router.post('/:clientId/wix-webhook-secret/rotate', async (req, res) => {
   const { clientId } = req.params;
   try {
@@ -629,86 +624,49 @@ router.post('/:clientId/setup-state/copied', async (req, res) => {
 });
 
 // ── POST /operator/verify-bypass ─────────────────────────────────
-// Owner bypass PIN validation for onboarding (skips Kisi key step).
-// PIN checked against OWNER_PIN env var (Railway ADMIN service) — never hardcoded.
-router.post('/verify-bypass', (req, res) => {
-  const { pin } = req.body;
+// Owner PIN for the onboarding "set up doors later" affordance. Session-gated like
+// every operator route, constant-time compared, and throttled — a short PIN is
+// guessable. (The PIN gates nothing server-side beyond this yes/no; the wizard only
+// uses it to decide which screen to show.)
+const bypassLimiter = rateLimit({
+  windowMs: 15 * 60_000, limit: 10, standardHeaders: true, legacyHeaders: false,
+  skipSuccessfulRequests: true,
+});
+router.post('/verify-bypass', bypassLimiter, (req, res) => {
+  const pin = req.body && req.body.pin;
   const expected = process.env.OWNER_PIN;
-  if (!expected || !pin || pin !== expected) {
-    return res.status(403).json({ error: 'Invalid PIN' });
-  }
+  const ok = !!expected && typeof pin === 'string' && pin.length > 0 &&
+    Buffer.byteLength(pin) === Buffer.byteLength(expected) &&
+    crypto.timingSafeEqual(Buffer.from(pin), Buffer.from(expected));
+  if (!ok) return res.status(403).json({ error: 'Invalid PIN' });
   log.info('operator.setup.bypass_accepted');
   res.json({ ok: true });
 });
 
-// ══ Operator Signup Endpoints ═════════════════════════════════════════════════
-// OB-24: Protected by invite token. Operators receive a link with ?invite=TOKEN.
-// Token checked against OPERATOR_INVITE_TOKEN env var. Without it, 403.
-// Rate-limited to 5 requests per IP per minute as defense-in-depth.
-
-const signupLimiter = rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false });
-function requireInviteToken(req, res, next) {
-  // Rate-limit first (5 req/IP/min), then check invite token.
-  signupLimiter(req, res, () => {
-    // Token check — timing-safe comparison to prevent side-channel attacks
-    const expected = process.env.OPERATOR_INVITE_TOKEN;
-    if (!expected) {
-      log.warn('operator.auth.invite_token_missing');
-      return res.status(503).json({ error: 'Signup is not currently available' });
-    }
-    const token = req.headers['x-invite-token'];
-    if (!token || Buffer.byteLength(token) !== Buffer.byteLength(expected) ||
-        !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected))) {
-      return res.status(403).json({ error: 'Valid invite link required' });
-    }
-    next();
-  });
-}
+// ══ Onboarding (session-scoped) ═══════════════════════════════════════════════
+// The client row is created by the OWNER (POST /admin/clients) and entered through an
+// owner-issued invite (core/invite-token.js). Everything below acts on the session's
+// own client only — router.param('clientId') above enforces that.
 
 // ── GET /operator/site-id/verify ─────────────────────────────────
-// Onboarding Step 1: validate a Wix site ID before account creation.
-// Checks UUID format and whether the source_site_id is already registered.
-// Used by the manual-entry path (owner onboarding) when instanceId is
-// not auto-injected from the Wix portal signed instance.
-router.get('/site-id/verify', requireInviteToken, async (req, res) => {
-  const { siteId } = req.query;
+// Wizard step 1: is this Wix site ID usable? Answers valid / in-use and nothing else
+// — it no longer describes whichever account owns the site.
+router.get('/site-id/verify', async (req, res) => {
+  const siteId = String(req.query.siteId || '').trim();
   if (!siteId) return res.status(400).json({ valid: false, error: 'siteId is required' });
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!UUID_RE.test(siteId.trim())) {
+  if (!UUID_RE.test(siteId)) {
     return res.json({ valid: false, error: 'Invalid Site ID format — expected xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' });
   }
-
   try {
-    const existing = await db.query(
-      `SELECT c.id, c.name,
-              cs.hardware_platform,
-              (ARRAY_AGG(DISTINCT bs.tier) FILTER (WHERE bs.tier IS NOT NULL))[1] AS tier,
-              (cs.id IS NOT NULL) AS has_api_key
-       FROM clients c
-       LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
-       LEFT JOIN billing_subscriptions   bs ON bs.client_id = c.id AND bs.status = 'active'
-       WHERE c.source_site_id = $1
-       GROUP BY c.id, cs.id, cs.hardware_platform
-       LIMIT 1`,
-      [siteId.trim()]
-    );
-    if (existing.rows.length) {
-      const c = existing.rows[0];
-      const locs = await db.query(
-        'SELECT id, name, city, state FROM locations WHERE client_id = $1 ORDER BY created_at ASC',
-        [c.id]
-      );
+    // Operators can only ever be "the session client"; the owner names one explicitly.
+    const mine = req.admin.role === 'admin' ? (req.query.clientId || null) : req.admin.clientId;
+    const existing = await db.query('SELECT id FROM clients WHERE source_site_id = $1 LIMIT 1', [siteId]);
+    if (existing.rows.length && existing.rows[0].id !== mine) {
       return res.json({
-        valid: false,
-        alreadyRegistered: true,
-        client: {
-          id: c.id,
-          name: c.name,
-          billing:   c.tier === null ? null : { tier: c.tier },
-          connector: c.hardware_platform === null ? null : { platform: c.hardware_platform, has_key: c.has_api_key },
-        },
-        locations: locs.rows,
+        valid: false, inUse: true,
+        error: 'This Wix site is already connected to another AccessSync account. Contact AccessSync if that looks wrong.',
       });
     }
     res.json({ valid: true, message: 'Site ID accepted — full verification happens at the Wix API key step' });
@@ -718,90 +676,131 @@ router.get('/site-id/verify', requireInviteToken, async (req, res) => {
   }
 });
 
-// ── POST /operator/issue-session ─────────────────────────────────
-// Invite-token gated. Issues an operatorToken cookie after onboarding completes,
-// so the portal path has a valid session without going through portal.js again.
-// Body: { clientId, siteId }
-router.post('/issue-session', requireInviteToken, async (req, res) => {
-  const { clientId, siteId } = req.body;
-  if (!clientId || !siteId) return res.status(400).json({ error: 'clientId and siteId are required' });
+// ── GET /operator/:clientId/onboarding-status ─────────────────────
+// Where did this client get to? Lets the wizard resume after a reload, a second
+// device, or an expired-then-reissued invite without anyone re-entering data.
+router.get('/:clientId/onboarding-status', async (req, res) => {
+  const { clientId } = req.params;
   try {
-    const result = await db.query(
-      'SELECT id FROM clients WHERE id = $1 AND source_site_id = $2 LIMIT 1',
-      [clientId, siteId]
+    const clientRes = await db.query(
+      `SELECT id, name, notification_email, source_site_id, source_site_name, status,
+              (source_api_key IS NOT NULL) AS has_wix_key
+         FROM clients WHERE id = $1`,
+      [clientId]
     );
-    if (!result.rows.length) return res.status(403).json({ error: 'Client/site mismatch' });
-    const token = signOperatorToken(clientId, siteId);
-    res.cookie('operatorToken', token, {
-      httpOnly: true,
-      secure:   process.env.NODE_ENV === 'production',
-      sameSite: 'none',
-      maxAge:   8 * 60 * 60 * 1000,
+    if (!clientRes.rows.length) return res.status(404).json({ error: 'Client not found' });
+    const c = clientRes.rows[0];
+    const [csRes, locRes] = await Promise.all([
+      db.query(
+        `SELECT hardware_platform, (hardware_api_key IS NOT NULL) AS has_key
+           FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+        [clientId]
+      ),
+      db.query(
+        `SELECT l.id, l.name, l.city, l.state, bs.tier, bs.status AS billing_status
+           FROM locations l
+           LEFT JOIN billing_subscriptions bs ON bs.location_id = l.id AND bs.client_id = l.client_id
+          WHERE l.client_id = $1 ORDER BY l.created_at ASC`,
+        [clientId]
+      ),
+    ]);
+    const cs = csRes.rows[0] || {};
+    res.json({
+      clientId: c.id,
+      name: c.name,
+      archived: c.status === 'archived',
+      notificationEmail: c.notification_email || null,
+      siteId: c.source_site_id || null,
+      siteName: c.source_site_name || null,
+      hasWixKey: !!c.has_wix_key,
+      hardwarePlatform: cs.hardware_platform || null,
+      hasHardwareKey: !!cs.has_key,
+      locations: locRes.rows,
     });
-    res.json({ ok: true });
   } catch (err) {
-    log.error('operator.onboard.session_issue_failed', { clientId }, err);
-    res.status(500).json({ error: 'Session issue failed' });
+    log.error('operator.onboard.status_failed', { clientId }, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// ── POST /operator/clients ───────────────────────────────────────
-// Operator self-onboarding: create a new client account.
-router.post('/clients', requireInviteToken, async (req, res) => {
+// ── POST /operator/:clientId/onboarding/profile ───────────────────
+// Wizard provisioning step: fill in the session client's own profile. It UPDATES the
+// existing row — it cannot create a client, choose which client it edits, set an
+// installation id (that comes only from the signed Wix instance), or repoint a client
+// that is already linked to a Wix site.
+router.post('/:clientId/onboarding/profile', async (req, res) => {
+  const { clientId } = req.params;
+  const {
+    name, notification_email, source_site_id, source_site_name, source_site_url,
+    source_api_key, tier, hardware_platform,
+  } = req.body || {};
+  if (!name || typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name is required' });
   try {
-    const {
-      name, platform = 'wix', hardware_platform, tier,
-      source_site_id, platform_instance_id, source_site_name, source_site_url, notification_email, source_api_key,
-    } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
-
-    // Business rule: tier determines hardware_platform (Connect=Kisi, Base/Pro=Seam).
-    // Explicit hardware_platform override allowed.
-    const derivedHardware = hardware_platform || (tier === 'Connect' ? 'kisi' : tier ? 'seam' : null);
-
-    // Encrypt source platform API key if provided (AES-256-GCM pattern, same as hardware keys)
-    const encryptedSourceKey = source_api_key ? encryptApiKey(source_api_key.trim()) : null;
-
-    // Upsert clients on source_site_id — prevents duplicates if onboarding is re-run.
-    const clientResult = await db.query(
-      `INSERT INTO clients (name, platform, source_site_id, platform_instance_id, source_site_name, source_site_url, notification_email, source_api_key, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), NOW())
-       ON CONFLICT (source_site_id) DO UPDATE
-         SET platform_instance_id = EXCLUDED.platform_instance_id,
-             updated_at = NOW()
-       RETURNING id, name, platform, source_site_id, platform_instance_id, source_site_name, notification_email, status, created_at`,
-      [name.trim(), platform, source_site_id || null, platform_instance_id || null, source_site_name || null, source_site_url || null, notification_email || null, encryptedSourceKey]
+    const cur = await db.query(
+      `SELECT id, source_site_id FROM clients WHERE id = $1 AND status = 'active'`, [clientId]
     );
-    const clientRow = clientResult.rows[0];
+    if (!cur.rows.length) return res.status(404).json({ error: 'Client not found' });
 
-    // Upsert connector_subscriptions if hardware platform was specified.
+    const siteId = source_site_id ? String(source_site_id).trim() : null;
+    if (siteId && cur.rows[0].source_site_id && cur.rows[0].source_site_id !== siteId) {
+      return res.status(409).json({ error: 'This account is already linked to a different Wix site.' });
+    }
+    const encryptedSourceKey = source_api_key ? encryptApiKey(String(source_api_key).trim()) : null;
+
+    let updated;
+    try {
+      updated = await db.query(
+        `UPDATE clients
+            SET name = $2,
+                notification_email = COALESCE($3, notification_email),
+                source_site_id     = COALESCE(NULLIF(source_site_id, ''), $4),
+                source_site_name   = COALESCE($5, source_site_name),
+                source_site_url    = COALESCE($6, source_site_url),
+                source_api_key     = COALESCE($7, source_api_key),
+                updated_at = NOW()
+          WHERE id = $1
+          RETURNING id, name, platform, source_site_id, source_site_name, notification_email, status`,
+        [clientId, name.trim(), notification_email || null, siteId, source_site_name || null,
+         source_site_url || null, encryptedSourceKey]
+      );
+    } catch (e) {
+      if (e.code === '23505') {
+        return res.status(409).json({ error: 'This Wix site is already connected to another AccessSync account.' });
+      }
+      throw e;
+    }
+
+    // Tier decides the door-system platform (Connect = Kisi) unless stated explicitly.
+    const derivedHardware = hardware_platform || (tier === 'Connect' ? 'kisi' : tier ? 'seam' : null);
     if (derivedHardware) {
       await db.query(
         `INSERT INTO connector_subscriptions (client_id, hardware_platform, status, created_at, updated_at)
          VALUES ($1, $2, 'active', NOW(), NOW())
          ON CONFLICT (client_id, hardware_platform) DO NOTHING`,
-        [clientRow.id, derivedHardware]
+        [clientId, derivedHardware]
       );
     }
+    // Clients created before webhook secrets existed get theirs here; never overwrites.
+    await ensureWebhookSecret(clientId);
 
-    log.info('operator.setup.client_upserted', { clientId: clientRow.id, name: clientRow.name });
-    res.status(201).json({
+    log.info('operator.setup.client_upserted', { clientId, name: updated.rows[0].name });
+    res.json({
       ok: true,
       client: {
-        ...clientRow,
+        ...updated.rows[0],
         billing:   tier ? { tier } : null,
         connector: derivedHardware ? { platform: derivedHardware, has_key: false } : null,
       },
     });
   } catch (err) {
-    log.error('operator.setup.client_create_failed', {}, err);
+    log.error('operator.setup.profile_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // ── POST /operator/clients/:clientId/locations ───────────────────
 // Operator self-onboarding: add a location to a new client account.
-router.post('/clients/:clientId/locations', requireInviteToken, async (req, res) => {
+router.post('/clients/:clientId/locations', async (req, res) => {
   try {
     const { clientId } = req.params;
     const { name, city, state, tier } = req.body;
@@ -839,7 +838,7 @@ router.post('/clients/:clientId/locations', requireInviteToken, async (req, res)
 // ── POST /operator/clients/:clientId/api-key ─────────────────────
 // Operator self-onboarding: store encrypted door system API key.
 // Write-only: key is AES-256-GCM encrypted, never returned.
-router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) => {
+router.post('/clients/:clientId/api-key', async (req, res) => {
   try {
     const { clientId } = req.params;
     const { apiKey } = req.body;
@@ -878,7 +877,7 @@ router.post('/clients/:clientId/api-key', requireInviteToken, async (req, res) =
 // ── POST /operator/clients/:clientId/locations/:locationId/activate ──
 // Activates a location during onboarding (OB-44/OB-45).
 // Sets subscription_status = 'active' so plan-mapping-resolver (DR-027) allows provisioning.
-router.post('/clients/:clientId/locations/:locationId/activate', requireInviteToken, async (req, res) => {
+router.post('/clients/:clientId/locations/:locationId/activate', async (req, res) => {
   const { clientId, locationId } = req.params;
   try {
     // Activate by updating bs.status; create bs row if it doesn't exist yet.
@@ -974,11 +973,20 @@ router.get('/clients/:clientId/kisi-groups', async (req, res) => {
 router.get('/clients/:clientId/api-key/status', async (req, res) => {
   const { clientId } = req.params;
   try {
+    // One hardware key per client (connector_subscriptions) — every location uses it.
+    // platform lets the UI name the key after the door system ("Kisi API Key").
     const result = await db.query(
-      `SELECT hardware_api_key FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
+      `SELECT hardware_api_key, hardware_platform, key_last_verified, key_last_error
+         FROM connector_subscriptions WHERE client_id = $1 AND status = 'active' LIMIT 1`,
       [clientId]
     );
-    res.json({ hasKey: !!(result.rows[0]?.hardware_api_key) });
+    const cs = result.rows[0] || {};
+    res.json({
+      hasKey:          !!cs.hardware_api_key,
+      platform:        cs.hardware_platform || null,
+      keyLastVerified: cs.key_last_verified || null,
+      keyLastError:    cs.key_last_error || null,
+    });
   } catch (err) {
     log.error('operator.apikey.status_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -1648,7 +1656,7 @@ router.post('/:clientId/locations/:locationId/api-key', async (req, res) => {
     // Wix-first flow: auto-retry any members parked as pending_hardware
     const retried = await retryPendingHardwareMembers(clientId);
 
-    res.json({ ok: true, message: 'Location API key saved', pendingRetried: retried });
+    res.json({ ok: true, message: 'API key saved — it applies to every location of this client', pendingRetried: retried });
 
     // GAP 6: validate new key can reach all active groups at this location
     validateApiKeyGroups(clientId, apiKey.trim(), hwPlatform)
@@ -1915,16 +1923,16 @@ router.get('/:clientId/locations/:locationId', async (req, res) => {
                 error_code, user_message, action_text, resolution,
                 occurred_count, last_occurred_at
          FROM error_queue
-         WHERE location_id = $1 AND status = 'failed'
+         WHERE location_id = $1 AND client_id = $2 AND status = 'failed'
          ORDER BY last_occurred_at DESC NULLS LAST, created_at DESC`,
-        [locationId]
+        [locationId, clientId]
       ),
       db.query(
         `SELECT id, source_plan_id, hardware_group_id, plan_name, door_name, status, created_at
          FROM plan_mappings
-         WHERE location_id = $1
+         WHERE location_id = $1 AND client_id = $2
          ORDER BY plan_name`,
-        [locationId]
+        [locationId, clientId]
       ),
       db.query(
         `SELECT mal.id, mal.event_type, mal.credential_type, mal.created_at,
@@ -3558,7 +3566,10 @@ router.post('/:clientId/members/:memberId/resend-welcome-email', async (req, res
 // Runs _syncClient() for the logged-in client only — bypasses the
 // recurrence gate and nightly digest. Returns { granted, revoked }.
 router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
-  const clientId = req.admin?.clientId || req.body?.clientId || req.query?.clientId;
+  // Operators are pinned to their own client; only the owner may name one in the request.
+  const clientId = req.admin?.role === 'admin'
+    ? (req.body?.clientId || req.query?.clientId)
+    : req.admin?.clientId;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
   try {
     const clientResult = await db.query(

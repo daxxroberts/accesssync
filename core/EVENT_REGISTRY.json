@@ -32,6 +32,7 @@
     "operator.location.reactivated":      { "persist": true },
     "operator.retry.pending_hardware":    { "persist": true },
     "operator.setup.bypass_accepted":     { "persist": true },
+    "admin.client.invite_issued":         { "persist": true },
     "operator.setup.client_upserted":     { "persist": true },
     "operator.setup.location_created":    { "persist": true },
     "operator.setup.apikey_set":          { "persist": true },

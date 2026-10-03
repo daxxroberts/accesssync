@@ -67,10 +67,10 @@ router.get('/', requireWixInstance, async (req, res) => {
 // Setup landing page shown when client has not yet completed onboarding.
 // clientId comes from the operator JWT (set by requireAuthPageOrOperator).
 router.get('/setup', requireAuthPageOrOperator, (req, res) => {
-  const clientId    = req.admin?.clientId  || req.query.clientId;
-  const instanceId  = req.admin?.instanceId || '';
-  const inviteToken = process.env.OPERATOR_INVITE_TOKEN || '';
-  res.render('pages/portal-setup', { clientId, instanceId, inviteToken });
+  // The operator session cookie (set by GET /operator-portal) is what authorises the
+  // wizard; nothing secret is rendered into this page.
+  const clientId = req.admin?.clientId || req.query.clientId;
+  res.render('pages/portal-setup', { clientId });
 });
 
 module.exports = router;

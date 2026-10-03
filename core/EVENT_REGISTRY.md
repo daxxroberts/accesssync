@@ -470,7 +470,8 @@ Operator-portal (per-client operator scope) mutation events. All persisted-by-ov
 | `operator.location.apikey_set` | info | Operator saved a per-location hardware API key from the operator portal |
 | `operator.retry.pending_hardware` | info | Operator triggered retry of pending_hardware members for a client |
 | `operator.setup.bypass_accepted` | info | Operator bypass during onboarding accepted (owner PIN flow) |
-| `operator.setup.client_upserted` | info | Onboarding upserted (created or updated) the operator's client row |
+| `admin.client.invite_issued` | info | Owner issued a setup link for one client (core/invite-token.js). The link itself is never logged; the audit row is `client.invite_issued` in activity_event |
+| `operator.setup.client_upserted` | info | Onboarding saved the session client's profile (the owner creates the client; the wizard updates it) |
 | `operator.setup.location_created` | info | Onboarding step created the operator's first location |
 | `operator.setup.apikey_set` | info | Onboarding step set the operator's hardware API key |
 | `operator.setup.location_activated` | info | Onboarding step activated the location (optional `created_bs` flag when a billing_subscriptions row was created in the same call) |

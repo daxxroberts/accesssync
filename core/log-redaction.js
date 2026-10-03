@@ -66,7 +66,8 @@ const SENSITIVE_FIELDS = new Set([
   'quick_response_code_image',
   'qrImageUrl',
   // Service keys
-  'OPERATOR_INVITE_TOKEN',
+  'OPERATOR_INVITE_TOKEN',   // retired; kept so a stale value is still never logged
+  'INVITE_SIGNING_SECRET',
   'OWNER_PIN',
   'RESEND_API_KEY',
   'ADMIN_JWT_SECRET',

@@ -139,7 +139,7 @@ const TRIAGE_BACKLOG = new Set([
   'reconciliation.sweep_complete', 'reconciliation.wix_sync_complete',
   'reconciliation.wix_sync_start', 'retry.notify.sent', 'revoke.skipped.never_provisioned',
   'source_retry.candidate_found', 'source_retry.run_complete', 'source_retry.run_start',
-  'tenant.auto_wired', 'tenant.source_site_id_registered', 'webhook.duplicate',
+  'tenant.source_site_id_registered', 'webhook.duplicate',
   'webhook.enqueued', 'webhook.received', 'webhook.unrecognised_type',
   'wix.active_orders.fetched', 'wix.booking_services.fetched',
   'wix.confirmed_bookings.fetched', 'wix.pricing_plans.fetched',

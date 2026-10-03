@@ -23,12 +23,20 @@ function requireAuth(req, res, next) {
   if (!token) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  let payload;
   try {
-    req.admin = jwt.verify(token, JWT_SECRET);
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
-    res.status(401).json({ error: 'Invalid or expired session' });
+    return res.status(401).json({ error: 'Invalid or expired session' });
   }
+  // Operator tokens are signed with the same secret. Without this check, an
+  // operator could replay their own token as the adminToken cookie and reach
+  // every owner-only route (all clients' data).
+  if (payload.role !== 'admin') {
+    return res.status(403).json({ error: 'Owner access required' });
+  }
+  req.admin = payload;
+  next();
 }
 
 /**
@@ -55,12 +63,16 @@ function requireAuthPage(req, res, next) {
   if (!token) {
     return res.redirect('/OwnerDashboard');
   }
+  let payload;
   try {
-    req.admin = jwt.verify(token, JWT_SECRET);
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
-    res.redirect('/OwnerDashboard');
+    return res.redirect('/OwnerDashboard');
   }
+  // Owner-only pages: an operator token in the adminToken cookie is not enough.
+  if (payload.role !== 'admin') return res.redirect('/OwnerDashboard');
+  req.admin = payload;
+  next();
 }
 
 /**
@@ -105,4 +117,23 @@ function requireAuthPageOrOperator(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, requireAuthOrOperator, requireAuthPage, requireAuthPageOrOperator, signToken, signOperatorToken };
+/**
+ * Non-redirecting session read for pages that render different states per caller
+ * (e.g. /onboard). Returns the verified JWT payload ({ role: 'admin' } or
+ * { role: 'operator', clientId }) or null. An owner cookie wins over an operator one,
+ * matching requireAuthOrOperator.
+ */
+function readSession(req) {
+  const token = req.cookies?.adminToken || req.cookies?.operatorToken;
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.role === 'admin') return payload;
+    if (payload.role === 'operator' && payload.clientId) return payload;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { requireAuth, requireAuthOrOperator, requireAuthPage, requireAuthPageOrOperator, readSession, signToken, signOperatorToken };

@@ -161,7 +161,7 @@ flowchart TD
     A([Wix loads /operator-portal\n?instance=signed_token]) --> B[Decode signed instance token\nExtract: instanceId, uid, permissions\nExtract: siteId from authorizationCode]
 
     B --> C{permissions\n=== OWNER?}
-    C -- No --> REJ([Reject 401\nNot site owner])
+    C -- No --> REJ([Reject 401\nNot a signed-in Wix user])
     C -- Yes --> D{Lookup client\nWHERE wix_instance_id\n= instanceId}
 
     D -- Found --> PA[PATH A\nIssue operator JWT\n8h session cookie]
@@ -202,7 +202,7 @@ flowchart TD
   <ul class="fault-list">
     <li><strong>authorizationCode absent or expired</strong> — Path B has no siteId source. Falls through to Path C. Operator re-onboards. Upsert on site_id prevents duplicate if siteId becomes available later. If siteId is never available, a duplicate client row may be created.</li>
     <li><strong>Reinstall on a different Wix site</strong> — Both instanceId and siteId change. Neither lookup hits. Path C creates a second client row. Recovery requires admin merge or manual DB fix. No automated recovery path exists yet.</li>
-    <li><strong>Onboarding abandonment mid-flow</strong> — Client row not created. Next portal load restarts from Path C. No partial state persisted. Acceptable behavior — wizard must not show stale pre-filled data from a prior abandoned session.</li>
+    <li><strong>Onboarding abandonment mid-flow</strong> — Path C creates a bare client (name "New Wix site", the verified instanceId, a webhook secret) on first open. Next portal load hits Path A and resumes the wizard from server state (<code>/operator/:id/onboarding-status</code>). No duplicate client; no Kisi/Wix key means reconciliation skips it.</li>
     <li><strong>Concurrent onboarding sessions</strong> — Two tabs reach Step 5 simultaneously. ON CONFLICT (site_id) DO UPDATE is atomic — second write updates, does not duplicate. Requires site_id UNIQUE NOT NULL constraint at DB level.</li>
   </ul>
 </div>

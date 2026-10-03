@@ -574,7 +574,7 @@ class NightlyReconciliation {
       // Uses the first active client's reconciliation_interval as a global gate (V1: single client).
       const lastSyncResult = await db.query(
         `SELECT last_sync_at, COALESCE(reconciliation_interval, 'daily') AS interval
-         FROM clients WHERE status = 'active' LIMIT 1`
+         FROM clients WHERE status = 'active' ORDER BY last_sync_at DESC NULLS LAST LIMIT 1`
       );
       const { last_sync_at, interval } = lastSyncResult.rows[0] || {};
       const intervalMs = { hourly: 3600000, '6h': 21600000, '12h': 43200000, daily: 86400000, weekly: 604800000 };

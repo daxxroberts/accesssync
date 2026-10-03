@@ -13,13 +13,14 @@
  * Lookup strategy (three-path):
  *   Path A — platform_instance_id match → known client, issue token, go to dashboard
  *   Path B — no instance match, siteId from authorizationCode matches source_site_id → update platform_instance_id, go to dashboard
- *   Path C — no match on either → redirect to onboarding
+ *   Path C — no match on either → first open after install: create the client from the
+ *            verified instanceId and go to setup (the install is the invitation)
  *
  * Payload fields used:
  *   instanceId  — Wix app installation ID (maps to clients.platform_instance_id)
- *   uid         — Wix User ID of the viewer
- *   siteOwnerId — Wix User ID of the site owner
- *   permissions — 'OWNER' for site owners
+ *   uid         — Wix User ID of the viewer (required; any dashboard user for the site)
+ *   siteOwnerId — Wix User ID of the site owner (informational)
+ *   permissions — recorded in wix_admin_seen; not used as a gate
  *   aid         — present if anonymous (reject immediately)
  *
  * authorizationCode param: Wix passes a signed JWT in ?authorizationCode= containing
@@ -31,6 +32,7 @@
 const crypto = require('crypto');
 const db     = require('../../db');
 const { log } = require('../../core/logger');
+const { ensureWebhookSecret } = require('../../core/webhook-secret');
 
 const APP_SECRET = process.env.WIX_APP_SECRET;
 
@@ -39,7 +41,7 @@ const APP_SECRET = process.env.WIX_APP_SECRET;
  *
  * @param {string} instance  Raw instance string from ?instance= query param
  * @returns {object} Decoded, verified payload
- * @throws  If signature invalid, anonymous user, or not site owner
+ * @throws  If signature invalid, or the viewer is anonymous / not a signed-in Wix user
  */
 function verifySignedInstance(instance) {
   if (!APP_SECRET) {
@@ -61,7 +63,9 @@ function verifySignedInstance(instance) {
     .replace(/\//g, '_')
     .replace(/=/g, '');
 
-  if (signature !== expected) {
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
     throw new Error('Wix instance signature invalid');
   }
 
@@ -77,12 +81,12 @@ function verifySignedInstance(instance) {
     throw new Error('Wix instance: anonymous user — access denied');
   }
 
-  // Confirm site owner
-  const isOwner = (payload.uid && payload.uid === payload.siteOwnerId) ||
-                  payload.permissions === 'OWNER';
-
-  if (!isOwner) {
-    throw new Error('Wix instance: viewer is not the site owner');
+  // Anyone Wix lets into this site's dashboard may open AccessSync for it — owner,
+  // co-admin or staff. The instance is signed and scoped to ONE installation
+  // (instanceId), so a viewer can only ever resolve to the client for the site they
+  // are already signed into. Must be a real signed-in user, though.
+  if (!payload.uid) {
+    throw new Error('Wix instance: no signed-in Wix user — access denied');
   }
 
   return payload;
@@ -116,7 +120,7 @@ function extractSiteIdFromAuthCode(authCode) {
  * Three-path lookup:
  *   Path A: platform_instance_id match → known client
  *   Path B: source_site_id match via authorizationCode → update platform_instance_id, known client
- *   Path C: no match → redirect to onboarding
+ *   Path C: no match → create a shell client for this verified installation
  *
  * Sets req.wixOperator = { clientId, instanceId, siteId, uid } on success.
  */
@@ -157,18 +161,35 @@ async function requireWixInstance(req, res, next) {
       : null;
 
     if (siteId) {
+      // The authorizationCode is read WITHOUT signature verification, so its siteId
+      // is attacker-controllable. It may only claim a client that has never been
+      // wired to an instance — otherwise anyone with a valid instance for their own
+      // Wix site could forge another gym's siteId, overwrite that gym's
+      // platform_instance_id and walk away with an operator session for it.
+      // A legitimate reinstall on an already-wired client needs the owner to clear
+      // platform_instance_id first.
       const bySite = await db.query(
-        'SELECT id, source_site_id FROM clients WHERE source_site_id = $1 LIMIT 1',
+        `SELECT id, source_site_id FROM clients
+          WHERE source_site_id = $1
+            AND (platform_instance_id IS NULL OR platform_instance_id = '')
+          LIMIT 1`,
         [siteId]
       );
 
       if (bySite.rows.length) {
         const clientId = bySite.rows[0].id;
-        // Wire up platform_instance_id so future loads hit Path A
-        await db.query(
-          'UPDATE clients SET platform_instance_id = $1, updated_at = NOW() WHERE id = $2',
+        // Wire up platform_instance_id so future loads hit Path A. Re-checked in the
+        // UPDATE so two concurrent claims can't both win.
+        const wired = await db.query(
+          `UPDATE clients SET platform_instance_id = $1, updated_at = NOW()
+            WHERE id = $2 AND (platform_instance_id IS NULL OR platform_instance_id = '')
+            RETURNING id`,
           [instanceId, clientId]
         );
+        if (!wired.rows.length) {
+          log.warn('admin.wix_instance_wire_refused', { clientId, instanceId });
+          return res.status(403).send('Access denied: this site is already connected to a different Wix installation');
+        }
         log.info('admin.wix_instance_wired', { clientId });
         req.wixOperator = { clientId, instanceId, siteId, uid: payload.uid };
         recordWixAdminSeen(clientId, payload.uid, payload.permissions);
@@ -178,16 +199,63 @@ async function requireWixInstance(req, res, next) {
       log.warn('admin.wix_instance_no_auth_code', { instanceId });
     }
 
-    // ── Path C: no match — redirect to onboarding ─────────────────
-    log.warn('admin.wix_instance_not_found', { instanceId, siteId });
-    const params = new URLSearchParams();
-    if (instanceId) params.set('instanceId', instanceId);
-    if (siteId)     params.set('siteId', siteId);
-    return res.redirect(`/onboard?${params.toString()}`);
+    // ── Path C: first open after install — create the client ──────────
+    // The install IS the invitation: this app is installed by the AccessSync owner
+    // onto each customer's Wix site, and Wix has just signed (WIX_APP_SECRET) that
+    // this viewer is the owner of that installation. Nothing here comes from the
+    // URL — the only input is the verified instanceId. The shell client carries
+    // that instanceId and nothing else; source_site_id stays NULL because the
+    // authorizationCode site id is unsigned. The setup wizard collects and verifies
+    // it, and the shell has no Kisi key / no source key so reconciliation skips it.
+    const { clientId, created } = await findOrCreateClientForInstance(instanceId);
+    if (created) {
+      log.warn('admin.wix_instance_client_created', { clientId, instanceId });
+      try {
+        await ensureWebhookSecret(clientId);
+      } catch (err) {
+        // Not fatal here: the wizard's profile step and setup-state call it again.
+        log.error('admin.wix_instance_secret_failed', { clientId }, err);
+      }
+    }
+    req.wixOperator = { clientId, instanceId, siteId: null, uid: payload.uid, created };
+    recordWixAdminSeen(clientId, payload.uid, payload.permissions);
+    return next();
 
   } catch (err) {
     log.warn('admin.wix_instance_verify_failed', {}, err);
     res.status(401).send(`Access denied: ${err.message}`);
+  }
+}
+
+const SHELL_CLIENT_NAME = 'New Wix site';
+
+/**
+ * Find the client for a verified Wix installation, creating a bare one if this is
+ * the first open. Two tabs opening at once, or Wix retrying, race on the unique
+ * platform_instance_id index — the loser re-reads the winner's row, so one
+ * installation can never become two clients.
+ *
+ * @param {string} instanceId  verified Wix app instance id
+ * @returns {Promise<{clientId: string, created: boolean}>}
+ */
+async function findOrCreateClientForInstance(instanceId) {
+  try {
+    const ins = await db.query(
+      `INSERT INTO clients (name, platform_instance_id, status)
+       VALUES ($1, $2, 'active')
+       RETURNING id`,
+      [SHELL_CLIENT_NAME, instanceId]
+    );
+    return { clientId: ins.rows[0].id, created: true };
+  } catch (err) {
+    if (err && err.code === '23505') {
+      const existing = await db.query(
+        'SELECT id FROM clients WHERE platform_instance_id = $1 LIMIT 1',
+        [instanceId]
+      );
+      if (existing.rows.length) return { clientId: existing.rows[0].id, created: false };
+    }
+    throw err;
   }
 }
 

@@ -97,7 +97,7 @@ function makeApp() {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    req.admin = { clientId: 'test-client', userId: 'test-user' };
+    req.admin = { role: 'admin', clientId: 'test-client', userId: 'test-user' };
     next();
   });
   app.use('/operator', operatorRouter);

@@ -63,12 +63,29 @@ class WebhookProcessor {
     const isDuplicate = await this._checkIfDuplicate(eventId);
 
     // Resolve tenant up front so duplicate webhook_log rows still get clientId stamped.
+    //
+    // Tenant isolation: when the request names its client (x-accesssync-client-id),
+    // wix-connector verified the HMAC with THAT client's secret, so the client id is
+    // the authenticated identity. The site id (x-wix-site-id header / body) is not
+    // covered by the signature. It may confirm the client but never redirect the
+    // event to a different one — otherwise one gym's signing secret could inject
+    // grants/revokes (and member emails) into another gym.
     let tenantId = null;
-    if (standardEvent.wixSiteId) {
-      tenantId = await tenantResolver.resolve(standardEvent.wixSiteId);
-    }
-    if (!tenantId && standardEvent.platformClientIdHint) {
-      tenantId = await tenantResolver.resolveByClientId(standardEvent.platformClientIdHint);
+    let tenantMismatch = null;
+    const hintTenant = standardEvent.platformClientIdHint
+      ? await tenantResolver.resolveByClientId(standardEvent.platformClientIdHint)
+      : null;
+    const siteTenant = standardEvent.wixSiteId
+      ? await tenantResolver.resolve(standardEvent.wixSiteId)
+      : null;
+    if (hintTenant) {
+      if (siteTenant && siteTenant !== hintTenant) {
+        tenantMismatch = { hintTenant, siteTenant };
+      } else {
+        tenantId = hintTenant;
+      }
+    } else {
+      tenantId = siteTenant;
     }
 
     // Backfill trace_context.client_id once tenant resolves. Webhook entry-point
@@ -97,6 +114,22 @@ class WebhookProcessor {
 
     // 3. Register Event (mark processed before enqueuing — prevents re-entry on crash)
     await this._markEventProcessed(eventId, standardEvent);
+
+    if (tenantMismatch) {
+      const err = new Error('Tenant mismatch — signed client id and site id resolve to different clients');
+      err.code = 'TENANT_MISMATCH';
+      log.error('webhook.tenant_mismatch', {
+        traceId, eventId,
+        eventType: standardEvent.eventType,
+        clientIdHint: standardEvent.platformClientIdHint,
+        wixSiteId: standardEvent.wixSiteId,
+        hintClientId: tenantMismatch.hintTenant,
+        siteClientId: tenantMismatch.siteTenant,
+        stage: 'resolve', result: 'rejected',
+      }, err);
+      await this._logToAlertLog(eventId, standardEvent, 'tenant_mismatch', tenantMismatch.hintTenant);
+      return;
+    }
 
     if (!tenantId) {
       // OB-88: classify the failure so operators can self-diagnose.
@@ -188,12 +221,12 @@ class WebhookProcessor {
     );
   }
 
-  async _logToAlertLog(eventId, event, reason) {
+  async _logToAlertLog(eventId, event, reason, clientId = null) {
     try {
       // OB-88: reason is now the classification string (events_js_outdated, unknown_site_id,
       // unknown_client_id, or 'missing_required_fields' for structure failures). Used to drive
       // operator-visible banners + count pills in the Admin Hub.
-      const alertType = reason && ['events_js_outdated', 'unknown_site_id', 'unknown_client_id'].includes(reason)
+      const alertType = reason && ['events_js_outdated', 'unknown_site_id', 'unknown_client_id', 'tenant_mismatch'].includes(reason)
         ? reason
         : 'malformed_payload';
 
@@ -202,7 +235,9 @@ class WebhookProcessor {
         `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [
-          process.env.DEFAULT_TENANT_ID || null,
+          // Never default to a real tenant: an unroutable event must not show up in
+          // (or alert) some other gym's console. NULL rows surface in the owner view.
+          clientId,
           alertType,
           eventId,
           getTraceId() || null,
