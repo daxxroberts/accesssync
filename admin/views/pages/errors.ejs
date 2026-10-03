@@ -36,6 +36,12 @@
     .err-card-subtitle { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
     .err-card-msg { font-size: 12px; color: var(--text2); line-height: 1.6; margin-bottom: 5px; }
     .err-confidence { font-size: 11px; color: var(--text2); margin-bottom: 5px; line-height: 1.5; }
+    .err-owner { font-size: 12px; color: var(--text); margin: 4px 0; line-height: 1.5; }
+    .err-owner-gym strong { color: var(--red, #e5484d); }
+    .err-owner-accesssync strong { color: var(--brand, #4F6EF7); }
+    .err-owner-nobody strong { color: var(--sage, #4ADE80); }
+    .err-steps { margin: 2px 0 8px 18px; padding: 0; font-size: 12px; color: var(--text2); line-height: 1.55; }
+    .err-noretry { font-size: 11px; color: var(--text2); align-self: center; }
     .err-card-consequence  { font-size: 11px; color: var(--red, #ef4444); font-weight: 600; margin-bottom: 5px; line-height: 1.5; }
     .err-card-reason       { font-size: 11px; color: var(--muted); font-style: italic; margin-bottom: 6px; line-height: 1.5; }
     .err-card-directions   { font-size: 11px; color: var(--text2); margin-bottom: 8px; line-height: 1.7; background: var(--surface); border-left: 3px solid var(--brand); padding: 6px 10px; border-radius: 0 6px 6px 0; }
@@ -165,6 +171,8 @@
       'PLAN_NOT_MAPPED':             "This Wix plan hasn't been linked to a door group yet.",
       'SUBSCRIPTION_LAPSED':         "AccessSync isn't active for this location.",
     };
+
+    var OWNER_LABELS = { gym: 'You need to act', accesssync: 'AccessSync support needs to act', nobody: 'Nothing for you to do' };
 
     // ── HTTP status → plain label ──────────────────────────────────
     var HTTP_LABELS = {
@@ -442,8 +450,10 @@
       var titleLine      = getTitleLine(e);
       var subtitleLine   = getSubtitleLine(e);
       var statusMsg      = getStatusMsg(e);
-      var confidenceLine = isResolved ? null : getConfidenceLine(e);
-      var nextStep       = isResolved ? null : getNextStepLine(e);
+      var g              = isResolved ? null : e.guidance;   // who must act / does Retry help (core/error-guidance.js)
+      var confidenceLine = isResolved ? null : (g ? null : getConfidenceLine(e));
+      var nextStep       = isResolved ? null : (g ? null : getNextStepLine(e));
+      var retryHelps     = !g || g.retryHelps;
       var reason         = errorReason(e.error_code);
       var consequence    = errorConsequence(e.error_code);
       var jumpUrl        = errorJumpUrl(e.error_code, e.location_id);
@@ -456,6 +466,9 @@
             (subtitleLine   ? '<div class="err-card-subtitle">' + esc(subtitleLine) + '</div>'              : '') +
             (statusMsg      ? '<div class="err-card-msg">'        + esc(statusMsg)      + '</div>'          : '') +
             (confidenceLine ? '<div class="err-confidence">'      + esc(confidenceLine) + '</div>'          : '') +
+            (g ?
+              '<div class="err-owner err-owner-' + esc(g.owner) + '"><strong>' + esc(OWNER_LABELS[g.owner] || g.owner) + '</strong> \u2014 ' + esc(g.headline) + '</div>' +
+              '<ol class="err-steps">' + g.steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>' : '') +
             (consequence    ? '<div class="err-card-consequence">\u26A0 ' + esc(consequence) + '</div>'     : '') +
             (reason         ? '<div class="err-card-reason">Why: ' + esc(reason) + '</div>'                 : '') +
             (nextStep       ?
@@ -465,7 +478,9 @@
         '</div>' +
         '<div class="err-card-actions">' +
           (jumpUrl ? '<button class="btn-jump" onclick="jumpToFix(\'' + esc(jumpUrl) + '\')">Fix this \u2197</button>' : '') +
-          '<button class="btn-retry"'   + (isResolved ? ' disabled' : '') + ' onclick="retryOne(\''   + esc(e.id) + '\', this)">Retry now</button>' +
+          (retryHelps
+            ? '<button class="btn-retry"'   + (isResolved ? ' disabled' : '') + ' onclick="retryOne(\''   + esc(e.id) + '\', this)">Retry now</button>'
+            : '<span class="err-noretry" title="This will fail the same way until the cause above is fixed">Retry won\u2019t help yet</span>') +
           '<button class="btn-dismiss"' + (isResolved ? ' disabled' : '') + ' onclick="dismissOne(\'' + esc(e.id) + '\', this)">Mark resolved</button>' +
           '<button class="btn-details" onclick="openIncidentDrawer(\'' + esc(e.id) + '\')">View incident</button>' +
         '</div>' +

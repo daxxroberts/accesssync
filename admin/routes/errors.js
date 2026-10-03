@@ -16,6 +16,7 @@ const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../../core/redis-utils');
 const { mintTraceId } = require('../../core/trace-context');
 const { jobNameForEventType } = require('../../core/event-routing');
+const { guidanceFor } = require('../../core/error-guidance');
 
 const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
 
@@ -144,7 +145,7 @@ router.get('/', async (req, res) => {
     );
 
     res.json({
-      data:   result.rows,
+      data:   result.rows.map(r => ({ ...r, guidance: guidanceFor(r) })),
       total:  parseInt(countResult.rows[0].count),
       limit:  parseInt(limit),
       offset: parseInt(offset)
@@ -179,7 +180,7 @@ router.get('/:id', async (req, res) => {
       [req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
-    res.json(result.rows[0]);
+    res.json({ ...result.rows[0], guidance: guidanceFor(result.rows[0]) });
   } catch (err) {
     log.error('admin.errors_detail_error', {}, err);
     res.status(500).json({ error: 'Internal server error' });

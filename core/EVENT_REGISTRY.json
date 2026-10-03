@@ -124,6 +124,7 @@
     "wix.member.resolved":                { "persist": false },
     "wix.parse.event_type_normalized":    { "persist": false },
     "reconciliation.sweep_start":         { "persist": false },
-    "reconciliation.requeued":            { "persist": false }
+    "reconciliation.requeued":            { "persist": false },
+    "reconciliation.grant_skipped_seat_released": { "persist": false }
   }
 }

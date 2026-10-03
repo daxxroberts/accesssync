@@ -2217,6 +2217,20 @@ class NightlyReconciliation {
       for (const plan of wixData.plans) {
         if (!plan.planId) continue;
 
+        // DR-051: a holder who released their OWN seat on this plan is paying (Wix still
+        // lists them) but deliberately has no door access. Pass 1 already honours this;
+        // 3A did not, so the sweep re-queued their grant on every run, Kisi refused it,
+        // and each refusal was a failed job nobody could act on. Skip released seats.
+        // If the flag cannot be read the grant still flows (a paying buyer is never
+        // blocked by a read hiccup — Pass 1 has already logged the failed read).
+        if ((await this._holderSeatState(client.id, memberId, plan.planId)) === 'released') {
+          log.info('reconciliation.grant_skipped_seat_released', {
+            clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+            traceId: this._sweepTraceId, stage: 'cron', result: 'skipped',
+          });
+          continue;
+        }
+
         const recoEventId = `recon-${client.id}-${memberId}-${plan.planId}-${Date.now()}`;
         const traceId = this._sweepTraceId || crypto.randomUUID();
         const syntheticEvent = {
@@ -2869,6 +2883,31 @@ class NightlyReconciliation {
           [loc.client_id, String(door.id || door.name || 'unknown'), getTraceId() || null, _actor.type || null, _actor.id || null]
         ).catch(e => log.error('reconciliation.lockdown_alert_failed', { clientId: loc.client_id }, e));
       }
+    }
+  }
+
+  /**
+   * DR-051 seat state for one (holder × plan), from the newest member_billing row —
+   * the same read Pass 1 uses. Sub-members and members with no billing row have no
+   * flag row and are treated as seated (the sweep grants them as before).
+   * A failed read returns 'read_failed' WITHOUT logging: Pass 1 reads the same row
+   * first and has already warned (reconciliation.holder_seated_read_failed).
+   * @returns {Promise<'released'|'read_failed'|'seated_or_unknown'>}
+   */
+  async _holderSeatState(clientId, platformMemberId, planId) {
+    try {
+      const res = await db.query(
+        `SELECT mb.holder_seated
+         FROM member_billing mb
+         JOIN member_master mm ON mm.id = mb.member_master_id
+         WHERE mb.client_id = $1 AND mm.platform_member_id = $2 AND mb.plan_id = $3
+         ORDER BY mb.cycle_index DESC LIMIT 1`,
+        [clientId, platformMemberId, planId]
+      );
+      const rows = (res && res.rows) || [];
+      return rows.length > 0 && rows[0].holder_seated === false ? 'released' : 'seated_or_unknown';
+    } catch (_err) {
+      return 'read_failed';
     }
   }
 

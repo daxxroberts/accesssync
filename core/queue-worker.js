@@ -833,7 +833,15 @@ async function _processJobBody(job, traceId) {
     // 4xx errors (except 429) are non-retryable — bad config, not transient failures.
     // Throw UnrecoverableError so BullMQ dead-letters immediately without exhausting retries.
     if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 429) {
-      throw new UnrecoverableError(`Non-retryable hardware error (${error.statusCode}): ${error.message}`);
+      const unrecoverable = new UnrecoverableError(`Non-retryable hardware error (${error.statusCode}): ${error.message}`);
+      // Carry the original error's classification across the wrapper. Without these the
+      // dead-letter step sees an error with no code/status/userMessage: it cannot dedupe
+      // (a duplicate error_queue row per failure) and stores nothing the operator can act on.
+      unrecoverable.original = error;
+      for (const key of ['code', 'statusCode', 'userMessage', 'action', 'resolution', 'body']) {
+        if (error[key] !== undefined) unrecoverable[key] = error[key];
+      }
+      throw unrecoverable;
     }
 
     // BUG-01 fix: throw so BullMQ retries. Dead-letter via worker.on('failed') → retryEngine.
@@ -877,7 +885,11 @@ function startWorker() {
       stage: 'queue', result: 'failed',
     }, err);
 
-    if (job.attemptsMade >= job.opts.attempts) {
+    // An UnrecoverableError (4xx: bad key, bad group, rejected payload) ends the job on its
+    // FIRST attempt, so attemptsMade is below opts.attempts. Gating on attempts alone dropped
+    // every such failure: no error_queue row, no operator email, and the panels read "Clean".
+    const unrecoverable = !!err && (err instanceof UnrecoverableError || err.name === 'UnrecoverableError');
+    if (unrecoverable || job.attemptsMade >= job.opts.attempts) {
       await retryEngine.handleFailure(job, err);
     }
   });

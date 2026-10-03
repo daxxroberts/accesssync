@@ -248,9 +248,9 @@ function installWorld(world = {}) {
     }
     if (s.includes('SELECT mb.holder_seated')) {                                // DR-051 flag
       if (world.holderSeatedThrows) throw new Error('member_billing read failed');
-      return (world.holderSeatedFalseFor || []).includes(params[1])
-        ? { rows: [{ holder_seated: false }], rowCount: 1 }
-        : empty;
+      const released = (world.holderSeatedFalseFor || []).includes(params[1])
+        || (world.holderSeatedFalseForPlans || []).some(([m, p]) => m === params[1] && p === params[2]);
+      return released ? { rows: [{ holder_seated: false }], rowCount: 1 } : empty;
     }
     if (s.includes("SET status = 'cancelled'")) {                               // DR-051 self-heal
       const seat = `${params[1]}|${params[2]}`;
@@ -362,6 +362,7 @@ const grantCalls   = () => eventQueue.add.mock.calls.filter(c => c[0] === 'grant
 const grantedPairs = () => grantCalls().map(c => `${c[1].standardEvent.platformMemberId}:${c[1].standardEvent.planId}`).sort();
 const warnCall     = (name) => log.warn.mock.calls.find(c => c[0] === name);
 const warnCalls    = (name) => log.warn.mock.calls.filter(c => c[0] === name);
+const infoCalls    = (name) => log.info.mock.calls.filter(c => c[0] === name);
 const sqlCalls     = (fragment) => db.query.mock.calls.filter(c => String(c[0]).includes(fragment));
 const alertsOf     = (type) => state.alerts.filter(a => a.type === type);
 
@@ -1959,6 +1960,49 @@ describe('[P3] Fix round F12 — a seat its holder released is never resurrected
     expect(warnCalls('reconciliation.holder_seated_read_failed').map(c => c[1].platformMemberId).sort())
       .toEqual(['a', 'new-buyer']);
     expect(grantedPairs()).toEqual([`new-buyer:${PLAN_ID}`]);
+  });
+});
+
+describe('[P3] Step 3A — a seat its holder released is never re-queued as a grant (the 422 loop)', () => {
+
+  test('a PAYING holder who released their seat is not granted; a genuine new buyer in the same sweep still is', async () => {
+    installWorld({
+      members: [member('a')],
+      read1:   reads(paying(['a', 'released-holder', 'new-buyer'])),
+      holderSeatedFalseFor: ['released-holder'],
+    });
+
+    const result = await runSync();
+
+    expect(grantedPairs()).toEqual([`new-buyer:${PLAN_ID}`]);   // before: BOTH were queued, every run
+    expect(result.granted).toBe(1);
+    expect(runClose().grantsQueued).toBe(1);
+    expect(infoCalls('reconciliation.grant_skipped_seat_released')[0][1]).toEqual(expect.objectContaining({
+      clientId: CLIENT_ID, platformMemberId: 'released-holder', planId: PLAN_ID,
+    }));
+  });
+
+  test('control: without the released flag the same member IS granted', async () => {
+    installWorld({
+      members: [member('a')],
+      read1:   reads(paying(['a', 'released-holder'])),
+    });
+
+    await runSync();
+
+    expect(grantedPairs()).toEqual([`released-holder:${PLAN_ID}`]);
+  });
+
+  test('the released flag is per (member × plan): a second plan the member still holds is granted', async () => {
+    installWorld({
+      members: [member('a')],
+      read1:   reads([...paying(['a']), order('multi', PLAN_ID, 'PAYING'), order('multi', PLAN_B, 'PAYING')]),
+      holderSeatedFalseForPlans: [['multi', PLAN_ID]],
+    });
+
+    await runSync();
+
+    expect(grantedPairs()).toEqual([`multi:${PLAN_B}`]);
   });
 });
 

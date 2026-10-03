@@ -21,6 +21,20 @@ const { log } = require('./logger');
 const { getTraceId, getActor } = require('./trace-context');
 const { sendOperatorEmail } = require('./operator-mailer');
 const { renderMemberFailureAlert } = require('./operator-email-templates');
+const { guidanceFor } = require('./error-guidance');
+
+/**
+ * Next-step text stored on the error row and put in the email. The connector's own advice
+ * is kept unless it is "try retrying" for an error that retrying cannot fix (e.g. Kisi 422),
+ * or it is absent: then the shared guidance supplies who must act and what to do, so an
+ * operator never receives an error with no way of rectifying it.
+ */
+function nextStepText(error) {
+  const g = guidanceFor({ error_code: error.code, resolution: error.resolution, http_status: error.statusCode });
+  if (!error.action) return g.steps.join(' ');
+  if (error.resolution === 'RETRY' && !g.retryHelps) return g.steps.join(' ');
+  return error.action;
+}
 
 class RetryEngine {
   constructor() {
@@ -115,7 +129,7 @@ class RetryEngine {
               existing.rows[0].id,
               error.message,
               error.userMessage || null,
-              error.action      || null,
+              nextStepText(error),
               error.statusCode  || null,
               rawApiBody,
             ]
@@ -144,7 +158,7 @@ class RetryEngine {
           errorCode,
           error.userMessage || null,
           error.resolution  || null,
-          error.action      || null,
+          nextStepText(error),
           error.statusCode  || null,
           rawApiBody,
           this.maxAttempts,
@@ -191,7 +205,7 @@ class RetryEngine {
         render: renderMemberFailureAlert,
         renderArgs: {
           userMessage: error.userMessage || null,
-          actionText: error.action || null,
+          actionText: nextStepText(error),
           memberName: null,
           planName: null,
           clientId: tenantId,

@@ -31,6 +31,7 @@ const hardwareAdapter = require('../../adapters/hardware-adapter');
 const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
 const standardAdapter = require('../../adapters/standard-adapter');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
+const { guidanceFor } = require('../../core/error-guidance');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
@@ -3060,7 +3061,9 @@ router.get('/:clientId/errors', async (req, res) => {
       [clientId]
     );
     res.json({
-      errors: result.rows,
+      // guidance = who must act + whether Retry helps + the next steps (core/error-guidance.js),
+      // so no error reaches the operator without a way of rectifying it.
+      errors: result.rows.map(r => ({ ...r, guidance: guidanceFor(r) })),
       total:  countResult.rows[0].total,
     });
   } catch (err) {
