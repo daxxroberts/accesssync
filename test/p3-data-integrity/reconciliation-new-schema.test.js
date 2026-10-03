@@ -45,6 +45,7 @@ jest.mock('../../core/logger', () => ({
 }));
 
 jest.mock('../../core/trace-context', () => ({
+  setClientId: jest.fn(), getClientId: jest.fn(), withClient: jest.fn((_id, fn) => fn()),
   runWith:       jest.fn((ctx, fn) => fn()),
   mintTraceId:   jest.fn(() => 'trace-s4-recon-001'),
   getTraceId:    jest.fn(() => 'trace-s4-recon-001'),

@@ -68,6 +68,7 @@ jest.mock('../../core/revoke-policy', () => {
 
 let mockTraceSeq = 0;
 jest.mock('../../core/trace-context', () => ({
+  setClientId: jest.fn(), getClientId: jest.fn(), withClient: jest.fn((_id, fn) => fn()),
   runWith:     jest.fn((ctx, fn) => fn()),
   mintTraceId: jest.fn(() => `trace-gate-${++mockTraceSeq}`),
   getTraceId:  jest.fn(() => 'trace-gate-ctx'),

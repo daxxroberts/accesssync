@@ -30,7 +30,7 @@ const { listActiveOrders, listConfirmedBookings, listOrdersClassified } = requir
 const { extractBillingSnapshot } = require('./billing-snapshot');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { log, withTrace } = require('./logger');
-const { runWith, mintTraceId, getTraceId, getActor } = require('./trace-context');
+const { runWith, withClient, mintTraceId, getTraceId, getActor } = require('./trace-context');
 const { sendOperatorEmail } = require('./operator-mailer');
 const { renderNightlyDigest } = require('./operator-email-templates');
 const {
@@ -664,11 +664,13 @@ class NightlyReconciliation {
     const triggerSource = this._sweepTriggerSource || 'unknown';
     for (const client of clientsResult.rows) {
       try {
-        await this._syncClient(client, {
+        // One sweep trace spans every client: give each client's work its own context so its log
+        // rows (including connector errors that never receive the tenant) carry ITS client id.
+        await withClient(client.id, () => this._syncClient(client, {
           triggeredBy: 'cron',
           triggeredByActor: { type: 'system', id: `reconciliation-${triggerSource}` },
           payingCollector: payingByClient,
-        });
+        }));
       } catch (err) {
         log.error('reconciliation.client_sync_failed', { clientId: client.id }, err);
         // One client failure must not abort the full sweep
@@ -2496,7 +2498,7 @@ class NightlyReconciliation {
   async reconcileMember(memberId, clientId) {
     const traceId = crypto.randomUUID();
     return runWith(
-      { traceId, actor: { type: 'system', id: 'reconcileMember' } },
+      { traceId, actor: { type: 'system', id: 'reconcileMember' }, clientId },
       () => this._reconcileMemberBody(memberId, clientId, traceId)
     );
   }

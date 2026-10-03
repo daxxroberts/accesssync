@@ -276,7 +276,9 @@ async function processJob(job) {
   }
 
   return runWith(
-    { traceId, actor: { type: 'system', id: 'queue-worker' } },
+    // clientId: every log row written while this job runs — including from layers that never
+    // receive the tenant (the Kisi connector's HTTP error log) — is stamped with its client.
+    { traceId, actor: { type: 'system', id: 'queue-worker' }, clientId: tenantId || null },
     () => _processJobBody(job, traceId)
   );
 }

@@ -84,6 +84,7 @@ jest.mock('../../admin/middleware/auth', () => ({
 }));
 
 jest.mock('../../core/trace-context', () => ({
+  setClientId: jest.fn(), getClientId: jest.fn(), withClient: jest.fn((_id, fn) => fn()),
   getTraceId: jest.fn(() => 'trace-s5-test'),
   getActor:   jest.fn(() => ({ type: 'system', id: 'test' })),
   setTraceContext: jest.fn(),

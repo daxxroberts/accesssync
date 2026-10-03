@@ -22,7 +22,7 @@ const db = require('../db');
 const tenantResolver = require('./tenant-resolver');
 const { getRedisConnection } = require('./redis-utils');
 const { log } = require('./logger');
-const { getTraceId, getActor, setTraceContext } = require('./trace-context');
+const { getTraceId, getActor, setTraceContext, setClientId } = require('./trace-context');
 const { GRANT_EVENT_TYPES, REVOKE_EVENT_TYPES } = require('./event-routing');
 
 const connection = getRedisConnection();
@@ -91,6 +91,8 @@ class WebhookProcessor {
     // Backfill trace_context.client_id once tenant resolves. Webhook entry-point
     // didn't know the clientId at mint time. Fire-and-forget; never blocks.
     if (tenantId && traceId) setTraceContext(traceId, { clientId: tenantId });
+    // Same for the in-memory context: later log rows on this request carry the client.
+    if (tenantId) setClientId(tenantId);
 
     // Log to webhook_log BEFORE the duplicate early-return so operators can see duplicates
     // in the Webhook Inspector (DR-010 observability requirement).

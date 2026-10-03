@@ -57,6 +57,8 @@ Primary team (NOVA, ORION, FAULT/REED, LENS/FORGE) and secondary team (SCOUT/QUI
 
 **Done since:** routine lifecycle breadcrumbs downgraded warn → info (still persisted through `EVENT_REGISTRY.json`, so the trace timeline keeps them; `kisi.user.created.full_response` carries the member's email so it is info and not persisted; a real anomaly under `post_commit_verify` / `complete_grant.lookup` still logs warn).
 
-**Later:** fill `client_id` on log rows at write time.
+**Done since (2):** every `diagnostic_log` row is now stamped with its client when written. The client is carried by the trace context (queue job, webhook once the tenant resolves, admin/operator request once the scope guard passes, each client's part of the nightly sweep, manual sync, `reconcileMember`), the logger picks it up, and a row that still has none is filled from `trace_context` at INSERT time. Only a real uuid is ever bound (the column is uuid), a per-client child context (`withClient`) keeps one sweep trace from stamping the wrong client, and an explicit client passed by a call site still wins. Historical NULL rows are not backfilled; the owner panel still attributes them through `trace_context` when it reads them.
+
+**Later:** nothing outstanding from this review except customer #2 onboarding questions.
 
 **Heads-up when this deploys:** the operator email for a refused grant is sent to the client's `notification_email` (House of Gains: Daxx's address, not Chad's). The first real 4xx failure emails once per member and error code, and a nightly digest line appears while one stays open.

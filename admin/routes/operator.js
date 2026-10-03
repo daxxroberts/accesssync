@@ -35,7 +35,7 @@ const { guidanceFor } = require('../../core/error-guidance');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
-const { getTraceId, getActor, runWith, mintTraceId } = require('../../core/trace-context');
+const { getTraceId, getActor, runWith, mintTraceId, setClientId } = require('../../core/trace-context');
 const { recordActivity } = require('../middleware/activity');
 // DR-052 — member-facing branded email: templates for the live preview, mailer for
 // the test-send button, multer for the logo upload (memory storage; 1 MB cap).
@@ -78,6 +78,9 @@ router.param('clientId', function enforceOperatorClientScope(req, res, next, cli
     });
     return res.status(403).json({ error: 'Forbidden' });
   }
+  // The request is now known to be about this client (and the caller may act on it): log rows
+  // written while serving it belong to that client, owner or operator alike.
+  setClientId(clientId);
   next();
 });
 
@@ -3594,7 +3597,7 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
     const traceId = mintTraceId();
     reconciliation._sweepTraceId = traceId;
     const { granted, revoked, skippedHolderOptin, runId, aborted, reason, sanityGateTriggered } = await runWith(
-      { traceId, actor: { type: 'operator', id: String(operatorActor) } },
+      { traceId, actor: { type: 'operator', id: String(operatorActor) }, clientId },
       () => reconciliation._syncClient(
         clientResult.rows[0],
         { triggeredBy: 'manual', triggeredByActor: { type: 'operator', id: String(operatorActor) } }

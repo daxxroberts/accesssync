@@ -52,6 +52,7 @@ jest.mock('../../adapters/hardware-adapter', () => ({
   assignRole: jest.fn(), removeRole: jest.fn(),
 }));
 jest.mock('../../core/trace-context', () => ({
+  setClientId: jest.fn(), getClientId: jest.fn(), withClient: jest.fn((_id, fn) => fn()),
   getTraceId: jest.fn(() => 'trace-test'),
   getActor:   jest.fn(() => ({ type: 'system', id: 'test' })),
   setTraceContext: jest.fn(),
@@ -123,6 +124,16 @@ describe('[P3] tenant isolation — operator API is pinned to the session client
       .set('Cookie', `operatorToken=${operatorToken(GYM_B)}`);
     expect(res.status).toBe(403);
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  test('log rows written while serving /operator/:clientId are bound to that client — only after the scope guard passes', async () => {
+    const traceContext = require('../../core/trace-context');
+    traceContext.setClientId.mockClear();
+    await request(app).get(`/operator/${HOG}/members`).set('Cookie', `operatorToken=${operatorToken(GYM_B)}`);   // denied
+    expect(traceContext.setClientId).not.toHaveBeenCalled();                                                     // never stamped with the denied client
+    db.query.mockResolvedValue({ rows: [], rowCount: 0 });
+    await request(app).get(`/operator/${GYM_B}/members`).set('Cookie', `operatorToken=${operatorToken(GYM_B)}`);  // allowed
+    expect(traceContext.setClientId).toHaveBeenCalledWith(GYM_B);
   });
 
   test("gym B's operator cannot read House of Gains' members", async () => {
@@ -206,6 +217,17 @@ describe('[P3] tenant isolation — webhook routing is bound to the signing clie
     const alert = db.query.mock.calls.find(([sql]) => /INSERT INTO config_alert_log/.test(sql));
     expect(alert[1][0]).toBe(GYM_B);
     expect(alert[1][1]).toBe('tenant_mismatch');
+  });
+
+  test('once the tenant resolves, the request context is bound to it so later log rows carry the client', async () => {
+    const traceContext = require('../../core/trace-context');
+    traceContext.setClientId.mockClear();
+    await processor.processIncoming('evt-ctx', event({ platformClientIdHint: GYM_B, wixSiteId: 'site-b' }), '{}');
+    expect(traceContext.setClientId).toHaveBeenCalledWith(GYM_B);
+
+    traceContext.setClientId.mockClear();
+    await processor.processIncoming('evt-ctx2', event({ wixSiteId: 'site-unknown' }), '{}');   // unresolved tenant: nothing to bind
+    expect(traceContext.setClientId).not.toHaveBeenCalled();
   });
 
   test('client id + matching site routes to that client', async () => {
