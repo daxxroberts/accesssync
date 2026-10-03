@@ -163,7 +163,8 @@ class WixAdapter {
       const statusOk  = !orderStatus  || ALLOWED_STATUS.has(orderStatus);
       const paymentOk = PAYING_PAYMENT_STATUSES.includes(paymentStatus); // null = not yet set on free plans
       if (!statusOk || !paymentOk) {
-        log.warn('wix.parse.unpaid_order_dropped', {
+        // Routine: an order that is not (yet) paid is deliberately not granted. Info, not a warning.
+        log.info('wix.parse.unpaid_order_dropped', {
           rawEventType:    eventType,
           normalizedEvent: normalizedEventType,
           orderStatus,

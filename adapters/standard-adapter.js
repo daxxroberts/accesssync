@@ -163,8 +163,10 @@ class StandardAdapter {
 
       await dbClient.query('COMMIT');
 
-      // DIAG: warn-level so it lands in diagnostic_log (info stays stdout-only).
-      log.warn('adapter.resolve_and_lock.committed', {
+      // DIAG breadcrumb: routine lifecycle, so info level. EVENT_REGISTRY.json (persist:true)
+      // still lands it in diagnostic_log for the trace timeline; it no longer counts as a
+      // warning (it was ~60 "warnings" a day for House of Gains and kept the health card amber).
+      log.info('adapter.resolve_and_lock.committed', {
         memberId, memberMasterId, tenantId,
         platformMemberId: event.platformMemberId,
         sourcePlatform: event.sourcePlatform || 'wix',
@@ -179,7 +181,8 @@ class StandardAdapter {
           `SELECT id, member_master_id, status FROM member_access WHERE id = $1`,
           [memberId]
         );
-        log.warn('adapter.resolve_and_lock.post_commit_verify', {
+        // Info when the row is visible after COMMIT (always, normally); warn only if it is missing.
+        (verify.rowCount === 1 ? log.info : log.warn)('adapter.resolve_and_lock.post_commit_verify', {
           memberId, memberMasterId,
           verifyRowCount: verify.rowCount,
           verifyMemberMasterId: verify.rows[0]?.member_master_id || null,
@@ -449,8 +452,8 @@ class StandardAdapter {
     // lets an operator tell a first purchase from a recurring auto-renewal at a glance.
     const resolvedCycleIndex = assignments[0]?.cycleIndex || null;
 
-    // DIAG: warn-level so it lands in diagnostic_log.
-    log.warn('adapter.complete_grant.entry', {
+    // DIAG breadcrumb: routine lifecycle, info level (persisted via EVENT_REGISTRY.json).
+    log.info('adapter.complete_grant.entry', {
       memberId, tenantId,
       assignmentCount: assignments.length,
       hardwarePlatform: resolvedHardwarePlatform,
@@ -533,7 +536,8 @@ class StandardAdapter {
     );
     const memberMasterId = masterRow.rows[0]?.member_master_id;
 
-    log.warn('adapter.complete_grant.lookup', {
+    // Info when the master row is found; warn only if it is missing (a real anomaly).
+    (masterRow.rowCount === 1 ? log.info : log.warn)('adapter.complete_grant.lookup', {
       memberId, tenantId,
       lookupRowCount: masterRow.rowCount,
       lookupMemberMasterId: memberMasterId || null,

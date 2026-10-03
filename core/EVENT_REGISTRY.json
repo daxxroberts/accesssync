@@ -125,6 +125,16 @@
     "wix.parse.event_type_normalized":    { "persist": false },
     "reconciliation.sweep_start":         { "persist": false },
     "reconciliation.requeued":            { "persist": false },
-    "reconciliation.grant_skipped_seat_released": { "persist": false }
+    "reconciliation.grant_skipped_seat_released": { "persist": false },
+
+    "adapter.resolve_and_lock.committed":         { "persist": true },
+    "adapter.resolve_and_lock.post_commit_verify": { "persist": true },
+    "adapter.complete_grant.entry":               { "persist": true },
+    "adapter.complete_grant.lookup":              { "persist": true },
+    "wix.parse.unpaid_order_dropped":             { "persist": true },
+    "admin.scheduler.day_pass_sweep_start":       { "persist": true },
+    "admin.scheduler.day_pass_sweep_complete":    { "persist": true },
+    "admin.scheduler.day_pass_sweep_armed":       { "persist": true },
+    "kisi.user.created.full_response":            { "persist": false }
   }
 }
