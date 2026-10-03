@@ -142,7 +142,7 @@ describe('[P3] first open after install — the install is the invitation', () =
   });
 });
 
-describe('[P3] who can open it is unchanged', () => {
+describe('[P3] who can open it', () => {
   test('HOG\'s owner still goes straight in on their own client (Path A)', async () => {
     const res = await open(OWNER('inst-hog'));
     expect(sessionOf(res)).toMatchObject({ clientId: HOG, instanceId: 'inst-hog' });
@@ -158,12 +158,22 @@ describe('[P3] who can open it is unchanged', () => {
     expect(clients).toHaveLength(1);
   });
 
-  test('anonymous visitors and non-owners (staff) are still refused and create nothing', async () => {
+  test('anonymous visitors and tokens with no signed-in user are refused and create nothing', async () => {
     const anon = await open(signedInstance({ instanceId: 'inst-x', aid: 'anon-1' }));
-    const staff = await open(signedInstance({ instanceId: 'inst-x', uid: 'u-staff', siteOwnerId: 'u-owner' }));
+    const noUser = await open(signedInstance({ instanceId: 'inst-x', siteOwnerId: 'u-owner' }));
     expect(anon.status).toBe(401);
-    expect(staff.status).toBe(401);
+    expect(noUser.status).toBe(401);
+    expect(sessionOf(anon)).toBeNull();
     expect(clients).toHaveLength(1);
+  });
+
+  test('a co-admin / staff member with dashboard access gets in — for THEIR site\'s client only', async () => {
+    const staff = (id) => signedInstance({ instanceId: id, uid: 'u-staff', siteOwnerId: 'u-owner', permissions: 'ADMIN' });
+    const hogStaff = sessionOf(await open(staff('inst-hog')));
+    expect(hogStaff.clientId).toBe(HOG);                       // Chad's staff reach HOG, as Chad does
+    const newStaff = sessionOf(await open(staff('inst-918')));
+    expect(newStaff.clientId).not.toBe(HOG);                   // 918's staff never reach HOG
+    expect(clients).toHaveLength(2);
   });
 
   test('no instance token at all → 401, nothing created', async () => {

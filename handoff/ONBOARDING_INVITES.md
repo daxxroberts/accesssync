@@ -66,13 +66,13 @@ Every row is an automated test in `onboarding-invite-scenarios.test.js` unless n
 The app is not in the Wix marketplace; the AccessSync owner installs it on each customer's Wix site. So no link is needed for those customers:
 
 1. Customer's Wix **site owner** opens AccessSync from the Wix dashboard → `GET /operator-portal?instance=<signed>`.
-2. `requireWixInstance` verifies the signature with `WIX_APP_SECRET`, rejects anonymous viewers and non-owners.
+2. `requireWixInstance` verifies the signature with `WIX_APP_SECRET` and rejects anonymous / not-signed-in viewers. Anyone Wix lets into that site's dashboard (owner, co-admin, staff) may open it — the instance is scoped to one installation, so they can only ever reach that site's client.
 3. Path A (known `platform_instance_id`) → their dashboard. Path B (unwired client with a matching site id) → wires it. **Path C (new)**: nothing matched → `INSERT INTO clients (name='New Wix site', platform_instance_id=<verified instanceId>, status='active')`; a unique-index race re-reads the winner's row (one installation can never become two clients). A webhook secret is generated. `source_site_id` stays NULL — the authorizationCode site id is unsigned, so the wizard collects and verifies it.
 4. The portal issues the scoped `operatorToken` and sends a client with no key and no locations to `/operator-portal/setup` → wizard (placeholder name is left blank for the gym to fill in).
 
 Nothing from the URL (siteId, clientId, authorizationCode) is trusted or stored on this path. A shell client has no Kisi/Wix key, so reconciliation (`source_api_key` + `source_site_id` required) skips it; the nightly interval gate now orders by `last_sync_at DESC NULLS LAST` so a new shell can't be picked in place of HOG. Invite links (§2) remain the way to onboard a customer without a Wix install.
 
-Unchanged: only the Wix **site owner** gets in (staff/co-admins get 401, as before this branch).
+Changed on the owner's instruction: the owner-only gate was removed; any signed-in Wix dashboard user for the site gets in.
 
 ## 4. Blast radius of this change
 

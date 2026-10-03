@@ -161,7 +161,7 @@ flowchart TD
     A([Wix loads /operator-portal\n?instance=signed_token]) --> B[Decode signed instance token\nExtract: instanceId, uid, permissions\nExtract: siteId from authorizationCode]
 
     B --> C{permissions\n=== OWNER?}
-    C -- No --> REJ([Reject 401\nNot site owner])
+    C -- No --> REJ([Reject 401\nNot a signed-in Wix user])
     C -- Yes --> D{Lookup client\nWHERE wix_instance_id\n= instanceId}
 
     D -- Found --> PA[PATH A\nIssue operator JWT\n8h session cookie]

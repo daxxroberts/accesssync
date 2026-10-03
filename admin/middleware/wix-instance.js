@@ -18,9 +18,9 @@
  *
  * Payload fields used:
  *   instanceId  — Wix app installation ID (maps to clients.platform_instance_id)
- *   uid         — Wix User ID of the viewer
- *   siteOwnerId — Wix User ID of the site owner
- *   permissions — 'OWNER' for site owners
+ *   uid         — Wix User ID of the viewer (required; any dashboard user for the site)
+ *   siteOwnerId — Wix User ID of the site owner (informational)
+ *   permissions — recorded in wix_admin_seen; not used as a gate
  *   aid         — present if anonymous (reject immediately)
  *
  * authorizationCode param: Wix passes a signed JWT in ?authorizationCode= containing
@@ -41,7 +41,7 @@ const APP_SECRET = process.env.WIX_APP_SECRET;
  *
  * @param {string} instance  Raw instance string from ?instance= query param
  * @returns {object} Decoded, verified payload
- * @throws  If signature invalid, anonymous user, or not site owner
+ * @throws  If signature invalid, or the viewer is anonymous / not a signed-in Wix user
  */
 function verifySignedInstance(instance) {
   if (!APP_SECRET) {
@@ -81,12 +81,12 @@ function verifySignedInstance(instance) {
     throw new Error('Wix instance: anonymous user — access denied');
   }
 
-  // Confirm site owner
-  const isOwner = (payload.uid && payload.uid === payload.siteOwnerId) ||
-                  payload.permissions === 'OWNER';
-
-  if (!isOwner) {
-    throw new Error('Wix instance: viewer is not the site owner');
+  // Anyone Wix lets into this site's dashboard may open AccessSync for it — owner,
+  // co-admin or staff. The instance is signed and scoped to ONE installation
+  // (instanceId), so a viewer can only ever resolve to the client for the site they
+  // are already signed into. Must be a real signed-in user, though.
+  if (!payload.uid) {
+    throw new Error('Wix instance: no signed-in Wix user — access denied');
   }
 
   return payload;
