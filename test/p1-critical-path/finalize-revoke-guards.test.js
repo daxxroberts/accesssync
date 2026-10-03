@@ -272,6 +272,42 @@ describe('[P1] finalizeRevoke Guard E — another member_access row shares the K
     expect(warnEvents()).toContain('adapter.finalize_revoke.refused_shared_user');
   });
 
+  describe('same person on several plans (sub-members of one holder, same email)', () => {
+    const SELF  = { email: 'Brittany@Example.com', platform_member_id: 'holder-1###as111111' };
+    const OTHER = { id: 'access-uuid-plan2', email: 'brittany@example.com ', platform_member_id: 'holder-1###as222222' };
+
+    async function run(self, others) {
+      db.query
+        .mockResolvedValueOnce(accessRow(self))
+        .mockResolvedValueOnce({ rows: others }); // Guard E
+      return adapter.finalizeRevoke(MEMBER_ACCESS_ID, TENANT_ID, 'kisi', API_KEY, HARDWARE_USER_ID);
+    }
+
+    test('still refuses the delete, but raises NO operator alert', async () => {
+      const result = await run(SELF, [OTHER]);
+
+      expect(result).toEqual({ finalized: false, reason: 'shared_hardware_user' });
+      expectMemberUntouched();
+      expect(alertInsertCalls()).toHaveLength(0);
+      expect(warnEvents()).toContain('adapter.finalize_revoke.refused_shared_user');
+    });
+
+    test.each([
+      ['different email',   SELF, [{ ...OTHER, email: 'someone.else@example.com' }]],
+      ['different holder',  SELF, [{ ...OTHER, platform_member_id: 'holder-2###as222222' }]],
+      ['other is the holder (not a sub-member)', SELF, [{ ...OTHER, platform_member_id: 'holder-1' }]],
+      ['one of several differs', SELF, [OTHER, { ...OTHER, id: 'x', email: 'someone.else@example.com' }]],
+      ['own identity unknown', {}, [OTHER]],
+    ])('%s → still alerts', async (_name, self, others) => {
+      const result = await run(self, others);
+
+      expect(result).toEqual({ finalized: false, reason: 'shared_hardware_user' });
+      expectMemberUntouched();
+      expect(alertInsertCalls()).toHaveLength(1);
+      expect(alertInsertCalls()[0][1][1]).toBe('finalize_refused_shared_user');
+    });
+  });
+
   test('Guard E query error propagates (retryable) — before any destructive step', async () => {
     db.query
       .mockResolvedValueOnce(accessRow())

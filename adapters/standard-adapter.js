@@ -1179,6 +1179,22 @@ class StandardAdapter {
   }
 
   /**
+   * True only when `self` and every row in `others` are sub-members (DR-029
+   * `{holder}###as{suffix}` ids) of the SAME holder with the SAME non-empty email —
+   * i.e. one person on several plans. Anything missing or different → false, so an
+   * unknown identity keeps alerting.
+   */
+  _allSameSubMemberPerson(self, others) {
+    const SUB = '###as';
+    const holderOf = id => (typeof id === 'string' && id.includes(SUB) ? id.split(SUB)[0] : null);
+    const emailOf  = e  => (typeof e === 'string' && e.trim() ? e.trim().toLowerCase() : null);
+    const holder = holderOf(self && self.platform_member_id);
+    const email  = emailOf(self && self.email);
+    if (!holder || !email) return false;
+    return others.every(r => holderOf(r.platform_member_id) === holder && emailOf(r.email) === email);
+  }
+
+  /**
    * OB-248: DR-044 finalize — delete Kisi user + NULL PII + mark access 'deleted'.
    *
    * Runs after completeRevoke succeeds and the access has rolled up to 'inactive'
@@ -1228,7 +1244,8 @@ class StandardAdapter {
     // Re-check the post-completeRevoke status. If the access rolled up to 'active'
     // (other sources survived the revoke) or somehow ended elsewhere, do not finalize.
     const accessRow = await db.query(
-      `SELECT ma.status, ma.hardware_user_id, ma.member_master_id, mm.source_tag
+      `SELECT ma.status, ma.hardware_user_id, ma.member_master_id, mm.source_tag,
+              mm.email, mm.platform_member_id
        FROM member_access ma
        JOIN member_master mm ON mm.id = ma.member_master_id
        WHERE ma.id = $1 AND ma.client_id = $2`,
@@ -1241,6 +1258,7 @@ class StandardAdapter {
     }
 
     const { status, member_master_id, source_tag } = accessRow.rows[0];
+    const selfIdentity = accessRow.rows[0];
 
     if (status === 'deleted') {
       // Idempotent — earlier finalize completed
@@ -1279,25 +1297,34 @@ class StandardAdapter {
       // A DB error here propagates (same as the status SELECT above) — nothing
       // has been deleted yet, so a BullMQ retry is safe.
       const sharedResult = await db.query(
-        `SELECT id
-         FROM member_access
-         WHERE hardware_user_id = $1
-           AND id <> $2
-           AND COALESCE(status, '') NOT IN ('deleted')
+        `SELECT ma.id, mm.email, mm.platform_member_id
+         FROM member_access ma
+         LEFT JOIN member_master mm ON mm.id = ma.member_master_id
+         WHERE ma.hardware_user_id = $1
+           AND ma.id <> $2
+           AND COALESCE(ma.status, '') NOT IN ('deleted')
          LIMIT 10`,
         [String(hardwareUserId), memberId]
       );
       if (sharedResult.rows.length > 0) {
+        // Same person, several plans: each plan is its own sub-member row under the
+        // same holder with the same email, so they legitimately share one Kisi user.
+        // The refusal below still stands (deleting would cut the other plans' access);
+        // only the "check each person has their own account" alert is wrong for them.
+        const samePerson = this._allSameSubMemberPerson(selfIdentity, sharedResult.rows);
         log.warn('adapter.finalize_revoke.refused_shared_user', {
           memberId, tenantId, hardwareUserId,
           otherAccessCount: sharedResult.rows.length,
           otherAccessIds: sharedResult.rows.map(r => r.id),
+          samePerson,
         });
-        await this._alertOperatorFinalizeRefused(
-          tenantId, memberId, hardwareUserId, 'shared_hardware_user',
-          `kisi user shared with ${sharedResult.rows.length} other access row(s)`,
-          { alertType: 'finalize_refused_shared_user' }
-        );
+        if (!samePerson) {
+          await this._alertOperatorFinalizeRefused(
+            tenantId, memberId, hardwareUserId, 'shared_hardware_user',
+            `kisi user shared with ${sharedResult.rows.length} other access row(s)`,
+            { alertType: 'finalize_refused_shared_user' }
+          );
+        }
         return { finalized: false, reason: 'shared_hardware_user' };
       }
 
