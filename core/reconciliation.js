@@ -3006,9 +3006,15 @@ class NightlyReconciliation {
     // instead of printing a client_id.
     const configAlertsResult = await db.query(
       `SELECT cal.client_id, cal.alert_type, cal.hardware_ref, cal.created_at,
-              c.name AS client_name
+              c.name AS client_name,
+              mm.first_name AS member_first_name, mm.last_name AS member_last_name
        FROM config_alert_log cal
        LEFT JOIN clients c ON c.id = cal.client_id
+       -- finalize_refused_* alerts carry "member_id=<member_access.id>" in hardware_ref;
+       -- resolving it lets the digest name the person instead of "a member".
+       LEFT JOIN member_access ma
+         ON ma.id::text = substring(cal.hardware_ref FROM 'member_id=([0-9a-fA-F-]{36})')
+       LEFT JOIN member_master mm ON mm.id = ma.member_master_id
        WHERE cal.resolved_at IS NULL
        ORDER BY cal.client_id, cal.created_at DESC`
     );
@@ -3054,6 +3060,7 @@ class NightlyReconciliation {
           alert_type: a.alert_type,
           locationName: a.client_name || null,
           doorName: a.hardware_ref || null,
+          memberName: [a.member_first_name, a.member_last_name].filter(Boolean).join(' ') || null,
         })),
         failedJobs: digest.failedJobs.map(j => ({
           event_type: j.event_type,
