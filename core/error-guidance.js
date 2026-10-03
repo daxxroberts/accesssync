@@ -52,13 +52,20 @@ const BY_CODE = {
     steps: ['Open Plan Mapping and choose a door group that still exists for this plan.', 'Then press Retry on the affected members.'],
   },
   HARDWARE_VALIDATION_ERROR: {
-    // The connector says "Try retrying" — wrong: Kisi rejected the SAME data and will again.
-    owner: OWNER.ACCESSSYNC, retryHelps: false,
-    headline: 'Kisi refused to create or update this person. Retrying sends the same data and fails the same way.',
+    // The connector says "Try retrying" — wrong on its own: Kisi rejected the SAME data and will
+    // again. The usual cause is the person's profile (no email/name), which the gym CAN fix; Retry
+    // only helps after that. If it keeps failing it is not a profile problem: AccessSync's.
+    owner: OWNER.GYM, retryHelps: false, escalateAfter: 3,
+    headline: 'Kisi refused to create or update this person. Retrying as-is sends the same data and fails the same way.',
     steps: [
-      'Check this person has an email and name on their Wix profile; ask them to add one if not, then press Retry.',
-      'If they do, nothing more is needed from you: AccessSync support can see this on their own panel and will look into it.',
+      'Check this person has an email and a name on their Wix profile (Kisi needs both). If not, ask them to add them.',
+      'Then press Retry.',
+      'If they already have both, tell AccessSync support: it needs looking at on our side.',
     ],
+    escalated: {
+      headline: 'Kisi has refused this person several times in a row, so it is not something retrying or a profile change will fix.',
+      steps: ['Nothing for you to fix. AccessSync support can see this on their own panel and will look into it.'],
+    },
   },
   HARDWARE_API_ERROR: {
     owner: OWNER.NOBODY, retryHelps: true,
@@ -126,6 +133,15 @@ function guidanceFor(row = {}) {
     g = { ...FALLBACK, headline: `The door system refused a request (HTTP ${status}).` };
   }
   const out = COPY(g || FALLBACK);
+
+  // A fix the gym is asked to make that has not worked after several attempts is no longer the
+  // gym's problem: hand it to AccessSync support rather than leave the gym guessing.
+  if (g && g.escalateAfter && count >= g.escalateAfter && g.escalated) {
+    out.owner = OWNER.ACCESSSYNC;
+    out.retryHelps = false;
+    out.headline = g.escalated.headline;
+    out.steps = g.escalated.steps.slice();
+  }
 
   // A "temporary" error that keeps coming back is no longer temporary — someone must look.
   const repeating = count >= 5;

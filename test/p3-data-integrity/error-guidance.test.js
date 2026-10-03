@@ -32,11 +32,21 @@ describe('[P3] error guidance — no dead ends', () => {
     expect(guidanceFor().owner).toBe(OWNER.ACCESSSYNC);
   });
 
-  test('the 422 loop: retrying is NOT advised (it sends the same data and fails the same way)', () => {
-    const g = guidanceFor({ error_code: 'HARDWARE_VALIDATION_ERROR', http_status: 422 });
-    expect(g.retryHelps).toBe(false);
+  test('a Kisi 422: the gym checks the profile first, THEN retries; retrying as-is is not advised', () => {
+    const g = guidanceFor({ error_code: 'HARDWARE_VALIDATION_ERROR', http_status: 422, occurred_count: 1 });
+    expect(g.owner).toBe(OWNER.GYM);
+    expect(g.retryHelps).toBe(false);                    // as-is it sends the same data and fails the same way
+    expect(g.steps[0]).toMatch(/email and a name/);
+    expect(g.steps[1]).toBe('Then press Retry.');
+    expect(g.steps.join(' ')).toMatch(/tell AccessSync support/);
+  });
+
+  test('a 422 that keeps failing is no longer the gym\'s problem: escalated to AccessSync, no "press Retry"', () => {
+    const g = guidanceFor({ error_code: 'HARDWARE_VALIDATION_ERROR', http_status: 422, occurred_count: 3 });
     expect(g.owner).toBe(OWNER.ACCESSSYNC);
-    expect(g.steps.join(' ')).toMatch(/email and name/);
+    expect(g.retryHelps).toBe(false);
+    expect(g.steps.join(' ')).not.toMatch(/press Retry/);
+    expect(g.steps.join(' ')).toMatch(/AccessSync support can see this/);
   });
 
   test('config errors are the gym\'s to fix and say where', () => {

@@ -88,6 +88,19 @@ beforeEach(() => {
 // ── GET /admin/clients ─────────────────────────────────────────────────────
 
 describe('[P2] GET /admin/clients — list shape for admin-panel.ejs', () => {
+  test('member_count uses the main dashboard\'s definition: former and deleted members are not counted', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+    const router = require('../../admin/routes/clients');
+    await findRouteHandler(router, 'get', '/')({ query: { status: 'active' } }, mockRes());
+
+    const sql = db.query.mock.calls[0][0];
+    const memberCount = sql.match(/COUNT\(DISTINCT CASE WHEN ma\.status IN \(([^)]*)\)[^\n]*AS member_count/);
+    expect(memberCount).not.toBeNull();
+    // the non-terminal states only — 'inactive' (former) and 'deleted' (soft-deleted sub-members) are out
+    expect(memberCount[1].replace(/\s/g, '')).toBe("'active','in_flight','pending_identity','recovery_pending'");
+    expect(sql).not.toMatch(/COUNT\(DISTINCT mm\.id\)::int\s+AS member_count/);   // the old lifetime count
+  });
+
   test('returns { data: [...] } with id, name, status, member_count, active_count', async () => {
     db.query.mockResolvedValueOnce({
       rows: [{

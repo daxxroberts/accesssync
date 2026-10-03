@@ -236,7 +236,7 @@
       'HARDWARE_VALIDATION_ERROR': {
         jumpUrl:     null,
         reason:      'Kisi rejected the request due to unexpected data — this can happen if a member record is in an unusual state or a group assignment conflicts with an existing rule.',
-        consequence: 'This member\'s access change did not complete. A retry will attempt the same operation again.',
+        consequence: 'This member\'s access change did not complete. Until it is fixed they will not get door access.',
       },
       'HARDWARE_API_ERROR': {
         jumpUrl:     null,
@@ -453,7 +453,11 @@
       var g              = isResolved ? null : e.guidance;   // who must act / does Retry help (core/error-guidance.js)
       var confidenceLine = isResolved ? null : (g ? null : getConfidenceLine(e));
       var nextStep       = isResolved ? null : (g ? null : getNextStepLine(e));
+      // Retry is shown when it can help now, or when the gym's fix comes first and Retry is the final step.
+      // Hidden only when the cause is AccessSync's to fix: pressing it would just fail the same way.
       var retryHelps     = !g || g.retryHelps;
+      var showRetry      = !g || g.retryHelps || g.owner === 'gym';
+      var retryLabel     = (g && !g.retryHelps) ? 'Retry after fixing' : 'Retry now';
       var reason         = errorReason(e.error_code);
       var consequence    = errorConsequence(e.error_code);
       var jumpUrl        = errorJumpUrl(e.error_code, e.location_id);
@@ -478,8 +482,8 @@
         '</div>' +
         '<div class="err-card-actions">' +
           (jumpUrl ? '<button class="btn-jump" onclick="jumpToFix(\'' + esc(jumpUrl) + '\')">Fix this \u2197</button>' : '') +
-          (retryHelps
-            ? '<button class="btn-retry"'   + (isResolved ? ' disabled' : '') + ' onclick="retryOne(\''   + esc(e.id) + '\', this)">Retry now</button>'
+          (showRetry
+            ? '<button class="btn-retry" data-label="' + esc(retryLabel) + '"'   + (isResolved ? ' disabled' : '') + ' onclick="retryOne(\''   + esc(e.id) + '\', this)">' + retryLabel + '</button>'
             : '<span class="err-noretry" title="This will fail the same way until the cause above is fixed">Retry won\u2019t help yet</span>') +
           '<button class="btn-dismiss"' + (isResolved ? ' disabled' : '') + ' onclick="dismissOne(\'' + esc(e.id) + '\', this)">Mark resolved</button>' +
           '<button class="btn-details" onclick="openIncidentDrawer(\'' + esc(e.id) + '\')">View incident</button>' +
@@ -595,12 +599,12 @@
           if (!res.ok) {
             // Nothing was queued; the error stays open. Show why.
             showToast('error', esc(res.body.error || ('Retry failed (HTTP ' + res.status + ')')));
-            btn.disabled = false; btn.textContent = 'Retry now';
+            btn.disabled = false; btn.textContent = (btn.dataset && btn.dataset.label) || 'Retry now';
             return;
           }
           showToast('success', 'Requeued — AccessSync will retry provisioning'); loadErrors(); loadSummary();
         })
-        .catch(function() { showToast('error', 'Retry failed'); btn.disabled = false; btn.textContent = 'Retry now'; });
+        .catch(function() { showToast('error', 'Retry failed'); btn.disabled = false; btn.textContent = (btn.dataset && btn.dataset.label) || 'Retry now'; });
     }
 
     function dismissOne(id, btn) {
