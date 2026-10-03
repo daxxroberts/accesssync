@@ -22,7 +22,7 @@
 
 const { Client } = require('pg');
 
-const RAILWAY = 'postgresql://postgres:uSfbDjUYlneLoTXwCEEmVuGlBtFVrgFW@gondola.proxy.rlwy.net:27298/railway';
+const RAILWAY = process.env.RAILWAY_DATABASE_URL;
 const PASSWORD = process.env.SUPABASE_DB_PASSWORD;
 if (!PASSWORD) { console.error('SUPABASE_DB_PASSWORD missing'); process.exit(1); }
 const SUPABASE = `postgresql://postgres:${encodeURIComponent(PASSWORD)}@db.gklgwyrnkedebyulrclv.supabase.co:5432/postgres`;

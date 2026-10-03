@@ -39,7 +39,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
 
-const RAILWAY_URL = 'postgresql://postgres:uSfbDjUYlneLoTXwCEEmVuGlBtFVrgFW@gondola.proxy.rlwy.net:27298/railway';
+const RAILWAY_URL = process.env.RAILWAY_DATABASE_URL;
 const OUT_FILE = path.resolve(__dirname, '..', 'migrations', 'supabase-bootstrap.sql');
 
 const client = new Client({

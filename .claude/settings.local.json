@@ -24,7 +24,6 @@
       "Bash(DATABASE_URL=postgresql://test:test@localhost/test timeout 8 node -e \"require\\(''./admin/routes/errors''\\); console.log\\(''errors loaded''\\);\")",
       "Bash(echo \"exit: $?\")",
       "mcp__Claude_Preview__preview_start",
-      "Bash(DATABASE_URL=\"postgresql://postgres:uSfbDjUYlneLoTXwCEEmVuGlBtFVrgFW@gondola.proxy.rlwy.net:27298/railway\" node seed.js)",
       "Bash(curl -s \"https://accesssync-admin.up.railway.app/operator/a0000001-0000-0000-0000-000000000001\")",
       "Bash(node -e \"const d=require\\(''''fs''''\\).readFileSync\\(''''/dev/stdin'''',''''utf8''''\\); const j=JSON.parse\\(d\\); console.log\\(''''Client:'''', j.client.name\\); console.log\\(''''Tier:'''', j.client.tier\\); console.log\\(''''Site:'''', j.client.site_url\\); console.log\\(''''Errors:'''', j.stats.error_count\\); console.log\\(''''Active members:'''', j.stats.active_members\\); console.log\\(''''Total members:'''', j.stats.total_members\\); console.log\\(''''Locations:'''', j.stats.location_count\\);\")",
       "Bash(curl -s \"https://accesssync-admin.up.railway.app/operator/a0000001-0000-0000-0000-000000000001/locations\")",
