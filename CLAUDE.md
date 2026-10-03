@@ -62,7 +62,7 @@ AccessSync is a SaaS product that automates physical space access control for fi
 | Core Engine | `https://accesssync-production.up.railway.app` |
 | Admin Hub | `https://accesssync-admin.up.railway.app` |
 | Postgres (LIVE — Supabase) | `postgresql://postgres.gklgwyrnkedebyulrclv:<password>@aws-1-us-west-1.pooler.supabase.com:5432/postgres` (session-mode pooler — port 5432, NOT 6543) |
-| Postgres (DEPRECATED — Railway, paused-but-alive through Phase 7) | `postgresql://postgres:uSfbDjUYlneLoTXwCEEmVuGlBtFVrgFW@gondola.proxy.rlwy.net:27298/railway` |
+| Postgres (DEPRECATED — Railway, paused-but-alive through Phase 7) | `postgresql://postgres:<password>@gondola.proxy.rlwy.net:27298/railway` (password: see `reference_railway_db.md` memory file or ask Daxx) |
 
 **Live DB project (Supabase):** `gklgwyrnkedebyulrclv` (us-west-1 California, Free tier). RLS disabled per OB-181 (gated on client #2). For ad-hoc SQL, **prefer Supabase MCP tools** (`mcp__claude_ai_Supabase__execute_sql`, `apply_migration`, `list_tables`) — no password handling. For Node-side queries:
 ```js
