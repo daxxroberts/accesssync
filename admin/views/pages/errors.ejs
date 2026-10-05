@@ -474,7 +474,7 @@
                          : g.owner === 'nobody' ? 'No action needed'
                          : 'AccessSync is on it';
       // The gym cannot dismiss what only AccessSync can fix (the server refuses it too); the owner can dismiss anything.
-      var canDismiss     = !g || _isOwnerView || g.owner !== 'accesssync';
+      var canDismiss     = !g || _isOwnerView || g.owner !== 'accesssync' || !!g.gymMayDismiss;
       // When guidance owns the card, the older static lines (connector message, "Why", "consequence") are only shown for
       // the gym's own fixes: for the others they contradicted it ("AccessSync will retry automatically" under "this keeps happening").
       var staticOk       = !g || g.owner === 'gym';

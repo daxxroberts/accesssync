@@ -2015,6 +2015,33 @@ describe('[P3] Step 3A — a seat its holder released is never re-queued as a gr
     }
   });
 
+  test('two PAYING orders on one plan: released only if BOTH are released (an older released order must not hide a live one)', async () => {
+    const twoOrders = (memberId) => [
+      { ...order(memberId), orderId: `ord-${memberId}-A-released` },
+      { ...order(memberId), orderId: `ord-${memberId}-B-live` },
+    ];
+    // A released, B live (listed in either order) → granted
+    for (const flip of [false, true]) {
+      installWorld({
+        members: [member('a')],
+        read1:   reads([...(flip ? twoOrders('two').reverse() : twoOrders('two'))]),
+        holderSeatedFalseForOrders: [['two', 'ord-two-A-released']],
+      });
+      eventQueue.add.mockClear();
+      await runSync();
+      expect(grantedPairs()).toEqual([`two:${PLAN_ID}`]);
+    }
+    eventQueue.add.mockClear();
+    // both released → skipped
+    installWorld({
+      members: [member('a')],
+      read1:   reads(twoOrders('two')),
+      holderSeatedFalseForOrders: [['two', 'ord-two-A-released'], ['two', 'ord-two-B-live']],
+    });
+    await runSync();
+    expect(grantedPairs()).toEqual([]);
+  });
+
   test('...and a holder who released THIS order is still skipped', async () => {
     installWorld({
       members: [member('a')],

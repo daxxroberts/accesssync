@@ -374,7 +374,7 @@
     if (state.errorId && state.clientId) {
       var ownerViewing = (document.body.getAttribute('data-session-role') || '') === 'owner';
       var retryMode = g ? g.retry : 'now';
-      var canDismiss = !g || ownerViewing || g.owner !== 'accesssync';
+      var canDismiss = !g || ownerViewing || g.owner !== 'accesssync' || !!g.gymMayDismiss;
       if (retryMode !== 'none') {
         actionsHtml += '<button class="mid-btn primary" id="mid-retry" type="button">↻ ' + (retryMode === 'after_fix' ? 'Retry after fixing' : (plain ? 'Retry now' : 'Retry job')) + '</button>';
       }

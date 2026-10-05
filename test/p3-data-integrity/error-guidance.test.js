@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const { guidanceFor, OWNER, RETRY } = require('../../core/error-guidance');
+const { guidanceFor, dismissRefusal, OWNER, RETRY } = require('../../core/error-guidance');
 
 const KNOWN = [
   'IN_FLIGHT_LOCK', 'HARDWARE_KEY_INVALID', 'HARDWARE_KEY_PERMISSIONS', 'HARDWARE_KEY_MISSING',
@@ -145,5 +145,50 @@ describe('[P3] error guidance — no dead ends', () => {
     g.steps.push('x'); g.owner = 'nobody';
     expect(guidanceFor({ error_code: 'PLAN_NOT_MAPPED' }).steps).not.toContain('x');
     expect(guidanceFor({ error_code: 'PLAN_NOT_MAPPED' }).owner).toBe(OWNER.GYM);
+  });
+});
+
+describe('review follow-ups', () => {
+  test('"door account gone" can be closed by the gym (the advice says so, so the server must allow it)', () => {
+    for (const row of [
+      { error_code: 'HARDWARE_USER_GONE' },
+      { error_code: 'HARDWARE_RESOURCE_NOT_FOUND', http_status: 404, event_type: 'plan.cancelled' },
+      { error_code: 'HARDWARE_RESOURCE_NOT_FOUND', http_status: 404, event_type: 'payment.failed' },
+    ]) {
+      const g = guidanceFor(row);
+      expect(g.owner).toBe('accesssync');
+      expect(g.steps.join(' ')).toMatch(/mark this resolved/);
+      expect(g.gymMayDismiss).toBe(true);
+      expect(dismissRefusal(row, 'operator')).toBeNull();
+    }
+  });
+
+  test('other AccessSync-owned errors still cannot be closed by the gym', () => {
+    expect(guidanceFor({ error_code: 'HARDWARE_VALIDATION_ERROR' }).gymMayDismiss).toBe(false);
+    expect(dismissRefusal({ error_code: 'HARDWARE_VALIDATION_ERROR' }, 'operator')).not.toBeNull();
+  });
+
+  test('source_retry_exhausted rows (not a queue job) are AccessSync\'s and offer no Retry', () => {
+    const row = { error_code: 'SOURCE_RETRY_EXHAUSTED', event_type: 'source_retry_exhausted' };
+    const g = guidanceFor(row);
+    expect(g).toMatchObject({ owner: 'accesssync', retry: 'none', retryHelps: false });
+    expect(g.steps.join(' ')).not.toMatch(/press Retry/i);
+  });
+
+  test('an unknown error on an event type that cannot be replayed never offers Retry', () => {
+    const g = guidanceFor({ error_code: null, event_type: 'some.other_event' });
+    expect(g.retry).toBe('none');
+    expect(g.steps.join(' ')).not.toMatch(/press Retry/i);
+    expect(g.steps.length).toBeGreaterThan(0);
+  });
+
+  test('a self-clearing error open for 24h+ is AccessSync\'s on EVERY screen, not just the panel', () => {
+    const old = new Date(Date.now() - 30 * 3_600_000).toISOString();
+    const fresh = new Date(Date.now() - 2 * 3_600_000).toISOString();
+    const row = { error_code: 'HARDWARE_API_ERROR', http_status: 503 };
+    expect(guidanceFor({ ...row, created_at: fresh }).owner).toBe('nobody');
+    const g = guidanceFor({ ...row, created_at: old });
+    expect(g.owner).toBe('accesssync');
+    expect(g.steps.join(' ')).toMatch(/AccessSync support/);
   });
 });

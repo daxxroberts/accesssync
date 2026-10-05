@@ -67,15 +67,14 @@ class RetryEngine {
       log.info('retry.notify.suppressed_repeat', { tenantId, errorCode: error.code || null, eventType });
       return;
     }
-    // One cause, many members (a revoked key, a deleted door group, an outage): one email, not one per member.
-    if (await this._alertedRecentlyForCause(tenantId, error, dl.id)) {
-      log.info('retry.notify.suppressed_same_cause', { tenantId, errorCode: error.code || null, eventType });
-      return;
-    }
-
     const guide = guidanceFor({
       error_code: error.code, resolution: error.resolution, http_status: error.statusCode, event_type: eventType,
     });
+    // One cause, many members (a revoked key, a deleted door group, an outage): one email, not one per member.
+    if (await this._alertedRecentlyForCause(tenantId, error, dl.id, guide)) {
+      log.info('retry.notify.suppressed_same_cause', { tenantId, errorCode: error.code || null, eventType });
+      return;
+    }
     await this._notifyOperator(tenantId, error, platformMemberId, eventType, guide);
     // The gym's email says "AccessSync support will look into it" — so AccessSync's owner must be told too,
     // not left to find it on the panel.
@@ -217,23 +216,30 @@ class RetryEngine {
   }
 
   /**
-   * Has another open error with the SAME cause for this client been created in the last hour? Then the operator
-   * was just told about this cause (a rotated key or a deleted door group hits every member at once) and a second
-   * email per member would only be noise. Never throws; on any doubt it answers "no" so an alert is not lost.
+   * Was this cause already alerted in the last hour? A rotated key or a deleted door group hits every member at once
+   * and one email per member would only be noise. Only rows created BEFORE this one count (by created_at, then id):
+   * workers run 20 at a time, so two members failing together both exist when each checks — if each counted the
+   * other, both would stay silent. With the ordering the first row of a burst always alerts.
+   * "Same cause" also means the same person must act: a 404 on a grant is the gym's (re-map the door group) but on a
+   * removal it is AccessSync's, so one must not hide the other. Never throws; on any doubt it answers "no" so an
+   * alert is not lost.
    */
-  async _alertedRecentlyForCause(tenantId, error, newRowId) {
+  async _alertedRecentlyForCause(tenantId, error, newRowId, guide = null) {
     if (!tenantId || !newRowId) return false;
     try {
       const byCode = !!error.code;
       const r = await db.query(
-        `SELECT 1 FROM error_queue
+        `SELECT event_type, error_code, resolution, http_status FROM error_queue
           WHERE client_id = $1 AND id <> $2
             AND ${byCode ? 'error_code' : 'error_reason'} = $3
             AND created_at > NOW() - INTERVAL '1 hour'
-          LIMIT 1`,
+            AND (created_at, id) < (SELECT created_at, id FROM error_queue WHERE id = $2)
+          LIMIT 20`,
         [tenantId, newRowId, byCode ? error.code : (error.message || '')]
       );
-      return !!(r && r.rows && r.rows.length);
+      const rows = (r && r.rows) || [];
+      if (!guide) return rows.length > 0;
+      return rows.some((row) => guidanceFor(row).owner === guide.owner);
     } catch (_err) {
       return false;
     }

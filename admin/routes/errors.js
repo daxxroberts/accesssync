@@ -218,7 +218,7 @@ router.post('/:id/dismiss', async (req, res) => {
 router.post('/:id/retry', async (req, res) => {
   try {
     const errorRow = await db.query(
-      'SELECT client_id, event_type, payload, error_code, resolution, http_status, occurred_count FROM error_queue WHERE id = $1',
+      'SELECT client_id, event_type, payload, error_code, resolution, http_status, occurred_count, created_at FROM error_queue WHERE id = $1',
       [req.params.id]
     );
     if (!errorRow.rows.length) return res.status(404).json({ error: 'Not found' });
@@ -268,7 +268,7 @@ router.post('/bulk-retry', async (req, res) => {
     for (const id of ids) {
       try {
         const errorRow = await db.query(
-          'SELECT client_id, event_type, payload, error_code, resolution, http_status, occurred_count FROM error_queue WHERE id = $1',
+          'SELECT client_id, event_type, payload, error_code, resolution, http_status, occurred_count, created_at FROM error_queue WHERE id = $1',
           [id]
         );
         if (!errorRow.rows.length) { results.failed++; continue; }

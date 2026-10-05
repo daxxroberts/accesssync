@@ -63,20 +63,15 @@ function mockSystem({
   diagWarns = [],
   slow = 0,
   setup,                       // default: every listed client fully set up
+  fail = [],                   // 1-based query numbers (see the list above) that reject
 } = {}) {
   const setupRows = setup || clients.map(c => ({ client_id: c.id, has_hardware_key: true, has_wix_key: true, location_count: 1, has_members: true }));
-  db.query
-    .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
-    .mockResolvedValueOnce({ rows: clients })
-    .mockResolvedValueOnce({ rows: reconcile })
-    .mockResolvedValueOnce({ rows: [{ latest_reconcile_at: latestReconcile }] })
-    .mockResolvedValueOnce({ rows: webhookLast })
-    .mockResolvedValueOnce({ rows: webhook24h })
-    .mockResolvedValueOnce({ rows: openErrors })
-    .mockResolvedValueOnce({ rows: diagErrors })
-    .mockResolvedValueOnce({ rows: diagWarns })
-    .mockResolvedValueOnce({ rows: [{ slow_query_24h: slow }] })
-    .mockResolvedValueOnce({ rows: setupRows });
+  const results = [
+    { rows: [{ '?column?': 1 }] }, { rows: clients }, { rows: reconcile }, { rows: [{ latest_reconcile_at: latestReconcile }] },
+    { rows: webhookLast }, { rows: webhook24h }, { rows: openErrors }, { rows: diagErrors }, { rows: diagWarns },
+    { rows: [{ slow_query_24h: slow }] }, { rows: setupRows },
+  ];
+  results.forEach((r, i) => (fail.includes(i + 1) ? db.query.mockRejectedValueOnce(new Error('query ' + (i + 1) + ' failed')) : db.query.mockResolvedValueOnce(r)));
 }
 
 const openErr = (over = {}) => ({
@@ -106,7 +101,7 @@ describe('[P2] OB-195 — GET /admin/system-health endpoint', () => {
     expect(res.body).toHaveProperty('aggregate');
     expect(res.body).toHaveProperty('clients');
     expect(res.body).toHaveProperty('db_health');
-    expect(res.body.platform).toEqual({ error_count_24h: 0 });
+    expect(res.body.platform).toEqual({ error_count_24h: 0, unassigned_open_errors: 0 });
     expect(Array.isArray(res.body.clients)).toBe(true);
     expect(['green', 'amber', 'red']).toContain(res.body.aggregate.worst_state);
     expect(['green', 'amber', 'red']).toContain(res.body.db_health.state);
@@ -383,6 +378,42 @@ describe('[P2] OB-195 — GET /admin/system-health endpoint', () => {
       const res = await get();
       expect(res.body.clients[0].setup).toBeNull();
       expect(res.body.clients[0].worst_state).toBe('red');
+    });
+  });
+
+  describe('a failed query is never good news (review follow-ups)', () => {
+    test('setup query failed on an established client: amber with setup_check_failed, never green', async () => {
+      mockSystem({ fail: [11] });
+      const c = (await get()).body.clients[0];
+      expect(c.setup_check_failed).toBe(true);
+      expect(c.worst_state).toBe('amber');
+    });
+
+    test('only ONE of the two webhook queries failed: the card says the check failed, not "Active"/"Silent"', async () => {
+      mockSystem({ fail: [6] });
+      const w = (await get()).body.clients[0].checks.webhook_ingestion;
+      expect(w.state).toBe('red');
+      expect(w._error).toBeTruthy();
+      db.query.mockReset();
+      mockSystem({ fail: [5] });
+      const w2 = (await get()).body.clients[0].checks.webhook_ingestion;
+      expect(w2.state).toBe('red');
+      expect(w2._error).toBeTruthy();
+    });
+
+    test('the aggregate reconcile query failing is flagged (the page must not print "0 clients need action")', async () => {
+      mockSystem({ fail: [4] });
+      const res = await get();
+      expect(res.body.aggregate._error).toBeTruthy();
+      expect(res.body.aggregate.worst_state).toBe('red');
+    });
+
+    test('open errors tied to no client are counted and turn the page amber', async () => {
+      mockSystem({ openErrors: [openErr({ client_id: null })] });
+      const res = await get();
+      expect(res.body.platform.unassigned_open_errors).toBe(1);
+      expect(res.body.aggregate.worst_state).toBe('amber');
+      expect(res.body.clients[0].worst_state).toBe('green');
     });
   });
 

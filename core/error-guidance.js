@@ -31,11 +31,15 @@ const { jobNameForEventType } = require('./event-routing');
 const OWNER = Object.freeze({ GYM: 'gym', ACCESSSYNC: 'accesssync', NOBODY: 'nobody' });
 const RETRY = Object.freeze({ NOW: 'now', AFTER_FIX: 'after_fix', NONE: 'none' });
 
+// "Clears by itself" only holds for a while: nothing auto-resolves an error row, so past this age it is AccessSync's.
+const SELF_CLEARING_MAX_H = 24;
 const SUPPORT_LINE = 'Nothing for you to fix. AccessSync support can see this on their own panel and will look into it.';
 const NETWORK_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EPIPE', 'UND_ERR_CONNECT_TIMEOUT']);
 
-const accessSyncOwned = (headline, steps = [SUPPORT_LINE]) =>
-  ({ owner: OWNER.ACCESSSYNC, retry: RETRY.NONE, headline, steps });
+const accessSyncOwned = (headline, steps = [SUPPORT_LINE], extra = {}) =>
+  ({ owner: OWNER.ACCESSSYNC, retry: RETRY.NONE, headline, steps, ...extra });
+// "Their door account is gone": only the gym knows whether it was deleted on purpose, so the gym may close the row.
+const GONE_STEPS = [SUPPORT_LINE, 'If you removed them in Kisi on purpose, you can mark this resolved.'];
 const gymFix = (headline, steps) => ({ owner: OWNER.GYM, retry: RETRY.AFTER_FIX, headline, steps });
 
 /** code → guidance. `resolution` (set by the connector) is the fallback key. */
@@ -71,7 +75,10 @@ const BY_CODE = {
     'Kisi reported a conflict assigning this member to a door group and AccessSync could not resolve it.'),
   HARDWARE_USER_GONE: accessSyncOwned(
     'This member\'s door account no longer exists in Kisi (it may have been deleted there).',
-    [SUPPORT_LINE, 'If you removed them in Kisi on purpose, you can mark this resolved.']),
+    GONE_STEPS, { gymMayDismiss: true }),
+  // Written by core/source-retry-probe.js when its automatic retries ran out; not a queue job, so Retry cannot replay it.
+  SOURCE_RETRY_EXHAUSTED: accessSyncOwned(
+    'AccessSync tried several times to finish this door assignment and could not. Pressing Retry would not change that.'),
   INVALID_HARDWARE_REQUEST: accessSyncOwned(
     'AccessSync could not build a valid request for the door system for this member (a required detail is missing).'),
   WIX_KEY_INVALID: gymFix(
@@ -113,14 +120,16 @@ const unknownError = () => ({
   steps: ['You can press Retry once. If it fails again, leave it with AccessSync support: they can see this on their own panel and will look into it.'],
 });
 
-const COPY = (g) => ({ owner: g.owner, retry: g.retry, headline: g.headline, steps: g.steps.slice() });
+const COPY = (g) => ({
+  owner: g.owner, retry: g.retry, headline: g.headline, steps: g.steps.slice(), gymMayDismiss: !!g.gymMayDismiss,
+});
 
 /**
  * @param {{ error_code?: string|null, errorCode?: string|null, code?: string|null, resolution?: string|null,
  *           http_status?: number|null, statusCode?: number|null, occurred_count?: number|null,
  *           event_type?: string|null, eventType?: string|null }} row
  *        an error_queue row (snake_case) or a thrown error (camelCase)
- * @returns {{ owner: 'gym'|'accesssync'|'nobody', retry: 'now'|'after_fix'|'none', retryHelps: boolean,
+ * @returns {{ owner: 'gym'|'accesssync'|'nobody', retry: 'now'|'after_fix'|'none', retryHelps: boolean, gymMayDismiss: boolean,
  *             headline: string, steps: string[], repeating: boolean, removal: boolean }}
  */
 function guidanceFor(row) {
@@ -160,7 +169,7 @@ function guidanceFor(row) {
   if (code === 'HARDWARE_RESOURCE_NOT_FOUND' && (removal || (eventType && eventType.startsWith('payment.')))) {
     g = accessSyncOwned(
       'AccessSync could not find this member\'s door account in Kisi (it may have been deleted there).',
-      [SUPPORT_LINE, 'If you removed them in Kisi on purpose, you can mark this resolved.']);
+      GONE_STEPS, { gymMayDismiss: true });
   }
 
   const out = COPY(g || unknownError());
@@ -170,6 +179,24 @@ function guidanceFor(row) {
     if (out.retry !== RETRY.NONE) out.retry = RETRY.NONE;
     out.steps = out.steps.filter((s) => !/press Retry/i.test(s));
     if (out.owner === OWNER.GYM) out.steps.push('AccessSync support will complete this removal once that is fixed.');
+  }
+
+  // Retry only replays a grant or a revoke job. A row whose event type is neither (e.g. source_retry_exhausted) is
+  // refused by the retry route, so never offer it.
+  if (eventType && !jobNameForEventType(eventType) && out.retry === RETRY.NOW) {
+    out.retry = RETRY.NONE;
+    out.steps = out.steps.filter((s) => !/press Retry/i.test(s));
+    if (!out.steps.length) out.steps = [SUPPORT_LINE];
+  }
+
+  // An error that was meant to clear by itself but has sat open for a day is no longer waiting on anything: the owner
+  // panel counts it as AccessSync's, so every screen must say the same (else the panel is red and the page says
+  // "nobody needs to act").
+  const ageH = row.created_at ? (Date.now() - new Date(row.created_at).getTime()) / 3_600_000 : null;
+  if (out.owner === OWNER.NOBODY && ageH != null && ageH >= SELF_CLEARING_MAX_H) {
+    out.owner = OWNER.ACCESSSYNC;
+    out.headline = 'This was expected to clear by itself but has been open for over a day.';
+    out.steps = [SUPPORT_LINE];
   }
 
   // A "temporary" or "unknown" error that keeps coming back is no longer a one-off — someone must look.
@@ -221,11 +248,11 @@ function retryRefusal(row) {
 function dismissRefusal(row, role) {
   if (role === 'admin') return null;
   const g = guidanceFor(row);
-  if (g.owner !== OWNER.ACCESSSYNC) return null;
+  if (g.owner !== OWNER.ACCESSSYNC || g.gymMayDismiss) return null;
   return {
     reason: 'owned_by_accesssync',
     error: 'AccessSync support is looking into this one, so it can\'t be marked resolved from here. It clears once AccessSync has dealt with it.',
   };
 }
 
-module.exports = { guidanceFor, retryRefusal, dismissRefusal, OWNER, RETRY };
+module.exports = { SELF_CLEARING_MAX_H, guidanceFor, retryRefusal, dismissRefusal, OWNER, RETRY };

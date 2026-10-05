@@ -33,9 +33,6 @@ const ALERT_COOLDOWN_KEY = 'hmac:alert_sent';
 const ALERT_COOLDOWN_TTL = 600; // 10 min — prevents alert storm if attack is sustained
 
 async function recordFailure(clientHint = 'unknown') {
-  // Log every individual HMAC failure for per-client trend analysis.
-  // clientHint is the resolved client_id UUID when available, else 'unknown'.
-  const clientId = clientHint !== 'unknown' ? clientHint : null;
   // clientHint is the UNVERIFIED x-accesssync-client-id header of a request whose signature just FAILED: anyone can send
   // any uuid. It must never be stored as the client of a log row (diagnostic_log.client_id), or a forged webhook could
   // put warnings on another gym's log. It is kept as free text (`clientHint`) for whoever investigates.

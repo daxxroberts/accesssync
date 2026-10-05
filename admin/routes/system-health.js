@@ -40,7 +40,7 @@
 const router = require('express').Router();
 const db     = require('../../db');
 const { log } = require('../../core/logger');
-const { guidanceFor, OWNER } = require('../../core/error-guidance');
+const { guidanceFor, OWNER, SELF_CLEARING_MAX_H } = require('../../core/error-guidance');
 
 // State priority for "worst-state" rollup. Higher = worse. 'idle' / 'setup' are neutral
 // (not yet started) and never contribute.
@@ -54,8 +54,6 @@ const SETUP_STALLED_H = 48;
 // A fully set-up new client is given time before silence is a fault.
 const FIRST_WEBHOOK_GRACE_H = 72;
 const FIRST_RECONCILE_GRACE_H = 24;
-// A "clears by itself" error older than this is not clearing: it needs AccessSync to look.
-const SELF_CLEARING_MAX_H = 24;
 // Errors in 24h before diagnostics turns amber (baseline for one gym is ~2/day).
 const DIAG_ERRORS_AMBER = 5;
 
@@ -255,8 +253,8 @@ router.get('/', async (req, res) => {
 
     // webhook_ingestion — red if >48h silence or never; amber 24-48h; green otherwise
     let webhook_ingestion;
-    if (!webhookLastR.ok && !webhook24hR.ok) {
-      webhook_ingestion = { state: 'red', last_received_at: null, count_24h: null, _error: webhookLastR.error || webhook24hR.error };
+    if (!webhookLastR.ok || !webhook24hR.ok) {
+      webhook_ingestion = { state: 'red', last_received_at: null, count_24h: null, _error: webhookLastR.error || webhook24hR.error || 'query failed' };
     } else {
       const last_received_at = webhookLastMap.get(c.id) || null;
       const count_24h = webhook24hMap.get(c.id) || 0;
@@ -277,13 +275,8 @@ router.get('/', async (req, res) => {
       error_queue = { state: 'red', open_count: null, _error: errorQueueR.error };
     } else {
       const open = openErrorsByClient.get(c.id) || [];
-      // "Clears by itself" only holds for a while: nothing auto-resolves an error row, so after SELF_CLEARING_MAX_H it is
-      // AccessSync's to look at instead of sitting amber forever.
-      const owners = open.map(r => {
-        const o = guidanceFor(r).owner;
-        const ageH = ageHours(r.created_at);
-        return (o === OWNER.NOBODY && ageH != null && ageH >= SELF_CLEARING_MAX_H) ? OWNER.ACCESSSYNC : o;
-      });
+      // guidanceFor already moves a self-clearing error that has sat open past SELF_CLEARING_MAX_H to AccessSync.
+      const owners = open.map(r => guidanceFor(r).owner);
       const needs_gym = owners.filter(o => o === OWNER.GYM).length;
       const needs_accesssync = owners.filter(o => o === OWNER.ACCESSSYNC).length;
       const self_clearing = owners.filter(o => o === OWNER.NOBODY).length;
@@ -331,6 +324,8 @@ router.get('/', async (req, res) => {
         reconcile_freshness.state, webhook_ingestion.state,
         error_queue.state, diagnostic_log.state,
         configGap ? 'red' : 'green',
+        // Could not read the setup state, so "nothing is missing" is unknown, not good news.
+        setupR.ok ? 'green' : 'amber',
       ]);
     }
 
@@ -341,6 +336,7 @@ router.get('/', async (req, res) => {
       status: c.status,
       setup,
       config_gap: configGap,
+      setup_check_failed: !setupR.ok,
       checks,
     };
   });
@@ -348,6 +344,9 @@ router.get('/', async (req, res) => {
   // Platform-level: errors that belong to no client even after trace attribution.
   const platform_errors_24h = rowsOf(diagErrorsR).filter(r => r.client_id == null)
     .reduce((n, r) => n + r.error_count_24h, 0);
+
+  // Open errors that belong to no client: no card shows them, so count them here.
+  const unassigned_open_errors = errorQueueR.ok ? (openErrorsByClient.get(null) || openErrorsByClient.get(undefined) || []).length : 0;
 
   // ── Aggregate ─────────────────────────────────────────────────────
   let aggregate;
@@ -361,6 +360,7 @@ router.get('/', async (req, res) => {
       worst_state: worstState([
         ...clients.map(c => c.worst_state),
         db_health.state,
+        unassigned_open_errors > 0 ? 'amber' : 'green',
       ]),
       clients_needing_attention: clients.filter(c => c.worst_state === 'red' || c.worst_state === 'amber').length,
       clients_setting_up: clients.filter(c => c.worst_state === 'setup').length,
@@ -371,7 +371,7 @@ router.get('/', async (req, res) => {
     generated_at,
     aggregate,
     clients,
-    platform: { error_count_24h: platform_errors_24h },
+    platform: { error_count_24h: platform_errors_24h, unassigned_open_errors },
     db_health,
   });
 });

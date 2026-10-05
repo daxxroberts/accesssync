@@ -243,9 +243,14 @@ function buildWixPayingView(reads) {
     }
     if (planId && !plans.has(planId)) {
       plans.add(planId);
-      // orderId: the Wix order this PAYING plan comes from — the seat-release flag (DR-051) belongs to ONE order, so a
-      // re-purchase (a new order) must not inherit the flag of an earlier, released one.
-      entry.plans.push({ planId, sourceType, rawOrder: rawOrder || null, orderId: orderId || null });
+      // orderIds: the Wix order(s) this PAYING plan comes from — the seat-release flag (DR-051) belongs to ONE order, so a
+      // re-purchase (a new order) must not inherit the flag of an earlier, released one. A plan can have TWO paying
+      // orders at once (released + cancelled-but-paid-to-term, then re-bought), so every one is kept: the seat counts as
+      // released only if all of them are.
+      entry.plans.push({ planId, sourceType, rawOrder: rawOrder || null, orderIds: orderId ? [orderId] : [] });
+    } else if (planId && orderId) {
+      const existing = entry.plans.find(p => p.planId === planId);
+      if (existing && !existing.orderIds.includes(orderId)) existing.orderIds.push(orderId);
     }
     if (!entry.email && email) entry.email = email;
     if (!entry.name && name)   entry.name  = name;
@@ -1246,8 +1251,7 @@ class NightlyReconciliation {
         // no promotion, no billing backfill, no seat INSERT.
         let holderReleasedSeat;
         try {
-          const seatFlagRows = await this._readSeatFlagRows(client.id, memberId, plan.planId, plan.orderId);
-          holderReleasedSeat = seatFlagRows.length > 0 && seatFlagRows[0].holder_seated === false;
+          holderReleasedSeat = await this._planSeatReleased(client.id, memberId, plan.planId, plan.orderIds);
         } catch (err) {
           log.warn('reconciliation.holder_seated_read_failed', {
             clientId: client.id, platformMemberId: memberId, planId: plan.planId,
@@ -2219,7 +2223,7 @@ class NightlyReconciliation {
         // and each refusal was a failed job nobody could act on. Skip released seats.
         // If the flag cannot be read the grant still flows (a paying buyer is never
         // blocked by a read hiccup — Pass 1 has already logged the failed read).
-        if ((await this._holderSeatState(client.id, memberId, plan.planId, plan.orderId)) === 'released') {
+        if ((await this._holderSeatState(client.id, memberId, plan.planId, plan.orderIds)) === 'released') {
           log.info('reconciliation.grant_skipped_seat_released', {
             clientId: client.id, platformMemberId: memberId, planId: plan.planId,
             traceId: this._sweepTraceId, stage: 'cron', result: 'skipped',
@@ -2890,13 +2894,31 @@ class NightlyReconciliation {
    * first and has already warned (reconciliation.holder_seated_read_failed).
    * @returns {Promise<'released'|'read_failed'|'seated_or_unknown'>}
    */
-  async _holderSeatState(clientId, platformMemberId, planId, orderId = null) {
+  async _holderSeatState(clientId, platformMemberId, planId, orderIds = []) {
     try {
-      const rows = await this._readSeatFlagRows(clientId, platformMemberId, planId, orderId);
-      return rows.length > 0 && rows[0].holder_seated === false ? 'released' : 'seated_or_unknown';
+      return (await this._planSeatReleased(clientId, platformMemberId, planId, orderIds)) ? 'released' : 'seated_or_unknown';
     } catch (_err) {
       return 'read_failed';
     }
+  }
+
+  /**
+   * Is the holder's seat on this plan released? With known paying order(s): only when EVERY one of them has a newest
+   * billing row saying holder_seated=false. One seated order — or one with no row yet (its webhook was lost) — means the
+   * member paid for a live seat and must not be skipped just because another, older order on the same plan was released.
+   * With no order id (bookings): the plan-wide newest row. Throws on a database error.
+   */
+  async _planSeatReleased(clientId, platformMemberId, planId, orderIds = []) {
+    const ids = Array.isArray(orderIds) ? orderIds.filter(Boolean) : (orderIds ? [orderIds] : []);
+    if (ids.length === 0) {
+      const rows = await this._readSeatFlagRows(clientId, platformMemberId, planId, null);
+      return rows.length > 0 && rows[0].holder_seated === false;
+    }
+    for (const id of ids) {
+      const rows = await this._readSeatFlagRows(clientId, platformMemberId, planId, id);
+      if (!(rows.length > 0 && rows[0].holder_seated === false)) return false;
+    }
+    return true;
   }
 
   /**

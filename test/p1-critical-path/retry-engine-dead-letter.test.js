@@ -47,7 +47,7 @@ beforeEach(() => {
     if (/FROM member_master/.test(sql)) return { rows: world.memberRow };
     if (/FROM plan_mappings/.test(sql)) return { rows: [] };
     if (/SELECT id FROM error_queue/.test(sql)) return { rows: world.existing };
-    if (/SELECT 1 FROM error_queue/.test(sql)) return { rows: world.sameCause };
+    if (/\(created_at, id\) </.test(sql)) return { rows: world.sameCause };
     if (/INSERT INTO error_queue/.test(sql)) { if (world.insertThrows) throw new Error('db down'); return { rows: [{ id: 'row-new' }] }; }
     if (/UPDATE error_queue/.test(sql)) return { rows: [] };
     if (/SELECT notification_email FROM clients/.test(sql)) return { rows: [{ notification_email: world.clientRow.notification_email }] };
@@ -153,15 +153,26 @@ describe('[P1] a repeat of the same problem never re-emails', () => {
 
 describe('[P1] one cause across many members is ONE email', () => {
   test('a second member failing for the same cause within the hour gets its row but no email', async () => {
-    world.sameCause = [{ '?column?': 1 }];       // another member's row, same client + code, <1h old
+    world.sameCause = [{ event_type: 'plan.purchased', error_code: 'HARDWARE_KEY_INVALID', resolution: 'ROTATE_API_KEY', http_status: 401 }];   // another member's row, same client + code, <1h old
     await engine.handleFailure(job({ platformMemberId: 'wix-m-2' }), kisiError({ code: 'HARDWARE_KEY_INVALID', statusCode: 401, resolution: 'ROTATE_API_KEY' }));
     expect(sqls('INSERT INTO error_queue')).toHaveLength(1);       // the page still lists every affected member
     expect(emails()).toHaveLength(0);
-    const [throttleSql, params] = sqls('SELECT 1 FROM error_queue')[0];
+    const [throttleSql, params] = sqls('(created_at, id) <')[0];
     expect(String(throttleSql)).toMatch(/client_id = \$1 AND id <> \$2/);
+    // Only OLDER rows count, so two members failing at the same instant cannot suppress each other (both silent).
+    expect(String(throttleSql)).toMatch(/\(created_at, id\) < \(SELECT created_at, id FROM error_queue WHERE id = \$2\)/);
     expect(String(throttleSql)).toMatch(/error_code = \$3/);
     expect(String(throttleSql)).toMatch(/INTERVAL '1 hour'/);
     expect(params).toEqual([CLIENT, 'row-new', 'HARDWARE_KEY_INVALID']);
+  });
+
+  test('the same code on a removal is AccessSync\'s, not the gym\'s: an older gym-owned row does not hide it', async () => {
+    process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL = 'daxx@accesssync.example';
+    // older row: a GRANT hit 404 (gym must re-map the door group)
+    world.sameCause = [{ event_type: 'plan.purchased', error_code: 'HARDWARE_RESOURCE_NOT_FOUND', resolution: 'REMAP_PLAN', http_status: 404 }];
+    await engine.handleFailure(job({ eventType: 'plan.cancelled' }),
+      kisiError({ code: 'HARDWARE_RESOURCE_NOT_FOUND', statusCode: 404, resolution: 'REMAP_PLAN' }));
+    expect(emails().map(e => e.toEmail)).toContain('daxx@accesssync.example');   // AccessSync's copy still goes out
   });
 
   test('a different cause for the same client is still emailed', async () => {
@@ -172,7 +183,7 @@ describe('[P1] one cause across many members is ONE email', () => {
 
   test('if the throttle lookup itself fails, the alert is sent (an alert is never lost to a bookkeeping error)', async () => {
     db.query.mockImplementation(async (sql) => {
-      if (/SELECT 1 FROM error_queue/.test(sql)) throw new Error('boom');
+      if (/\(created_at, id\) </.test(sql)) throw new Error('boom');
       if (/INSERT INTO error_queue/.test(sql)) return { rows: [{ id: 'row-new' }] };
       if (/SELECT notification_email FROM clients/.test(sql)) return { rows: [{ notification_email: 'chad@gym.example' }] };
       return { rows: [] };

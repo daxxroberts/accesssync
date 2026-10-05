@@ -167,6 +167,7 @@
     }
     .client-card-badge.status-active   { background: var(--sage-dim, #d1fae5); color: #065f46; }
     .client-card-badge.status-archived { background: #f1f5f9; color: #64748b; }
+    .client-card-badge.status-inactive { background: #fef3c7; color: #92400e; }
     .client-card-meta { font-size: 12px; color: var(--muted, #64748b); line-height: 1.5; }
     .client-card-meta span + span::before { content: ' · '; }
     .client-card-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
@@ -508,8 +509,11 @@
       var setupN = (data.aggregate && data.aggregate.clients_setting_up) || 0;
       var setupNote = setupN ? ' · ' + setupN + ' setting up' : '';
       var dbStateNow = (data.db_health && data.db_health.state) || 'green';
+      var unassignedN = (data.platform && data.platform.unassigned_open_errors) || 0;
       var aggText;
-      if (aggState === 'green') aggText = 'Nothing needs your attention' + setupNote;
+      if (data.aggregate && data.aggregate._error) aggText = 'Health check partly failed: some results below are missing' + setupNote;
+      else if (aggState === 'green') aggText = 'Nothing needs your attention' + setupNote;
+      else if (needN === 0 && dbStateNow === 'green' && unassignedN) aggText = unassignedN + (unassignedN === 1 ? ' open error is' : ' open errors are') + ' not tied to any client' + setupNote;
       else if (needN === 0 && dbStateNow !== 'green') aggText = (dbStateNow === 'red' ? 'The database is not responding' : 'The database is slow') + setupNote;   // the colour comes from the database, not a client
       else if (aggState === 'amber') aggText = (needN === 1 ? '1 client needs a look' : needN + ' clients need a look') + setupNote;
       else aggText = (needN === 1 ? '1 client needs action' : needN + ' clients need action') + setupNote;
@@ -517,9 +521,11 @@
       // Subtitle
       var subtitle = document.getElementById('systemHealthSubtitle');
       var ageH = data.aggregate ? data.aggregate.latest_reconcile_age_hours : null;
-      subtitle.textContent = ageH != null
-        ? 'Latest reconcile ' + ageH + 'h ago across all clients'
-        : 'No reconcile runs on record';
+      subtitle.textContent = (data.aggregate && data.aggregate._error)
+        ? 'Reconcile status unavailable'
+        : (ageH != null
+          ? 'Latest reconcile ' + ageH + 'h ago across all clients'
+          : 'No reconcile runs on record');
       // Per-client cards
       var grid = document.getElementById('systemHealthGrid');
       grid.innerHTML = clients.length
@@ -538,6 +544,12 @@
         '<span class="health-db-label">Supabase DB \u00b7 ' + dbWord + '</span>' +
         '<span class="health-db-detail">Probe ' + dbProbe + ' \u00b7 ' + dbSlow + ' slow queries / 24h</span>' +
         '</div>' +
+        ((data.platform && data.platform.unassigned_open_errors)
+          ? '<div class="health-db-row health-state-amber" style="margin-top:6px;">' +
+              '<span class="health-db-label">Open errors not tied to a client</span>' +
+              '<span class="health-db-detail">' + data.platform.unassigned_open_errors + '</span>' +
+            '</div>'
+          : '') +
         (platformErrs
           ? '<div class="health-db-row health-state-amber" style="margin-top:6px;">' +
               '<span class="health-db-label">Not tied to a client</span>' +
@@ -571,6 +583,7 @@
         var gap = (c.config_gap && c.config_gap.length)
           ? '<div class="health-gap">Setup is incomplete: ' + escapeHtml(c.config_gap.join(', ')) + ' missing. This client was working, so this needs fixing.</div>'
           : '';
+        if (c.setup_check_failed) gap += '<div class="health-gap">Check failed: could not read this client\'s setup, so a missing key or location would not show here.</div>';
         body = gap + '<div class="health-checks">' +
           renderCheck('Reconcile', checks.reconcile_freshness, formatReconcile) +
           renderCheck('Webhooks', checks.webhook_ingestion, formatWebhook) +
@@ -702,8 +715,9 @@
     }
 
     function renderClientCard(c) {
-      var statusKey = (c.status === 'archived') ? 'archived' : 'active';
-      var statusLabel = statusKey.toUpperCase();
+      // Suspended / cancelled clients are not active: say so (the health card already does).
+      var statusKey = (c.status === 'archived') ? 'archived' : (!c.status || c.status === 'active') ? 'active' : 'inactive';
+      var statusLabel = statusKey === 'inactive' ? String(c.status).toUpperCase() : statusKey.toUpperCase();
       var created  = c.created_at  ? new Date(c.created_at).toLocaleDateString()  : '—';
       var lastSync = c.last_sync_at ? formatRelativeTime(c.last_sync_at)            : '—';
       var members  = (c.member_count != null) ? c.member_count : 0;

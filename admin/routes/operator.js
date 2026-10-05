@@ -2137,7 +2137,7 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
     }
     // A retry that can only fail the same way is refused: nothing queued, row left open (it used to be
     // re-queued and marked resolved, so it disappeared from the owner's panel while the member was still locked out).
-    const wontHelp = retryRefusal(error);
+    const wontHelp = jobName ? retryRefusal(error) : null;   // an unroutable type gets its own, more specific refusal below
     if (wontHelp) {
       log.warn('admin.retry.wont_help', { clientId, errorId, eventType: error.event_type, route: 'operator.errors.retry', reason: wontHelp.reason });
       return res.status(422).json({ error: wontHelp.error, reason: wontHelp.reason });

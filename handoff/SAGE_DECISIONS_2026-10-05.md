@@ -32,6 +32,20 @@ Branch: `claude/error-visibility-actions`. Review that produced this list: see t
 | D18 | `errors.ejs` accepts only a uuid `clientId` from the address bar; the "who needs to act" label says "The gym needs to act" when the AccessSync owner is viewing. | Existing XSS via an unescaped single quote (NOVA); the owner is not "you, the gym" (LENS). |
 | D19 | The incident drawer, the errors page and the operator email all take Retry / Mark resolved / "Action needed" from the guidance. Operator-side Retry and dismiss are guarded on the server (nothing queued / 409), not only hidden in the UI. | LENS: three screens contradicted each other; UI-only hiding can be bypassed. |
 
+### Re-review of the fix round (three read-only reviewers on `11dd61c`) — all confirmed findings fixed
+
+| # | Finding | Fix |
+|---|---|---|
+| D20 | **A burst of same-cause failures could send zero emails**: with 20 workers, two members failing together each saw the other's fresh row and both stayed silent. | The throttle counts only rows created BEFORE this one (`(created_at, id) <`). The first row of a burst always alerts. Test fails on the old code. |
+| D21 | The throttle ignored who must act: an older gym-owned 404 on a grant hid the AccessSync-owned 404 on a removal (so the owner copy never fired). | Throttle matches only older rows whose guidance owner is the same. |
+| D22 | "If you removed them in Kisi on purpose, you can mark this resolved" was advice the server refused (409) and the UI hid. | `gymMayDismiss` on those two guidance cases; `dismissRefusal`, the page and the drawer honour it. |
+| D23 | `source_retry_exhausted` rows offered "Retry once" but the route refuses them (unroutable). | Explicit `SOURCE_RETRY_EXHAUSTED` guidance (AccessSync-owned, no Retry); any event type that is not a grant/revoke never offers Retry. The operator route now reports the more specific `unroutable_event_type` first. |
+| D24 | The panel promoted a self-clearing error older than 24h to "AccessSync's" but the errors page / drawer still said "nobody needs to act". | The age rule moved into `guidanceFor` (uses `created_at`); the panel and every screen read the same answer. |
+| D25 | Panel truthfulness: a failed setup query could show green; one of two failed webhook queries showed "Active"/"Silent"; a failed aggregate query printed "0 clients need action"; open errors with no client were on no card; a suspended client's list badge said ACTIVE. | Setup failure = amber + "Check failed" line; either webhook query failing = red "Check failed"; aggregate failure says "Health check partly failed" / "Reconcile status unavailable"; unassigned open errors are counted (amber) and shown; the badge shows the real status. Tests added. |
+| D26 | Two PAYING orders on one plan (an old released order + a re-buy): the seat-release skip read only the first order and could lock out the live one. | Every PAYING order is read; the seat counts as released only if ALL are. Test fails on the old code. |
+
+Also: removed an unused `clientId` const in `core/hmac-monitor.js`.
+
 ### Process note
 SAGE did **not** merge or deploy, wrote nothing to production, and made no change to House of Gains data. Tests: the new
 retry-engine test (`test/p1-critical-path/retry-engine-dead-letter.test.js`) fails on the old engine (10 of 19), as do the
@@ -64,4 +78,6 @@ retry-engine test (`test/p1-critical-path/retry-engine-dead-letter.test.js`) fai
 | L9 | `DB_SLOW_QUERY` sits at the amber threshold (10 in 24h); at ~350k log rows/year the 24h diagnostic query will want an index on `(level, created_at)`. | watch | Pre-existing. |
 | L10 | The reconcile cadence is 12h only because a 6h timer lands a few seconds short of the 6h gate. | watch | Make the gate tolerant (e.g. interval − 1 min) or run the timer at 12h on purpose. |
 | L11 | Docs to update when this ships (KEEPER): repo + vault `CLAUDE.md` (error-guidance, log client stamping, 4xx dead-letter, panel verdict rules), `docs/feature-map.html` (client health), `docs/operations.html` (reconcile cadence), `docs/OPERATOR_FAQ.md`, `docs/endpoints.html` (`guidance` field), vault `open_items.md` (OB items for L4, L7, L10). | docs | Not edited here: CLAUDE.md says KEEPER syncs both copies at session close. |
+| L13 | If a re-buy's own webhook was lost, the synthetic reconcile event carries no order id, so the grant path (`standardAdapter._resolveHolderSeated`) reads the seat flag plan-wide and may still refuse it while an older order on the plan is released. Reconcile now skips correctly; the adapter read should take the order id. | low | Delayed access only when a webhook was lost AND an older order was released. |
+| L14 | `source_retry_exhausted` rows are written by `core/source-retry-probe.js` outside `handleFailure`, so no email goes to the gym or the AccessSync owner; the panel shows them red but nobody is pushed. | should | Call the owner alert from the probe. |
 | L12 | Dark mode: the client-card "ACTIVE" badge and some muted text on the Errors page are still low contrast (pre-existing `--muted`). | nit | Fix the token in `operator-styles.css`. |
