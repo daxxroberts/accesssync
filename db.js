@@ -44,7 +44,10 @@ const pool = new Pool({
   // Supabase's session-mode pooler allows only ~15 clients IN TOTAL across every process (Core Engine, Admin Hub and the
   // cron jobs each open their own pool). DB_POOL_MAX lets a service be sized down without a code change.
   max: Number.parseInt(process.env.DB_POOL_MAX, 10) > 0 ? Number.parseInt(process.env.DB_POOL_MAX, 10) : 10,
-  idleTimeoutMillis: 30000,   // Close idle connections after 30s
+  // Hand an idle connection back after 5s (was 30s). In Supabase session mode every open connection holds one of
+  // the pooler's ~15 slots even while it does nothing; on 2026-10-05 ten slots sat reserved by idle connections at a
+  // quiet moment, so a small burst filled the rest. Reconnecting costs a few ms; a full pooler fails the query.
+  idleTimeoutMillis: 5000,
   connectionTimeoutMillis: 5000, // Fail fast if no connection available within 5s
 });
 
