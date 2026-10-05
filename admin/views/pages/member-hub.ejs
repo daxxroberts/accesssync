@@ -536,75 +536,61 @@ body {
   flex-shrink: 0; color: var(--green);
 }
 
-/* "Get the app" branded card — uses BOTH of the gym's DR-052 email-branding
-   colors, same two-role split as the email itself (renderLayout: primary =
-   prominent band, secondary = link/CTA color): primary tints the card via a
-   solid left accent (avoids deriving an alpha-blended fill from an
-   arbitrary hex — no color-mix()/rgba-conversion risk on older mobile
-   browsers), secondary drives the download links. Both fall back to
-   --brand/--brand-dark when the gym hasn't set branding. Connector
-   icon/name/links via CONNECTOR_REGISTRY, keyed by hardwarePlatform. */
+/* "Get the app" — overlay section and Tab 3 share the same pieces. Kept
+   plain on purpose (Builder 2026-10-02: wordy, redundant, no side color
+   bars): download buttons, then three short numbered steps. Buttons fill
+   with --gym-btn — a gym color white text reads on, never a pale accent
+   like HOG's yellow (same rule as the emails' _linkOnWhite). */
 .get-app-card {
-  margin-top: 20px; display: flex; flex-direction: column; gap: 10px;
-  padding: 14px 14px 14px 13px; border-radius: 12px; text-align: left;
-  background: var(--brand-dim);
-  box-shadow: inset 0 0 0 1px var(--brand-glow);
-  border-left: 3px solid var(--gym-primary, var(--brand));
+  margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 14px; text-align: left;
 }
 .get-app-card.hidden { display: none !important; }
-.get-app-main { display: flex; align-items: center; gap: 12px; }
-.get-app-icon { width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; }
-.get-app-text { flex: 1; min-width: 0; }
-.get-app-label { font-size: 13px; font-weight: 700; color: var(--text); }
-.get-app-sub { font-size: 11px; color: var(--text2); margin-top: 1px; }
-.get-app-links { display: flex; gap: 10px; flex-shrink: 0; }
+.get-app-main { display: flex; align-items: center; gap: 10px; }
+.get-app-icon { width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; }
+.get-app-label { font-size: 15px; font-weight: 700; color: var(--text); }
+.get-app-links { display: flex; gap: 8px; }
 .get-app-link {
-  color: var(--gym-secondary, var(--brand)); font-weight: 700; font-size: 12px; text-decoration: none;
+  flex: 1; text-align: center; padding: 11px 8px; border-radius: 9px;
+  background: var(--gym-btn, var(--brand)); color: #ffffff;
+  font-weight: 700; font-size: 13px; text-decoration: none;
 }
 .get-app-link.hidden { display: none !important; }
-.get-app-requirements {
-  font-size: 11px; color: var(--text2); line-height: 1.6;
-  padding-top: 10px; border-top: 1px solid var(--brand-glow);
-}
-.get-app-requirements.hidden { display: none !important; }
-.get-app-requirements strong { color: var(--text); }
-.ov-continue { margin-top: 20px; }
+.ov-continue { margin-top: 24px; }
 
 /* ═══════════════════════════════════════════════════════
    TAB 3 — GET THE APP
-   Same two-role gym-color split as .get-app-card above: primary = left
-   accent, secondary = the download buttons. ═══════════════════════ */
-.app-tab-card { border-left: 3px solid var(--gym-primary, var(--brand)); }
-.app-tab-header { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-.app-tab-icon { width: 52px; height: 52px; border-radius: 12px; flex-shrink: 0; }
+   ═══════════════════════════════════════════════════════ */
+.app-tab-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.app-tab-icon { width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0; }
 .app-tab-title { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: -.2px; }
-.app-tab-sub { font-size: 12px; color: var(--text2); margin-top: 2px; line-height: 1.4; }
-.app-tab-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.app-tab-links { display: flex; gap: 8px; }
 /* Two-class selectors so these win over .btn-primary / .btn-primary:hover,
    which are declared later in this sheet and would otherwise take the
    source-order tiebreak back to the AccessSync indigo. */
-.app-tab-links .app-tab-link { background: var(--gym-secondary, var(--brand)); text-decoration: none; }
-.app-tab-links .app-tab-link:hover { background: var(--gym-secondary, var(--brand-dark)); filter: brightness(.92); }
+.app-tab-links .app-tab-link { flex: 1; height: 42px; justify-content: center; background: var(--gym-btn, var(--brand)); color: #ffffff; text-decoration: none; box-shadow: none; }
+.app-tab-links .app-tab-link:hover { background: var(--gym-btn, var(--brand-dark)); filter: brightness(.92); }
 .app-tab-nolinks { font-size: 12.5px; color: var(--text2); }
-.app-tab-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
-.app-tab-section-title { font-size: 11.5px; font-weight: 600; color: var(--text2); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 6px; }
-.app-tab-list { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text); line-height: 1.6; }
-.app-tab-list li { margin-bottom: 4px; }
-/* "Important" is a callout, not a bolded word: amber tint + accent so it
-   reads as its own block on the tab, the overlay card, and (via inline
-   styles) the emails. */
-.app-tab-section--callout {
-  background: var(--amber-dim); border-left: 3px solid var(--amber);
-  border-radius: 8px; padding: 10px 12px 8px; border-top: none;
+
+/* Numbered setup steps (connector.hubSteps). The one that fails silently
+   (Bluetooth/Location) carries a bold "or the door won't open" line with a
+   small amber icon — weight from the words, not a colored box. */
+.app-steps { list-style: none; margin: 0; padding: 0; counter-reset: step; text-align: left; }
+.app-tab-card .app-steps { margin-top: 18px; }
+.app-steps li {
+  counter-increment: step; position: relative; padding-left: 30px;
+  font-size: 13.5px; line-height: 1.5; color: var(--text); margin-bottom: 12px;
 }
-.app-tab-section--callout .app-tab-section-title { color: var(--amber); }
-.app-tab-section--callout .app-tab-list { color: var(--text); }
-/* Compact variant for the overlay's Get App card — same blocks, tighter. */
-.app-instructions.compact .app-tab-section { margin-top: 10px; padding-top: 0; border-top: none; }
-.app-instructions.compact .app-tab-section:first-child { margin-top: 0; }
-.app-instructions.compact .app-tab-section-title { font-size: 10.5px; margin-bottom: 3px; }
-.app-instructions.compact .app-tab-list { font-size: 11.5px; line-height: 1.5; padding-left: 16px; }
-.app-instructions.compact .app-tab-list li { margin-bottom: 2px; }
+.app-steps li:last-child { margin-bottom: 0; }
+.app-steps li::before {
+  content: counter(step); position: absolute; left: 0; top: 0;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--card2); box-shadow: inset 0 0 0 1px var(--border2);
+  font-size: 11px; font-weight: 700; color: var(--text2);
+  display: flex; align-items: center; justify-content: center;
+}
+.app-step-warn { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-weight: 700; color: var(--text); }
+.app-step-warn svg { flex-shrink: 0; }
 
 /* ═══════════════════════════════════════════════════════
    TAB 2 — MANAGE MEMBERS
@@ -1178,7 +1164,7 @@ body {
 
   <!-- ── Tab 3: Get the App ───────────────────────────── -->
   <!-- Always visible. Everything here — tab label, icon, store links, the
-       requirements + how-it-works lists — comes from CONNECTOR_REGISTRY via
+       numbered setup steps — comes from CONNECTOR_REGISTRY via
        renderAppTab(), keyed by the hardwarePlatform /member/access-status
        returns (kisi fallback until that arrives). Same data the emails and the
        overlay's Get App card read, so the three can't drift. -->
@@ -1187,14 +1173,11 @@ body {
       <div class="data-card app-tab-card" id="app-tab-card">
         <div class="app-tab-header">
           <img id="app-tab-icon" class="app-tab-icon" alt=""/>
-          <div>
-            <div class="app-tab-title" id="app-tab-title">Get the app</div>
-            <div class="app-tab-sub">Your phone is your key — this is how you open the door.</div>
-          </div>
+          <div class="app-tab-title" id="app-tab-title">Get the app</div>
         </div>
         <div class="app-tab-links">
-          <a id="app-tab-ios" class="btn-primary app-tab-link hidden" target="_blank" rel="noopener noreferrer">Download for iPhone</a>
-          <a id="app-tab-android" class="btn-primary app-tab-link hidden" target="_blank" rel="noopener noreferrer">Download for Android</a>
+          <a id="app-tab-ios" class="btn-primary app-tab-link hidden" target="_blank" rel="noopener noreferrer">iPhone</a>
+          <a id="app-tab-android" class="btn-primary app-tab-link hidden" target="_blank" rel="noopener noreferrer">Android</a>
           <div id="app-tab-nolinks" class="app-tab-nolinks hidden">Check with your gym for the app to use at the door.</div>
         </div>
         <div id="app-tab-instructions"></div>
@@ -1310,25 +1293,21 @@ body {
           <path class="check-path" d="M9 18l7 7L27 11" stroke="var(--green)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
-      <div class="ov-title">You're all set!</div>
-      <div class="ov-sub">Your access is active and ready. Head to the entrance and use your app or credential to get in.</div>
+      <div class="ov-title">Your access is on</div>
+      <div class="ov-sub" id="ov-active-sub">You're good to go.</div>
       <div class="ov-access-list" id="ov-access-list"></div>
       <div class="get-app-card hidden" id="get-app-card">
         <div class="get-app-main">
           <img id="get-app-icon" class="get-app-icon" alt=""/>
-          <div class="get-app-text">
-            <div class="get-app-label" id="get-app-label">Get the app</div>
-            <div class="get-app-sub">Open doors from your phone</div>
-          </div>
-          <div class="get-app-links">
-            <a id="get-app-ios" class="get-app-link hidden" target="_blank" rel="noopener noreferrer">iPhone</a>
-            <a id="get-app-android" class="get-app-link hidden" target="_blank" rel="noopener noreferrer">Android</a>
-          </div>
+          <div class="get-app-label" id="get-app-label">Get the app</div>
         </div>
-        <!-- Same connector-driven requirements the email shows (Bluetooth + Always
-             location for Kisi) — populated by renderGetAppCard(), hidden when the
+        <div class="get-app-links">
+          <a id="get-app-ios" class="get-app-link hidden" target="_blank" rel="noopener noreferrer">iPhone</a>
+          <a id="get-app-android" class="get-app-link hidden" target="_blank" rel="noopener noreferrer">Android</a>
+        </div>
+        <!-- connector.hubSteps — populated by renderGetAppCard(), hidden when the
              connector has none (e.g. seam, stubbed). -->
-        <div class="get-app-requirements hidden" id="get-app-requirements"></div>
+        <div class="hidden" id="get-app-steps"></div>
       </div>
       <!-- Manual dismiss. The overlay used to auto-hide 1.5s after access went
            active (loadAccessData), which read as the page jumping away before the
@@ -1378,6 +1357,11 @@ body {
 // values. Entries can have null iconUrl/iosLink/androidLink (e.g. the seam
 // stub) — always null-guard before rendering, see renderGetAppCard() below.
 const CONNECTOR_REGISTRY = <%- connectorRegistryJson %>;
+
+// Download-button fill, picked server-side (admin/server.js → linkOnWhite):
+// a gym color white text reads on, never a pale accent like HOG's yellow.
+const GYM_BUTTON_COLOR = <%- JSON.stringify((typeof gymButtonColor !== 'undefined' && gymButtonColor) || null) %>;
+if (GYM_BUTTON_COLOR) document.documentElement.style.setProperty('--gym-btn', GYM_BUTTON_COLOR);
 
 // ── URL params ──────────────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
@@ -1623,6 +1607,11 @@ function renderGetAppCard(data) {
   if (data.secondaryColor) card.style.setProperty('--gym-secondary', data.secondaryColor);
 
   document.getElementById('get-app-label').textContent = 'Get the ' + connector.displayName + ' app';
+  // The headline used to say "You're all set" while the app still wasn't
+  // installed. Say what's left.
+  if (connector.iosLink || connector.androidLink) {
+    document.getElementById('ov-active-sub').textContent = 'One last step: set up the ' + connector.displayName + ' app.';
+  }
   const icon = document.getElementById('get-app-icon');
   if (connector.iconUrl) { icon.src = connector.iconUrl; icon.style.display = ''; }
   else { icon.style.display = 'none'; }
@@ -1634,39 +1623,30 @@ function renderGetAppCard(data) {
   android.classList.toggle('hidden', !connector.androidLink);
   if (connector.androidLink) android.href = connector.androidLink;
 
-  // Compact one-liners here (it's a small card); the Get the App tab shows the
-  // same lists in full. Row stays hidden for a connector with neither (seam).
-  const reqEl = document.getElementById('get-app-requirements');
-  const instrHtml = connectorInstructionsHtml(connector, { compact: true });
-  reqEl.innerHTML = instrHtml;
-  reqEl.classList.toggle('hidden', !instrHtml);
+  const stepsEl  = document.getElementById('get-app-steps');
+  const stepsHtml = connectorStepsHtml(connector);
+  stepsEl.innerHTML = stepsHtml;
+  stepsEl.classList.toggle('hidden', !stepsHtml);
 
   card.classList.remove('hidden');
 }
 
-// One place that turns connector.requirements / connector.usageTips into markup.
-// Shared by the overlay's Get App card (compact) and the Get the App tab (full)
-// so the two surfaces can't drift on wording, section names, or the null-guard.
-// Mirrors connectorNoteSections() in core/email-templates.js — different
-// runtime, same data, same two sections in the same order.
-// Same markup in both modes — the requirements always render as an amber
-// callout so "Important" reads as a block, not a bolded word inside a
-// sentence; `compact` only tightens spacing/type via the .compact wrapper
-// (Builder 2026-09-13: the dot-joined one-liner on the overlay was unreadable).
-function connectorInstructionsHtml(connector, opts) {
-  const compact  = !!(opts && opts.compact);
-  const sections = [
-    { title: 'Important',    items: connector.requirements || [], callout: true  },
-    { title: 'How it works', items: connector.usageTips    || [], callout: false },
-  ].filter(s => s.items.length);
-  if (!sections.length) return '';
-  const inner = sections.map(s =>
-    '<div class="app-tab-section' + (s.callout ? ' app-tab-section--callout' : '') + '">' +
-      '<div class="app-tab-section-title">' + s.title + '</div>' +
-      '<ul class="app-tab-list">' + s.items.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>' +
-    '</div>'
-  ).join('');
-  return compact ? '<div class="app-instructions compact">' + inner + '</div>' : inner;
+// connector.hubSteps → the numbered setup list. Shared by the overlay and the
+// Get the App tab so the two can't drift. A step with `warn` gets a bold line
+// with a small amber icon: Kisi fails silently when Bluetooth/Location are off,
+// so that step has to read as non-optional (Builder 2026-10-02: say it once,
+// short, no colored boxes or side bars).
+const WARN_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+  '<path d="M12 3L2 20h20L12 3z" stroke="var(--amber)" stroke-width="2.4" stroke-linejoin="round"/>' +
+  '<path d="M12 10v4.5M12 17.2v.3" stroke="var(--amber)" stroke-width="2.4" stroke-linecap="round"/></svg>';
+function connectorStepsHtml(connector) {
+  const steps = connector.hubSteps || [];
+  if (!steps.length) return '';
+  return '<ol class="app-steps">' + steps.map(st =>
+    '<li>' + esc(st.text) +
+      (st.warn ? '<div class="app-step-warn">' + WARN_ICON + esc(st.warn) + '</div>' : '') +
+    '</li>'
+  ).join('') + '</ol>';
 }
 
 // Tab 3 — "Get the {Connector} App". Always visible (every gym runs some door
@@ -1694,7 +1674,7 @@ function renderAppTab(data) {
   if (connector.androidLink) android.href = connector.androidLink;
   document.getElementById('app-tab-nolinks').classList.toggle('hidden', !!(connector.iosLink || connector.androidLink));
 
-  document.getElementById('app-tab-instructions').innerHTML = connectorInstructionsHtml(connector);
+  document.getElementById('app-tab-instructions').innerHTML = connectorStepsHtml(connector);
 }
 
 async function pollAccess() {

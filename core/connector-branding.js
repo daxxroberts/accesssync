@@ -79,6 +79,15 @@ const CONNECTORS = {
       'No need to open the app to get in. Keep your phone on you.',
       'At the door, hold your phone to the reader until it unlocks.',
     ],
+    // Member hub page (admin/views/pages/member-hub.ejs) — the same facts as
+    // setupSteps + requirements, cut to three short lines under the download
+    // buttons (Builder 2026-10-02: minimal, nothing said twice). `warn` renders
+    // bold with an icon: this is the step that fails silently.
+    hubSteps: [
+      { text: 'Sign in with your checkout email, then tap the link Kisi emails you.' },
+      { text: 'Turn on Bluetooth (Android: NFC too) and set Location to "Always" for Kisi.', warn: 'Skip this and the door won\'t open.' },
+      { text: 'At the door, hold your phone to the reader.' },
+    ],
   },
   seam: {
     // Stubbed — post-V1 (DR-011). No live app-store presence yet; consumers
@@ -93,6 +102,7 @@ const CONNECTORS = {
     doorTips:     null,
     setupSteps:   null,
     usageTips:    null,
+    hubSteps:     null,
   },
 };
 

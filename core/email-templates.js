@@ -818,4 +818,7 @@ module.exports = {
   renderAccessRestored,
   renderSubMemberInvite,
   renderDayPassReady,
+  // The member hub page fills its download buttons with this same color, so
+  // the page and the emails agree on which gym color is readable.
+  linkOnWhite: _linkOnWhite,
 };
