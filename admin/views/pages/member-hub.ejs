@@ -122,6 +122,41 @@ body {
   box-shadow: 0 0 8px var(--green);
 }
 
+/* ── Gym bar — the gym's logo on its primary color, same treatment as the
+   overlay band and the email header. Only when gym branding is known. */
+.gym-bar { background: var(--gym-primary); color: var(--gym-bar-text, #fff); flex-shrink: 0; position: relative; z-index: 1; }
+.gym-bar-inner {
+  max-width: 480px; margin: 0 auto; min-height: 52px;
+  padding: 10px 18px; display: flex; align-items: center; gap: 12px;
+  justify-content: center;
+}
+.gym-bar-inner.has-back { justify-content: space-between; }
+.gym-bar .gym-logo { height: 26px; max-width: 150px; }
+.gym-bar .gym-name-band { font-size: 15px; color: var(--gym-bar-text, #fff); }
+.gym-bar a.gym-home { display: block; text-decoration: none; }
+.gym-back {
+  display: inline-flex; align-items: center; gap: 4px; min-width: 0;
+  font-size: 12.5px; font-weight: 600; color: var(--gym-bar-text, #fff);
+  text-decoration: none; padding: 10px 0 10px 10px; white-space: nowrap;
+}
+/* Long gym names ("Back to Iron Republic Strength & Conditioning") shorten
+   with an ellipsis instead of pushing the logo off a 320px screen. */
+.gym-back span { overflow: hidden; text-overflow: ellipsis; }
+.gym-bar .gym-logo, .overlay-band.has-back .gym-logo { flex-shrink: 0; }
+.gym-back:hover { text-decoration: underline; }
+.gym-back svg { width: 14px; height: 14px; }
+/* Overlay band: same row layout when a back link is present */
+.overlay-band.has-back { justify-content: space-between; gap: 8px; padding: 14px 14px; }
+.overlay-band.has-back .gym-logo { height: 22px; max-width: 124px; }
+/* Bar sits above the shell in body's flex column: let the shell fill the rest
+   instead of adding a full 100svh under the bar (keeps the footer on screen). */
+.gym-bar + .shell { min-height: 0; flex: 1; }
+.gym-bar + .shell .header { padding-top: 12px; justify-content: flex-end; }
+.hub-footer {
+  text-align: center; font-size: 10px; font-weight: 600; letter-spacing: .03em;
+  color: var(--muted); opacity: .7; padding: 8px 18px 22px;
+}
+
 /* ── Tab bar ──────────────────────────────────────────── */
 .tab-bar {
   padding: 12px 18px 0;
@@ -272,6 +307,13 @@ body {
   transition: background .12s;
 }
 .btn-check:hover { background: var(--brand-dim); }
+/* A gym with branding gets its own dark button color instead of AccessSync
+   indigo (Builder 2026-10-05) — the tab pill, the primary buttons, Check Status. */
+.gym-branded .tab-btn.active { background: var(--gym-btn); box-shadow: none; }
+.gym-branded .btn-primary { background: var(--gym-btn); box-shadow: none; }
+.gym-branded .btn-primary:hover { background: var(--gym-btn); filter: brightness(.9); box-shadow: none; }
+.gym-branded .btn-check { color: var(--gym-btn); box-shadow: inset 0 0 0 1px var(--border2); }
+.gym-branded .btn-check:hover { background: var(--card2); }
 
 /* ── Skeleton loaders ─────────────────────────────────── */
 .skeleton {
@@ -339,7 +381,7 @@ body {
 }
 @media (min-width: 520px) { .overlay-band { padding: 26px 40px; } }
 .gym-logo { height: 30px; max-width: 220px; object-fit: contain; display: block; }
-.gym-name-band { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; color: #ffffff; }
+.gym-name-band { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; color: var(--gym-bar-text, #ffffff); }
 
 .overlay-body { padding: 32px 24px 28px; }
 @media (min-width: 520px) { .overlay-body { padding: 44px 40px 40px; } }
@@ -992,6 +1034,15 @@ body {
 @keyframes orb-drift-2  { from{transform:translate(0,0)} to{transform:translate(-40px,-60px)} }
 
 .hidden { display: none !important; }
+/* Kept last so it wins the cascade. Small phones (320px): a smaller logo and tighter padding so a typical gym
+   name fits whole; only very long names fall back to the ellipsis. */
+@media (max-width: 374px) {
+  .gym-bar-inner { padding: 10px 14px; gap: 8px; }
+  .overlay-band.has-back { padding: 12px 12px; gap: 6px; }
+  .status-overlay { padding: 8px; }
+  .gym-bar .gym-logo, .overlay-band.has-back .gym-logo { height: 20px; max-width: 96px; }
+  .gym-back { font-size: 12px; padding-left: 2px; gap: 2px; }
+}
 </style>
 </head>
 <body>
@@ -1000,11 +1051,23 @@ body {
 <div class="bg-orb bg-orb-2"></div>
 
 <!-- ── Shell ───────────────────────────────────────────── -->
+<%
+  var _hasGymBrand = (typeof gymLogoUrl !== 'undefined' && gymLogoUrl) || (typeof gymName !== 'undefined' && gymName);
+  var _hasBack = _hasGymBrand && typeof gymSiteUrl !== 'undefined' && gymSiteUrl;
+%>
+<% if (_hasGymBrand) { %>
+<header class="gym-bar" style="--gym-primary:<%= gymPrimaryColor || '#333333' %>;--gym-bar-text:<%= gymBarText || '#ffffff' %>;">
+  <div class="gym-bar-inner<%= _hasBack ? ' has-back' : '' %>">
+    <% if (_hasBack) { %><a class="gym-home" href="<%= gymSiteUrl %>" target="_self" rel="noopener noreferrer"><% } %><% if (gymLogoUrl) { %><img class="gym-logo" src="<%= gymLogoUrl %>" alt="<%= gymName || 'Your gym' %>"/><% } else { %><span class="gym-name-band"><%= gymName %></span><% } %><% if (_hasBack) { %></a><% } %>
+    <% if (_hasBack) { %><a class="gym-back" href="<%= gymSiteUrl %>" target="_self" rel="noopener noreferrer" aria-label="Back to <%= gymName %> website"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Back to <%= gymName %></span></a><% } %>
+  </div>
+</header>
+<% } %>
 <div class="shell">
 
   <!-- Header -->
   <div class="header">
-    <span class="logo-text"><span class="brand">Access</span><span class="dim">Sync</span></span>
+    <% if (!_hasGymBrand) { %><span class="logo-text"><span class="brand">Access</span><span class="dim">Sync</span></span><% } else { %><span></span><% } %>
     <span class="member-chip" id="member-chip" style="display:none">
       <span class="member-dot"></span>
       <span id="member-chip-name"></span>
@@ -1185,6 +1248,7 @@ body {
     </div>
   </div><!-- /panel-app -->
 
+<% if (_hasGymBrand) { %><div class="hub-footer">Powered by AccessSync</div><% } %>
 </div><!-- /shell -->
 
 <!-- Sticky CTA (Manage Members) -->
@@ -1209,12 +1273,13 @@ body {
          /member-hub route). Only when a gym's branding is actually known;
          the AccessSync-fallback case has no band, see .overlay-logo below. -->
     <% if (_hasGymBrand) { %>
-      <div class="overlay-band">
+      <div class="overlay-band<%= _hasBack ? ' has-back' : '' %>" style="--gym-bar-text:<%= gymBarText || '#ffffff' %>;">
         <% if (typeof gymLogoUrl !== 'undefined' && gymLogoUrl) { %>
           <img class="gym-logo" src="<%= gymLogoUrl %>" alt="<%= (typeof gymName !== 'undefined' && gymName) || 'Your gym' %>"/>
         <% } else { %>
           <span class="gym-name-band"><%= gymName %></span>
         <% } %>
+        <% if (_hasBack) { %><a class="gym-back" href="<%= gymSiteUrl %>" target="_self" rel="noopener noreferrer" aria-label="Back to <%= gymName %> website"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Back to <%= gymName %></span></a><% } %>
       </div>
     <% } %>
 
@@ -1361,7 +1426,16 @@ const CONNECTOR_REGISTRY = <%- connectorRegistryJson %>;
 // Download-button fill, picked server-side (admin/server.js → linkOnWhite):
 // a gym color white text reads on, never a pale accent like HOG's yellow.
 const GYM_BUTTON_COLOR = <%- JSON.stringify((typeof gymButtonColor !== 'undefined' && gymButtonColor) || null) %>;
-if (GYM_BUTTON_COLOR) document.documentElement.style.setProperty('--gym-btn', GYM_BUTTON_COLOR);
+if (GYM_BUTTON_COLOR) {
+  document.documentElement.style.setProperty('--gym-btn', GYM_BUTTON_COLOR);
+  document.documentElement.classList.add('gym-branded');
+}
+// Shown inside a frame on the gym's own site, the member is already there:
+// the back link would only load the gym's site inside its own frame (WARD).
+if (window.self !== window.top) {
+  document.querySelectorAll('.gym-back').forEach(el => el.remove());
+  document.querySelectorAll('a.gym-home').forEach(el => el.removeAttribute('href'));
+}
 
 // ── URL params ──────────────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search);

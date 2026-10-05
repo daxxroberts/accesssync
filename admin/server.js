@@ -201,21 +201,18 @@ const { CONNECTORS } = require('../core/connector-branding');
 // Same fail-soft pattern as /health above: never blocks the page on a DB
 // hiccup or a missing clientId.
 app.get('/member-hub', allowMemberFrame, async (req, res) => {
-  let branding = { gymName: null, logoUrl: null, primaryColor: null, secondaryColor: null, buttonColor: null };
+  const { hubBranding } = require('../core/member-hub-branding');
+  let branding = hubBranding(undefined);
   if (req.query.clientId) {
     try {
       const db = require('../db');
-      const { brandingFromClientRow, linkOnWhite } = require('../core/email-templates');
       const r = await db.query(
-        `SELECT name, email_logo_url, email_primary_color, email_secondary_color FROM clients WHERE id = $1`,
+        `SELECT name, email_logo_url, email_primary_color, email_secondary_color,
+                source_site_url, status, archived_at
+         FROM clients WHERE id = $1`,
         [req.query.clientId]
       );
-      const b = brandingFromClientRow(r.rows[0]);
-      branding = {
-        gymName: b.gymName, logoUrl: b.logoUrl, primaryColor: b.primaryColor, secondaryColor: b.secondaryColor,
-        // Download-button fill: a gym color that white text reads on, never a pale accent.
-        buttonColor: r.rows[0] ? linkOnWhite(b) : null,
-      };
+      branding = hubBranding(r.rows[0]);
     } catch (err) {
       // fall through to nulls — member-hub.ejs falls back to the AccessSync mark
     }
@@ -227,6 +224,8 @@ app.get('/member-hub', allowMemberFrame, async (req, res) => {
     gymPrimaryColor: branding.primaryColor,
     gymSecondaryColor: branding.secondaryColor,
     gymButtonColor: branding.buttonColor,
+    gymBarText: branding.barText,
+    gymSiteUrl: branding.siteUrl,
   });
 });
 
