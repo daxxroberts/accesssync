@@ -104,7 +104,7 @@
     }
     .key-input:focus { border-color: var(--brand); }
     .key-input-hint { font-size: 10px; color: var(--muted); margin-bottom: 10px; line-height: 1.5; }
-    .key-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .key-form-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 
     /* Buttons provided by operator-styles.css */
 
@@ -451,7 +451,7 @@
       </div>
 
       <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;">
-        <div style="flex:1;min-width:240px;">
+        <div style="flex:1;min-width:min(240px,100%);">
           <!-- Logo -->
           <div class="config-row" style="border-bottom:none;padding-top:0;">
             <div class="config-row-header">
@@ -499,7 +499,7 @@
           </div>
         </div>
         <!-- Live preview — renders the REAL template server-side -->
-        <div style="flex:1.2;min-width:280px;">
+        <div style="flex:1.2;min-width:min(280px,100%);">
           <div class="key-input-hint" style="margin-bottom:2px;">Live preview — exactly what members receive:</div>
           <div class="key-input-hint" style="margin-bottom:6px;">Subject: <b id="eb-preview-subject" style="color:var(--text2);font-style:italic;">&mdash;</b></div>
           <iframe id="eb-preview" sandbox="" title="Email preview" style="width:100%;height:360px;border:1px solid var(--border);border-radius:10px;background:#f4f4f4;"></iframe>
