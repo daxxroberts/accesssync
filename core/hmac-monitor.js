@@ -33,10 +33,10 @@ const ALERT_COOLDOWN_KEY = 'hmac:alert_sent';
 const ALERT_COOLDOWN_TTL = 600; // 10 min — prevents alert storm if attack is sustained
 
 async function recordFailure(clientHint = 'unknown') {
-  // Log every individual HMAC failure for per-client trend analysis.
-  // clientHint is the resolved client_id UUID when available, else 'unknown'.
-  const clientId = clientHint !== 'unknown' ? clientHint : null;
-  log.warn('hmac.failure', { clientId, clientHint });
+  // clientHint is the UNVERIFIED x-accesssync-client-id header of a request whose signature just FAILED: anyone can send
+  // any uuid. It must never be stored as the client of a log row (diagnostic_log.client_id), or a forged webhook could
+  // put warnings on another gym's log. It is kept as free text (`clientHint`) for whoever investigates.
+  log.warn('hmac.failure', { clientHint });
 
   let redis;
   try {
@@ -58,23 +58,23 @@ async function recordFailure(clientHint = 'unknown') {
       const alreadyAlerted = await redis.get(cooldownKey);
       if (!alreadyAlerted) {
         await redis.set(cooldownKey, '1', 'EX', ALERT_COOLDOWN_TTL);
-        await _sendAlert(recentCount, clientHint, clientId);
+        await _sendAlert(recentCount, clientHint);
       }
     }
   } catch (err) {
     // Never block the webhook flow for monitoring failures
-    log.error('hmac.monitor.internal_error', { clientId, clientHint }, err);
+    log.error('hmac.monitor.internal_error', { clientHint }, err);
   }
 }
 
-async function _sendAlert(count, clientHint, clientId) {
+async function _sendAlert(count, clientHint) {
   const spikeErr = new Error(`${count} HMAC failures in 5 min — possible webhook attack`);
   spikeErr.code = 'HMAC_FAILURE_SPIKE';
-  log.warn('hmac.failure_spike', { clientId, clientHint, count }, spikeErr);
+  log.warn('hmac.failure_spike', { clientHint, count }, spikeErr);
 
   const toEmail = process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
   if (!toEmail) {
-    log.warn('hmac.alert.no_email', { clientId, clientHint, count });
+    log.warn('hmac.alert.no_email', { clientHint, count });
     return;
   }
 
@@ -84,12 +84,12 @@ async function _sendAlert(count, clientHint, clientId) {
   const { sent, reason } = await sendOperatorEmail({
     toEmail,
     render: renderHmacAlert,
-    renderArgs: { clientId },
-    logContext: { alert: 'hmac_spike', clientId, clientHint, count },
+    renderArgs: {},
+    logContext: { alert: 'hmac_spike', clientHint, count },
   });
 
   if (sent) log.info('hmac.alert.sent', { toEmail, count, clientHint });
-  else log.error('hmac.alert.send_failed', { clientId, clientHint, toEmail, reason });
+  else log.error('hmac.alert.send_failed', { clientHint, toEmail, reason });
 }
 
 module.exports = { recordFailure };

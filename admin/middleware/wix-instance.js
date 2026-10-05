@@ -241,8 +241,11 @@ const SHELL_CLIENT_NAME = 'New Wix site';
 async function findOrCreateClientForInstance(instanceId) {
   try {
     const ins = await db.query(
-      `INSERT INTO clients (name, platform_instance_id, status)
-       VALUES ($1, $2, 'active')
+      // reconciliation_interval '6h' = the cadence House of Gains runs on. The column default is 'daily', and the
+      // nightly gate takes its interval from whichever client synced most recently, so a new client left on 'daily'
+      // would stretch every client's sync to 24h and trip the panel's reconcile thresholds.
+      `INSERT INTO clients (name, platform_instance_id, status, reconciliation_interval)
+       VALUES ($1, $2, 'active', '6h')
        RETURNING id`,
       [SHELL_CLIENT_NAME, instanceId]
     );

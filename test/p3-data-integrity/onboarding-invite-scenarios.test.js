@@ -54,6 +54,7 @@ jest.mock('../../core/location-lapse', () => ({ suspendLocationMembers: jest.fn(
 jest.mock('../../adapters/kisi/kisi-connector', () => ({ getGroups: jest.fn().mockResolvedValue([]), getLocks: jest.fn(), makeRequest: jest.fn().mockResolvedValue({}) }));
 jest.mock('../../adapters/hardware-adapter', () => ({ getLocks: jest.fn(), getGroups: jest.fn().mockResolvedValue([]), findUserByEmail: jest.fn(), createUser: jest.fn(), assignRole: jest.fn(), removeRole: jest.fn() }));
 jest.mock('../../core/trace-context', () => ({
+  setClientId: jest.fn(), getClientId: jest.fn(), withClient: jest.fn((_id, fn) => fn()),
   getTraceId: jest.fn(() => 'trace-test'), getActor: jest.fn(() => ({ type: 'system', id: 'test' })),
   setTraceContext: jest.fn(), runWith: jest.fn((c, fn) => fn()), mintTraceId: jest.fn(() => 'trace-test'),
 }));

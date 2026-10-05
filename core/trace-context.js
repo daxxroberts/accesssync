@@ -2,7 +2,7 @@
  * @file trace-context.js
  * @layer core/shared
  * @role logging-context
- * @exports runWith, setActor, getContext, getTraceId, getActor, mintTraceId, deriveTraceId
+ * @exports runWith, withClient, setActor, setClientId, getContext, getTraceId, getActor, getClientId, mintTraceId, deriveTraceId
  * @dr DR-037
  *
  * Universal trace + actor context via AsyncLocalStorage.
@@ -42,6 +42,12 @@ function getDb() {
 
 const VALID_ACTOR_TYPES = ['owner', 'operator', 'member', 'system', 'webhook'];
 
+// clients.id is a uuid, and so is diagnostic_log.client_id: a non-uuid value would make the log INSERT
+// fail (and the row be lost). Anything else bound to the context — e.g. a mistyped /operator/:clientId
+// path param — is ignored rather than stored.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const asClientId = (v) => (typeof v === 'string' && UUID_RE.test(v) ? v : null);
+
 /**
  * Run callback inside a new context. Any async descendants inherit it.
  * Nested runWith calls REPLACE the parent context (not merge).
@@ -49,6 +55,8 @@ const VALID_ACTOR_TYPES = ['owner', 'operator', 'member', 'system', 'webhook'];
  * @param {Object} ctx
  * @param {string} ctx.traceId  - UUID v4 string
  * @param {Object} ctx.actor    - { type, id }
+ * @param {string} [ctx.clientId] - the client (tenant) this work belongs to, when known. Every
+ *                                  log row written inside the context is stamped with it.
  * @param {Function} fn         - sync or async function to run inside the context
  * @returns whatever fn returns (Promise or value)
  */
@@ -62,7 +70,27 @@ function runWith(ctx, fn) {
   if (!VALID_ACTOR_TYPES.includes(ctx.actor.type)) {
     throw new Error(`runWith: actor.type must be one of ${VALID_ACTOR_TYPES.join(', ')}, got ${ctx.actor.type}`);
   }
-  return als.run({ traceId: ctx.traceId, actor: { type: ctx.actor.type, id: ctx.actor.id } }, fn);
+  return als.run({
+    traceId: ctx.traceId,
+    actor: { type: ctx.actor.type, id: ctx.actor.id },
+    clientId: asClientId(ctx.clientId),
+  }, fn);
+}
+
+/**
+ * Run fn inside a CHILD context that keeps the current trace and actor but is bound to one client.
+ * Use this where one trace spans several clients (the nightly sweep): each client's work gets its own
+ * context, so concurrent or interleaved awaits can never stamp one client's id on another's log rows.
+ * With no active context it just runs fn (nothing to inherit).
+ *
+ * @param {string} clientId
+ * @param {Function} fn
+ */
+function withClient(clientId, fn) {
+  const ctx = als.getStore();
+  const id = asClientId(clientId);
+  if (!ctx || !id) return fn();
+  return als.run({ traceId: ctx.traceId, actor: ctx.actor, clientId: id }, fn);
 }
 
 /**
@@ -76,6 +104,29 @@ function setActor(actor) {
   const ctx = als.getStore();
   if (!ctx) return;
   ctx.actor = { type: actor.type, id: actor.id };
+}
+
+/**
+ * Bind the CURRENT context to a client once it is known (e.g. after the webhook tenant resolves).
+ * Safe only where the context belongs to a single unit of work (one request, one job). For a trace
+ * that spans several clients use withClient(). No-op if no context is active or clientId is empty.
+ *
+ * @param {string} clientId
+ */
+function setClientId(clientId) {
+  const ctx = als.getStore();
+  const id = asClientId(clientId);
+  if (!ctx || !id) return;
+  ctx.clientId = id;
+}
+
+/**
+ * Returns the client id bound to the current context, or undefined.
+ * @returns {string | undefined}
+ */
+function getClientId() {
+  const ctx = als.getStore();
+  return ctx ? (ctx.clientId || undefined) : undefined;
 }
 
 /**
@@ -366,10 +417,13 @@ function setTraceContext(traceId, opts = {}) {
 
 module.exports = {
   runWith,
+  withClient,
   setActor,
+  setClientId,
   getContext,
   getTraceId,
   getActor,
+  getClientId,
   mintTraceId,
   deriveTraceId,
   registerTrace,

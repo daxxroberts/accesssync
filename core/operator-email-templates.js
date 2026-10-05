@@ -330,29 +330,56 @@ function renderHmacAlert({ clientId } = {}) {
  * O5 — A single member's access failed (core/retry-engine.js)
  * ------------------------------------------------------------------ */
 
-function renderMemberFailureAlert({ userMessage, actionText, memberName, planName, clientId }) {
+/**
+ * @param {Object} a
+ * @param {string}  [a.owner]       'gym' | 'accesssync' | 'nobody' — who has to act (core/error-guidance.js).
+ *                                  Decides the chip, the subject and the button, so the email never says
+ *                                  "Action needed" about something the reader cannot or need not fix.
+ * @param {string}  [a.retry]       'now' | 'after_fix' | 'none' — whether the Retry button is offered.
+ * @param {string}  [a.audience]    'gym' (default) | 'owner' — the AccessSync owner's copy names the client.
+ * @param {string}  [a.clientName]
+ */
+function renderMemberFailureAlert({ userMessage, actionText, memberName, planName, clientId, owner, retry, audience, clientName }) {
   const who  = memberName || 'A member';
   const plan = planName ? ' on ' + planName : '';
+  const forOwner = audience === 'owner';
 
   const lead = userMessage || (who + ' didn’t get their door access' + plan + '.');
-  const what = actionText || 'Open your dashboard to retry this, or dismiss it if it’s already sorted out.';
+  const what = actionText || 'Open your dashboard to see what to do next.';
+  const intro = forOwner ? (clientName ? clientName : 'A client') + ': ' : '';
 
   const bodyHtml =
-    '<p style="margin:0 0 12px 0;">' + escapeHtml(lead) + '</p>' +
+    '<p style="margin:0 0 12px 0;">' + escapeHtml(intro + lead) + '</p>' +
     '<p style="margin:0;">' + escapeHtml(what) + '</p>';
 
-  const bodyText = lead + '\n\n' + what;
+  const bodyText = intro + lead + '\n\n' + what;
+
+  // Unknown owner (older callers): keep the original "action needed" behaviour.
+  const mustAct = forOwner ? owner === 'accesssync' : (owner ? owner === 'gym' : true);
+  const canRetry = retry ? retry !== 'none' : !owner;
+  const ctaText = forOwner ? 'Open the errors list'
+    : canRetry ? 'Retry or dismiss'
+    : mustAct ? 'See what to do'
+    : 'See details';
 
   const { html, text } = renderLayout({
-    heading: who + ' didn’t get access',
+    heading: forOwner ? (clientName || 'A client') + ': ' + who + ' didn’t get access' : who + ' didn’t get access',
     bodyHtml,
     bodyText,
-    actionNeeded: true,
-    ctaText: 'Retry or dismiss',
+    actionNeeded: mustAct,
+    ctaText,
     ctaUrl: hubLink('/errors', clientId),
   });
 
-  return { subject: '[AccessSync] Action needed: ' + who + ' didn’t get access', html, text };
+  const subject = forOwner
+    ? '[AccessSync] ' + (clientName || 'A client') + ': ' + who + ' didn’t get access (needs AccessSync)'
+    : mustAct
+      ? '[AccessSync] Action needed: ' + who + ' didn’t get access'
+      : owner === 'nobody'
+        ? '[AccessSync] ' + who + ' didn’t get access (no action needed)'
+        : '[AccessSync] ' + who + ' didn’t get access (AccessSync is looking into it)';
+
+  return { subject, html, text };
 }
 
 /* ------------------------------------------------------------------ *

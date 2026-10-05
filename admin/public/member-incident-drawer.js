@@ -184,6 +184,7 @@
 
   var state = {
     memberId: null, clientId: null, errorId: null, traceId: null,
+    guidance: null,     // core/error-guidance.js answer for the open error (who must act / does Retry help / steps)
     onActionDone: null,
     voice: getCookie(VOICE_COOKIE) || 'plain',
     diagnose: null, timeline: null, member: null,
@@ -199,6 +200,7 @@
     state.clientId = opts.clientId || null;
     state.errorId  = opts.errorId  || null;
     state.traceId  = opts.traceId  || null;
+    state.guidance = opts.guidance || null;
     state.onActionDone = typeof opts.onActionDone === 'function' ? opts.onActionDone : null;
     state.diagnose = null; state.timeline = null; state.member = null;
     state.fellBackToMemberTimeline = false;
@@ -320,8 +322,10 @@
 
       var verdict = (d.verdict || 'healthy').toLowerCase();
       var icon = verdict === 'healthy' ? '✓' : verdict === 'warning' ? '⚠' : '✕';
+      // A "healthy" verdict compares AccessSync, Wix and Kisi. It says nothing about the open error being viewed, so it must
+      // not read as "all fine" while that error is still open.
       var verdictTitle =
-        verdict === 'healthy' ? (plain ? 'Looks healthy' : 'verdict: healthy') :
+        verdict === 'healthy' ? (state.guidance ? (plain ? 'No mismatch found — but this error is still open' : 'verdict: healthy (error still open)') : (plain ? 'Looks healthy' : 'verdict: healthy')) :
         verdict === 'warning' ? (plain ? 'Some attention needed' : 'verdict: warning') :
         (plain ? 'Access is broken' : 'verdict: failed');
 
@@ -349,11 +353,34 @@
       '</div>';
     }
 
+    // 1b. What needs to happen — the same answer as the card it was opened from (core/error-guidance.js)
+    var g = state.guidance;
+    if (g && state.errorId) {
+      var ownerView = (document.body.getAttribute('data-session-role') || '') === 'owner';
+      var whoLabel = g.owner === 'gym' ? (ownerView ? 'The gym needs to act' : 'You need to act')
+                   : g.owner === 'accesssync' ? 'AccessSync support needs to act'
+                   : (ownerView ? 'Nobody needs to act' : 'Nothing for you to do');
+      html += '<div class="mid-section"><h3>What needs to happen</h3>' +
+        '<div class="mid-verdict-detail"><strong>' + esc(whoLabel) + '</strong> — ' + esc(g.headline) + '</div>' +
+        '<ol style="margin:6px 0 0 18px;padding:0;font-size:12px;line-height:1.55;color:var(--text2,#4A5568)">' +
+          (g.steps || []).map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>' +
+        '</div>';
+    }
+
     // 2. Actions
+    // Retry / Dismiss follow the guidance too: no Retry where it would fail the same way (or the server refuses it), and the
+    // gym cannot dismiss what only AccessSync can fix. With no guidance (older callers) both are offered as before.
     var actionsHtml = '<div class="mid-actions">';
     if (state.errorId && state.clientId) {
-      actionsHtml += '<button class="mid-btn primary" id="mid-retry" type="button">↻ ' + (plain ? 'Retry now' : 'Retry job') + '</button>';
-      actionsHtml += '<button class="mid-btn" id="mid-dismiss" type="button">' + (plain ? 'Dismiss' : 'Mark resolved') + '</button>';
+      var ownerViewing = (document.body.getAttribute('data-session-role') || '') === 'owner';
+      var retryMode = g ? g.retry : 'now';
+      var canDismiss = !g || ownerViewing || g.owner !== 'accesssync' || !!g.gymMayDismiss;
+      if (retryMode !== 'none') {
+        actionsHtml += '<button class="mid-btn primary" id="mid-retry" type="button">↻ ' + (retryMode === 'after_fix' ? 'Retry after fixing' : (plain ? 'Retry now' : 'Retry job')) + '</button>';
+      }
+      if (canDismiss) {
+        actionsHtml += '<button class="mid-btn" id="mid-dismiss" type="button">' + (plain ? 'Mark resolved' : 'Mark resolved') + '</button>';
+      }
     }
     if (state.memberId && state.clientId) {
       actionsHtml += '<button class="mid-btn" id="mid-reconcile" type="button">' + (plain ? 'Re-check this member' : 'Reconcile') + '</button>';
@@ -497,15 +524,21 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Dismissing…'; }
     fetch('/operator/' + encodeURIComponent(state.clientId) + '/errors/' + encodeURIComponent(state.errorId) + '/dismiss',
           { method: 'POST', credentials: 'include' })
-      .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
-      .then(function () {
-        showToast('Dismissed');
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, status: r.status, body: b }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          // e.g. 409: the gym cannot dismiss an error only AccessSync can fix — show why, leave it open.
+          showToast((res.body && res.body.error) || ('Could not mark resolved (HTTP ' + res.status + ')'));
+          if (btn) { btn.disabled = false; btn.textContent = 'Mark resolved'; }
+          return;
+        }
+        showToast('Marked resolved');
         if (state.onActionDone) state.onActionDone('dismiss');
         close();
       })
       .catch(function () {
         showToast('Dismiss failed');
-        if (btn) { btn.disabled = false; btn.textContent = 'Dismiss'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Mark resolved'; }
       });
   }
   function onReconcile() {

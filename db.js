@@ -41,8 +41,13 @@ const pool = new Pool({
     ? { rejectUnauthorized: false }
     : false,
   // Connection pool sizing
-  max: 10,               // Maximum concurrent connections
-  idleTimeoutMillis: 30000,   // Close idle connections after 30s
+  // Supabase's session-mode pooler allows only ~15 clients IN TOTAL across every process (Core Engine, Admin Hub and the
+  // cron jobs each open their own pool). DB_POOL_MAX lets a service be sized down without a code change.
+  max: Number.parseInt(process.env.DB_POOL_MAX, 10) > 0 ? Number.parseInt(process.env.DB_POOL_MAX, 10) : 10,
+  // Hand an idle connection back after 5s (was 30s). In Supabase session mode every open connection holds one of
+  // the pooler's ~15 slots even while it does nothing; on 2026-10-05 ten slots sat reserved by idle connections at a
+  // quiet moment, so a small burst filled the rest. Reconnecting costs a few ms; a full pooler fails the query.
+  idleTimeoutMillis: 5000,
   connectionTimeoutMillis: 5000, // Fail fast if no connection available within 5s
 });
 
@@ -51,6 +56,33 @@ const pool = new Pool({
 pool.on('error', (err) => {
   getLog().error('db.pool_error', {}, err);
 });
+
+// --- Pool exhaustion ---
+
+// Supabase answers a NEW connection with "(EMAXCONNSESSION) max clients reached in session mode" when its pooler is full.
+// That is refused while connecting — the statement never ran — so trying again a moment later is always safe, and a
+// batch of simultaneous jobs (e.g. a family's sub-members queued at once) clears itself within a second or two.
+const POOL_RETRY_DELAYS_MS = [150, 400, 900];
+function isPoolExhausted(err) {
+  const msg = err && err.message ? String(err.message) : '';
+  return /EMAXCONNSESSION|max clients reached/i.test(msg);
+}
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Runs fn(); on pool exhaustion waits (with jitter) and tries again. Any other error is thrown at once. */
+async function withPoolRetry(label, fn) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const result = await fn();
+      if (attempt > 0 && label !== 'diagnostic_log') {
+        getLog().warn('db.pool_exhausted_recovered', { attempts: attempt + 1 });
+      }
+      return result;
+    } catch (err) {
+      if (!isPoolExhausted(err) || attempt >= POOL_RETRY_DELAYS_MS.length) throw err;
+      await sleep(POOL_RETRY_DELAYS_MS[attempt] + Math.floor(Math.random() * 100));
+    }
+  }
+}
 
 // --- Query Helper ---
 
@@ -71,7 +103,7 @@ pool.on('error', (err) => {
 async function query(text, params) {
   const start = Date.now();
   try {
-    const result = await pool.query(text, params);
+    const result = await withPoolRetry(/INSERT INTO diagnostic_log/i.test(text) ? 'diagnostic_log' : 'query', () => pool.query(text, params));
     const duration = Date.now() - start;
     // Log slow queries in production (> 500ms) for observability
     if (process.env.NODE_ENV === 'production' && duration > 500) {
@@ -109,7 +141,7 @@ async function query(text, params) {
  * }
  */
 async function getClient() {
-  return pool.connect();
+  return withPoolRetry('client', () => pool.connect());   // nothing has run on the connection yet, so retrying is safe
 }
 
 // --- Health Check ---
@@ -128,4 +160,4 @@ async function healthCheck() {
   }
 }
 
-module.exports = { query, getClient, healthCheck, pool };
+module.exports = { query, getClient, healthCheck, pool, isPoolExhausted };

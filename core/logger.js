@@ -43,7 +43,7 @@
 
 'use strict';
 
-const { getTraceId, getActor } = require('./trace-context');
+const { getTraceId, getActor, getClientId } = require('./trace-context');
 const { redact }               = require('./log-redaction');
 
 const PRODUCTION = process.env.NODE_ENV === 'production';
@@ -158,7 +158,10 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
   const message = (err && (err.userMessage || err.message)) || event;
 
   // Merge context — pull clientId from multiple conventions used across the codebase.
-  const clientId = ctx.tenantId || ctx.clientId || null;
+  // An explicit ctx value wins; otherwise the client bound to the current trace context
+  // (queue job, webhook, admin request, per-client sweep) — so a call site that never passed
+  // the client (e.g. the Kisi connector's HTTP error log) still lands on the right client.
+  const clientId = ctx.tenantId || ctx.clientId || getClientId() || null;
 
   const context = {
     ...ctx,
@@ -179,10 +182,20 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
     try {
       const db = getDb();
       if (!db || typeof db.query !== 'function') return;
+      // Last resort for a row still without a client: take it from the trace's trace_context row (set when the trace was
+      // registered / its tenant resolved). COALESCE only evaluates the subquery when $1 is NULL, so rows that already
+      // carry a client pay nothing. NOT used for the nightly sweep's own trace (actor 'reconciliation-*'): that one trace
+      // spans every client and its trace_context row holds whichever client's job registered it first, so with two clients
+      // a sweep-level row would be stamped on the wrong tenant. Those rows stay client-less unless a call site names one.
+      const sweepActor = typeof actor?.id === 'string' && actor.id.startsWith('reconciliation-');
+      const clientExpr = sweepActor
+        ? '$1::uuid'
+        : 'COALESCE($1::uuid, (SELECT tc.client_id FROM trace_context tc WHERE tc.trace_id = $7::text LIMIT 1))';
       const result = db.query(
         `INSERT INTO diagnostic_log
          (client_id, service, level, error_code, message, context, trace_id, actor_type, actor_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         VALUES (${clientExpr},
+                 $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           clientId,
           deriveService(event),

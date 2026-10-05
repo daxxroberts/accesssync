@@ -82,6 +82,7 @@ jest.mock('../../admin/middleware/auth', () => ({
 }));
 
 jest.mock('../../core/trace-context', () => ({
+  setClientId: jest.fn(), getClientId: jest.fn(), withClient: jest.fn((_id, fn) => fn()),
   getTraceId:      jest.fn(() => 'trace-shape'),
   getActor:        jest.fn(() => ({ type: 'system', id: 'test' })),
   setTraceContext: jest.fn(),

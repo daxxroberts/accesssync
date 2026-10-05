@@ -25,8 +25,9 @@ jest.mock('../../adapters/hardware-adapter', () => ({
 }));
 
 const mockLogWarn = jest.fn();
+const mockLogInfo = jest.fn();   // adapter.complete_grant.entry is a routine breadcrumb: info level
 jest.mock('../../core/logger', () => ({
-  log: { info: jest.fn(), warn: mockLogWarn, error: jest.fn() },
+  log: { info: mockLogInfo, warn: mockLogWarn, error: jest.fn() },
 }));
 jest.mock('../../core/trace-context', () => ({
   getTraceId: jest.fn(() => null), setTraceContext: jest.fn(),
@@ -63,21 +64,27 @@ beforeEach(() => {
 });
 
 describe('[P3] standard-adapter adapter.complete_grant.entry — cycleIndex / isRenewal', () => {
+  test('it is logged at INFO, not warn: a routine breadcrumb must not count as a warning', async () => {
+    await adapter.completeGrant(MEMBER_ACCESS_ID, TENANT_ID, [baseAssignment(1)]);
+    expect(mockLogInfo.mock.calls.some(c => c[0] === 'adapter.complete_grant.entry')).toBe(true);
+    expect(mockLogWarn.mock.calls.some(c => c[0] === 'adapter.complete_grant.entry')).toBe(false);
+  });
+
   test('cycleIndex=1 (first purchase) logs isRenewal=false', async () => {
     await adapter.completeGrant(MEMBER_ACCESS_ID, TENANT_ID, [baseAssignment(1)]);
-    const call = mockLogWarn.mock.calls.find(c => c[0] === 'adapter.complete_grant.entry');
+    const call = mockLogInfo.mock.calls.find(c => c[0] === 'adapter.complete_grant.entry');
     expect(call[1]).toEqual(expect.objectContaining({ cycleIndex: 1, isRenewal: false }));
   });
 
   test('cycleIndex=4 (recurring renewal) logs isRenewal=true', async () => {
     await adapter.completeGrant(MEMBER_ACCESS_ID, TENANT_ID, [baseAssignment(4)]);
-    const call = mockLogWarn.mock.calls.find(c => c[0] === 'adapter.complete_grant.entry');
+    const call = mockLogInfo.mock.calls.find(c => c[0] === 'adapter.complete_grant.entry');
     expect(call[1]).toEqual(expect.objectContaining({ cycleIndex: 4, isRenewal: true }));
   });
 
   test('cycleIndex null (e.g. booking-type grant) logs cycleIndex=null, isRenewal=null', async () => {
     await adapter.completeGrant(MEMBER_ACCESS_ID, TENANT_ID, [baseAssignment(null)]);
-    const call = mockLogWarn.mock.calls.find(c => c[0] === 'adapter.complete_grant.entry');
+    const call = mockLogInfo.mock.calls.find(c => c[0] === 'adapter.complete_grant.entry');
     expect(call[1]).toEqual(expect.objectContaining({ cycleIndex: null, isRenewal: null }));
   });
 });

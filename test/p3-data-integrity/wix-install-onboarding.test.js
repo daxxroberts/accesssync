@@ -111,6 +111,12 @@ describe('[P3] first open after install — the install is the invitation', () =
     expect(clients[1]).toMatchObject({ platform_instance_id: 'inst-918', source_site_id: null, name: 'New Wix site' });
   });
 
+  test('the new client is created on the 6h reconcile cadence House of Gains uses, not the column default (daily)', async () => {
+    await open(OWNER('inst-918'));
+    const insert = db.query.mock.calls.find(([sql]) => /INSERT INTO clients/.test(sql));
+    expect(insert[0]).toMatch(/reconciliation_interval\)\s+VALUES \(\$1, \$2, 'active', '6h'\)/);
+  });
+
   test('the new client gets its own webhook secret immediately (nothing for the gym to invent)', async () => {
     await open(OWNER('inst-918'));
     expect(clients[1].wix_webhook_secret).toMatch(/^enc-/);

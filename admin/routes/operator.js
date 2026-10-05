@@ -31,10 +31,11 @@ const hardwareAdapter = require('../../adapters/hardware-adapter');
 const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
 const standardAdapter = require('../../adapters/standard-adapter');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
+const { guidanceFor, retryRefusal, dismissRefusal } = require('../../core/error-guidance');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
-const { getTraceId, getActor, runWith, mintTraceId } = require('../../core/trace-context');
+const { getTraceId, getActor, runWith, mintTraceId, setClientId } = require('../../core/trace-context');
 const { recordActivity } = require('../middleware/activity');
 // DR-052 — member-facing branded email: templates for the live preview, mailer for
 // the test-send button, multer for the logo upload (memory storage; 1 MB cap).
@@ -77,6 +78,9 @@ router.param('clientId', function enforceOperatorClientScope(req, res, next, cli
     });
     return res.status(403).json({ error: 'Forbidden' });
   }
+  // The request is now known to be about this client (and the caller may act on it): log rows
+  // written while serving it belong to that client, owner or operator alike.
+  setClientId(clientId);
   next();
 });
 
@@ -2068,6 +2072,16 @@ router.post('/:clientId/sync', async (req, res) => {
 router.post('/:clientId/errors/:errorId/dismiss', async (req, res) => {
   const { clientId, errorId } = req.params;
   try {
+    // The gym cannot hide an error only AccessSync can fix (it would turn the owner's panel green while the member
+    // is still locked out). The owner (role 'admin') can dismiss anything.
+    const current = await db.query(
+      `SELECT error_code, resolution, http_status, occurred_count, event_type FROM error_queue WHERE id = $1 AND client_id = $2`,
+      [errorId, clientId]
+    );
+    if (current.rows.length) {
+      const refusal = dismissRefusal(current.rows[0], req.admin && req.admin.role);
+      if (refusal) return res.status(409).json({ error: refusal.error, reason: refusal.reason });
+    }
     const result = await db.query(
       `UPDATE error_queue
        SET status = 'resolved', resolved_at = NOW(), dismissed_by = 'operator'
@@ -2120,6 +2134,13 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
           + 'Nothing was changed — if this person should lose access, remove them in Kisi.',
         reason: 'revoke_retry_disabled',
       });
+    }
+    // A retry that can only fail the same way is refused: nothing queued, row left open (it used to be
+    // re-queued and marked resolved, so it disappeared from the owner's panel while the member was still locked out).
+    const wontHelp = jobName ? retryRefusal(error) : null;   // an unroutable type gets its own, more specific refusal below
+    if (wontHelp) {
+      log.warn('admin.retry.wont_help', { clientId, errorId, eventType: error.event_type, route: 'operator.errors.retry', reason: wontHelp.reason });
+      return res.status(422).json({ error: wontHelp.error, reason: wontHelp.reason });
     }
     let standardEvent = error.payload;
     if (typeof standardEvent === 'string') {
@@ -3060,7 +3081,9 @@ router.get('/:clientId/errors', async (req, res) => {
       [clientId]
     );
     res.json({
-      errors: result.rows,
+      // guidance = who must act + whether Retry helps + the next steps (core/error-guidance.js),
+      // so no error reaches the operator without a way of rectifying it.
+      errors: result.rows.map(r => ({ ...r, guidance: guidanceFor(r) })),
       total:  countResult.rows[0].total,
     });
   } catch (err) {
@@ -3591,7 +3614,7 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
     const traceId = mintTraceId();
     reconciliation._sweepTraceId = traceId;
     const { granted, revoked, skippedHolderOptin, runId, aborted, reason, sanityGateTriggered } = await runWith(
-      { traceId, actor: { type: 'operator', id: String(operatorActor) } },
+      { traceId, actor: { type: 'operator', id: String(operatorActor) }, clientId },
       () => reconciliation._syncClient(
         clientResult.rows[0],
         { triggeredBy: 'manual', triggeredByActor: { type: 'operator', id: String(operatorActor) } }

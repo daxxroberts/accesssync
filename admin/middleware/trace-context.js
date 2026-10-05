@@ -90,7 +90,7 @@ function traceContextMiddleware(req, res, next) {
     actorId:   actor.id,
   });
 
-  runWith({ traceId, actor }, () => {
+  runWith({ traceId, actor, clientId }, () => {
     next();
   });
 }

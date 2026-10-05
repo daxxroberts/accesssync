@@ -242,7 +242,7 @@ describe('[P1] DR-051 reconciliation — skips re-add and self-heals when holder
 
   it('skips the seat backfill (continue) after enforcing the released state', () => {
     // The DR-051 branch must `continue` so the targets.rows backfill loop does not re-add.
-    expect(src).toMatch(/holder_seated === false[\s\S]*continue;/);
+    expect(src).toMatch(/if \(holderReleasedSeat\)[\s\S]*continue;/);
   });
 });
 

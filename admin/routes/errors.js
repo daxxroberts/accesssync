@@ -16,6 +16,7 @@ const { Queue } = require('bullmq');
 const { getRedisConnection } = require('../../core/redis-utils');
 const { mintTraceId } = require('../../core/trace-context');
 const { jobNameForEventType } = require('../../core/event-routing');
+const { guidanceFor, retryRefusal } = require('../../core/error-guidance');
 
 const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
 
@@ -46,6 +47,7 @@ const RETRY_REFUSED_EVENT = Object.freeze({
   unroutable_event_type: 'admin.retry.unroutable_event_type',
   unreadable_payload:    'admin.retry.unreadable_payload',
   revoke_retry_disabled: 'admin.retry.revoke_disabled',
+  retry_wont_help:       'admin.retry.wont_help',
 });
 
 /** The saved standard event as a plain object, or null when it can't be read. */
@@ -63,7 +65,7 @@ function readRetryPayload(payload) {
  * @returns {{ ok: true, jobName: 'grant', standardEvent: object }
  *         | { ok: false, reason: 'unroutable_event_type'|'revoke_retry_disabled'|'unreadable_payload', error: string }}
  */
-function planRetry(eventType, payload) {
+function planRetry(eventType, payload, row) {
   const jobName = jobNameForEventType(eventType);
   if (!jobName) {
     return {
@@ -78,6 +80,10 @@ function planRetry(eventType, payload) {
   if (jobName === 'revoke') {
     return { ok: false, reason: 'revoke_retry_disabled', error: REVOKE_RETRY_DISABLED_MESSAGE };
   }
+  // A retry that can only fail the same way (core/error-guidance.js) is refused: nothing queued, row left OPEN
+  // — it used to be re-queued and marked resolved, so it vanished from the panel while the member was locked out.
+  const refusal = row ? retryRefusal(row) : null;
+  if (refusal) return { ok: false, reason: refusal.reason, error: refusal.error };
   const standardEvent = readRetryPayload(payload);
   if (!standardEvent) {
     return {
@@ -144,7 +150,7 @@ router.get('/', async (req, res) => {
     );
 
     res.json({
-      data:   result.rows,
+      data:   result.rows.map(r => ({ ...r, guidance: guidanceFor(r) })),
       total:  parseInt(countResult.rows[0].count),
       limit:  parseInt(limit),
       offset: parseInt(offset)
@@ -179,7 +185,7 @@ router.get('/:id', async (req, res) => {
       [req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
-    res.json(result.rows[0]);
+    res.json({ ...result.rows[0], guidance: guidanceFor(result.rows[0]) });
   } catch (err) {
     log.error('admin.errors_detail_error', {}, err);
     res.status(500).json({ error: 'Internal server error' });
@@ -212,13 +218,13 @@ router.post('/:id/dismiss', async (req, res) => {
 router.post('/:id/retry', async (req, res) => {
   try {
     const errorRow = await db.query(
-      'SELECT client_id, event_type, payload FROM error_queue WHERE id = $1',
+      'SELECT client_id, event_type, payload, error_code, resolution, http_status, occurred_count, created_at FROM error_queue WHERE id = $1',
       [req.params.id]
     );
     if (!errorRow.rows.length) return res.status(404).json({ error: 'Not found' });
 
     const { client_id: tenantId, event_type: eventType, payload } = errorRow.rows[0];
-    const plan = planRetry(eventType, payload);
+    const plan = planRetry(eventType, payload, errorRow.rows[0]);
     if (!plan.ok) {
       // Refused: enqueue nothing and leave the row 'failed' so it stays visible.
       warnRetryRefused(plan, { clientId: tenantId, errorId: req.params.id, eventType, route: 'admin.errors.retry' });
@@ -262,13 +268,13 @@ router.post('/bulk-retry', async (req, res) => {
     for (const id of ids) {
       try {
         const errorRow = await db.query(
-          'SELECT client_id, event_type, payload FROM error_queue WHERE id = $1',
+          'SELECT client_id, event_type, payload, error_code, resolution, http_status, occurred_count, created_at FROM error_queue WHERE id = $1',
           [id]
         );
         if (!errorRow.rows.length) { results.failed++; continue; }
 
         const { client_id: tenantId, event_type: eventType, payload } = errorRow.rows[0];
-        const plan = planRetry(eventType, payload);
+        const plan = planRetry(eventType, payload, errorRow.rows[0]);
         if (!plan.ok) {
           warnRetryRefused(plan, { clientId: tenantId, errorId: id, eventType, route: 'admin.errors.bulk_retry' });
           results.skipped++;

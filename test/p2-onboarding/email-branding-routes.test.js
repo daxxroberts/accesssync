@@ -53,6 +53,7 @@ jest.mock('../../admin/middleware/auth', () => ({
   signOperatorToken:         jest.fn(() => 'mock-op-token'),
 }));
 jest.mock('../../core/trace-context', () => ({
+  setClientId: jest.fn(), getClientId: jest.fn(), withClient: jest.fn((_id, fn) => fn()),
   getTraceId: jest.fn(() => 'trace-dr052-test'),
   getActor:   jest.fn(() => ({ type: 'system', id: 'test' })),
   setTraceContext: jest.fn(),

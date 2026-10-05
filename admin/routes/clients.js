@@ -113,8 +113,10 @@ router.post('/', async (req, res) => {
     const derivedHardware = hardware_platform || (tier === 'Connect' ? 'kisi' : tier ? 'seam' : null);
 
     const result = await db.query(
-      `INSERT INTO clients (name, platform, source_site_id, source_site_name, source_site_url, notification_email, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), NOW())
+      // reconciliation_interval '6h': same cadence as House of Gains (the column default 'daily' would stretch the
+      // sweep gate, which reads the interval of whichever client synced most recently).
+      `INSERT INTO clients (name, platform, source_site_id, source_site_name, source_site_url, notification_email, status, reconciliation_interval, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active', '6h', NOW(), NOW())
        RETURNING id, name, platform, source_site_id, source_site_name, notification_email, status, created_at`,
       [name.trim(), platform, source_site_id || null, source_site_name || null, source_site_url || null, notification_email || null]
     );
@@ -222,7 +224,9 @@ router.get('/', async (req, res) => {
               c.updated_at,
               cs.hardware_platform AS connector_platform,
               (ARRAY_AGG(DISTINCT bs.tier) FILTER (WHERE bs.tier IS NOT NULL))[1] AS billing_tier,
-              COUNT(DISTINCT mm.id)::int  AS member_count,
+              -- Same definition as the main dashboard's managed total: every non-terminal state.
+              -- Former ('inactive') and soft-deleted members are NOT members any more.
+              COUNT(DISTINCT CASE WHEN ma.status IN ('active','in_flight','pending_identity','recovery_pending') THEN mm.id END)::int AS member_count,
               COUNT(DISTINCT CASE WHEN ma.status = 'active' THEN mm.id END)::int AS active_count
        FROM clients c
        LEFT JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'

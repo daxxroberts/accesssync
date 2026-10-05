@@ -30,7 +30,7 @@ const { listActiveOrders, listConfirmedBookings, listOrdersClassified } = requir
 const { extractBillingSnapshot } = require('./billing-snapshot');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { log, withTrace } = require('./logger');
-const { runWith, mintTraceId, getTraceId, getActor } = require('./trace-context');
+const { runWith, withClient, mintTraceId, getTraceId, getActor } = require('./trace-context');
 const { sendOperatorEmail } = require('./operator-mailer');
 const { renderNightlyDigest } = require('./operator-email-templates');
 const {
@@ -230,7 +230,7 @@ function buildWixPayingView(reads) {
   // A member may hold MULTIPLE plans at once (OB-185 hotfix, 2026-05-18): one
   // entry per member, plans de-duplicated on planId. Orders go first, so the
   // first PAYING order for a plan supplies its rawOrder (OB-187 billing backfill).
-  const addPaying = (memberId, planId, sourceType, email, name, rawOrder) => {
+  const addPaying = (memberId, planId, sourceType, email, name, rawOrder, orderId = null) => {
     let entry = wixMembers.get(memberId);
     if (!entry) {
       entry = { plans: [], email: email || null, name: name || null };
@@ -243,7 +243,14 @@ function buildWixPayingView(reads) {
     }
     if (planId && !plans.has(planId)) {
       plans.add(planId);
-      entry.plans.push({ planId, sourceType, rawOrder: rawOrder || null });
+      // orderIds: the Wix order(s) this PAYING plan comes from — the seat-release flag (DR-051) belongs to ONE order, so a
+      // re-purchase (a new order) must not inherit the flag of an earlier, released one. A plan can have TWO paying
+      // orders at once (released + cancelled-but-paid-to-term, then re-bought), so every one is kept: the seat counts as
+      // released only if all of them are.
+      entry.plans.push({ planId, sourceType, rawOrder: rawOrder || null, orderIds: orderId ? [orderId] : [] });
+    } else if (planId && orderId) {
+      const existing = entry.plans.find(p => p.planId === planId);
+      if (existing && !existing.orderIds.includes(orderId)) existing.orderIds.push(orderId);
     }
     if (!entry.email && email) entry.email = email;
     if (!entry.name && name)   entry.name  = name;
@@ -256,7 +263,7 @@ function buildWixPayingView(reads) {
       noteClass(o.memberId, o.planId, cls);
       if (cls !== ORDER_CLASS.PAYING) continue;
       payingPerRead[i].orders.add(o.memberId);
-      addPaying(o.memberId, o.planId || null, 'plan', null, null, o.rawOrder);
+      addPaying(o.memberId, o.planId || null, 'plan', null, null, o.rawOrder, o.orderId || null);
     }
   });
   reads.forEach((read, i) => {
@@ -664,11 +671,13 @@ class NightlyReconciliation {
     const triggerSource = this._sweepTriggerSource || 'unknown';
     for (const client of clientsResult.rows) {
       try {
-        await this._syncClient(client, {
+        // One sweep trace spans every client: give each client's work its own context so its log
+        // rows (including connector errors that never receive the tenant) carry ITS client id.
+        await withClient(client.id, () => this._syncClient(client, {
           triggeredBy: 'cron',
           triggeredByActor: { type: 'system', id: `reconciliation-${triggerSource}` },
           payingCollector: payingByClient,
-        });
+        }));
       } catch (err) {
         log.error('reconciliation.client_sync_failed', { clientId: client.id }, err);
         // One client failure must not abort the full sweep
@@ -1242,16 +1251,7 @@ class NightlyReconciliation {
         // no promotion, no billing backfill, no seat INSERT.
         let holderReleasedSeat;
         try {
-          const seatFlagRes = await db.query(
-            `SELECT mb.holder_seated
-             FROM member_billing mb
-             JOIN member_master mm ON mm.id = mb.member_master_id
-             WHERE mb.client_id = $1 AND mm.platform_member_id = $2 AND mb.plan_id = $3
-             ORDER BY mb.cycle_index DESC LIMIT 1`,
-            [client.id, memberId, plan.planId]
-          );
-          const seatFlagRows = (seatFlagRes && seatFlagRes.rows) || [];
-          holderReleasedSeat = seatFlagRows.length > 0 && seatFlagRows[0].holder_seated === false;
+          holderReleasedSeat = await this._planSeatReleased(client.id, memberId, plan.planId, plan.orderIds);
         } catch (err) {
           log.warn('reconciliation.holder_seated_read_failed', {
             clientId: client.id, platformMemberId: memberId, planId: plan.planId,
@@ -2217,6 +2217,20 @@ class NightlyReconciliation {
       for (const plan of wixData.plans) {
         if (!plan.planId) continue;
 
+        // DR-051: a holder who released their OWN seat on this plan is paying (Wix still
+        // lists them) but deliberately has no door access. Pass 1 already honours this;
+        // 3A did not, so the sweep re-queued their grant on every run, Kisi refused it,
+        // and each refusal was a failed job nobody could act on. Skip released seats.
+        // If the flag cannot be read the grant still flows (a paying buyer is never
+        // blocked by a read hiccup — Pass 1 has already logged the failed read).
+        if ((await this._holderSeatState(client.id, memberId, plan.planId, plan.orderIds)) === 'released') {
+          log.info('reconciliation.grant_skipped_seat_released', {
+            clientId: client.id, platformMemberId: memberId, planId: plan.planId,
+            traceId: this._sweepTraceId, stage: 'cron', result: 'skipped',
+          });
+          continue;
+        }
+
         const recoEventId = `recon-${client.id}-${memberId}-${plan.planId}-${Date.now()}`;
         const traceId = this._sweepTraceId || crypto.randomUUID();
         const syntheticEvent = {
@@ -2482,7 +2496,7 @@ class NightlyReconciliation {
   async reconcileMember(memberId, clientId) {
     const traceId = crypto.randomUUID();
     return runWith(
-      { traceId, actor: { type: 'system', id: 'reconcileMember' } },
+      { traceId, actor: { type: 'system', id: 'reconcileMember' }, clientId },
       () => this._reconcileMemberBody(memberId, clientId, traceId)
     );
   }
@@ -2870,6 +2884,65 @@ class NightlyReconciliation {
         ).catch(e => log.error('reconciliation.lockdown_alert_failed', { clientId: loc.client_id }, e));
       }
     }
+  }
+
+  /**
+   * DR-051 seat state for one (holder × plan), from the newest member_billing row —
+   * the same read Pass 1 uses. Sub-members and members with no billing row have no
+   * flag row and are treated as seated (the sweep grants them as before).
+   * A failed read returns 'read_failed' WITHOUT logging: Pass 1 reads the same row
+   * first and has already warned (reconciliation.holder_seated_read_failed).
+   * @returns {Promise<'released'|'read_failed'|'seated_or_unknown'>}
+   */
+  async _holderSeatState(clientId, platformMemberId, planId, orderIds = []) {
+    try {
+      return (await this._planSeatReleased(clientId, platformMemberId, planId, orderIds)) ? 'released' : 'seated_or_unknown';
+    } catch (_err) {
+      return 'read_failed';
+    }
+  }
+
+  /**
+   * Is the holder's seat on this plan released? With known paying order(s): only when EVERY one of them has a newest
+   * billing row saying holder_seated=false. One seated order — or one with no row yet (its webhook was lost) — means the
+   * member paid for a live seat and must not be skipped just because another, older order on the same plan was released.
+   * With no order id (bookings): the plan-wide newest row. Throws on a database error.
+   */
+  async _planSeatReleased(clientId, platformMemberId, planId, orderIds = []) {
+    const ids = Array.isArray(orderIds) ? orderIds.filter(Boolean) : (orderIds ? [orderIds] : []);
+    if (ids.length === 0) {
+      const rows = await this._readSeatFlagRows(clientId, platformMemberId, planId, null);
+      return rows.length > 0 && rows[0].holder_seated === false;
+    }
+    for (const id of ids) {
+      const rows = await this._readSeatFlagRows(clientId, platformMemberId, planId, id);
+      if (!(rows.length > 0 && rows[0].holder_seated === false)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * The newest member_billing row for (holder × plan) — scoped to the Wix ORDER being granted when it is known.
+   * The seat-release flag (DR-051) belongs to one subscription/order: a holder who left a plan, cancelled, and then
+   * RE-BOUGHT it has a new order that starts seated (standard-adapter.js: "a genuine re-purchase starts seated").
+   * Reading the newest row across ALL the plan's orders would apply the old order's "released" flag to the new
+   * purchase and withhold access from someone who paid. With an order id and no row for it (the re-purchase's own
+   * webhook was lost), the answer is "no flag" = seated. Without an order id (bookings) it falls back to the plan-wide read.
+   * Throws on a database error (callers decide: Pass 1 leaves the plan alone, 3A lets the grant flow).
+   */
+  async _readSeatFlagRows(clientId, platformMemberId, planId, orderId = null) {
+    const params = [clientId, platformMemberId, planId];
+    let orderCond = '';
+    if (orderId) { params.push(orderId); orderCond = ` AND mb.wix_order_id = $${params.length}`; }
+    const res = await db.query(
+      `SELECT mb.holder_seated
+         FROM member_billing mb
+         JOIN member_master mm ON mm.id = mb.member_master_id
+        WHERE mb.client_id = $1 AND mm.platform_member_id = $2 AND mb.plan_id = $3${orderCond}
+        ORDER BY mb.cycle_index DESC LIMIT 1`,
+      params
+    );
+    return (res && res.rows) || [];
   }
 
   async _fetchActionableRecords() {

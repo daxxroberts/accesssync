@@ -284,13 +284,13 @@ if (SCHEDULER_ENABLED) {
     try {
       // OB-197 fix 2026-05-24: bumped info → warn so scheduler liveness is
       // observable in diagnostic_log (info currently suppressed pre-OB-176).
-      log.warn('admin.scheduler.reconcile_start', { trigger: 'inprocess_scheduler' });
+      log.info('admin.scheduler.reconcile_start', { trigger: 'inprocess_scheduler' });
       const reconciliation = require('../core/reconciliation');
       // OB-227: pass triggerSource so the sweep's triggered_by_actor_id can
       // distinguish in-process scheduler from Railway cron. Actor becomes
       // 'reconciliation-inprocess' instead of the legacy 'reconciliation-cron'.
       await reconciliation.runNightlySweep({ triggerSource: 'inprocess' });
-      log.warn('admin.scheduler.reconcile_complete', { trigger: 'inprocess_scheduler' });
+      log.info('admin.scheduler.reconcile_complete', { trigger: 'inprocess_scheduler' });
     } catch (err) {
       log.error('admin.scheduler.reconcile_failed', { trigger: 'inprocess_scheduler' }, err);
     }
@@ -300,7 +300,7 @@ if (SCHEDULER_ENABLED) {
     setInterval(fireSweep, RECONCILE_INTERVAL_MS);
   }, RECONCILE_INITIAL_DELAY_MS);
   // OB-197 fix 2026-05-24: bumped info → warn so we can verify scheduler armed.
-  log.warn('admin.scheduler.armed', {
+  log.info('admin.scheduler.armed', {
     initial_delay_minutes: RECONCILE_INITIAL_DELAY_MS / 60000,
     interval_hours: RECONCILE_INTERVAL_MS / 3_600_000,
   });
@@ -320,10 +320,10 @@ const DAY_PASS_SWEEP_ENABLED = process.env.NODE_ENV !== 'test'
 if (DAY_PASS_SWEEP_ENABLED) {
   const fireDayPassSweep = async () => {
     try {
-      log.warn('admin.scheduler.day_pass_sweep_start', { trigger: 'inprocess_scheduler' });
+      log.info('admin.scheduler.day_pass_sweep_start', { trigger: 'inprocess_scheduler' });
       const { runDayPassSweep } = require('../core/day-pass-sweep');
       const result = await runDayPassSweep({ triggerSource: 'inprocess' });
-      log.warn('admin.scheduler.day_pass_sweep_complete', { trigger: 'inprocess_scheduler', ...result });
+      log.info('admin.scheduler.day_pass_sweep_complete', { trigger: 'inprocess_scheduler', ...result });
     } catch (err) {
       log.error('admin.scheduler.day_pass_sweep_failed', { trigger: 'inprocess_scheduler' }, err);
     }
@@ -332,7 +332,7 @@ if (DAY_PASS_SWEEP_ENABLED) {
     fireDayPassSweep();
     setInterval(fireDayPassSweep, DAY_PASS_SWEEP_INTERVAL_MS);
   }, DAY_PASS_SWEEP_INITIAL_DELAY_MS);
-  log.warn('admin.scheduler.day_pass_sweep_armed', {
+  log.info('admin.scheduler.day_pass_sweep_armed', {
     initial_delay_minutes: DAY_PASS_SWEEP_INITIAL_DELAY_MS / 60000,
     interval_minutes: DAY_PASS_SWEEP_INTERVAL_MS / 60000,
   });
