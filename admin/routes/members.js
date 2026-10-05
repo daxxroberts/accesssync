@@ -15,6 +15,7 @@ const { getRedisConnection } = require('../../core/redis-utils');
 const { decryptApiKey } = require('../../core/crypto-utils');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { jobNameForEventType } = require('../../core/event-routing');
+const { retryRefusal } = require('../../core/error-guidance');
 
 const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
 
@@ -376,7 +377,7 @@ router.post('/:id/retry', async (req, res) => {
 
     // Find most recent failed error_queue entry for this member
     const errorResult = await db.query(
-      `SELECT id, client_id, event_type, payload
+      `SELECT id, client_id, event_type, payload, error_code, resolution, http_status, occurred_count
        FROM error_queue
        WHERE member_id = $1 AND status = 'failed'
        ORDER BY created_at DESC
@@ -388,6 +389,7 @@ router.post('/:id/retry', async (req, res) => {
     }
 
     const { id: errorId, client_id: tenantId, event_type: eventType, payload } = errorResult.rows[0];
+    const errorRowForGuard = errorResult.rows[0];
 
     // Route through core/event-routing.js. The inline list this replaced sent
     // everything that wasn't [plan.purchased, payment.recovered, booking.confirmed]
@@ -417,6 +419,14 @@ router.post('/:id/retry', async (req, res) => {
         reason: 'revoke_retry_disabled',
         errorId,
       });
+    }
+    // A retry that can only fail the same way (core/error-guidance.js) is refused: nothing queued, row left open.
+    const wontHelp = retryRefusal(errorRowForGuard);
+    if (wontHelp) {
+      log.warn('admin.retry.wont_help', {
+        clientId: tenantId, errorId, eventType, route: 'admin.members.retry', reason: wontHelp.reason,
+      });
+      return res.status(422).json({ error: wontHelp.error, reason: wontHelp.reason, errorId });
     }
     const standardEvent = readRetryPayload(payload);
     if (!standardEvent) {

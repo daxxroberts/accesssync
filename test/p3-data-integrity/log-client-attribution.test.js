@@ -116,6 +116,34 @@ describe('[P3] the logger stamps the client on diagnostic_log rows', () => {
   });
 });
 
+describe('[P3] the sweep trace is never attributed through trace_context', () => {
+  test('a client-less row written by the nightly sweep actor uses the PLAIN client param (no trace_context fallback)', async () => {
+    const sweepActor = { type: 'system', id: 'reconciliation-railway-cron' };
+    tc.runWith({ traceId: 'sweep-1', actor: sweepActor }, () => log.error('kisi.response.error', { statusCode: 500 }));
+    await flush();
+    const [sql, params] = inserts()[0];
+    expect(sql).not.toMatch(/trace_context/);
+    expect(sql).toMatch(/VALUES \(\$1::uuid,/);
+    expect(params[0]).toBeNull();                                   // stays client-less: no wrong-tenant stamp
+  });
+
+  test('...but a sweep row whose call site names the client (or that runs inside withClient) still carries it', async () => {
+    const sweepActor = { type: 'system', id: 'reconciliation-railway-cron' };
+    await tc.runWith({ traceId: 'sweep-2', actor: sweepActor }, async () => {
+      await tc.withClient(A, async () => { log.error('some.event', { statusCode: 500 }); });
+      log.error('other.event', { clientId: B });
+    });
+    await flush();
+    expect(inserts().map(c => c[1][0]).sort()).toEqual([A, B]);
+  });
+
+  test('every other actor keeps the fallback', async () => {
+    tc.runWith({ traceId: 'job-9', actor: { type: 'system', id: 'queue-worker' } }, () => log.error('kisi.response.error', {}));
+    await flush();
+    expect(inserts()[0][0]).toMatch(/trace_context/);
+  });
+});
+
 describe('[P3] the entry points bind the client', () => {
   const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
 

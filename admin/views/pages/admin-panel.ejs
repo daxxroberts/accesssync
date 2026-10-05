@@ -99,12 +99,26 @@
     .health-setup { font-size: 12px; color: var(--text2); line-height: 1.5; }
     .health-setup strong { color: var(--text); }
     .health-sub { display: block; font-size: 11px; color: var(--text2); margin-top: 1px; text-align: right; }
-    .health-link { color: var(--brand); font-weight: 600; text-decoration: none; }
+    .health-link { color: #3447C4; font-weight: 600; text-decoration: none; padding: 4px 2px; display: inline-block; }
+    .health-link:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
+    .health-card.health-state-inactive { border-left-color: var(--border2, #cbd5e1); }
+    .health-card.health-state-inactive .health-card-state-pill { background: var(--surface); color: var(--text2); border: 1px solid var(--border); }
+    .health-gap { font-size: 12px; color: #991b1b; font-weight: 600; margin: 0 0 8px; line-height: 1.5; }
+    .health-setup .btn { margin-top: 8px; }
+    /* Dark mode: the state colours above were hard-coded for a white card (red text was 2:1 on the dark card). */
+    [data-mode="dark"] .health-check-state.health-state-green { color: #4ade80; }
+    [data-mode="dark"] .health-check-state.health-state-amber { color: #fbbf24; }
+    [data-mode="dark"] .health-check-state.health-state-red   { color: #f87171; }
+    [data-mode="dark"] .health-gap { color: #f87171; }
+    [data-mode="dark"] .health-link { color: #93a5ff; }
+    [data-mode="dark"] .health-card.health-state-green .health-card-state-pill { background: rgba(74,222,128,.15); color: #4ade80; }
+    [data-mode="dark"] .health-card.health-state-amber .health-card-state-pill { background: rgba(251,191,36,.15); color: #fbbf24; }
+    [data-mode="dark"] .health-card.health-state-red   .health-card-state-pill { background: rgba(248,113,113,.15); color: #f87171; }
     .health-link:hover { text-decoration: underline; }
     .system-health-aggregate.health-state-setup::before { background: var(--border2, #cbd5e1); }
     .health-checks { display: grid; grid-template-columns: 1fr; gap: 4px; font-size: 12px; }
     .health-check { display: flex; justify-content: space-between; }
-    .health-check-label { color: var(--muted, #64748b); }
+    .health-check-label { color: var(--text2, #4A5568); }   /* was --muted: 3:1 on light, ~2:1 on dark */
     .health-check-state.health-state-green { color: #047857; }
     .health-check-state.health-state-amber { color: #92400e; }
     .health-check-state.health-state-red { color: #991b1b; font-weight: 600; }
@@ -117,7 +131,7 @@
     .health-db-row.health-state-red { border-left-color: #ef4444; }
     .health-db-label { font-weight: 600; }
     #toast:not(.visible) { visibility: hidden; }   /* off-screen but laid out otherwise: it showed as a dark pill mid-page */
-    .health-db-detail { color: var(--muted, #64748b); }
+    .health-db-detail { color: var(--text2, #4A5568); }
     .health-empty { color: var(--muted, #64748b); font-size: 13px; padding: 8px 0; }
 
     /* ── Clients section ── */
@@ -480,7 +494,7 @@
     }
 
     function renderSystemHealth(data) {
-      var stateOrder = { red: 0, amber: 1, setup: 2, green: 3 };
+      var stateOrder = { red: 0, amber: 1, setup: 2, green: 3, inactive: 4 };
       var clients = (data.clients || []).slice().sort(function(a, b) {
         var av = stateOrder[a.worst_state]; if (av == null) av = 99;
         var bv = stateOrder[b.worst_state]; if (bv == null) bv = 99;
@@ -493,8 +507,10 @@
       var needN = (data.aggregate && data.aggregate.clients_needing_attention) || 0;
       var setupN = (data.aggregate && data.aggregate.clients_setting_up) || 0;
       var setupNote = setupN ? ' · ' + setupN + ' setting up' : '';
+      var dbStateNow = (data.db_health && data.db_health.state) || 'green';
       var aggText;
       if (aggState === 'green') aggText = 'Nothing needs your attention' + setupNote;
+      else if (needN === 0 && dbStateNow !== 'green') aggText = (dbStateNow === 'red' ? 'The database is not responding' : 'The database is slow') + setupNote;   // the colour comes from the database, not a client
       else if (aggState === 'amber') aggText = (needN === 1 ? '1 client needs a look' : needN + ' clients need a look') + setupNote;
       else aggText = (needN === 1 ? '1 client needs action' : needN + ' clients need action') + setupNote;
       agg.textContent = aggText;
@@ -533,20 +549,29 @@
     function renderHealthCard(c) {
       var checks = c.checks || {};
       var pill = c.worst_state === 'setup' ? 'SETTING UP'
+               : c.worst_state === 'inactive' ? 'INACTIVE'
                : (c.setup && c.setup.stalled) ? 'SETUP STALLED'
                : String(c.worst_state || '').toUpperCase();
       var body;
-      if (c.setup) {
+      var inviteBtn = '<button type="button" class="btn btn-sm btn-primary" data-action="invite" data-id="' + escapeHtml(c.client_id) +
+                      '" data-name="' + escapeHtml(c.client_name || '') + '">Send setup link</button>';
+      if (c.worst_state === 'inactive') {
+        body = '<div class="health-setup">This client is <strong>' + escapeHtml(c.status || 'not active') + '</strong>, so nothing is synced for it and nothing is expected of it.</div>';
+      } else if (c.setup) {
         // Not broken, just not finished: say what is missing and for how long, no red.
         var age = c.setup.age_hours == null ? '' : (c.setup.age_hours < 48 ? c.setup.age_hours + 'h' : Math.floor(c.setup.age_hours / 24) + ' days');
         body = '<div class="health-setup">' +
           (c.setup.stalled ? '<strong>Setup has stalled</strong>' : '<strong>Setup in progress</strong>') +
           (age ? ' \u00b7 started ' + escapeHtml(age) + ' ago' : '') + '<br>' +
           'Still missing: ' + escapeHtml(c.setup.missing.join(', ')) + '.' +
-          (c.setup.stalled ? '<br>Use <em>Setup link</em> below to send the gym a fresh link.' : '') +
+          (c.setup.stalled ? '<br>Send the gym a fresh link:<br>' + inviteBtn : '') +
           '</div>';
       } else {
-        body = '<div class="health-checks">' +
+        // An established client that lost part of its configuration is a real fault: say so above its checks.
+        var gap = (c.config_gap && c.config_gap.length)
+          ? '<div class="health-gap">Setup is incomplete: ' + escapeHtml(c.config_gap.join(', ')) + ' missing. This client was working, so this needs fixing.</div>'
+          : '';
+        body = gap + '<div class="health-checks">' +
           renderCheck('Reconcile', checks.reconcile_freshness, formatReconcile) +
           renderCheck('Webhooks', checks.webhook_ingestion, formatWebhook) +
           renderErrorsCheck(checks.error_queue) +
@@ -573,7 +598,7 @@
         if (q.self_clearing) parts.push(q.self_clearing + ' will clear itself');
         var age = q.oldest_age_hours == null ? '' : ' \u00b7 oldest ' + (q.oldest_age_hours < 48 ? q.oldest_age_hours + 'h' : Math.floor(q.oldest_age_hours / 24) + 'd');
         detail = '<span class="health-sub">' + escapeHtml(parts.join(' \u00b7 ') + age) + '</span>';
-        if (q.link) link = ' <a class="health-link" href="' + escapeHtml(q.link) + '">Open &rarr;</a>';
+        if (q.link) link = ' <a class="health-link" href="' + escapeHtml(q.link) + '">See errors &rarr;</a>';
       }
       return '<div class="health-check">' +
         '<span class="health-check-label">Errors</span>' +
@@ -590,24 +615,28 @@
     }
 
     function formatReconcile(c) {
-      if (c.state === 'idle') return 'Not started';
+      if (c.state === 'idle') return 'Waiting for first sync';
+      if (c.state === 'red' && c._error) return 'Check failed';
       if (c.age_hours == null) return 'Never run';
       if (c.state === 'green') return 'Fresh (' + c.age_hours + 'h ago)';
       if (c.state === 'amber') return 'Stale (' + c.age_hours + 'h ago)';
       return '>' + c.age_hours + 'h ago';
     }
     function formatWebhook(c) {
-      if (c.state === 'idle') return 'Not started';
+      if (c.state === 'idle') return 'Waiting for first sale';
+      if (c.state === 'red' && c._error) return 'Check failed';
       if (c.state === 'green') return 'Active (' + (c.count_24h || 0) + ' today)';
       if (c.state === 'amber') return 'Slow (' + (c.count_24h || 0) + ' today)';
       return 'Silent';
     }
     function formatErrors(c) {
+      if (c.open_count == null) return 'Check failed';
       if (c.state === 'green') return 'None open';
       if (c.state === 'amber') return c.open_count + ' open';
       return c.open_count + ' need action';
     }
     function formatDiagnostics(c) {
+      if (c.state === 'red' && c._error) return 'Check failed';
       if (c.state === 'amber') return (c.error_count_24h || 0) + ' errors / 24h';
       return 'No error burst';
     }
@@ -895,6 +924,12 @@
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(done, fallback);
       else fallback();
     }
+
+    // The "Send setup link" button on a setup card (System Health) uses the same data-action contract.
+    document.getElementById('systemHealthGrid').addEventListener('click', function(e) {
+      var b = e.target.closest('button[data-action="invite"]');
+      if (b) openInviteModal(b.getAttribute('data-id'), b.getAttribute('data-name'));
+    });
 
     // One delegated listener for every client-card button (see renderClientCard).
     document.getElementById('clientsGrid').addEventListener('click', function(e) {

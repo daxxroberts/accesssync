@@ -137,7 +137,13 @@
   <script src="/humanize.js"></script>
   <script src="/member-incident-drawer.js"></script>
   <script>
-    var _clientId      = new URLSearchParams(window.location.search).get('clientId') || '';
+    // clientId comes from the address bar and is concatenated into URLs and inline handlers below: accept a real uuid only
+    // (anything else — e.g. a quote-and-script payload — is treated as "no client selected").
+    var _clientId      = (function () {
+      var v = new URLSearchParams(window.location.search).get('clientId') || '';
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : '';
+    })();
+    var _isOwnerView   = (document.body.getAttribute('data-session-role') || '') === 'owner';
     var _currentFilter = 'failed';
     var _filterLocation = '';
     var _filterCode    = '';
@@ -172,7 +178,10 @@
       'SUBSCRIPTION_LAPSED':         "AccessSync isn't active for this location.",
     };
 
-    var OWNER_LABELS = { gym: 'You need to act', accesssync: 'AccessSync support needs to act', nobody: 'Nothing for you to do' };
+    // Who is looking changes who "you" is: the AccessSync owner sees the same page as the gym, but is not the gym.
+    var OWNER_LABELS = _isOwnerView
+      ? { gym: 'The gym needs to act', accesssync: 'AccessSync support needs to act', nobody: 'Nobody needs to act' }
+      : { gym: 'You need to act', accesssync: 'AccessSync support needs to act', nobody: 'Nothing for you to do' };
 
     // ── HTTP status → plain label ──────────────────────────────────
     var HTTP_LABELS = {
@@ -455,11 +464,23 @@
       var nextStep       = isResolved ? null : (g ? null : getNextStepLine(e));
       // Retry is shown when it can help now, or when the gym's fix comes first and Retry is the final step.
       // Hidden only when the cause is AccessSync's to fix: pressing it would just fail the same way.
-      var retryHelps     = !g || g.retryHelps;
-      var showRetry      = !g || g.retryHelps || g.owner === 'gym';
-      var retryLabel     = (g && !g.retryHelps) ? 'Retry after fixing' : 'Retry now';
-      var reason         = errorReason(e.error_code);
-      var consequence    = errorConsequence(e.error_code);
+      // Everything about Retry / Mark resolved comes from the server's guidance (core/error-guidance.js):
+      //   retry 'now'       pressing Retry can succeed as things stand
+      //   retry 'after_fix' the gym's fix comes first; Retry is the LAST step
+      //   retry 'none'      the same request would fail the same way (or removals, which the server refuses)
+      var retry          = g ? g.retry : 'now';
+      var retryLabel     = retry === 'after_fix' ? 'Retry after fixing' : 'Retry now';
+      var noRetryLabel   = !g ? '' : g.removal ? 'Removals can\u2019t be retried'
+                         : g.owner === 'nobody' ? 'No action needed'
+                         : 'AccessSync is on it';
+      // The gym cannot dismiss what only AccessSync can fix (the server refuses it too); the owner can dismiss anything.
+      var canDismiss     = !g || _isOwnerView || g.owner !== 'accesssync';
+      // When guidance owns the card, the older static lines (connector message, "Why", "consequence") are only shown for
+      // the gym's own fixes: for the others they contradicted it ("AccessSync will retry automatically" under "this keeps happening").
+      var staticOk       = !g || g.owner === 'gym';
+      if (!staticOk) { statusMsg = null; }
+      var reason         = staticOk ? errorReason(e.error_code) : null;
+      var consequence    = staticOk ? errorConsequence(e.error_code) : null;
       var jumpUrl        = errorJumpUrl(e.error_code, e.location_id);
 
       return '<div class="err-card" data-id="' + esc(e.id) + '">' +
@@ -482,10 +503,12 @@
         '</div>' +
         '<div class="err-card-actions">' +
           (jumpUrl ? '<button class="btn-jump" onclick="jumpToFix(\'' + esc(jumpUrl) + '\')">Fix this \u2197</button>' : '') +
-          (showRetry
+          (retry !== 'none'
             ? '<button class="btn-retry" data-label="' + esc(retryLabel) + '"'   + (isResolved ? ' disabled' : '') + ' onclick="retryOne(\''   + esc(e.id) + '\', this)">' + retryLabel + '</button>'
-            : '<span class="err-noretry" title="This will fail the same way until the cause above is fixed">Retry won\u2019t help yet</span>') +
-          '<button class="btn-dismiss"' + (isResolved ? ' disabled' : '') + ' onclick="dismissOne(\'' + esc(e.id) + '\', this)">Mark resolved</button>' +
+            : '<span class="err-noretry">' + esc(noRetryLabel) + '</span>') +
+          (canDismiss
+            ? '<button class="btn-dismiss"' + (isResolved ? ' disabled' : '') + ' onclick="dismissOne(\'' + esc(e.id) + '\', this)">Mark resolved</button>'
+            : '') +
           '<button class="btn-details" onclick="openIncidentDrawer(\'' + esc(e.id) + '\')">View incident</button>' +
         '</div>' +
       '</div>';
@@ -502,6 +525,7 @@
         clientId: _clientId,
         errorId:  e.id,
         traceId:  e.trace_id || null,
+        guidance: e.guidance || null,
         onActionDone: function () { loadErrors(); loadSummary(); },
       });
     }
@@ -614,14 +638,30 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ note: '' }),
       })
-        .then(function(r) { return r.json(); })
-        .then(function() { showToast('success', 'Dismissed'); loadErrors(); loadSummary(); })
+        .then(readJsonResponse)
+        .then(function(res) {
+          if (!res.ok) {
+            // e.g. 409: the gym cannot dismiss an error only AccessSync can fix — say why, leave it open.
+            showToast('error', esc((res.body && res.body.error) || ('Could not mark resolved (HTTP ' + res.status + ')')));
+            btn.disabled = false; btn.textContent = 'Mark resolved';
+            return;
+          }
+          showToast('success', 'Marked resolved'); loadErrors(); loadSummary();
+        })
         .catch(function() { showToast('error', 'Dismiss failed'); btn.disabled = false; btn.textContent = 'Mark resolved'; });
     }
 
     function retryAll() {
-      var activeIds = _errors.filter(function(e) { return e.status === 'failed'; }).map(function(e) { return e.id; });
-      if (!activeIds.length) { showToast('info', 'No active errors to retry'); return; }
+      var active    = _errors.filter(function(e) { return e.status === 'failed'; });
+      // Only rows where Retry can work (now, or after the gym's fix). The rest would fail the same way — they are left
+      // open and untouched, never re-queued and never marked resolved.
+      var eligible  = active.filter(function(e) { return !e.guidance || e.guidance.retry !== 'none'; });
+      var leftAlone = active.length - eligible.length;
+      var activeIds = eligible.map(function(e) { return e.id; });
+      if (!activeIds.length) {
+        showToast('info', active.length ? 'Nothing to retry: ' + active.length + ' open error' + (active.length === 1 ? '' : 's') + ' would fail the same way. See what each one needs.' : 'No active errors to retry');
+        return;
+      }
       var btn = document.getElementById('btn-retry-all');
       if (btn) { btn.disabled = true; btn.textContent = 'Retrying…'; }
       apiFetch('/admin/errors/bulk-retry', {
@@ -641,6 +681,7 @@
           var skipped = d.skipped || 0;
           var failed  = d.failed  || 0;
           var msg = 'Queued ' + queued + ' for retry';
+          if (leftAlone) msg += ' · ' + leftAlone + ' left open (retrying would fail the same way)';
           // Skipped rows were refused — a door-access removal (retry paused while
           // safety checks roll out), an error that can't be re-run, or unreadable
           // saved details. Nothing was queued for them; they stay open below.

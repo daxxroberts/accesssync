@@ -132,11 +132,15 @@ class KisiConnector {
       // shapes that should not pollute error counts or trip alert paths.
       //   - 409 on POST /role_assignments → kisi-adapter.js:158 reuses existing
       //   - 404 on DELETE /role_assignments → kisi-adapter.js OB-147 treats as success
+      //   - 409 on POST /users → standard-adapter.js re-queries by email and reuses the existing user
+      //     (the user was created between findUserByEmail and createUser). ~18 a day for House of Gains;
+      //     logged at ERROR they kept the owner panel's Diagnostics card permanently amber.
       // All other 4xx/5xx stay at ERROR (real failures the operator must see).
       const method = options.method || 'GET';
       const isLikelyRecoverable =
         (response.status === 409 && method === 'POST'   && endpoint.startsWith('/role_assignments')) ||
-        (response.status === 404 && method === 'DELETE' && endpoint.startsWith('/role_assignments'));
+        (response.status === 404 && method === 'DELETE' && endpoint.startsWith('/role_assignments')) ||
+        (response.status === 409 && method === 'POST'   && endpoint === '/users');
       const logFn = isLikelyRecoverable ? log.warn : log.error;
       logFn('kisi.response.error', {
         method,

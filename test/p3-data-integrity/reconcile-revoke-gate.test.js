@@ -250,7 +250,9 @@ function installWorld(world = {}) {
     if (s.includes('SELECT mb.holder_seated')) {                                // DR-051 flag
       if (world.holderSeatedThrows) throw new Error('member_billing read failed');
       const released = (world.holderSeatedFalseFor || []).includes(params[1])
-        || (world.holderSeatedFalseForPlans || []).some(([m, p]) => m === params[1] && p === params[2]);
+        || (world.holderSeatedFalseForPlans || []).some(([m, p]) => m === params[1] && p === params[2])
+        // flag belongs to ONE Wix order: only a read scoped to that order ($4) sees it
+        || (world.holderSeatedFalseForOrders || []).some(([m, o]) => m === params[1] && o === params[3]);
       return released ? { rows: [{ holder_seated: false }], rowCount: 1 } : empty;
     }
     if (s.includes("SET status = 'cancelled'")) {                               // DR-051 self-heal
@@ -1992,6 +1994,35 @@ describe('[P3] Step 3A — a seat its holder released is never re-queued as a gr
     await runSync();
 
     expect(grantedPairs()).toEqual([`released-holder:${PLAN_ID}`]);
+  });
+
+  test('the seat flag belongs to ONE order: a holder who released an earlier order and RE-BOUGHT the plan is granted for the new order', async () => {
+    installWorld({
+      members: [member('a')],
+      read1:   reads(paying(['a', 'rebuyer'])),
+      holderSeatedFalseForOrders: [['rebuyer', 'ord-rebuyer-OLD-ORDER']],      // the OLD order's row says released
+    });
+
+    await runSync();
+
+    // the current order (ord-rebuyer-<plan>-PAYING) has no billing row yet (its webhook was lost): a new order starts seated
+    expect(grantedPairs()).toEqual([`rebuyer:${PLAN_ID}`]);
+    const seatReads = sqlCalls('SELECT mb.holder_seated').filter(c => c[1][1] === 'rebuyer');
+    expect(seatReads.length).toBeGreaterThan(0);
+    for (const c of seatReads) {
+      expect(String(c[0])).toMatch(/mb\.wix_order_id = \$4/);                  // scoped to the order being granted
+      expect(c[1][3]).toBe(`ord-rebuyer-${PLAN_ID}-PAYING`);
+    }
+  });
+
+  test('...and a holder who released THIS order is still skipped', async () => {
+    installWorld({
+      members: [member('a')],
+      read1:   reads(paying(['a', 'leaver'])),
+      holderSeatedFalseForOrders: [['leaver', `ord-leaver-${PLAN_ID}-PAYING`]],
+    });
+    await runSync();
+    expect(grantedPairs()).toEqual([]);
   });
 
   test('the released flag is per (member × plan): a second plan the member still holds is granted', async () => {

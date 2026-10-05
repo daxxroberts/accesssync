@@ -135,6 +135,8 @@
     "admin.scheduler.day_pass_sweep_start":       { "persist": true },
     "admin.scheduler.day_pass_sweep_complete":    { "persist": true },
     "admin.scheduler.day_pass_sweep_armed":       { "persist": true },
-    "kisi.user.created.full_response":            { "persist": false }
+    "kisi.user.created.full_response":            { "persist": false },
+    "retry.notify.suppressed_repeat":             { "persist": false },
+    "retry.notify.suppressed_same_cause":         { "persist": false }
   }
 }

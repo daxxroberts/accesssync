@@ -62,3 +62,14 @@ Primary team (NOVA, ORION, FAULT/REED, LENS/FORGE) and secondary team (SCOUT/QUI
 **Later:** nothing outstanding from this review except customer #2 onboarding questions.
 
 **Heads-up when this deploys:** the operator email for a refused grant is sent to the client's `notification_email` (House of Gains: Daxx's address, not Chad's). The first real 4xx failure emails once per member and error code, and a nightly digest line appears while one stays open.
+
+---
+
+## Corrections after the full BOT review (2026-10-05)
+
+Three statements above were wrong and are corrected here (the original text is left as written so the record is honest):
+
+- **"97% of warnings were breadcrumbs"** — measured later at about **81%** (207 of 254 House of Gains warnings in 24h; ~78% over 7 days). The downgrade to info is still right; the percentage was overstated.
+- **"The first real 4xx failure emails once per member and error code"** — *false in the code as it stood.* `handleFailure` called `_notifyOperator` even after the row-dedupe hit, so every repeat (each 12-hourly sweep, each Retry click, each "Mark resolved" followed by another failure) re-emailed. Fixed in the fix round (see `SAGE_DECISIONS_2026-10-05.md`, D6/D7).
+- **"Kisi needs both email and name" (the first 422 guidance)** — *false.* AccessSync sends Kisi only the email (`kisi-adapter.js createUser`); the live 422s are on `POST /role_assignments` with the message "unknown". The 422 is now AccessSync support's from the first occurrence (D1).
+- **"The sweep runs every 12 hours"** — true in practice but by accident: the code is a 6h timer with a 6h gate, and `last_sync_at` is stamped at the end of a sweep so the next tick lands a few seconds short and is skipped. New clients are now created on `reconciliation_interval='6h'` (the column default is `'daily'`, and the gate takes the interval of whichever client synced most recently).

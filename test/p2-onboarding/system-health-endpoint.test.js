@@ -64,7 +64,7 @@ function mockSystem({
   slow = 0,
   setup,                       // default: every listed client fully set up
 } = {}) {
-  const setupRows = setup || clients.map(c => ({ client_id: c.id, has_hardware_key: true, has_wix_key: true, location_count: 1 }));
+  const setupRows = setup || clients.map(c => ({ client_id: c.id, has_hardware_key: true, has_wix_key: true, location_count: 1, has_members: true }));
   db.query
     .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
     .mockResolvedValueOnce({ rows: clients })
@@ -149,11 +149,8 @@ describe('[P2] OB-195 — GET /admin/system-health endpoint', () => {
       expect(res.body.aggregate.worst_state).toBe('red');
     });
 
-    test('a fresh Kisi 422 is the gym\'s to check first (profile) → red; once it keeps failing it is AccessSync support\'s', async () => {
+    test('a Kisi 422 is AccessSync support\'s from the first occurrence (the gym cannot fix it) → red', async () => {
       mockSystem({ openErrors: [openErr()] });
-      expect((await get()).body.clients[0].checks.error_queue).toMatchObject({ state: 'red', needs_gym: 1, needs_accesssync: 0 });
-
-      mockSystem({ openErrors: [openErr({ occurred_count: 8 })] });
       expect((await get()).body.clients[0].checks.error_queue).toMatchObject({ state: 'red', needs_gym: 0, needs_accesssync: 1 });
     });
 
@@ -167,6 +164,11 @@ describe('[P2] OB-195 — GET /admin/system-health endpoint', () => {
       const res = await get();
       expect(res.body.clients[0].checks.error_queue).toMatchObject({ state: 'amber', self_clearing: 1, needs_gym: 0, needs_accesssync: 0 });
       expect(res.body.clients[0].worst_state).toBe('amber');
+    });
+
+    test('"clears by itself" expires: a temporary error still open after 24h is counted as AccessSync\'s (red), not amber forever', async () => {
+      mockSystem({ openErrors: [openErr({ error_code: 'HARDWARE_API_ERROR', resolution: 'RETRY', http_status: 503, occurred_count: 1, created_at: HOURS(30) })] });
+      expect((await get()).body.clients[0].checks.error_queue).toMatchObject({ state: 'red', self_clearing: 0, needs_accesssync: 1 });
     });
 
     test('a "temporary" error that keeps recurring escalates to red', async () => {
@@ -205,6 +207,24 @@ describe('[P2] OB-195 — GET /admin/system-health endpoint', () => {
       expect((await get()).body.clients[0].checks.diagnostic_log.state).toBe('green');
     });
 
+    test('if the errors query itself fails the card is RED ("we do not know"), never green', async () => {
+      db.query
+        .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+        .mockResolvedValueOnce({ rows: [{ id: 'c1', name: 'Test Client', last_webhook_at: HOURS(1), status: 'active', created_at: HOURS(900) }] })
+        .mockResolvedValueOnce({ rows: [{ client_id: 'c1', last_run_at: HOURS(1) }] })
+        .mockResolvedValueOnce({ rows: [{ latest_reconcile_at: HOURS(1) }] })
+        .mockResolvedValueOnce({ rows: [{ client_id: 'c1', last_received_at: HOURS(1) }] })
+        .mockResolvedValueOnce({ rows: [{ client_id: 'c1', count_24h: 10 }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValueOnce(new Error('diag down'))
+        .mockResolvedValueOnce({ rows: [{ client_id: 'c1', warn_count_24h: 3 }] })
+        .mockResolvedValueOnce({ rows: [{ slow_query_24h: 0 }] })
+        .mockResolvedValueOnce({ rows: [{ client_id: 'c1', has_hardware_key: true, has_wix_key: true, location_count: 1, has_members: true }] });
+      const d = (await get()).body.clients[0].checks.diagnostic_log;
+      expect(d.state).toBe('red');
+      expect(d._error).toBe('diag down');
+    });
+
     test('errors that belong to no client are reported as platform-level, not lost', async () => {
       mockSystem({ diagErrors: [{ client_id: 'c1', error_count_24h: 1 }, { client_id: null, error_count_24h: 4 }] });
       const res = await get();
@@ -217,7 +237,7 @@ describe('[P2] OB-195 — GET /admin/system-health endpoint', () => {
       await get();
       const sql = db.query.mock.calls.map(c => String(c[0])).find(q => q.includes("level = 'error'"));
       expect(sql).toMatch(/LEFT JOIN trace_context/);
-      expect(sql).toMatch(/COALESCE\(d\.client_id, tc\.client_id\)/);
+      expect(sql).toMatch(/COALESCE\(d\.client_id, CASE WHEN d\.actor_id LIKE 'reconciliation-%' THEN NULL ELSE tc\.client_id END\)/);
       expect(sql).toMatch(/24 hours/);
     });
   });
@@ -241,23 +261,26 @@ describe('[P2] OB-195 — GET /admin/system-health endpoint', () => {
   // ── 7. A client that has not finished setup is not "broken" ───────────────
   describe('setup state', () => {
     const NEW = { id: 'c2', name: 'New Wix site', last_webhook_at: null, status: 'active', created_at: HOURS(2) };
-    const setupRow = (over = {}) => ({ client_id: 'c2', has_hardware_key: false, has_wix_key: false, location_count: 0, ...over });
+    const setupRow = (over = {}) => ({ client_id: 'c2', has_hardware_key: false, has_wix_key: false, location_count: 0, has_members: false, ...over });
+    const HOG = { id: 'c1', name: 'HOG', last_webhook_at: HOURS(1), status: 'active', created_at: HOURS(900) };
+    const HOG_SETUP = { client_id: 'c1', has_hardware_key: true, has_wix_key: true, location_count: 1, has_members: true };
 
-    test('a brand-new client reads "setup", not red, and does not turn the page red', async () => {
+    test('a brand-new client with no history reads "setup", not red, and does not turn the page red', async () => {
       mockSystem({
-        clients: [{ id: 'c1', name: 'HOG', last_webhook_at: HOURS(1), status: 'active', created_at: HOURS(900) }, NEW],
+        clients: [HOG, NEW],
         reconcile: [{ client_id: 'c1', last_run_at: HOURS(1) }],
         webhookLast: [{ client_id: 'c1', last_received_at: HOURS(1) }],
-        setup: [{ client_id: 'c1', has_hardware_key: true, has_wix_key: true, location_count: 1 }, setupRow()],
+        setup: [HOG_SETUP, setupRow()],
       });
       const res = await get();
       const c2 = res.body.clients.find(c => c.client_id === 'c2');
 
       expect(c2.worst_state).toBe('setup');
       expect(c2.setup).toMatchObject({ stalled: false, missing: ['Kisi API key', 'Wix API key', 'a location'] });
-      expect(c2.checks.reconcile_freshness.state).toBe('idle');   // "not started", not "never ran"
+      expect(c2.config_gap).toBeNull();
+      expect(c2.checks.reconcile_freshness.state).toBe('idle');
       expect(c2.checks.webhook_ingestion.state).toBe('idle');
-      expect(res.body.aggregate.worst_state).toBe('green');       // HOG is fine; the new gym does not alarm
+      expect(res.body.aggregate.worst_state).toBe('green');
       expect(res.body.aggregate.clients_setting_up).toBe(1);
       expect(res.body.aggregate.clients_needing_attention).toBe(0);
     });
@@ -274,7 +297,34 @@ describe('[P2] OB-195 — GET /admin/system-health endpoint', () => {
       expect(res.body.aggregate.clients_needing_attention).toBe(1);
     });
 
-    test('once setup is complete the client is judged like any other (no reconcile ever → red)', async () => {
+    test('an ESTABLISHED client that loses its Kisi key is a real fault: RED with config_gap, its checks and errors stay visible (never "setup stalled")', async () => {
+      mockSystem({
+        clients: [HOG],
+        reconcile: [{ client_id: 'c1', last_run_at: HOURS(1) }],
+        webhookLast: [{ client_id: 'c1', last_received_at: HOURS(1) }],
+        openErrors: [openErr({ error_code: 'HARDWARE_KEY_INVALID', resolution: 'ROTATE_API_KEY', http_status: 401 })],
+        setup: [{ ...HOG_SETUP, has_hardware_key: false }],
+      });
+      const c = (await get()).body.clients[0];
+      expect(c.setup).toBeNull();
+      expect(c.config_gap).toEqual(['Kisi API key']);
+      expect(c.worst_state).toBe('red');
+      expect(c.checks.error_queue).toMatchObject({ state: 'red', needs_gym: 1 });      // not hidden
+    });
+
+    test('history counts even with no members: a client that already received webhooks is not "setting up"', async () => {
+      mockSystem({
+        clients: [{ ...NEW, created_at: HOURS(100) }],
+        reconcile: [], webhookLast: [{ client_id: 'c2', last_received_at: HOURS(1) }], webhook24h: [],
+        setup: [setupRow({ has_hardware_key: true, has_wix_key: true, location_count: 0 })],
+      });
+      const c = (await get()).body.clients[0];
+      expect(c.setup).toBeNull();
+      expect(c.config_gap).toEqual(['a location']);
+      expect(c.worst_state).toBe('red');
+    });
+
+    test('once setup is complete the client is judged like any other (no reconcile ever, past the grace period → red)', async () => {
       mockSystem({
         clients: [{ ...NEW, created_at: HOURS(100) }],
         reconcile: [], webhookLast: [], webhook24h: [],
@@ -285,10 +335,42 @@ describe('[P2] OB-195 — GET /admin/system-health endpoint', () => {
       expect(res.body.clients[0].worst_state).toBe('red');
     });
 
+    test('...but a just-finished new client gets a grace period: "waiting for first sale/sync", not red', async () => {
+      mockSystem({
+        clients: [{ ...NEW, created_at: HOURS(10) }],
+        reconcile: [], webhookLast: [], webhook24h: [],
+        setup: [setupRow({ has_hardware_key: true, has_wix_key: true, location_count: 1 })],
+      });
+      const c = (await get()).body.clients[0];
+      expect(c.checks.reconcile_freshness.state).toBe('idle');
+      expect(c.checks.webhook_ingestion.state).toBe('idle');
+      expect(c.worst_state).toBe('green');
+    });
+
+    test('grace is only for the FIRST webhook: after 72h of silence a complete client is red', async () => {
+      mockSystem({
+        clients: [{ ...NEW, created_at: HOURS(80) }],
+        reconcile: [{ client_id: 'c2', last_run_at: HOURS(1) }], webhookLast: [], webhook24h: [],
+        setup: [setupRow({ has_hardware_key: true, has_wix_key: true, location_count: 1 })],
+      });
+      expect((await get()).body.clients[0].checks.webhook_ingestion.state).toBe('red');
+    });
+
+    test.each(['suspended', 'cancelled'])('a %s client is neutral "inactive": the sweep never runs for it, so no red for "never reconciled"', async (status) => {
+      mockSystem({
+        clients: [{ ...HOG, status }],
+        reconcile: [], webhookLast: [], webhook24h: [],
+      });
+      const res = await get();
+      expect(res.body.clients[0]).toMatchObject({ worst_state: 'inactive', status });
+      expect(res.body.aggregate.worst_state).toBe('green');
+      expect(res.body.aggregate.clients_needing_attention).toBe(0);
+    });
+
     test('if the setup query itself fails, clients are judged normally (never hidden behind "setup")', async () => {
       db.query
         .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'c1', name: 'HOG', last_webhook_at: HOURS(1), status: 'active', created_at: HOURS(900) }] })
+        .mockResolvedValueOnce({ rows: [HOG] })
         .mockResolvedValueOnce({ rows: [] })                                    // no reconcile ever
         .mockResolvedValueOnce({ rows: [{ latest_reconcile_at: null }] })
         .mockResolvedValueOnce({ rows: [] })

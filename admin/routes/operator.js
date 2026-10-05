@@ -31,7 +31,7 @@ const hardwareAdapter = require('../../adapters/hardware-adapter');
 const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
 const standardAdapter = require('../../adapters/standard-adapter');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
-const { guidanceFor } = require('../../core/error-guidance');
+const { guidanceFor, retryRefusal, dismissRefusal } = require('../../core/error-guidance');
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
@@ -2072,6 +2072,16 @@ router.post('/:clientId/sync', async (req, res) => {
 router.post('/:clientId/errors/:errorId/dismiss', async (req, res) => {
   const { clientId, errorId } = req.params;
   try {
+    // The gym cannot hide an error only AccessSync can fix (it would turn the owner's panel green while the member
+    // is still locked out). The owner (role 'admin') can dismiss anything.
+    const current = await db.query(
+      `SELECT error_code, resolution, http_status, occurred_count, event_type FROM error_queue WHERE id = $1 AND client_id = $2`,
+      [errorId, clientId]
+    );
+    if (current.rows.length) {
+      const refusal = dismissRefusal(current.rows[0], req.admin && req.admin.role);
+      if (refusal) return res.status(409).json({ error: refusal.error, reason: refusal.reason });
+    }
     const result = await db.query(
       `UPDATE error_queue
        SET status = 'resolved', resolved_at = NOW(), dismissed_by = 'operator'
@@ -2124,6 +2134,13 @@ router.post('/:clientId/errors/:errorId/retry', async (req, res) => {
           + 'Nothing was changed — if this person should lose access, remove them in Kisi.',
         reason: 'revoke_retry_disabled',
       });
+    }
+    // A retry that can only fail the same way is refused: nothing queued, row left open (it used to be
+    // re-queued and marked resolved, so it disappeared from the owner's panel while the member was still locked out).
+    const wontHelp = retryRefusal(error);
+    if (wontHelp) {
+      log.warn('admin.retry.wont_help', { clientId, errorId, eventType: error.event_type, route: 'operator.errors.retry', reason: wontHelp.reason });
+      return res.status(422).json({ error: wontHelp.error, reason: wontHelp.reason });
     }
     let standardEvent = error.payload;
     if (typeof standardEvent === 'string') {

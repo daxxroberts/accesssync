@@ -17,9 +17,15 @@
  *   amber  only self-clearing errors, a reconcile 13-26h old, a burst of errors in 24h,
  *          or a client whose setup has stalled
  *   green  nothing to do
- *   setup  (client.worst_state only) a client that has not finished setup is NOT unhealthy —
- *          it has not started yet. It never turns the page red and is left out of the rollup
- *          until its setup has stalled (48h), when it becomes amber.
+ *   setup  (client.worst_state only) a client that has not finished setup AND has no history yet is NOT
+ *          unhealthy — it has not started. It never turns the page red and is left out of the rollup until its
+ *          setup has stalled (48h), when it becomes amber. A client that HAS history (members, webhooks, a
+ *          reconcile) but lost its key or location is a real problem: it is judged normally and shows red.
+ *   inactive (client.worst_state only) a client whose status is neither active nor archived (suspended,
+ *          cancelled): the sweep does not run for it, so "never reconciled" is expected, not a fault.
+ * A newly set-up client gets a grace period before "never received a webhook / never reconciled" is a fault
+ * (a quiet new gym is not broken). Open errors that "clear by themselves" stop being self-clearing after 24h
+ * (nothing auto-resolves them): they are counted as AccessSync's to look at.
  * Routine lifecycle warnings never drive a colour: they are counted for information only.
  *
  * SAGE-locked design (OB-195):
@@ -45,6 +51,11 @@ const RECONCILE_GREEN_H = 13;
 const RECONCILE_AMBER_H = 26;
 // A client that has not finished setup is "setting up" for this long, then "stalled".
 const SETUP_STALLED_H = 48;
+// A fully set-up new client is given time before silence is a fault.
+const FIRST_WEBHOOK_GRACE_H = 72;
+const FIRST_RECONCILE_GRACE_H = 24;
+// A "clears by itself" error older than this is not clearing: it needs AccessSync to look.
+const SELF_CLEARING_MAX_H = 24;
 // Errors in 24h before diagnostics turns amber (baseline for one gym is ~2/day).
 const DIAG_ERRORS_AMBER = 5;
 
@@ -111,16 +122,19 @@ router.get('/', async (req, res) => {
   // Error queue — every OPEN row (status='failed' = open, see admin/routes/errors.js), so each
   // can be classified by core/error-guidance.js: who must act, and does it clear by itself?
   const errorQueueP = settle(db.query(
-    `SELECT client_id, error_code, resolution, http_status, occurred_count, created_at
+    `SELECT client_id, error_code, resolution, http_status, occurred_count, event_type, created_at
        FROM error_queue
       WHERE status = 'failed'`
   ));
 
   // Diagnostic log — errors in the last 24h per client. Rows logged without a client_id are
   // attributed through trace_context (the same trace_id), so a connector error is not lost
-  // just because the call site did not pass the client. What still has no client is platform-level.
+  // just because the call site did not pass the client — EXCEPT rows written by the nightly sweep (actor
+  // 'reconciliation-*'): one trace spans every client there, so its trace_context client is only the first job's.
+  // What still has no client is platform-level.
   const diagErrorsP = settle(db.query(
-    `SELECT COALESCE(d.client_id, tc.client_id) AS client_id, COUNT(*)::int AS error_count_24h
+    `SELECT COALESCE(d.client_id, CASE WHEN d.actor_id LIKE 'reconciliation-%' THEN NULL ELSE tc.client_id END) AS client_id,
+            COUNT(*)::int AS error_count_24h
        FROM diagnostic_log d
        LEFT JOIN trace_context tc ON tc.trace_id = d.trace_id
       WHERE d.level = 'error' AND d.created_at >= NOW() - INTERVAL '24 hours'
@@ -129,7 +143,8 @@ router.get('/', async (req, res) => {
 
   // Warnings are informational only (most are deliberate lifecycle breadcrumbs).
   const diagWarnsP = settle(db.query(
-    `SELECT COALESCE(d.client_id, tc.client_id) AS client_id, COUNT(*)::int AS warn_count_24h
+    `SELECT COALESCE(d.client_id, CASE WHEN d.actor_id LIKE 'reconciliation-%' THEN NULL ELSE tc.client_id END) AS client_id,
+            COUNT(*)::int AS warn_count_24h
        FROM diagnostic_log d
        LEFT JOIN trace_context tc ON tc.trace_id = d.trace_id
       WHERE d.level = 'warn' AND d.created_at >= NOW() - INTERVAL '24 hours'
@@ -149,7 +164,8 @@ router.get('/', async (req, res) => {
             EXISTS (SELECT 1 FROM connector_subscriptions cs
                      WHERE cs.client_id = c.id AND cs.status = 'active' AND cs.hardware_api_key IS NOT NULL) AS has_hardware_key,
             (c.source_api_key IS NOT NULL) AS has_wix_key,
-            (SELECT COUNT(*)::int FROM locations l WHERE l.client_id = c.id) AS location_count
+            (SELECT COUNT(*)::int FROM locations l WHERE l.client_id = c.id) AS location_count,
+            EXISTS (SELECT 1 FROM member_master mm WHERE mm.client_id = c.id) AS has_members
        FROM clients c
       WHERE c.status != 'archived'`
   ));
@@ -212,8 +228,15 @@ router.get('/', async (req, res) => {
       if (!setupRow.has_wix_key) missing.push('Wix API key');
       if (!(setupRow.location_count > 0)) missing.push('a location');
     }
-    const settingUp = missing.length > 0;
     const setupAgeH = ageHours(c.created_at);
+    // History = the client has actually run: members, a webhook, or a reconcile. Missing config on a client WITH history
+    // is a fault (key cleared, location deleted), not "setting up" — its errors and stale checks must stay visible.
+    const hasHistory = !!(setupRow && setupRow.has_members) || reconcileMap.has(c.id) || webhookLastMap.has(c.id);
+    const settingUp = missing.length > 0 && !hasHistory;
+    const configGap = missing.length > 0 && hasHistory ? missing : null;
+    const inactive = c.status !== 'active';
+    // A complete new client that has not had a first webhook / sync yet is waiting, not broken.
+    const newClientWaiting = (graceH) => !settingUp && setupAgeH != null && setupAgeH < graceH;
 
     // reconcile_freshness — green <13h (runs every 12h), amber 13-26h, red >26h or never
     let reconcile_freshness;
@@ -223,7 +246,7 @@ router.get('/', async (req, res) => {
       const last_run_at = reconcileMap.get(c.id) || null;
       const age_hours = ageHours(last_run_at);
       let state;
-      if (last_run_at === null) state = settingUp ? 'idle' : 'red';
+      if (last_run_at === null) state = (settingUp || inactive || newClientWaiting(FIRST_RECONCILE_GRACE_H)) ? 'idle' : 'red';
       else if (age_hours < RECONCILE_GREEN_H) state = 'green';
       else if (age_hours < RECONCILE_AMBER_H) state = 'amber';
       else state = 'red';
@@ -239,7 +262,7 @@ router.get('/', async (req, res) => {
       const count_24h = webhook24hMap.get(c.id) || 0;
       const age_h = ageHours(last_received_at);
       let state;
-      if (last_received_at === null) state = settingUp ? 'idle' : 'red';
+      if (last_received_at === null) state = (settingUp || inactive || newClientWaiting(FIRST_WEBHOOK_GRACE_H)) ? 'idle' : 'red';
       else if (age_h > 48) state = 'red';
       else if (age_h >= 24) state = 'amber';
       else state = 'green';
@@ -254,7 +277,13 @@ router.get('/', async (req, res) => {
       error_queue = { state: 'red', open_count: null, _error: errorQueueR.error };
     } else {
       const open = openErrorsByClient.get(c.id) || [];
-      const owners = open.map(r => guidanceFor(r).owner);
+      // "Clears by itself" only holds for a while: nothing auto-resolves an error row, so after SELF_CLEARING_MAX_H it is
+      // AccessSync's to look at instead of sitting amber forever.
+      const owners = open.map(r => {
+        const o = guidanceFor(r).owner;
+        const ageH = ageHours(r.created_at);
+        return (o === OWNER.NOBODY && ageH != null && ageH >= SELF_CLEARING_MAX_H) ? OWNER.ACCESSSYNC : o;
+      });
       const needs_gym = owners.filter(o => o === OWNER.GYM).length;
       const needs_accesssync = owners.filter(o => o === OWNER.ACCESSSYNC).length;
       const self_clearing = owners.filter(o => o === OWNER.NOBODY).length;
@@ -273,8 +302,9 @@ router.get('/', async (req, res) => {
     // burst; never red (red comes from error_queue, i.e. something a person can act on).
     // Warnings are shown for information and never colour the card.
     let diagnostic_log;
-    if (!diagErrorsR.ok && !diagWarnsR.ok) {
-      diagnostic_log = { state: 'red', error_count_24h: null, warn_count_24h: null, _error: diagErrorsR.error || diagWarnsR.error };
+    if (!diagErrorsR.ok) {
+      // The error count is what drives this card: if that query failed we do not know, and must not read green.
+      diagnostic_log = { state: 'red', error_count_24h: null, warn_count_24h: null, _error: diagErrorsR.error };
     } else {
       const error_count_24h = diagErrorsMap.get(c.id) || 0;
       const warn_count_24h = diagWarnsMap.get(c.id) || 0;
@@ -286,10 +316,13 @@ router.get('/', async (req, res) => {
 
     const checks = { reconcile_freshness, webhook_ingestion, error_queue, diagnostic_log };
 
-    // A client still in setup is neutral until its setup has stalled; then amber ("nudge them").
+    // Neutral states first: an inactive client is not swept (so nothing is expected of it); a client still in setup
+    // is neutral until its setup has stalled, then amber ("nudge them").
     let worst;
     let setup = null;
-    if (settingUp) {
+    if (inactive) {
+      worst = 'inactive';
+    } else if (settingUp) {
       const stalled = setupAgeH != null && setupAgeH >= SETUP_STALLED_H;
       setup = { missing, age_hours: setupAgeH, stalled };
       worst = stalled ? 'amber' : 'setup';
@@ -297,6 +330,7 @@ router.get('/', async (req, res) => {
       worst = worstState([
         reconcile_freshness.state, webhook_ingestion.state,
         error_queue.state, diagnostic_log.state,
+        configGap ? 'red' : 'green',
       ]);
     }
 
@@ -304,7 +338,9 @@ router.get('/', async (req, res) => {
       client_id: c.id,
       client_name: c.name,
       worst_state: worst,
+      status: c.status,
       setup,
+      config_gap: configGap,
       checks,
     };
   });

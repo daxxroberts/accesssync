@@ -182,13 +182,19 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
     try {
       const db = getDb();
       if (!db || typeof db.query !== 'function') return;
-      // Last resort for a row still without a client: take it from the trace's trace_context row
-      // (set when the trace was registered / its tenant resolved). COALESCE only evaluates the
-      // subquery when $1 is NULL, so rows that already carry a client pay nothing.
+      // Last resort for a row still without a client: take it from the trace's trace_context row (set when the trace was
+      // registered / its tenant resolved). COALESCE only evaluates the subquery when $1 is NULL, so rows that already
+      // carry a client pay nothing. NOT used for the nightly sweep's own trace (actor 'reconciliation-*'): that one trace
+      // spans every client and its trace_context row holds whichever client's job registered it first, so with two clients
+      // a sweep-level row would be stamped on the wrong tenant. Those rows stay client-less unless a call site names one.
+      const sweepActor = typeof actor?.id === 'string' && actor.id.startsWith('reconciliation-');
+      const clientExpr = sweepActor
+        ? '$1::uuid'
+        : 'COALESCE($1::uuid, (SELECT tc.client_id FROM trace_context tc WHERE tc.trace_id = $7::text LIMIT 1))';
       const result = db.query(
         `INSERT INTO diagnostic_log
          (client_id, service, level, error_code, message, context, trace_id, actor_type, actor_id)
-         VALUES (COALESCE($1::uuid, (SELECT tc.client_id FROM trace_context tc WHERE tc.trace_id = $7::text LIMIT 1)),
+         VALUES (${clientExpr},
                  $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           clientId,

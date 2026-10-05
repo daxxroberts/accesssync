@@ -1,79 +1,143 @@
 /**
  * PRIORITY 3 — every error an operator can see says who must act and what to do.
- * An error with no way of rectifying it is a dead end; these tests pin that none exists.
+ * An error with no way of rectifying it is a dead end; these tests pin that none exists, and that the answer
+ * is true (e.g. a 4xx is never called "temporary", a removal is never told to press a Retry the server refuses).
  */
 'use strict';
 
-const { guidanceFor, OWNER } = require('../../core/error-guidance');
+const { guidanceFor, OWNER, RETRY } = require('../../core/error-guidance');
 
 const KNOWN = [
   'IN_FLIGHT_LOCK', 'HARDWARE_KEY_INVALID', 'HARDWARE_KEY_PERMISSIONS', 'HARDWARE_KEY_MISSING',
   'HARDWARE_RESOURCE_NOT_FOUND', 'HARDWARE_VALIDATION_ERROR', 'HARDWARE_API_ERROR',
+  'KISI_ROLE_CONFLICT_UNRESOLVED', 'HARDWARE_USER_GONE', 'INVALID_HARDWARE_REQUEST',
   'WIX_KEY_INVALID', 'WIX_KEY_MISSING', 'WIX_KEY_PERMISSIONS', 'PLAN_NOT_MAPPED', 'SUBSCRIPTION_LAPSED',
 ];
+const steps = (g) => g.steps.join(' ');
 
 describe('[P3] error guidance — no dead ends', () => {
-  test.each(KNOWN)('%s names an owner, a headline and at least one step', (code) => {
+  test.each(KNOWN)('%s names an owner, a retry stance, a headline and at least one step', (code) => {
     const g = guidanceFor({ error_code: code });
     expect(Object.values(OWNER)).toContain(g.owner);
+    expect(Object.values(RETRY)).toContain(g.retry);
+    expect(g.retryHelps).toBe(g.retry === RETRY.NOW);
     expect(g.headline.length).toBeGreaterThan(10);
     expect(g.steps.length).toBeGreaterThan(0);
-    expect(typeof g.retryHelps).toBe('boolean');
   });
 
-  test.each([null, undefined, '', 'SOME_FUTURE_CODE'])('an unknown code (%p) is never blank: AccessSync owns it', (code) => {
+  test.each([null, undefined, '', 'SOME_FUTURE_CODE'])('an unknown code (%p) is never blank: AccessSync owns it, and one Retry is offered (it may be a one-off)', (code) => {
     const g = guidanceFor({ error_code: code });
     expect(g.owner).toBe(OWNER.ACCESSSYNC);
-    expect(g.retryHelps).toBe(false);
-    expect(g.steps.join(' ')).toMatch(/AccessSync support/);
+    expect(g.retry).toBe(RETRY.NOW);
+    expect(steps(g)).toMatch(/press Retry once/);
+    expect(steps(g)).toMatch(/AccessSync support/);
   });
 
-  test('guidanceFor() with no argument still answers', () => {
+  test('...but an unknown error that keeps failing stops offering Retry and is left with AccessSync support', () => {
+    const g = guidanceFor({ error_code: 'SOME_FUTURE_CODE', occurred_count: 5 });
+    expect(g).toMatchObject({ owner: OWNER.ACCESSSYNC, retry: RETRY.NONE, repeating: true });
+    expect(steps(g)).not.toMatch(/press Retry/i);
+  });
+
+  test('guidanceFor() with no argument, or null, still answers', () => {
     expect(guidanceFor().owner).toBe(OWNER.ACCESSSYNC);
+    expect(guidanceFor(null).owner).toBe(OWNER.ACCESSSYNC);
   });
 
-  test('a Kisi 422: the gym checks the profile first, THEN retries; retrying as-is is not advised', () => {
-    const g = guidanceFor({ error_code: 'HARDWARE_VALIDATION_ERROR', http_status: 422, occurred_count: 1 });
-    expect(g.owner).toBe(OWNER.GYM);
-    expect(g.retryHelps).toBe(false);                    // as-is it sends the same data and fails the same way
-    expect(g.steps[0]).toMatch(/email and a name/);
-    expect(g.steps[1]).toBe('Then press Retry.');
-    expect(g.steps.join(' ')).toMatch(/tell AccessSync support/);
+  describe('Kisi 422 "unknown" (the live case)', () => {
+    test('is AccessSync support\'s from the first occurrence; the gym is NOT sent to check a profile (AccessSync never sends Kisi a name)', () => {
+      const g = guidanceFor({ error_code: 'HARDWARE_VALIDATION_ERROR', http_status: 422, occurred_count: 1 });
+      expect(g.owner).toBe(OWNER.ACCESSSYNC);
+      expect(g.retry).toBe(RETRY.NONE);
+      expect(steps(g)).not.toMatch(/email and a name|Wix profile|press Retry/i);
+      expect(steps(g)).toMatch(/AccessSync support can see this/);
+      expect(steps(g)).toMatch(/cannot get in/);          // what to do if the member complains
+    });
   });
 
-  test('a 422 that keeps failing is no longer the gym\'s problem: escalated to AccessSync, no "press Retry"', () => {
-    const g = guidanceFor({ error_code: 'HARDWARE_VALIDATION_ERROR', http_status: 422, occurred_count: 3 });
-    expect(g.owner).toBe(OWNER.ACCESSSYNC);
-    expect(g.retryHelps).toBe(false);
-    expect(g.steps.join(' ')).not.toMatch(/press Retry/);
-    expect(g.steps.join(' ')).toMatch(/AccessSync support can see this/);
+  describe('gym-fixable configuration errors', () => {
+    test.each([
+      ['HARDWARE_KEY_INVALID', /System Config/], ['HARDWARE_KEY_PERMISSIONS', /System Config/],
+      ['HARDWARE_KEY_MISSING', /System Config/], ['PLAN_NOT_MAPPED', /Plan Mapping/],
+      ['HARDWARE_RESOURCE_NOT_FOUND', /Plan Mapping/],
+    ])('%s is the gym\'s, says where, and Retry is the LAST step (after the fix)', (code, where) => {
+      const g = guidanceFor({ error_code: code, event_type: 'plan.purchased' });
+      expect(g.owner).toBe(OWNER.GYM);
+      expect(g.retry).toBe(RETRY.AFTER_FIX);
+      expect(steps(g)).toMatch(where);
+      expect(g.steps[g.steps.length - 1]).toMatch(/Retry/);
+    });
+
+    test('falls back to the connector\'s resolution when the code is unfamiliar', () => {
+      expect(guidanceFor({ error_code: 'X', resolution: 'ROTATE_API_KEY' }).owner).toBe(OWNER.GYM);
+      expect(steps(guidanceFor({ error_code: 'X', resolution: 'REMAP_PLAN' }))).toMatch(/Plan Mapping/);
+    });
   });
 
-  test('config errors are the gym\'s to fix and say where', () => {
-    expect(guidanceFor({ error_code: 'HARDWARE_KEY_INVALID' }).owner).toBe(OWNER.GYM);
-    expect(guidanceFor({ error_code: 'PLAN_NOT_MAPPED' }).steps.join(' ')).toMatch(/Plan Mapping/);
-    expect(guidanceFor({ error_code: 'HARDWARE_KEY_INVALID' }).steps.join(' ')).toMatch(/System Config/);
+  describe('HTTP status decides what is temporary — a refused request never is', () => {
+    test('HARDWARE_API_ERROR with a 4xx (the connector files 400/405/409 here) is NOT temporary and is not retried', () => {
+      for (const s of [400, 405, 409]) {
+        const g = guidanceFor({ error_code: 'HARDWARE_API_ERROR', http_status: s, occurred_count: 1 });
+        expect(g.owner).toBe(OWNER.ACCESSSYNC);
+        expect(g.retry).toBe(RETRY.NONE);
+        expect(g.headline).toMatch(new RegExp(`HTTP ${s}`));
+        expect(g.headline).not.toMatch(/temporary/i);
+      }
+    });
+
+    test.each([500, 502, 503, 429])('HARDWARE_API_ERROR / an unclassified %i is temporary: nobody acts, Retry works', (s) => {
+      expect(guidanceFor({ error_code: 'HARDWARE_API_ERROR', http_status: s })).toMatchObject({ owner: OWNER.NOBODY, retry: RETRY.NOW });
+      expect(guidanceFor({ http_status: s })).toMatchObject({ owner: OWNER.NOBODY, retry: RETRY.NOW });
+    });
+
+    test.each(['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND'])('network error %s is temporary', (code) => {
+      expect(guidanceFor({ error_code: code })).toMatchObject({ owner: OWNER.NOBODY, retry: RETRY.NOW });
+    });
+
+    test('an unclassified 4xx is refused, not retryable, and owned by AccessSync — and it names the right system', () => {
+      const kisi = guidanceFor({ http_status: 418 });
+
+      expect(kisi).toMatchObject({ owner: OWNER.ACCESSSYNC, retry: RETRY.NONE });
+      expect(kisi.headline).toMatch(/418/);
+      const wix = guidanceFor({ error_code: 'WIX_MEMBER_NOT_FOUND', http_status: 404 });
+      expect(wix.headline).toMatch(/^Wix refused/);
+      expect(wix.headline).not.toMatch(/door system/i);
+    });
+
+    test('a "temporary" error that keeps recurring is escalated to AccessSync (no endless "it will retry")', () => {
+      const once = guidanceFor({ error_code: 'HARDWARE_API_ERROR', http_status: 503, occurred_count: 1 });
+      expect(once).toMatchObject({ owner: OWNER.NOBODY, retryHelps: true });
+      const many = guidanceFor({ error_code: 'HARDWARE_API_ERROR', http_status: 503, occurred_count: 6 });
+      expect(many).toMatchObject({ owner: OWNER.ACCESSSYNC, retry: RETRY.NONE, repeating: true });
+    });
+
+    test('a lock collision that repeats is not "clears by itself" any more', () => {
+      expect(guidanceFor({ error_code: 'IN_FLIGHT_LOCK', occurred_count: 1 }).owner).toBe(OWNER.NOBODY);
+      expect(guidanceFor({ error_code: 'IN_FLIGHT_LOCK', occurred_count: 5 }).owner).toBe(OWNER.ACCESSSYNC);
+    });
   });
 
-  test('falls back to the connector\'s resolution when the code is unfamiliar', () => {
-    expect(guidanceFor({ error_code: 'X', resolution: 'ROTATE_API_KEY' }).owner).toBe(OWNER.GYM);
-    expect(guidanceFor({ error_code: 'X', resolution: 'REMAP_PLAN' }).steps.join(' ')).toMatch(/Plan Mapping/);
-  });
+  describe('what kind of job failed changes the advice', () => {
+    test('a 404 on a payment suspend/enable or a removal is about the member\'s door account, NOT a deleted door group', () => {
+      for (const event_type of ['payment.failed', 'payment.recovered', 'plan.cancelled']) {
+        const g = guidanceFor({ error_code: 'HARDWARE_RESOURCE_NOT_FOUND', http_status: 404, event_type });
+        expect(g.owner).toBe(OWNER.ACCESSSYNC);
+        expect(g.headline).toMatch(/door account/);
+        expect(steps(g)).not.toMatch(/Plan Mapping/);
+      }
+      // the same code on a grant is still the door-group case
+      expect(steps(guidanceFor({ error_code: 'HARDWARE_RESOURCE_NOT_FOUND', http_status: 404, event_type: 'plan.purchased' }))).toMatch(/Plan Mapping/);
+    });
 
-  test('an unclassified 4xx is refused, not retryable, and owned by AccessSync', () => {
-    const g = guidanceFor({ http_status: 418 });
-    expect(g.retryHelps).toBe(false);
-    expect(g.headline).toMatch(/418/);
-  });
-
-  test('a "temporary" error that repeats is escalated to AccessSync (no endless "it will retry")', () => {
-    const once = guidanceFor({ error_code: 'HARDWARE_API_ERROR', occurred_count: 1 });
-    expect(once.owner).toBe(OWNER.NOBODY);
-    expect(once.retryHelps).toBe(true);
-    const many = guidanceFor({ error_code: 'HARDWARE_API_ERROR', occurred_count: 6 });
-    expect(many.owner).toBe(OWNER.ACCESSSYNC);
-    expect(many.repeating).toBe(true);
-    expect(many.retryHelps).toBe(false);
+    test('removals are never told to press Retry (the server refuses it) and are never offered one', () => {
+      const g = guidanceFor({ error_code: 'HARDWARE_KEY_INVALID', event_type: 'plan.cancelled' });
+      expect(g.removal).toBe(true);
+      expect(g.retry).toBe(RETRY.NONE);
+      expect(steps(g)).not.toMatch(/press Retry/i);
+      expect(g.owner).toBe(OWNER.GYM);                       // the key is still the gym's to fix
+      expect(steps(g)).toMatch(/AccessSync support will complete this removal/);
+      expect(guidanceFor({ error_code: 'HARDWARE_KEY_INVALID', event_type: 'plan.purchased' }).removal).toBe(false);
+    });
   });
 
   test('the result is a copy: callers cannot corrupt the table', () => {

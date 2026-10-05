@@ -113,8 +113,10 @@ router.post('/', async (req, res) => {
     const derivedHardware = hardware_platform || (tier === 'Connect' ? 'kisi' : tier ? 'seam' : null);
 
     const result = await db.query(
-      `INSERT INTO clients (name, platform, source_site_id, source_site_name, source_site_url, notification_email, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), NOW())
+      // reconciliation_interval '6h': same cadence as House of Gains (the column default 'daily' would stretch the
+      // sweep gate, which reads the interval of whichever client synced most recently).
+      `INSERT INTO clients (name, platform, source_site_id, source_site_name, source_site_url, notification_email, status, reconciliation_interval, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active', '6h', NOW(), NOW())
        RETURNING id, name, platform, source_site_id, source_site_name, notification_email, status, created_at`,
       [name.trim(), platform, source_site_id || null, source_site_name || null, source_site_url || null, notification_email || null]
     );
