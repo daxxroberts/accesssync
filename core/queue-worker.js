@@ -218,7 +218,16 @@ function _unitsBought(standardEvent, planId, logger) {
  * paid for means a code is issued. planId is pinned to the first for the shared steps
  * (lock, logging) that expect exactly one.
  *
- * @returns {Promise<Array|null>} mappings, or null when no line item is mapped
+ * Only DAY-PASS mappings count. Buying a Pricing Plan also makes Wix create an eCom
+ * checkout whose `store.order_paid` line item carries the PLAN's id (lineItemType
+ * CUSTOM_AMOUNT_ITEM). Matching that against the plan's mapping granted every plan
+ * purchase a second time: a second member_billing row under the checkout order id,
+ * the access source re-pointed at it, and a second "access ready" email (59 House of
+ * Gains members, 2026-09-23 → 10-05). Plans are granted by their own plan.* webhooks;
+ * a store order only ever grants day passes. Keying on our own mapping data, not the
+ * payload shape, holds whatever Wix sends.
+ *
+ * @returns {Promise<Array|null>} mappings, or null when no line item is a mapped day pass
  */
 async function _resolveStoreMappings(tenantId, standardEvent, logger) {
   const ids = Array.isArray(standardEvent.lineItemPlanIds) && standardEvent.lineItemPlanIds.length
@@ -228,7 +237,18 @@ async function _resolveStoreMappings(tenantId, standardEvent, logger) {
   const matched = [];
   for (const id of ids) {
     const mappings = await planMappingResolver.resolve(tenantId, id);
-    if (Array.isArray(mappings) && mappings.length > 0) matched.push({ id, mappings });
+    if (!Array.isArray(mappings) || mappings.length === 0) continue;
+    if (mappings[0].accessType !== 'day_pass') {
+      logger.info('queue.grant.store.non_day_pass_item_skipped', {
+        clientId: tenantId,
+        platformMemberId: standardEvent.platformMemberId,
+        wixOrderId: standardEvent.wixOrderId,
+        planId: id,
+        stage: 'grant', result: 'skipped',
+      });
+      continue;
+    }
+    matched.push({ id, mappings });
   }
 
   if (matched.length === 0) {
@@ -946,4 +966,4 @@ function startWorker() {
   return worker;
 }
 
-module.exports = { startWorker, processJob, _processJobBody, _runDayPassGrant, _unitsBought };
+module.exports = { startWorker, processJob, _processJobBody, _runDayPassGrant, _unitsBought, _resolveStoreMappings };

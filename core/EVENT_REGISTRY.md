@@ -606,7 +606,7 @@ link id lives in `member_access_sources.role_assignment_id` with `source_type='d
 | `wix.store_products.fetch_failed` | error | Stores product list unavailable — Plan Mapping still renders plans and services |
 | `operator.plan_mapping.day_pass_unsupported` | warn | Day-pass save refused — the client's connector cannot mint a guest QR credential |
 | `queue.grant.store.multiple_mapped_items` | info | A store basket held more than one mapped pass — each is granted |
-| `queue.grant.store.non_day_pass_item_skipped` | warn | A mapped store item that is not a day pass was skipped in a day-pass basket |
+| `queue.grant.store.non_day_pass_item_skipped` | info | A store line item mapped to something other than a day pass was skipped. Normal for every Pricing Plan purchase: Wix also fires `store.order_paid` for the plan's eCom checkout, and plans are granted by their own `plan.*` webhooks (fix 2026-10-05, 59 members double-granted before it) |
 | `grant.day_pass.units_capped` | warn | An order's quantity exceeded the 50-code sanity ceiling |
 | `operator.email_branding.guide_uploaded` | info | Operator uploaded the QR entry guide PDF (attached to every QR-code email) |
 | `operator.email_branding.guide_removed` | info | Operator removed the QR entry guide PDF |
