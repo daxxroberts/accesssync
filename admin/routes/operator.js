@@ -3273,6 +3273,35 @@ router.get('/:clientId/access-stats', async (req, res) => {
 // T1 = processed_event_ids.processed_at (job enqueued)
 // T2 = member_access_sources.created_at (Kisi role recorded)
 // Intervals: ingest (T1-T0), processing (T2-T1), total (T2-T0)
+//
+// Anchored on member_access_sources (one real grant = one row), each paired via
+// LATERAL with the single nearest-preceding webhook for that member, capped at a
+// 10-minute lookback. A naive member-level JOIN (webhook x source) overcounts any
+// member with more than one webhook or more than one door — e.g. a member with 40
+// webhooks and 4 doors produced 92 webhook/source pairs instead of 4, and a source
+// row created by the nightly reconciliation sweep (not a live webhook) would pair
+// with whatever unrelated webhook that member last sent, sometimes hours earlier.
+// That's what was producing the multi-hundred-thousand-second "p95"/"worst" values.
+const LATENCY_LOOKBACK_SQL = `
+  FROM member_access_sources mas
+  JOIN member_access ma ON ma.id = mas.access_id
+  JOIN member_master mm ON mm.id = ma.member_master_id
+  JOIN LATERAL (
+    SELECT wl2.event_id, wl2.received_at
+    FROM webhook_log wl2
+    WHERE wl2.client_id = mas.client_id
+      AND wl2.normalized_payload->>'platformMemberId' = mm.platform_member_id
+      AND wl2.hmac_status = 'accepted'
+      AND wl2.dedup_status = 'new'
+      AND wl2.received_at <= mas.created_at
+      AND wl2.received_at > mas.created_at - INTERVAL '10 minutes'
+    ORDER BY wl2.received_at DESC
+    LIMIT 1
+  ) wl ON true
+  JOIN processed_event_ids pei ON pei.event_id = wl.event_id
+  WHERE mas.client_id = $1
+    AND mas.created_at > NOW() - INTERVAL '30 days'
+`;
 router.get('/:clientId/latency-stats', async (req, res) => {
   const { clientId } = req.params;
   try {
@@ -3280,37 +3309,24 @@ router.get('/:clientId/latency-stats', async (req, res) => {
     const agg = await db.query(
       `WITH timing AS (
          SELECT
-           wl.received_at                                          AS t0,
-           pei.processed_at                                        AS t1,
-           mas.created_at                                          AS t2,
-           EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)) AS ingest_s,
+           EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at))  AS ingest_s,
            EXTRACT(EPOCH FROM (mas.created_at   - pei.processed_at)) AS processing_s,
            EXTRACT(EPOCH FROM (mas.created_at   - wl.received_at))  AS total_s
-         FROM webhook_log wl
-         JOIN processed_event_ids pei ON pei.event_id = wl.event_id
-         JOIN member_master mm
-           ON mm.client_id = wl.client_id
-           AND mm.platform_member_id = wl.normalized_payload->>'platformMemberId'
-         JOIN member_access ma ON ma.member_master_id = mm.id
-         JOIN member_access_sources mas ON mas.access_id = ma.id
-         WHERE wl.client_id = $1
-           AND wl.received_at > NOW() - INTERVAL '30 days'
-           AND wl.hmac_status = 'accepted'
-           AND wl.dedup_status = 'new'
-           AND mas.created_at > wl.received_at
+         ${LATENCY_LOOKBACK_SQL}
        )
        SELECT
          COUNT(*)::int                                                     AS sample_count,
          ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_s))::int AS total_median_s,
          ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY total_s))::int AS total_p95_s,
          ROUND(MAX(total_s))::int                                          AS total_max_s,
+         ROUND(AVG(total_s))::int                                          AS total_avg_s,
          ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ingest_s))::int AS ingest_median_s,
          ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY processing_s))::int AS processing_median_s
        FROM timing`,
       [clientId]
     );
 
-    // Per-member rows for recent 50 events
+    // Per-member rows for recent 50 events, most recently provisioned first
     const recent = await db.query(
       `SELECT
          mm.id                                                              AS member_id,
@@ -3321,19 +3337,8 @@ router.get('/:clientId/latency-stats', async (req, res) => {
          ROUND(EXTRACT(EPOCH FROM (pei.processed_at - wl.received_at)))::int  AS ingest_s,
          ROUND(EXTRACT(EPOCH FROM (mas.created_at   - pei.processed_at)))::int AS processing_s,
          ROUND(EXTRACT(EPOCH FROM (mas.created_at   - wl.received_at)))::int   AS total_s
-       FROM webhook_log wl
-       JOIN processed_event_ids pei ON pei.event_id = wl.event_id
-       JOIN member_master mm
-         ON mm.client_id = wl.client_id
-         AND mm.platform_member_id = wl.normalized_payload->>'platformMemberId'
-       JOIN member_access ma ON ma.member_master_id = mm.id
-       JOIN member_access_sources mas ON mas.access_id = ma.id
-       WHERE wl.client_id = $1
-         AND wl.received_at > NOW() - INTERVAL '30 days'
-         AND wl.hmac_status = 'accepted'
-         AND wl.dedup_status = 'new'
-         AND mas.created_at > wl.received_at
-       ORDER BY wl.received_at DESC
+       ${LATENCY_LOOKBACK_SQL}
+       ORDER BY mas.created_at DESC
        LIMIT 50`,
       [clientId]
     );
@@ -3344,6 +3349,7 @@ router.get('/:clientId/latency-stats', async (req, res) => {
       total_median_s:     stats.total_median_s     || null,
       total_p95_s:        stats.total_p95_s        || null,
       total_max_s:        stats.total_max_s        || null,
+      total_avg_s:        stats.total_avg_s        || null,
       ingest_median_s:    stats.ingest_median_s    || null,
       processing_median_s: stats.processing_median_s || null,
       recent: recent.rows,
