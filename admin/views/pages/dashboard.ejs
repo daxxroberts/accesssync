@@ -393,16 +393,12 @@
         <div class="stat-delta neutral" id="latency-delta">Last 30 days</div>
         <div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;">
           <div>
-            <div class="stat-n sm" id="latency-median">—</div>
-            <div class="stat-l">Median</div>
+            <div class="stat-n sm" id="latency-last">—</div>
+            <div class="stat-l">Last</div>
           </div>
           <div>
-            <div class="stat-n sm" id="latency-p95" style="color:var(--muted);">—</div>
-            <div class="stat-l">p95</div>
-          </div>
-          <div>
-            <div class="stat-n sm" id="latency-max" style="color:var(--muted);">—</div>
-            <div class="stat-l">Worst</div>
+            <div class="stat-n sm" id="latency-avg" style="color:var(--muted);">—</div>
+            <div class="stat-l">30-Day Avg</div>
           </div>
         </div>
         <div class="stat-l" style="margin-top:6px;">Purchase → Door Open</div>
@@ -971,18 +967,21 @@
           if (!d.sample_count) return;
           function fmtSec(s) {
             if (s == null) return '—';
+            s = Math.round(s);
             if (s < 60)   return s + 's';
-            return Math.round(s / 60) + 'm ' + (s % 60) + 's';
+            if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+            var h = Math.floor(s / 3600);
+            var m = Math.floor((s % 3600) / 60);
+            return h.toLocaleString() + 'h ' + m + 'm';
           }
           var card = document.getElementById('latency-card');
           if (card) card.style.display = '';
-          var med = document.getElementById('latency-median');
-          var p95 = document.getElementById('latency-p95');
-          var max = document.getElementById('latency-max');
+          var last = document.getElementById('latency-last');
+          var avg = document.getElementById('latency-avg');
           var brk = document.getElementById('latency-breakdown');
-          if (med) { med.textContent = fmtSec(d.total_median_s); med.className = d.total_median_s <= 10 ? 'stat-n sm sage' : d.total_median_s <= 30 ? 'stat-n sm brand' : 'stat-n sm red'; }
-          if (p95) p95.textContent = fmtSec(d.total_p95_s);
-          if (max) max.textContent = fmtSec(d.total_max_s);
+          var lastS = d.recent && d.recent.length ? d.recent[0].total_s : null;
+          if (last) { last.textContent = fmtSec(lastS); last.className = lastS <= 10 ? 'stat-n sm sage' : lastS <= 30 ? 'stat-n sm brand' : 'stat-n sm red'; }
+          if (avg) avg.textContent = fmtSec(d.total_avg_s);
           if (brk) brk.textContent = 'Ingest: ' + fmtSec(d.ingest_median_s) + ' median  ·  Processing: ' + fmtSec(d.processing_median_s) + ' median  ·  ' + d.sample_count + ' events';
         }).catch(function() {});
 
