@@ -135,7 +135,7 @@ describe('[P1] a repeat of the same problem never re-emails', () => {
     await engine.handleFailure(job(), kisiError({ code: 'PLAN_NOT_MAPPED', statusCode: null, resolution: null }));
     const [dedupeSql, params] = sqls('SELECT id FROM error_queue')[0];
     expect(String(dedupeSql)).toMatch(/member_id IS NULL AND payload->>'platformMemberId' = \$2/);
-    expect(params).toEqual([CLIENT, 'wix-m-1', 'PLAN_NOT_MAPPED']);
+    expect(params).toEqual([CLIENT, 'wix-m-1', 'PLAN_NOT_MAPPED', 'plan-1']);
     expect(sqls('INSERT INTO error_queue')).toHaveLength(0);
     expect(emails()).toHaveLength(0);
   });
@@ -146,8 +146,19 @@ describe('[P1] a repeat of the same problem never re-emails', () => {
     await engine.handleFailure(job(), err);
     const [dedupeSql, params] = sqls('SELECT id FROM error_queue')[0];
     expect(String(dedupeSql)).toMatch(/error_reason = \$3/);
-    expect(params).toEqual([CLIENT, MEMBER, 'boom']);
+    expect(params).toEqual([CLIENT, MEMBER, 'boom', 'plan-1']);
     expect(emails()).toHaveLength(0);
+  });
+});
+
+describe('[P1] each plan gets its own row (Retry replays the right event)', () => {
+  test('the dedupe matches the same plan only', async () => {
+    world.existing = [];
+    await engine.handleFailure(job({ planId: 'plan-2' }), kisiError());
+    const [dedupeSql, params] = sqls('SELECT id FROM error_queue')[0];
+    expect(String(dedupeSql)).toMatch(/COALESCE\(payload->>'planId', ''\) = \$4/);
+    expect(params[3]).toBe('plan-2');
+    expect(sqls('INSERT INTO error_queue')).toHaveLength(1);   // a second plan is a new row, not a count-up of the first
   });
 });
 

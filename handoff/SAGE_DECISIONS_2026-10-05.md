@@ -49,6 +49,37 @@ Branch: `claude/error-visibility-actions`. Review that produced this list: see t
 
 Also: removed an unused `clientId` const in `core/hmac-monitor.js`.
 
+## Fix round 2 (2026-10-08) — the logged problems
+
+Daxx: "Yes, start the fix round." Branch `claude/error-visibility-actions` restarted from `main` (PR #4 merged).
+RULE-19 #2: `main` was 3 commits past the PR #4 anchor (`846115a`) — Daxx's own session (member hub branding, the
+store-order double-grant fix in `core/queue-worker.js`). Re-anchored on `bc14ea9` (latest `main`) before any change.
+
+| Item | What was wrong | Fix |
+|---|---|---|
+| L1 | Errors with no client on no card | Already fixed in D25 (counted on the panel). |
+| L2 | Dead-lettered rows had no trace id / actor / client (BullMQ `failed` runs outside the job's context) | `worker.on('failed')` runs `handleFailure` inside `runWith` with the job's trace, the worker actor and its client. Test fails on the old worker. |
+| L3 | An owner opening `/operator/<uuid that is not a client>` lost every log row of that request (FK) | The logger re-writes a row that hits the FK without the client, recording `unknownClientId`. Other write errors are not retried. |
+| L4 | Any request could choose its trace id (`x-trace-id`) and borrow another gym's trace | Honoured only on a signed-in session (`req.admin`); nothing in AccessSync sends it today. |
+| L5 | A second plan failing for the same member + code only counted up the first plan's row (Retry replayed the wrong plan) | The dedupe also matches the plan (`payload->>'planId'`). The per-cause throttle still stops a second email within the hour. |
+| L6 | Comment said IN_FLIGHT_LOCK is never dead-lettered; it is after 3 attempts | Comment corrected — dead-lettering a member still locked after every attempt is the right behaviour (guidance: "nothing to do", AccessSync's once it repeats). |
+| L7 | "Retry all active" called the owner-only bulk route: a 403 for a gym | It retries row by row through the gym's own route (same server rules as the per-row button). |
+| L8 | Held removals (`config_alert_log`) on no panel | Shown on the client card as a count, **information only**. They have no screen where the gym can see or dismiss them (digest email only), so colouring the card would be a dead end. → new L17. |
+| L9 | No index for the panel's 24h log checks | `migrations/diagnostic-log-level-created.sql` written, **not applied** (Tier 4). Not urgent: 13.8k rows / 11 MB. |
+| L10 | A "6h" client was synced every 12h (the timer lands seconds short of the gate) | The gate allows 10% early, at most 30 min. Test fails on the old gate. |
+| L12 | Low-contrast muted text and badges in dark mode | `--muted` raised to ≥4.5:1 in light and dark (operator pages, logs, members); client-list badges get dark-mode colours. |
+| L13 | The grant path read the seat flag plan-wide for the sweep's grants | The sweep's grant carries `seatOrderIds`; the adapter reads the flag per order (released only if every paying order is). |
+| L14 | Exhausted source retries emailed nobody | The probe alerts through retry-engine (same guidance, per-cause throttle, AccessSync owner copy). A failed email never undoes the row. |
+| L16 (new, found and fixed) | The gym's error list could not name the member for any dead-lettered grant: `error_queue.member_id` is `member_master.id` but the lists joined it as `member_access.id` (confirmed on the live row) | The lists match either id; the probe now writes `member_master.id` like everything else. |
+| L11 | Docs | Still for KEEPER at session close (vault not reachable from here). |
+| L15 | Transaction-mode pooler / Supabase Pro | Still an OB for before client #3. |
+
+**New logged item:**
+
+| # | Finding | Severity | Notes |
+|---|---|---|---|
+| L17 | `config_alert_log` alerts (held removals, held payment states) can only be seen in the daily digest email and dismissed through an API with no button. The gym cannot act on them in the app. | should | Give them a screen (or a section on the Errors page) with a dismiss button; then the panel can colour on them. |
+
 ### Process note
 SAGE did **not** merge or deploy, wrote nothing to production, and made no change to House of Gains data. Tests: the new
 retry-engine test (`test/p1-critical-path/retry-engine-dead-letter.test.js`) fails on the old engine (10 of 19), as do the

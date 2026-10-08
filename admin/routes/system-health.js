@@ -71,7 +71,11 @@ function ageHours(ts) {
   return Math.floor((Date.now() - new Date(ts).getTime()) / 3_600_000);
 }
 
-const settle = (p) => p.then(r => ({ ok: true, rows: r.rows }), err => ({ ok: false, error: String(err.message || err) }));
+// Promise.resolve: a query helper that throws synchronously (or returns nothing) must become a failed check, never an
+// exception that leaves the request hanging with no response.
+const settle = (p) => Promise.resolve().then(() => p)
+  .then(r => ({ ok: true, rows: r.rows }))
+  .catch(err => ({ ok: false, error: String((err && err.message) || err) }));
 
 // ── GET /admin/system-health ────────────────────────────────────────
 router.get('/', async (req, res) => {
@@ -168,12 +172,23 @@ router.get('/', async (req, res) => {
       WHERE c.status != 'archived'`
   ));
 
+  // Open alerts from the nightly sweep (config_alert_log) — e.g. removals held for the gym to decide. They are sent in
+  // the daily digest and have no screen of their own yet, so the panel shows the count for information only: it never
+  // colours the card (a card that turns amber with nothing on screen to clear it would be a dead end).
+  const alertsP = settle(db.query(
+    `SELECT client_id, COUNT(*)::int AS open_count,
+            COUNT(*) FILTER (WHERE alert_type IN ('sweep_removal_pending','revoke_holder_lapse_pending','revoke_held_payment_state'))::int AS removals_held
+       FROM config_alert_log
+      WHERE resolved_at IS NULL
+      GROUP BY client_id`
+  ));
+
   const [
     dbProbeR, clientsR, reconcileR, aggregateReconcileR,
-    webhookLastR, webhook24hR, errorQueueR, diagErrorsR, diagWarnsR, slowQueryR, setupR,
+    webhookLastR, webhook24hR, errorQueueR, diagErrorsR, diagWarnsR, slowQueryR, setupR, alertsR,
   ] = await Promise.all([
     dbProbe, clientsP, reconcileP, aggregateReconcileP,
-    webhookLastP, webhook24hP, errorQueueP, diagErrorsP, diagWarnsP, slowQueryP, setupP,
+    webhookLastP, webhook24hP, errorQueueP, diagErrorsP, diagWarnsP, slowQueryP, setupP, alertsP,
   ]);
 
   // ── DB health (top-level, global) ─────────────────────────────────
@@ -209,6 +224,7 @@ router.get('/', async (req, res) => {
   const diagErrorsMap = new Map(rowsOf(diagErrorsR).map(r => [r.client_id, r.error_count_24h]));
   const diagWarnsMap = new Map(rowsOf(diagWarnsR).map(r => [r.client_id, r.warn_count_24h]));
   const setupMap = new Map(rowsOf(setupR).map(r => [r.client_id, r]));
+  const alertsMap = new Map(rowsOf(alertsR).map(r => [r.client_id, r]));
   const openErrorsByClient = new Map();
   for (const r of rowsOf(errorQueueR)) {
     if (!openErrorsByClient.has(r.client_id)) openErrorsByClient.set(r.client_id, []);
@@ -337,6 +353,10 @@ router.get('/', async (req, res) => {
       setup,
       config_gap: configGap,
       setup_check_failed: !setupR.ok,
+      // informational, never part of worst_state (see alertsP)
+      open_alerts: alertsR.ok
+        ? { open_count: (alertsMap.get(c.id) || {}).open_count || 0, removals_held: (alertsMap.get(c.id) || {}).removals_held || 0 }
+        : null,
       checks,
     };
   });

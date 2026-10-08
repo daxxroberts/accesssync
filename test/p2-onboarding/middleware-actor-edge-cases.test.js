@@ -155,7 +155,7 @@ describe('[P2] traceContextMiddleware: x-trace-id header security', () => {
 
   test('uppercase UUID is accepted as valid inbound trace ID', async () => {
     const upperUUID = 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA';
-    const { traceId } = await runMiddleware({ headers: { 'x-trace-id': upperUUID }, path: '/api/test' });
+    const { traceId } = await runMiddleware({ headers: { 'x-trace-id': upperUUID }, path: '/api/test', admin: { role: 'admin' } });
     expect(traceId.toLowerCase()).toBe(upperUUID.toLowerCase());
   });
 

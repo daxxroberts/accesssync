@@ -126,7 +126,8 @@ class RetryEngine {
       // Dedup: the same problem for the same member must not become a new row (and a new email) every sweep.
       //   same member  = the member_master row, or — when it is not in member_master yet — the Wix member id
       //                  carried in the event payload;
-      //   same problem = the error code, or the error text when there is no code.
+      //   same problem = the error code, or the error text when there is no code;
+      //   same plan    = the event's planId (each row's Retry replays its own event).
       // A row that is still open matches, and so does one RESOLVED in the last 24h (someone pressed Retry or
       // "Mark resolved" and it failed again): that row is re-opened and counted, so the panel shows it again
       // instead of going quiet — and no second email goes out (handleFailure only mails new rows).
@@ -139,9 +140,13 @@ class RetryEngine {
         const causeCond = errorCode
           ? (params.push(errorCode), `error_code = $${params.length}`)
           : (params.push(error.message || ''), `error_reason = $${params.length}`);
+        // same plan too: each row replays ITS event on Retry, so a second plan failing for the same member and
+        // code must get its own row (it used to only count up the first plan's row, and Retry replayed the wrong plan).
+        params.push(standardEvent?.planId || '');
+        const planCond = `COALESCE(payload->>'planId', '') = $${params.length}`;
         const existing = await db.query(
           `SELECT id FROM error_queue
-           WHERE client_id = $1 AND ${memberCond} AND ${causeCond}
+           WHERE client_id = $1 AND ${memberCond} AND ${causeCond} AND ${planCond}
              AND (status = 'failed' OR (status = 'resolved' AND resolved_at > NOW() - INTERVAL '24 hours'))
            ORDER BY (status = 'failed') DESC, created_at DESC
            LIMIT 1`,

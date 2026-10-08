@@ -251,6 +251,27 @@ async function _recordSuccess(row, roleAssignmentId) {
 }
 
 /**
+ * Email for an exhausted source retry, through retry-engine's alert path (guidance, per-cause throttle, owner copy).
+ * Never throws: a failed email must not undo the row that is already written.
+ */
+async function _alertExhausted(row, reason, errorRowId) {
+  try {
+    const retryEngine = require('./retry-engine');
+    const { guidanceFor } = require('./error-guidance');
+    const error = Object.assign(new Error(reason), { code: 'SOURCE_RETRY_EXHAUSTED' });
+    const guide = guidanceFor({ error_code: 'SOURCE_RETRY_EXHAUSTED', event_type: 'source_retry_exhausted' });
+    if (await retryEngine._alertedRecentlyForCause(row.client_id, error, errorRowId, guide)) {
+      log.info('retry.notify.suppressed_same_cause', { tenantId: row.client_id, errorCode: error.code, eventType: 'source_retry_exhausted' });
+      return;
+    }
+    await retryEngine._notifyOperator(row.client_id, error, null, 'source_retry_exhausted', guide);
+    await retryEngine._notifyOwnerCopy(row.client_id, error, 'source_retry_exhausted', guide);
+  } catch (err) {
+    log.warn('source_retry.alert_failed', { clientId: row.client_id, sourceId: row.source_id }, err);
+  }
+}
+
+/**
  * UPDATE mas with bumped retry_count + failure_reason. If retry_count reaches
  * MAX_RETRIES after the bump, also flips status to 'failed' and INSERTs an
  * error_queue row.
@@ -277,15 +298,18 @@ async function _recordFailure(row, err) {
     // — this is recovery-tier, not the original-grant dead-letter path.
     // trace_id / actor_type / actor_id pulled from ALS context (DR-037).
     const _actor = getActor() || {};
-    await db.query(
+    const inserted = await db.query(
       `INSERT INTO error_queue
          (client_id, member_id, event_type, payload, error_reason,
           error_code, retry_count, status, occurred_count, last_occurred_at,
           trace_id, actor_type, actor_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'failed', 1, NOW(), $8, $9, $10)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'failed', 1, NOW(), $8, $9, $10)
+       RETURNING id`,
       [
         row.client_id,
-        row.access_id,
+        // member_id holds member_master.id everywhere else (retry-engine, core/diagnostics.js); this used to store the
+        // member_access id, so the errors pages could not say whose error it was.
+        row.member_master_id || null,
         'source_retry_exhausted',
         JSON.stringify({
           sourceId: row.source_id,
@@ -302,6 +326,11 @@ async function _recordFailure(row, err) {
         _actor.id     || null,
       ]
     );
+
+    // Tell someone. This row is written outside retry-engine.handleFailure, so it used to reach the panel only:
+    // no email to the gym and none to AccessSync, although only AccessSync can fix it. Same rules as every other
+    // dead-letter: one email per cause per hour, plus the owner copy for AccessSync-owned errors.
+    await _alertExhausted(row, truncatedReason, inserted && inserted.rows && inserted.rows[0] ? inserted.rows[0].id : null);
 
     log.error('source_retry.exhausted', {
       sourceId: row.source_id,

@@ -488,7 +488,7 @@ class StandardAdapter {
       }
 
       holderSeatedCurrent =
-        await this._resolveHolderSeated(holderSeatedCurrent, memberMasterId, sourcePlanId);
+        await this._resolveHolderSeated(holderSeatedCurrent, memberMasterId, sourcePlanId, assignment.seatOrderIds);
       const seatSuppressed = holderSeatedCurrent === false;
       if (seatSuppressed) {
         log.info('adapter.complete_grant.seat_suppressed_holder_released', {
@@ -713,8 +713,25 @@ class StandardAdapter {
    *
    * @returns {Promise<boolean|null>} resolved holder_seated value
    */
-  async _resolveHolderSeated(holderSeatedCurrent, memberMasterId, sourcePlanId) {
+  async _resolveHolderSeated(holderSeatedCurrent, memberMasterId, sourcePlanId, seatOrderIds = null) {
     if (holderSeatedCurrent === null && memberMasterId && sourcePlanId) {
+      // The nightly sweep's grant has no Wix order of its own but says which PAYING orders it is for. The flag belongs
+      // to one order: the seat is released only if EVERY one of them says so. One order seated, or one with no billing
+      // row yet (its webhook was lost), means a live paid seat — reading plan-wide would let an older released order
+      // withhold access from a re-purchase (same rule as core/reconciliation.js#_planSeatReleased).
+      const orderIds = Array.isArray(seatOrderIds) ? seatOrderIds.filter(Boolean) : [];
+      if (orderIds.length) {
+        for (const orderId of orderIds) {
+          const r = await db.query(
+            `SELECT holder_seated FROM member_billing
+             WHERE member_master_id = $1 AND plan_id = $2 AND wix_order_id = $3
+             ORDER BY cycle_index DESC LIMIT 1`,
+            [memberMasterId, sourcePlanId, orderId]
+          );
+          if (!(r.rows.length > 0 && r.rows[0].holder_seated === false)) return null;
+        }
+        return false;
+      }
       const seatFlag = await db.query(
         `SELECT holder_seated FROM member_billing
          WHERE member_master_id = $1 AND plan_id = $2
@@ -725,6 +742,7 @@ class StandardAdapter {
     }
     return holderSeatedCurrent;
   }
+
 
   /**
    * completeGrant step 4 — member_access_sources UPSERT for one assignment.

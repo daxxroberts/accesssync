@@ -42,7 +42,7 @@ const grantRevoke     = require('../../core/grant-revoke');
 const mappingResolver = require('../../core/plan-mapping-resolver');
 const retryEngine     = require('../../core/retry-engine');
 const { processJob, startWorker } = require('../../core/queue-worker');
-const { mintTraceId } = require('../../core/trace-context');
+const { mintTraceId, getTraceId, getActor, getClientId } = require('../../core/trace-context');
 
 const makeJob = (over = {}) => ({
   id: 'job-4xx', name: 'grant', attemptsMade: 1, opts: { attempts: 3 },
@@ -133,3 +133,32 @@ describe('[P1] transient errors still retry before alerting (unchanged)', () => 
     expect(thrown.name).not.toBe('UnrecoverableError');
   });
 });
+
+describe('[P1] the dead-letter runs in the job\'s own context (L2)', () => {
+  test('error_queue row and its log lines get the job\'s trace id, the worker actor and the client', async () => {
+    startWorker();
+    let seen = null;
+    retryEngine.handleFailure.mockImplementationOnce(async () => {
+      seen = { traceId: getTraceId(), actor: getActor(), clientId: getClientId() };
+    });
+    const job = makeJob({ attemptsMade: 3 });
+    const err = Object.assign(new Error('Kisi 500'), { statusCode: 500 });
+    await handlers.failed(job, err);
+    expect(seen).toEqual({
+      traceId: job.data.standardEvent.traceId,
+      actor: { type: 'system', id: 'queue-worker' },
+      clientId: undefined,   // 'tenant-001' is not a uuid: only real client ids are bound (asClientId)
+    });
+  });
+
+  test('with a real client id, the client is bound too', async () => {
+    startWorker();
+    let seen = null;
+    retryEngine.handleFailure.mockImplementationOnce(async () => { seen = getClientId(); });
+    const job = makeJob({ attemptsMade: 3 });
+    job.data.tenantId = '11111111-1111-4111-8111-111111111111';
+    await handlers.failed(job, Object.assign(new Error('Kisi 500'), { statusCode: 500 }));
+    expect(seen).toBe('11111111-1111-4111-8111-111111111111');
+  });
+});
+

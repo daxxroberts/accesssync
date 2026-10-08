@@ -846,8 +846,10 @@ async function _processJobBody(job, traceId) {
       await standardAdapter.releaseLock(lockMemberId, tenantId, 'failed');
     }
 
-    // IN_FLIGHT_LOCK is a transient race — let BullMQ retry with its normal backoff.
-    // Do not dead-letter or escalate to UnrecoverableError.
+    // IN_FLIGHT_LOCK is a transient race — let BullMQ retry with its normal backoff, never escalate it to an
+    // UnrecoverableError. If the member is STILL locked after every attempt, worker.on('failed') dead-letters it
+    // like any exhausted job: a member stuck behind a lock must be visible (core/error-guidance.js says "nothing to
+    // do" for a one-off and hands it to AccessSync support once it repeats).
     if (error.code === 'IN_FLIGHT_LOCK') {
       throw error;
     }
@@ -912,7 +914,12 @@ function startWorker() {
     // every such failure: no error_queue row, no operator email, and the panels read "Clean".
     const unrecoverable = !!err && (err instanceof UnrecoverableError || err.name === 'UnrecoverableError');
     if (unrecoverable || job.attemptsMade >= job.opts.attempts) {
-      await retryEngine.handleFailure(job, err);
+      // BullMQ fires 'failed' outside the job's async context, so without re-binding it the error_queue row and
+      // its log lines had no trace id, actor or client: the incident could not be followed back to its webhook.
+      const deadLetter = () => retryEngine.handleFailure(job, err);
+      await (traceId
+        ? runWith({ traceId, actor: { type: 'system', id: 'queue-worker' }, clientId: job.data?.tenantId || null }, deadLetter)
+        : deadLetter());
     }
   });
 

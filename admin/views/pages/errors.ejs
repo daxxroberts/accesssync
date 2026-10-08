@@ -5,7 +5,7 @@
   @role error-management
   @data GET /operator/:clientId/errors, GET /operator/:clientId/errors/summary
         POST /operator/:clientId/errors/:id/retry, POST /operator/:clientId/errors/:id/dismiss
-        POST /admin/errors/bulk-retry
+        POST /operator/:clientId/errors/:id/retry (Retry all = one call per eligible row)
   @tab Errors
 %>
 <!DOCTYPE html>
@@ -664,39 +664,36 @@
       }
       var btn = document.getElementById('btn-retry-all');
       if (btn) { btn.disabled = true; btn.textContent = 'Retrying…'; }
-      apiFetch('/admin/errors/bulk-retry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: activeIds }),
-      })
-        .then(readJsonResponse)
-        .then(function(res) {
-          var d = res.body;
-          if (!res.ok) {
-            showToast('error', esc(d.error || ('Bulk retry failed (HTTP ' + res.status + ')')));
-            loadErrors(); loadSummary();
-            return;
-          }
-          var queued  = d.queued  || 0;
-          var skipped = d.skipped || 0;
-          var failed  = d.failed  || 0;
-          var msg = 'Queued ' + queued + ' for retry';
-          if (leftAlone) msg += ' · ' + leftAlone + ' left open (retrying would fail the same way)';
-          // Skipped rows were refused — a door-access removal (retry paused while
-          // safety checks roll out), an error that can't be re-run, or unreadable
-          // saved details. Nothing was queued for them; they stay open below.
-          if (skipped) msg += ' · skipped ' + skipped + ' that can’t be retried right now (still open)';
-          if (failed)  msg += ' · ' + failed + ' failed';
-          var removalsSkipped = (d.skippedRows || []).some(function(s) { return s && s.reason === 'revoke_retry_disabled'; });
-          if (removalsSkipped) msg += '. Door-access removals can’t be retried yet — nothing was changed; if someone should lose access, remove them in Kisi.';
-          showToast((skipped || failed) ? 'info' : 'success', esc(msg));
-          if (skipped && d.skippedRows && d.skippedRows.length) {
-            console.warn('[errors] bulk retry skipped rows:', d.skippedRows);
-          }
-          loadErrors(); loadSummary();
-        })
-        .catch(function() { showToast('error', 'Bulk retry failed'); })
-        .finally(function() { if (btn) { btn.disabled = false; btn.textContent = 'Retry all active'; } });
+      // One row at a time through the gym's own retry route (scoped to this client, same server-side rules as the
+      // per-row button). The old call went to the owner-only /admin/errors/bulk-retry, so for a gym it was a 403.
+      var queued = 0, skipped = 0, failed = 0, removalsSkipped = false;
+      var chain = Promise.resolve();
+      activeIds.forEach(function(id) {
+        chain = chain.then(function() {
+          return apiFetch('/operator/' + _clientId + '/errors/' + id + '/retry', { method: 'POST' })
+            .then(readJsonResponse)
+            .then(function(res) {
+              if (res.ok) { queued++; return; }
+              if (res.status === 422 || res.status === 409) {
+                skipped++;
+                if (res.body && res.body.reason === 'revoke_retry_disabled') removalsSkipped = true;
+                return;
+              }
+              failed++;
+            })
+            .catch(function() { failed++; });
+        });
+      });
+      chain.then(function() {
+        var msg = 'Queued ' + queued + ' for retry';
+        if (leftAlone) msg += ' · ' + leftAlone + ' left open (retrying would fail the same way)';
+        // Skipped rows were refused by the server — nothing was queued for them; they stay open below.
+        if (skipped) msg += ' · skipped ' + skipped + ' that can’t be retried right now (still open)';
+        if (failed)  msg += ' · ' + failed + ' failed';
+        if (removalsSkipped) msg += '. Door-access removals can’t be retried yet — nothing was changed; if someone should lose access, remove them in Kisi.';
+        showToast((skipped || failed) ? 'info' : 'success', esc(msg));
+        loadErrors(); loadSummary();
+      }).finally(function() { if (btn) { btn.disabled = false; btn.textContent = 'Retry all active'; } });
     }
 
     // ── Polling ───────────────────────────────────────────────────

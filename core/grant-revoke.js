@@ -145,6 +145,7 @@ class GrantRevokeLogic {
             sourcePlanId:       wixEvent.planId || null,
             sourceType:         wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
             wixOrderId:         wixEvent.wixOrderId || null,
+            seatOrderIds:       wixEvent.seatOrderIds || null,   // reconcile's paying order ids (DR-051 seat read per order)
             wixSubscriptionId:  wixEvent.wixSubscriptionId || null,
             planName:           wixEvent.planName || null,
             cycleIndex:         wixEvent.cycleIndex || null,
@@ -206,6 +207,7 @@ class GrantRevokeLogic {
           sourcePlanId:       wixEvent.planId || null,
           sourceType:         wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
           wixOrderId:         wixEvent.wixOrderId || null,
+          seatOrderIds:       wixEvent.seatOrderIds || null,   // reconcile's paying order ids (DR-051 seat read per order)
           wixSubscriptionId:  wixEvent.wixSubscriptionId || null,
           planName:           wixEvent.planName || null,
           cycleIndex:         wixEvent.cycleIndex || null,
@@ -255,6 +257,7 @@ class GrantRevokeLogic {
           sourcePlanId:       wixEvent.planId || null,
           sourceType:         wixEvent.eventType === 'booking.confirmed' ? 'booking' : 'plan',
           wixOrderId:         wixEvent.wixOrderId || null,
+          seatOrderIds:       wixEvent.seatOrderIds || null,   // reconcile's paying order ids (DR-051 seat read per order)
           wixSubscriptionId:  wixEvent.wixSubscriptionId || null,
           planName:           wixEvent.planName || null,
           cycleIndex:         wixEvent.cycleIndex || null,
@@ -527,6 +530,7 @@ class GrantRevokeLogic {
           sourceKey,
           sourceType:         'day_pass',
           wixOrderId:         wixEvent.wixOrderId || null,
+          seatOrderIds:       wixEvent.seatOrderIds || null,   // reconcile's paying order ids (DR-051 seat read per order)
           wixSubscriptionId:  wixEvent.wixSubscriptionId || null,
           planName:           wixEvent.planName || null,
           cycleIndex:         wixEvent.cycleIndex || null,

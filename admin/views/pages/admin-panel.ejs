@@ -119,6 +119,7 @@
     .health-checks { display: grid; grid-template-columns: 1fr; gap: 4px; font-size: 12px; }
     .health-check { display: flex; justify-content: space-between; }
     .health-check-label { color: var(--text2, #4A5568); }   /* was --muted: 3:1 on light, ~2:1 on dark */
+    .health-note { margin-top: 8px; font-size: 12px; color: var(--text2, #4A5568); }
     .health-check-state.health-state-green { color: #047857; }
     .health-check-state.health-state-amber { color: #92400e; }
     .health-check-state.health-state-red { color: #991b1b; font-weight: 600; }
@@ -168,6 +169,10 @@
     .client-card-badge.status-active   { background: var(--sage-dim, #d1fae5); color: #065f46; }
     .client-card-badge.status-archived { background: #f1f5f9; color: #64748b; }
     .client-card-badge.status-inactive { background: #fef3c7; color: #92400e; }
+    /* dark mode: the light badge text colours sit at ~2:1 on the dark card */
+    [data-mode="dark"] .client-card-badge.status-active   { color: #4ADE80; }
+    [data-mode="dark"] .client-card-badge.status-archived { background: #252B35; color: #A0AEC0; }
+    [data-mode="dark"] .client-card-badge.status-inactive { background: rgba(245,166,35,0.15); color: #F5A623; }
     .client-card-meta { font-size: 12px; color: var(--muted, #64748b); line-height: 1.5; }
     .client-card-meta span + span::before { content: ' · '; }
     .client-card-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
@@ -584,12 +589,19 @@
           ? '<div class="health-gap">Setup is incomplete: ' + escapeHtml(c.config_gap.join(', ')) + ' missing. This client was working, so this needs fixing.</div>'
           : '';
         if (c.setup_check_failed) gap += '<div class="health-gap">Check failed: could not read this client\'s setup, so a missing key or location would not show here.</div>';
+        var al = c.open_alerts;
+        var alertNote = (al && al.open_count)
+          ? '<div class="health-note">' + (al.removals_held === al.open_count
+              ? al.open_count + (al.open_count === 1 ? ' removal is' : ' removals are') + ' waiting for the gym to decide (nothing was removed; sent in the daily digest).'
+              : al.open_count + ' open sync alert' + (al.open_count === 1 ? '' : 's') + (al.removals_held ? ', ' + al.removals_held + ' of them removals waiting for the gym' : '') + ' (sent in the daily digest).') +
+            '</div>'
+          : '';
         body = gap + '<div class="health-checks">' +
           renderCheck('Reconcile', checks.reconcile_freshness, formatReconcile) +
           renderCheck('Webhooks', checks.webhook_ingestion, formatWebhook) +
           renderErrorsCheck(checks.error_queue) +
           renderCheck('Diagnostics', checks.diagnostic_log, formatDiagnostics) +
-        '</div>';
+        '</div>' + alertNote;
       }
       return '<div class="health-card health-state-' + (c.setup && c.setup.stalled ? 'amber' : c.worst_state) + '">' +
         '<div class="health-card-header">' +

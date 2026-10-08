@@ -38,6 +38,13 @@ jest.mock('../../core/logger', () => ({
   log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), critical: jest.fn() },
 }));
 
+// L14: exhaustion alerts go through retry-engine's alert path (faked here; covered by its own suite).
+jest.mock('../../core/retry-engine', () => ({
+  _alertedRecentlyForCause: jest.fn().mockResolvedValue(false),
+  _notifyOperator:          jest.fn().mockResolvedValue(),
+  _notifyOwnerCopy:         jest.fn().mockResolvedValue(),
+}));
+
 jest.mock('../../core/trace-context', () => ({
   runWith:     jest.fn((ctx, fn) => fn()),
   mintTraceId: jest.fn(() => 'trace-ob240-001'),
@@ -232,7 +239,9 @@ describe('[P2] OB-240 — exhaustion (retry_count 2 → 3)', () => {
     expect(errorQueueInsert[0]).toMatch(/INSERT\s+INTO\s+error_queue/i);
     const params = errorQueueInsert[1];
     expect(params).toContain(CLIENT_ID);
-    expect(params).toContain(ACCESS_ID);
+    // member_id = member_master.id, like every other error_queue writer (it used to be the member_access id, so the
+    // errors pages could not name the member)
+    expect(params[1]).toBe(MM_ID);
     expect(params).toContain('SOURCE_RETRY_EXHAUSTED');
     // payload is JSON-encoded — find by parsing
     const payload = params.find(p => typeof p === 'string' && p.startsWith('{'));
@@ -247,6 +256,51 @@ describe('[P2] OB-240 — exhaustion (retry_count 2 → 3)', () => {
       expect.objectContaining({ retryCount: 3 }),
       err
     );
+  });
+});
+
+describe('[P2] L14 — an exhausted retry is TOLD to someone, not just written down', () => {
+  const retryEngine = require('../../core/retry-engine');
+  beforeEach(() => { retryEngine._alertedRecentlyForCause.mockResolvedValue(false); });
+
+  test('the gym gets the alert and AccessSync gets its copy (only AccessSync can fix it)', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [candidateRow({ retry_count: 2 })] })
+      .mockResolvedValueOnce({ rowCount: 1 })                       // UPDATE mas (failed)
+      .mockResolvedValueOnce({ rows: [{ id: 'eq-9' }], rowCount: 1 }); // INSERT error_queue RETURNING id
+    hardwareAdapter.assignRole.mockRejectedValueOnce(new Error('Kisi 500'));
+    await runProbe();
+
+    expect(db.query.mock.calls[2][0]).toMatch(/RETURNING id/);
+    const [clientId, err, rowId, guide] = retryEngine._alertedRecentlyForCause.mock.calls[0];
+    expect([clientId, err.code, rowId]).toEqual([CLIENT_ID, 'SOURCE_RETRY_EXHAUSTED', 'eq-9']);
+    expect(guide).toMatchObject({ owner: 'accesssync', retry: 'none' });
+    expect(retryEngine._notifyOperator).toHaveBeenCalledWith(CLIENT_ID, expect.objectContaining({ code: 'SOURCE_RETRY_EXHAUSTED' }), null, 'source_retry_exhausted', guide);
+    expect(retryEngine._notifyOwnerCopy).toHaveBeenCalledWith(CLIENT_ID, expect.objectContaining({ code: 'SOURCE_RETRY_EXHAUSTED' }), 'source_retry_exhausted', guide);
+  });
+
+  test('a second exhaustion of the same cause within the hour is not emailed again', async () => {
+    retryEngine._alertedRecentlyForCause.mockResolvedValue(true);
+    db.query
+      .mockResolvedValueOnce({ rows: [candidateRow({ retry_count: 2 })] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'eq-10' }], rowCount: 1 });
+    hardwareAdapter.assignRole.mockRejectedValueOnce(new Error('Kisi 500'));
+    await runProbe();
+    expect(retryEngine._notifyOperator).not.toHaveBeenCalled();
+    expect(retryEngine._notifyOwnerCopy).not.toHaveBeenCalled();
+  });
+
+  test('a failing email never undoes the row (the probe still reports the exhaustion)', async () => {
+    retryEngine._notifyOperator.mockRejectedValueOnce(new Error('mailer down'));
+    db.query
+      .mockResolvedValueOnce({ rows: [candidateRow({ retry_count: 2 })] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'eq-11' }], rowCount: 1 });
+    hardwareAdapter.assignRole.mockRejectedValueOnce(new Error('Kisi 500'));
+    await runProbe();
+    expect(log.warn).toHaveBeenCalledWith('source_retry.alert_failed', expect.objectContaining({ clientId: CLIENT_ID }), expect.any(Error));
+    expect(log.error).toHaveBeenCalledWith('source_retry.exhausted', expect.anything(), expect.anything());
   });
 });
 

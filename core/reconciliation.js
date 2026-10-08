@@ -585,8 +585,12 @@ class NightlyReconciliation {
       );
       const { last_sync_at, interval } = lastSyncResult.rows[0] || {};
       const intervalMs = { hourly: 3600000, '6h': 21600000, '12h': 43200000, daily: 86400000, weekly: 604800000 };
+      // Slack: last_sync_at is stamped when a sweep FINISHES, and the scheduler fires every interval from when the
+      // previous sweep STARTED — so the next fire always lands a little short of a full interval and was skipped,
+      // halving the cadence (a '6h' client was really synced every 12h). Allow 10% early, at most 30 minutes.
       const minMs = intervalMs[interval] || 86400000;
-      if (last_sync_at && (Date.now() - new Date(last_sync_at).getTime()) < minMs) {
+      const slackMs = Math.min(30 * 60 * 1000, Math.floor(minMs * 0.1));
+      if (last_sync_at && (Date.now() - new Date(last_sync_at).getTime()) < minMs - slackMs) {
         sweepLogger.info('reconciliation.skipped', { reason: 'interval_not_elapsed', interval, stage: 'cron', result: 'skipped' });
         return;
       }
@@ -2241,6 +2245,8 @@ class NightlyReconciliation {
           email:            wixData.email,
           name:             wixData.name,
           wixSiteId:        siteId,
+          // the paying Wix order(s) behind this grant: the grant path reads the DR-051 seat flag per order, not plan-wide
+          seatOrderIds:     plan.orderIds && plan.orderIds.length ? plan.orderIds : undefined,
           synthetic:        true,
           syntheticSource:  'reconciliation.true_source_sync',
           traceId,

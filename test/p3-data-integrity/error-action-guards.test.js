@@ -217,3 +217,17 @@ describe('[P3] operator routes — same rules, and the gym cannot hide AccessSyn
     expect(res.status).toBe(404);
   });
 });
+
+describe('[P3] every error names its member (error_queue.member_id written as member_master.id)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  test('the errors list, detail and the gym\'s list match member_id against member_master as well as member_access', () => {
+    const errorsSrc = fs.readFileSync(path.join(__dirname, '../../admin/routes/errors.js'), 'utf8');
+    const operatorSrc = fs.readFileSync(path.join(__dirname, '../../admin/routes/operator.js'), 'utf8');
+    const either = /LEFT JOIN member_access ma ON \(ma\.id = eq\.member_id\s+OR \(ma\.member_master_id = eq\.member_id AND ma\.client_id = eq\.client_id\)\)/g;
+    expect((errorsSrc.match(either) || []).length).toBe(2);
+    expect((operatorSrc.match(either) || []).length).toBe(1);
+    expect(errorsSrc).not.toMatch(/LEFT JOIN member_access ma ON ma\.id = eq\.member_id\s*\n/);
+    expect(operatorSrc).not.toMatch(/LEFT JOIN member_access ma ON ma\.id = eq\.member_id\s*\n/);
+  });
+});
