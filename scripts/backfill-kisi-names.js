@@ -59,7 +59,7 @@ const norm = (s) => (s || '').trim().toLowerCase();
 
   if (rows.length === 0) {
     console.log(ONLY_EMAIL ? `No Kisi-linked member found for ${ONLY_EMAIL}` : 'No Kisi-linked members found');
-    process.exit(0);
+    return;
   }
 
   // One Kisi user can back several member_access rows; handle each user once.
@@ -122,8 +122,8 @@ const norm = (s) => (s || '').trim().toLowerCase();
 
   console.log(`\n${APPLY ? `Renamed ${tally.renamed} of ${tally.rename}` : `Would rename ${tally.rename}`}, ` +
               `skipped ${tally.skip}, failed ${tally.failed}`);
-  process.exit(tally.failed ? 1 : 0);
+  process.exitCode = tally.failed ? 1 : 0;
 })().catch((err) => {
   console.error(err);
-  process.exit(1);
-});
+  process.exitCode = 1;
+}).finally(() => db.pool.end());
