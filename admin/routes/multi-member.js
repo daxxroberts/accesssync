@@ -628,7 +628,7 @@ router.post('/api/multi-member/submit', async (req, res) => {
         sourcePlatform:   'wix',
         planId:           draft.source_plan_id,
         email:            draft.email,
-        name:             `${draft.first_name} ${draft.last_name}`,
+        name:             [draft.first_name, draft.last_name].filter(Boolean).join(' '),
         synthetic:        true,
         // DR-052: allow-listed — drives the M3 sub-member invite email on grant completion.
         syntheticSource:  'multi-member.submit',

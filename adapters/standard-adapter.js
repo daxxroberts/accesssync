@@ -261,9 +261,12 @@ class StandardAdapter {
     }
     if (!userPattern) userPattern = 'invited';
 
-    // 1. DB cache check — reads hardware_user_id from member_access (skipped when force=true)
+    // 1. DB cache check — reads hardware_user_id from member_access (skipped when force=true).
+    // The stored name rides along for the create fallback below.
     const cached = await db.query(
-      'SELECT hardware_user_id FROM member_access WHERE id = $1',
+      `SELECT ma.hardware_user_id, mm.first_name, mm.last_name, mm.display_name
+         FROM member_access ma LEFT JOIN member_master mm ON mm.id = ma.member_master_id
+        WHERE ma.id = $1`,
       [memberId]
     );
     const priorHardwareUserId = cached.rows[0]?.hardware_user_id || null;
@@ -275,9 +278,19 @@ class StandardAdapter {
       return priorHardwareUserId;
     }
 
+    // Name is not an identity anchor (never used for matching) but it is sent to Kisi on
+    // create so the dashboard shows the member's name instead of their email. Plan-order
+    // webhooks often carry no buyer name, so fall back to the name already on member_master.
+    if (!name || !String(name).trim()) {
+      const stored = cached.rows[0] || {};
+      name = [stored.first_name, stored.last_name].filter(Boolean).join(' ').trim()
+        || (stored.display_name && String(stored.display_name).trim())
+        || null;
+    }
+
     // OB-89 Gate 2: wrap hardware calls — recover missing email if needed.
-    // Email is the only identity anchor. Name is decoration (not used for matching, not
-    // sent to Kisi). If email is missing, run the recovery ladder (Wix Members API → DB cache → park).
+    // Email is the only identity anchor. If email is missing, run the recovery
+    // ladder (Wix Members API → DB cache → park).
     let hardwareUserId;
     try {
       hardwareUserId = await this._callHardwareToResolveIdentity(
@@ -1934,7 +1947,7 @@ class StandardAdapter {
 
           return {
             email: member.email,
-            name:  member.name || member.email,
+            name:  member.name || null,
             firstName: member.firstName || null,
             lastName:  member.lastName  || null,
             phone:     member.phone     || null,

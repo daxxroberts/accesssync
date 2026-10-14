@@ -172,6 +172,7 @@ New events require an entry before shipping. Events without entries are flagged 
 | `kisi.user.created` | info | New Kisi user created via createUser |
 | `kisi.user.suspending` / `kisi.user.suspended` / `kisi.user.suspend_failed` | info / info / error | suspendAccess lifecycle (payment.failed flow) |
 | `kisi.user.enabling` / `kisi.user.enabled` / `kisi.user.enable_failed` | info / info / error | enableAccess lifecycle (payment.recovered flow) |
+| `kisi.user.renamed` | info | setUserName — display name set on an AccessSync-created Kisi user (name backfill) |
 | `kisi.user.deleting` / `kisi.user.deleted` / `kisi.user.delete_failed` | info / info / error | deleteUser lifecycle (member.deleted flow). Caller-side OB-125 source_tag guard required before invocation. |
 | `kisi.user.delete_skipped_foreign` | warn | OB-125: deleteUser skipped because `member_identity.source_tag` is not `'accesssync'` — Kisi user identity may be shared with admin/staff or non-AccessSync grants and must not be deleted. AccessSync-side cleanup still proceeds (audit log + config_alert_log written). |
 | `kisi.user.delete_skipped_already_gone` | info | **PERSISTED (DR-054).** Kisi user already absent at delete time — idempotent no-op. Explains a delete that appears to have done nothing. |

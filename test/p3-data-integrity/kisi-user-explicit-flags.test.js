@@ -91,6 +91,63 @@ describe('[P3] DR-043 kisi-adapter.createUser — send_emails and confirm flags'
 
 });
 
+describe('[P3] kisi-adapter.createUser — member name reaches Kisi', () => {
+  // Without a name Kisi shows the email in its Name column, so the gym can't
+  // tell members apart at a glance.
+
+  const bodyFor = async (name) => {
+    await kisiAdapter.createUser(API_KEY, EMAIL, name, { clientId: CLIENT_ID });
+    return JSON.parse(kisiConnector.makeRequest.mock.calls[0][1].body);
+  };
+
+  it('sends the member name', async () => {
+    expect((await bodyFor(NAME)).user.name).toBe(NAME);
+  });
+
+  it('collapses stray whitespace (e.g. a missing last name)', async () => {
+    expect((await bodyFor('  Jane   ')).user.name).toBe('Jane');
+  });
+
+  it('omits name when there is none, so Kisi keeps its default', async () => {
+    for (const blank of [null, undefined, '', '   ', 'null']) {
+      kisiConnector.makeRequest.mockClear();
+      expect((await bodyFor(blank)).user).not.toHaveProperty('name');
+    }
+  });
+
+  it('never sends the email as the name', async () => {
+    expect((await bodyFor(EMAIL.toUpperCase())).user).not.toHaveProperty('name');
+  });
+});
+
+describe('[P3] kisi-adapter.setUserName — rename only AccessSync-created users', () => {
+  const MANAGED = { id: 999, notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync` };
+
+  it('PATCHes name only — notes and access untouched', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce(MANAGED).mockResolvedValueOnce({});
+    await kisiAdapter.setUserName(API_KEY, 999, 'Daxx Roberts', { clientId: CLIENT_ID });
+
+    const [path, opts] = kisiConnector.makeRequest.mock.calls[1];
+    expect(path).toBe('/users/999');
+    expect(opts.method).toBe('PATCH');
+    expect(JSON.parse(opts.body)).toEqual({ user: { name: 'Daxx Roberts' } });
+  });
+
+  it('refuses a user with no AccessSync marker (the gym\'s own user)', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 999, notes: '' });
+    await expect(kisiAdapter.setUserName(API_KEY, 999, 'X Y', { clientId: CLIENT_ID }))
+      .rejects.toMatchObject({ code: 'NOT_ACCESSSYNC_MANAGED' });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a user marked for a different client', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 999, notes: '[AS|managed|other|2026-05-13T00:00:00Z] x' });
+    await expect(kisiAdapter.setUserName(API_KEY, 999, 'X Y', { clientId: CLIENT_ID }))
+      .rejects.toMatchObject({ code: 'CLIENT_MISMATCH' });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('[P3] kisi-adapter.deleteUser — two-layer ownership guard', () => {
 
   it('refuses to DELETE when notes lack the AccessSync marker', async () => {
