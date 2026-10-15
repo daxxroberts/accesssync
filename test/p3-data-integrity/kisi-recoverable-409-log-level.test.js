@@ -30,6 +30,8 @@ describe('[P3] Kisi connector log level for recoverable responses', () => {
     ['POST', '/users', 409],                   // new: user already exists → adapter reuses it
     ['POST', '/role_assignments', 409],        // existing
     ['DELETE', '/role_assignments/123', 404],  // existing
+    ['GET', '/group_links/958081', 404],       // expired day-pass link already removed by Kisi (adapter: "already gone")
+    ['DELETE', '/group_links/958081', 404],
   ])('%s %s %i is logged at INFO (routine duplicate-webhook recovery) and flagged recoverable', async (method, endpoint, status) => {
     await call(method, endpoint, status);
     expect(levelOf()).toBe('info');
@@ -42,6 +44,9 @@ describe('[P3] Kisi connector log level for recoverable responses', () => {
     ['GET', '/users', 409],                    // a 409 on a read is not the create race
     ['POST', '/groups', 409],                  // nor on an unrelated endpoint
     ['DELETE', '/role_assignments/123', 403],
+    ['GET', '/group_links', 404],              // the LIST endpoint missing is a real failure
+    ['POST', '/group_links', 404],             // creating a day pass must never be quiet
+    ['GET', '/group_links/958081', 401],
   ])('%s %s %i stays an ERROR (a real failure the operator must see)', async (method, endpoint, status) => {
     await call(method, endpoint, status);
     expect(levelOf()).toBe('error');
