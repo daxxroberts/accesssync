@@ -21,9 +21,11 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 
 // ── Minimal Express app for testing ──────────────────────────────────────────
 
-function makeApp() {
+function makeApp({ signedIn = false } = {}) {
   const app = express();
   app.use(express.json());
+  // An inbound x-trace-id is only honoured on a signed-in session (req.admin set by auth middleware).
+  if (signedIn) app.use((req, _res, next) => { req.admin = { role: 'admin' }; next(); });
   app.use(traceContextMiddleware);
 
   // Echo trace context for inspection
@@ -71,7 +73,7 @@ function request(app) {
 // ── traceContextMiddleware ─────────────────────────────────────────────────
 
 describe('[P2] trace-context middleware: x-trace-id header behavior', () => {
-  const app = makeApp();
+  const app = makeApp({ signedIn: true });
 
   test('mints UUID v4 when no inbound x-trace-id header', async () => {
     const res = await request(app).get('/echo');
@@ -99,6 +101,14 @@ describe('[P2] trace-context middleware: x-trace-id header behavior', () => {
     const inbound = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     const res = await request(app).get('/echo', { 'x-trace-id': inbound });
     expect(res.body.traceId).toBe(inbound);
+  });
+
+  test('a request WITHOUT a session cannot choose its trace id (it could borrow another gym\'s trace)', async () => {
+    const inbound = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const res = await request(makeApp()).get('/echo', { 'x-trace-id': inbound });
+    expect(res.headers['x-trace-id']).toMatch(UUID_V4);
+    expect(res.headers['x-trace-id']).not.toBe(inbound);
+    expect(res.body.traceId).not.toBe(inbound);
   });
 
 });

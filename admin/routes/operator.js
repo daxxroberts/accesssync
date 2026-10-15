@@ -3069,7 +3069,10 @@ router.get('/:clientId/errors', async (req, res) => {
               mm.first_name, mm.last_name, mm.email AS member_email,
               mm.platform_member_id
        FROM error_queue eq
-       LEFT JOIN member_access ma ON ma.id = eq.member_id
+       -- error_queue.member_id is member_master.id (retry-engine, core/diagnostics.js); older probe rows
+       -- stored member_access.id. Match either, so every error shows whose it is.
+       LEFT JOIN member_access ma ON (ma.id = eq.member_id
+            OR (ma.member_master_id = eq.member_id AND ma.client_id = eq.client_id))
        LEFT JOIN member_master mm ON mm.id = ma.member_master_id
        WHERE eq.client_id = $1 AND eq.status = 'failed'
        ORDER BY eq.last_occurred_at DESC NULLS LAST, eq.created_at DESC

@@ -49,7 +49,7 @@ const HOURS = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
  * Query order in admin/routes/system-health.js (Promise.all over 11 queries):
  *   1 SELECT 1 · 2 clients · 3 reconcile per client · 4 reconcile aggregate · 5 webhook last
  *   6 webhook 24h · 7 open error_queue rows · 8 diag errors 24h · 9 diag warns 24h
- *  10 slow queries · 11 setup progress
+ *  10 slow queries · 11 setup progress · 12 open sync alerts (config_alert_log)
  * mockResolvedValueOnce queues them in dispatch order.
  */
 function mockSystem({
@@ -64,12 +64,13 @@ function mockSystem({
   slow = 0,
   setup,                       // default: every listed client fully set up
   fail = [],                   // 1-based query numbers (see the list above) that reject
+  alerts = [],                 // 12 open config_alert_log counts per client
 } = {}) {
   const setupRows = setup || clients.map(c => ({ client_id: c.id, has_hardware_key: true, has_wix_key: true, location_count: 1, has_members: true }));
   const results = [
     { rows: [{ '?column?': 1 }] }, { rows: clients }, { rows: reconcile }, { rows: [{ latest_reconcile_at: latestReconcile }] },
     { rows: webhookLast }, { rows: webhook24h }, { rows: openErrors }, { rows: diagErrors }, { rows: diagWarns },
-    { rows: [{ slow_query_24h: slow }] }, { rows: setupRows },
+    { rows: [{ slow_query_24h: slow }] }, { rows: setupRows }, { rows: alerts },
   ];
   results.forEach((r, i) => (fail.includes(i + 1) ? db.query.mockRejectedValueOnce(new Error('query ' + (i + 1) + ' failed')) : db.query.mockResolvedValueOnce(r)));
 }
@@ -414,6 +415,25 @@ describe('[P2] OB-195 — GET /admin/system-health endpoint', () => {
       expect(res.body.platform.unassigned_open_errors).toBe(1);
       expect(res.body.aggregate.worst_state).toBe('amber');
       expect(res.body.clients[0].worst_state).toBe('green');
+    });
+  });
+
+  describe('open sync alerts (removals held for the gym) — information only (L8)', () => {
+    test('the count is reported but never colours the card (nothing on screen could clear it)', async () => {
+      mockSystem({ alerts: [{ client_id: 'c1', open_count: 4, removals_held: 4 }] });
+      const c = (await get()).body.clients[0];
+      expect(c.open_alerts).toEqual({ open_count: 4, removals_held: 4 });
+      expect(c.worst_state).toBe('green');
+    });
+
+    test('a client with no open alerts reads zero; if the alerts query fails it reads null (unknown), still not a verdict', async () => {
+      mockSystem();
+      expect((await get()).body.clients[0].open_alerts).toEqual({ open_count: 0, removals_held: 0 });
+      db.query.mockReset();
+      mockSystem({ fail: [12] });
+      const c = (await get()).body.clients[0];
+      expect(c.open_alerts).toBeNull();
+      expect(c.worst_state).toBe('green');
     });
   });
 

@@ -162,3 +162,24 @@ describe('[P3] the entry points bind the client', () => {
     expect(read('admin/routes/operator.js')).toMatch(/actor: \{ type: 'operator', id: String\(operatorActor\) \}, clientId \}/);
   });
 });
+
+describe('[P3] a client id that is not a client never loses the log row (L3)', () => {
+  test('FK violation (owner opened /operator/<mistyped uuid>): the row is written again without the client, naming the id', async () => {
+    const fk = Object.assign(new Error('insert or update on table "diagnostic_log" violates foreign key constraint'), { code: '23503' });
+    db.query.mockRejectedValueOnce(fk);
+    tc.runWith({ traceId: 'fk-1', actor, clientId: A }, () => log.warn('operator.something_happened', {}));
+    await flush(); await flush();
+    const rows = inserts();
+    expect(rows).toHaveLength(2);
+    expect(rows[0][1][0]).toBe(A);
+    expect(rows[1][1][0]).toBeNull();
+    expect(JSON.parse(rows[1][1][5])).toMatchObject({ unknownClientId: A });
+  });
+
+  test('any other write failure is not retried (no duplicate rows)', async () => {
+    db.query.mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: '57014' }));
+    tc.runWith({ traceId: 'fk-2', actor, clientId: A }, () => log.warn('operator.something_else', {}));
+    await flush(); await flush();
+    expect(inserts()).toHaveLength(1);
+  });
+});

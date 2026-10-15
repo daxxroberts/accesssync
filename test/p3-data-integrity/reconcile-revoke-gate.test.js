@@ -324,7 +324,7 @@ function installWorld(world = {}) {
     if (s.includes('UPDATE reconciliation_run')) return { rows: [], rowCount: 1 };
 
     // ── runNightlySweep-only queries ──
-    if (s.includes('SELECT last_sync_at')) return { rows: [{ last_sync_at: null, interval: 'daily' }], rowCount: 1 };
+    if (s.includes('SELECT last_sync_at')) return { rows: [{ last_sync_at: world.lastSyncAt || null, interval: world.syncInterval || 'daily' }], rowCount: 1 };
     if (s.includes('FROM clients c') && s.includes('JOIN connector_subscriptions')) {
       return { rows: [clientRow()], rowCount: 1 };
     }
@@ -2042,6 +2042,18 @@ describe('[P3] Step 3A — a seat its holder released is never re-queued as a gr
     expect(grantedPairs()).toEqual([]);
   });
 
+  test('the sweep\'s grant names the paying order(s), so the grant path reads the seat flag per order too (L13)', async () => {
+    installWorld({
+      members: [member('a')],
+      read1:   reads(paying(['a', 'rebuyer'])),
+      holderSeatedFalseForOrders: [['rebuyer', 'ord-rebuyer-OLD-ORDER']],
+    });
+    await runSync();
+    const ev = grantCalls().find(c => c[1].standardEvent.platformMemberId === 'rebuyer')[1].standardEvent;
+    expect(ev.seatOrderIds).toEqual([`ord-rebuyer-${PLAN_ID}-PAYING`]);
+    expect(ev.wixOrderId).toBeUndefined();   // no billing write from a synthetic event
+  });
+
   test('...and a holder who released THIS order is still skipped', async () => {
     installWorld({
       members: [member('a')],
@@ -2328,3 +2340,23 @@ describe('[P3] Fix round 3 — clears always run; only advancing a clock is ever
     expect(standardAdapter.recordNotPayingObservation.mock.calls).toEqual([['ma-e', PLAN_ID]]);
   });
 });
+
+describe('[P3] sweep cadence gate — a 6h client is really synced every 6h (L10)', () => {
+  const HOURS_AGO = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
+  async function sweepWith(lastSyncAt) {
+    installWorld({ members: [], read1: reads([]), syncInterval: '6h', lastSyncAt });
+    const sleep = jest.spyOn(reconciliation, '_sleep').mockResolvedValue();
+    try { await reconciliation.runNightlySweep({ triggerSource: 'inprocess' }); } finally { sleep.mockRestore(); }
+  }
+
+  test('the 6h timer landing a minute short of 6h (the previous sweep ran a minute) still syncs', async () => {
+    await sweepWith(HOURS_AGO(6 - 1 / 60));
+    expect(sqlCalls('UPDATE clients SET last_sync_at')).toHaveLength(1);
+  });
+
+  test('a sweep fired well inside the interval (e.g. a restart 2h later) is still skipped', async () => {
+    await sweepWith(HOURS_AGO(2));
+    expect(sqlCalls('UPDATE clients SET last_sync_at')).toHaveLength(0);
+  });
+});
+

@@ -62,7 +62,8 @@ const BY_CODE = {
     'A door group this plan points to no longer exists in Kisi.',
     ['Open Plan Mapping and choose a door group that still exists for this plan.', 'Then press Retry on the affected members.']),
   // Kisi answered 422 "unknown" to the role assignment: no reason is given and the cause has not been established
-  // (the old advice — "check the member's email and name" — was wrong: AccessSync never sends a name to Kisi).
+  // (the old advice — "check the member's email and name" — was wrong: the live 422s are on POST /role_assignments,
+  // which carries no member details; names are only sent when the Kisi user is created, since 2026-10-14).
   HARDWARE_VALIDATION_ERROR: accessSyncOwned(
     'Kisi refused this request and gave no reason. Retrying sends the same request again and fails the same way.',
     [SUPPORT_LINE, 'If this member tells you they cannot get in, contact AccessSync support and mention this error.']),

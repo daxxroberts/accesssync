@@ -191,33 +191,46 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
       const clientExpr = sweepActor
         ? '$1::uuid'
         : 'COALESCE($1::uuid, (SELECT tc.client_id FROM trace_context tc WHERE tc.trace_id = $7::text LIMIT 1))';
-      const result = db.query(
-        `INSERT INTO diagnostic_log
+      const sql = `INSERT INTO diagnostic_log
          (client_id, service, level, error_code, message, context, trace_id, actor_type, actor_id)
          VALUES (${clientExpr},
-                 $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          clientId,
-          deriveService(event),
-          level,
-          errorCode,
-          message,
-          JSON.stringify(context),
-          traceId || null,
-          actor?.type || null,
-          actor?.id   || null,
-        ]
-      );
+                 $2, $3, $4, $5, $6, $7, $8, $9)`;
+      const params = [
+        clientId,
+        deriveService(event),
+        level,
+        errorCode,
+        message,
+        JSON.stringify(context),
+        traceId || null,
+        actor?.type || null,
+        actor?.id   || null,
+      ];
+      const reportFailure = (dbErr) => {
+        try {
+          process.stdout.write(JSON.stringify({
+            ts: new Date().toISOString(), level: 'error',
+            event: 'logger.diagnostic_log_write_failed',
+            error: { message: dbErr.message, code: dbErr.code },
+          }) + '\n');
+        } catch (_) { /* stdout closed — nothing to do */ }
+      };
+      const result = db.query(sql, params);
       // db.query may return a Promise (real pg) or any value (test mocks)
       if (result && typeof result.catch === 'function') {
         result.catch((dbErr) => {
-          try {
-            process.stdout.write(JSON.stringify({
-              ts: new Date().toISOString(), level: 'error',
-              event: 'logger.diagnostic_log_write_failed',
-              error: { message: dbErr.message, code: dbErr.code },
-            }) + '\n');
-          } catch (_) { /* stdout closed — nothing to do */ }
+          // 23503 = the client id is a well-formed uuid that is not a client (e.g. the owner opened
+          // /operator/<mistyped id>). The row is still worth keeping: write it again without the client
+          // instead of losing it, and record which id was asked for.
+          if (dbErr && dbErr.code === '23503' && clientId) {
+            const retryParams = params.slice();
+            retryParams[0] = null;
+            retryParams[5] = JSON.stringify({ ...context, unknownClientId: clientId });
+            const again = db.query(sql, retryParams);
+            if (again && typeof again.catch === 'function') again.catch(reportFailure);
+            return;
+          }
+          reportFailure(dbErr);
         });
       }
     } catch (_) {

@@ -593,11 +593,15 @@ const realEsc = liftFunctions(readRepoFile('admin', 'public', 'operator-nav.js')
 describe('[P3] admin retry routing — operator Errors page (errors.ejs) surfaces refusals (F10)', () => {
   const src = readRepoFile('admin', 'views', 'pages', 'errors.ejs');
 
-  function page({ response, errors } = {}) {
+  function page({ response, responses, errors } = {}) {
     const toasts = [];
     const calls  = { loadErrors: 0, loadSummary: 0, warned: [] };
     const retryAllBtn = { disabled: true, textContent: 'Retrying…' };
-    const apiFetch = jest.fn(() => Promise.resolve(response));
+    // responses: { <errorId>: fakeResponse } for Retry all, which retries one row at a time
+    const apiFetch = jest.fn((url) => {
+      const id = String(url).split('/errors/')[1]?.split('/')[0];
+      return Promise.resolve(responses && responses[id] ? responses[id] : response);
+    });
     const fns = liftFunctions(src, ['readJsonResponse', 'retryOne', 'retryAll'], {
       _clientId:   'c1',
       _errors:     errors || [],
@@ -650,22 +654,22 @@ describe('[P3] admin retry routing — operator Errors page (errors.ejs) surface
     expect(p.toasts).toEqual([{ type: 'error', msg: 'Retry failed (HTTP 500)' }]);
   });
 
-  test('Retry all: the toast carries the skipped count and explains skipped removals', async () => {
+  test('Retry all: one call per open row through the gym\'s own route; the toast carries the skipped count and explains skipped removals', async () => {
     const p = page({
       errors: [{ id: 'a', status: 'failed' }, { id: 'b', status: 'failed' }, { id: 'c', status: 'failed' }, { id: 'z', status: 'resolved' }],
-      response: fakeResponse(200, {
-        queued: 1, failed: 0, skipped: 2, errors: [],
-        skippedRows: [
-          { id: 'b', reason: 'revoke_retry_disabled', error: REVOKE_RETRY_DISABLED_MESSAGE },
-          { id: 'c', reason: 'unroutable_event_type', error: 'x' },
-        ],
-      }),
+      responses: {
+        a: fakeResponse(200, { queued: true }),
+        b: fakeResponse(422, { error: REVOKE_RETRY_DISABLED_MESSAGE, reason: 'revoke_retry_disabled' }),
+        c: fakeResponse(422, { error: 'x', reason: 'unroutable_event_type' }),
+      },
     });
     p.retryAll();
-    await settle();
+    for (let i = 0; i < 6; i++) await settle();
 
-    const [, opts] = p.apiFetch.mock.calls[0];
-    expect(JSON.parse(opts.body)).toEqual({ ids: ['a', 'b', 'c'] }); // only open rows
+    // never the owner-only /admin/errors/bulk-retry (a 403 for a gym session)
+    expect(p.apiFetch.mock.calls.map(c => c[0])).toEqual([
+      '/operator/c1/errors/a/retry', '/operator/c1/errors/b/retry', '/operator/c1/errors/c/retry',
+    ]);
     expect(p.toasts).toHaveLength(1);
     expect(p.toasts[0].type).toBe('info'); // not a plain success when rows were skipped
     expect(p.toasts[0].msg).toMatch(/^Queued 1 for retry/);
@@ -678,21 +682,23 @@ describe('[P3] admin retry routing — operator Errors page (errors.ejs) surface
   test('Retry all with nothing skipped stays a plain success', async () => {
     const p = page({
       errors: [{ id: 'a', status: 'failed' }],
-      response: fakeResponse(200, { queued: 1, failed: 0, skipped: 0, errors: [], skippedRows: [] }),
+      response: fakeResponse(200, { queued: true }),
     });
     p.retryAll();
-    await settle();
+    for (let i = 0; i < 4; i++) await settle();
     expect(p.toasts).toEqual([{ type: 'success', msg: 'Queued 1 for retry' }]);
   });
 
-  test('Retry all: a non-2xx response shows the server’s error, not "Queued 0"', async () => {
+  test('Retry all: a row the server rejects outright is counted as failed, never as queued', async () => {
     const p = page({
       errors: [{ id: 'a', status: 'failed' }],
       response: fakeResponse(403, { error: 'Forbidden for this account' }),
     });
     p.retryAll();
-    await settle();
-    expect(p.toasts).toEqual([{ type: 'error', msg: 'Forbidden for this account' }]);
+    for (let i = 0; i < 4; i++) await settle();
+    expect(p.toasts).toHaveLength(1);
+    expect(p.toasts[0].msg).toMatch(/^Queued 0 for retry · 1 failed/);
+    expect(p.toasts[0].type).toBe('info');
   });
 });
 

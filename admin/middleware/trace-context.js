@@ -15,8 +15,8 @@
  * MUST mount AFTER cookieParser and AFTER auth middleware that populates
  * req.admin / req.wixOperator. MUST mount BEFORE any route handler.
  *
- * Honors inbound x-trace-id header so admin → core proxy calls can chain
- * traces across service boundaries.
+ * Honors an inbound x-trace-id header only on authenticated (req.admin) requests, so a
+ * signed-in admin → core call can chain traces; on any other request a fresh id is minted.
  */
 
 'use strict';
@@ -65,7 +65,10 @@ function resolveActor(req) {
  * After auth middleware, before route handlers.
  */
 function traceContextMiddleware(req, res, next) {
-  const inbound = req.headers['x-trace-id'];
+  // An inbound trace id is only trusted from a signed-in session. Anyone can send the header on a public request
+  // (a webhook, the member hub): reusing a victim's trace id would let a stranger's log rows inherit that trace's
+  // client through trace_context and appear on another gym's log. Nothing in AccessSync sends it today.
+  const inbound = req.admin ? req.headers['x-trace-id'] : null;
   const traceId = (inbound && VALID_TRACE_ID.test(inbound)) ? inbound : mintTraceId();
 
   const actor = resolveActor(req);
