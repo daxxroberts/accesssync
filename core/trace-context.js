@@ -74,6 +74,9 @@ function runWith(ctx, fn) {
     traceId: ctx.traceId,
     actor: { type: ctx.actor.type, id: ctx.actor.id },
     clientId: asClientId(ctx.clientId),
+    // Lazy trace_context registration (see ensureTraceRegistered). A holder object, shared with
+    // any withClient() child, so whichever context flushes first clears it for all of them.
+    pending: ctx.pendingTrace ? { opts: ctx.pendingTrace } : null,
   }, fn);
 }
 
@@ -90,7 +93,28 @@ function withClient(clientId, fn) {
   const ctx = als.getStore();
   const id = asClientId(clientId);
   if (!ctx || !id) return fn();
-  return als.run({ traceId: ctx.traceId, actor: ctx.actor, clientId: id }, fn);
+  return als.run({ traceId: ctx.traceId, actor: ctx.actor, clientId: id, pending: ctx.pending || null }, fn);
+}
+
+/**
+ * Write the current context's trace_context row now, if it was registered lazily and has not
+ * been written yet. Resolves once the row is in (or was already there / nothing is pending).
+ *
+ * Why: an admin HTTP request mints a trace before anything is known about it. For months every
+ * such request wrote a trace_context row holding only a timestamp — 260k rows, 99.9% never
+ * referenced by any log table (2026-10-15 review). The middleware now parks the row's fields on
+ * the context instead (runWith's ctx.pendingTrace) and db.js calls this before any INSERT into a
+ * trace-bearing table, so the row exists exactly when something is logged under the trace.
+ *
+ * @returns {Promise<void>}
+ */
+function ensureTraceRegistered() {
+  const ctx = als.getStore();
+  const holder = ctx && ctx.pending;
+  if (!holder || !holder.opts) return Promise.resolve();
+  const opts = holder.opts;
+  holder.opts = null;                       // clear before the await — concurrent callers see "done"
+  return registerTrace(ctx.traceId, opts);
 }
 
 /**
@@ -213,10 +237,11 @@ function deriveTraceId(name) {
  * @param {string}  [opts.planName]
  * @param {string}  [opts.doorName]
  * @param {string}  [opts.mappingId]
+ * @returns {Promise<void>} resolves after the write attempt; callers may ignore it (fire-and-forget)
  */
 function registerTrace(traceId, opts = {}) {
-  if (!traceId) return;
-  setImmediate(async () => {
+  if (!traceId) return Promise.resolve();
+  return new Promise((resolve) => setImmediate(async () => {
     try {
       const db = getDb();
       if (!db || typeof db.query !== 'function') return;
@@ -298,8 +323,10 @@ function registerTrace(traceId, opts = {}) {
           traceId,
         }) + '\n');
       } catch (_) { /* stdout closed — nothing to do */ }
+    } finally {
+      resolve();
     }
-  });
+  }));
 }
 
 /**
@@ -325,6 +352,10 @@ function setTraceContext(traceId, opts = {}) {
     try {
       const db = getDb();
       if (!db || typeof db.query !== 'function') return;
+
+      // This is an UPDATE: a lazily-registered request trace has no row yet, so write it first.
+      const ctx = als.getStore();
+      if (ctx && ctx.traceId === traceId) await ensureTraceRegistered();
 
       // Resolve member fields if memberId given. We re-resolve here (rather than
       // requiring the caller to pass names) so any caller who knows the memberId
@@ -418,6 +449,7 @@ function setTraceContext(traceId, opts = {}) {
 module.exports = {
   runWith,
   withClient,
+  ensureTraceRegistered,
   setActor,
   setClientId,
   getContext,

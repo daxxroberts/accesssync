@@ -152,7 +152,8 @@ describe('[P3] the entry points bind the client', () => {
   });
 
   test('admin requests: the trace middleware binds the resolved client', () => {
-    expect(read('admin/middleware/trace-context.js')).toMatch(/runWith\(\{ traceId, actor, clientId \}/);
+    // clientId must be bound; further fields (pendingTrace — lazy trace_context registration) are fine.
+    expect(read('admin/middleware/trace-context.js')).toMatch(/runWith\(\{ traceId, actor, clientId[,} ]/);
   });
 
   test('nightly sweep: each client\'s work runs in withClient(); manual sync and reconcileMember bind their client', () => {

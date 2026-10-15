@@ -86,14 +86,24 @@ function traceContextMiddleware(req, res, next) {
     : clientId ? 'operator_ui'
     : 'api';
 
-  registerTrace(traceId, {
+  const traceOpts = {
     entryPoint,
     clientId,
     actorType: actor.type,
     actorId:   actor.id,
-  });
+  };
 
-  runWith({ traceId, actor, clientId }, () => {
+  // 'api' is a request with no resolved operator, client, or webhook — which, because per-router
+  // auth runs after this middleware, is nearly every admin HTTP request. Written eagerly, those
+  // rows held nothing but a timestamp: 260k of them, 99.9% never referenced by any log table
+  // (2026-10-15 review). So an 'api' trace is parked on the context and written only when
+  // something is actually logged under it — db.js flushes it before any trace-bearing INSERT.
+  // Every other entry point (webhook, admin_ui, operator_ui) is a real, attributable trace and
+  // is still registered up front.
+  const lazy = entryPoint === 'api';
+  if (!lazy) registerTrace(traceId, traceOpts);
+
+  runWith({ traceId, actor, clientId, pendingTrace: lazy ? traceOpts : undefined }, () => {
     next();
   });
 }

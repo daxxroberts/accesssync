@@ -100,8 +100,23 @@ async function withPoolRetry(label, fn) {
  * );
  * const row = result.rows[0];
  */
+// Tables whose rows carry a trace_id. An admin request's trace_context row is written lazily
+// (admin/middleware/trace-context.js — only once something is logged under the trace), and this
+// is the one path every such writer goes through, so the row is flushed here before the INSERT.
+// trace_context itself is deliberately not in the list (that INSERT is the flush).
+const TRACE_BEARING_INSERT =
+  /INSERT INTO (diagnostic_log|activity_event|member_access_log|error_queue|config_alert_log|member_email_log|webhook_log|reconciliation_run)\b/i;
+let _traceContext = null;
+function getTraceContext() {
+  if (!_traceContext) _traceContext = require('./core/trace-context');
+  return _traceContext;
+}
+
 async function query(text, params) {
   const start = Date.now();
+  if (TRACE_BEARING_INSERT.test(text)) {
+    try { await getTraceContext().ensureTraceRegistered(); } catch (_) { /* never block the row for its trace */ }
+  }
   try {
     const result = await withPoolRetry(/INSERT INTO diagnostic_log/i.test(text) ? 'diagnostic_log' : 'query', () => pool.query(text, params));
     const duration = Date.now() - start;

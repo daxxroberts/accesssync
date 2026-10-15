@@ -873,6 +873,10 @@ async function _processJobBody(job, traceId) {
   }
 }
 
+// Max parallel jobs across all tenants. Each job holds one Postgres connection through
+// resolveAndLock and the Supabase session pooler allows 15, so this must stay well under it.
+const WORKER_CONCURRENCY = 10;
+
 /**
  * Start the BullMQ worker.
  * Called once at server boot from server.js.
@@ -881,7 +885,7 @@ async function _processJobBody(job, traceId) {
 function startWorker() {
   const worker = new Worker('accesssync-events', processJob, {
     connection,
-    concurrency: 10,  // DR-035: rate limiting is per-adapter inside each connector (e.g. kisi-connector enforces 5 req/sec).
+    concurrency: WORKER_CONCURRENCY,  // DR-035: rate limiting is per-adapter inside each connector (e.g. kisi-connector enforces 5 req/sec).
                       // Worker concurrency is not the rate limit — it's max parallel jobs across all tenants/platforms.
                       // 2026-10-15: 20 → 10. The Supabase session pooler allows 15 connections and each job holds
                       // one through resolveAndLock; at 20 a purchase burst hit EMAXCONNSESSION (2026-10-05 03:19,
@@ -972,7 +976,7 @@ function startWorker() {
     }
   });
 
-  log.info('queue.worker.started', { queue: 'accesssync-events', concurrency: 20 });
+  log.info('queue.worker.started', { queue: 'accesssync-events', concurrency: WORKER_CONCURRENCY });
   return worker;
 }
 
