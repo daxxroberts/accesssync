@@ -141,18 +141,33 @@ class KisiConnector {
         (response.status === 409 && method === 'POST'   && endpoint.startsWith('/role_assignments')) ||
         (response.status === 404 && method === 'DELETE' && endpoint.startsWith('/role_assignments')) ||
         (response.status === 409 && method === 'POST'   && endpoint === '/users');
-      const logFn = isLikelyRecoverable ? log.warn : log.error;
+      // 2026-10-15: recoverable shapes moved WARN → INFO. Every Wix purchase fires 3-4 grant jobs
+      // and each one after the first gets a 409 here (~150/week at HOG); at WARN they were the
+      // single largest line in diagnostic_log. Still persisted (EVENT_REGISTRY.json) so a trace
+      // timeline shows the recovery, just not counted as a problem.
+      const logFn = isLikelyRecoverable ? log.info : log.error;
+      // Kisi's validation errors (422) do not use `message` — the detail sits under other keys —
+      // so for the Sep 30 – Oct 5 dead-letter run the only record was "Kisi 422: unknown".
+      // Keep the raw body (capped) on every non-recoverable error so the cause is in the row.
+      let kisiBody = null;
+      if (!isLikelyRecoverable) {
+        try {
+          const s = JSON.stringify(errorBody);
+          kisiBody = (s && s !== '{}') ? s.slice(0, 1000) : null;
+        } catch (_) { /* unserialisable body — nothing to keep */ }
+      }
       logFn('kisi.response.error', {
         method,
         endpoint,
         statusCode: response.status,
         kisiCode: errorBody?.code || null,
         kisiMessage: errorBody?.message || response.statusText,
+        kisiBody,
         mappedCode: mapped.code,
         recoverable: isLikelyRecoverable,
       });
 
-      const error = new Error(`Kisi ${response.status}: ${errorBody?.message || response.statusText}`);
+      const error = new Error(`Kisi ${response.status}: ${errorBody?.message || kisiBody || response.statusText}`);
       error.statusCode = response.status;
       error.code = mapped.code;
       error.userMessage = mapped.userMessage;

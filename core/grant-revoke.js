@@ -140,6 +140,7 @@ class GrantRevokeLogic {
             accessId:           memberId,
             mappingId:          mapping.mappingId,
             roleAssignmentId:   String(priorRaId),
+            hardwareCallMade:   false,   // reused — completeGrant must not count it as a grant
             hardwareGroupId:    mapping.hardwareGroupId,
             hardwarePlatform:   mapping.hardwarePlatform,
             sourcePlanId:       wixEvent.planId || null,
@@ -202,6 +203,7 @@ class GrantRevokeLogic {
           accessId:           memberId,
           mappingId:          mapping.mappingId,
           roleAssignmentId:   String(priorId),
+          hardwareCallMade:   false,   // reused — completeGrant must not count it as a grant
           hardwareGroupId:    mapping.hardwareGroupId,
           hardwarePlatform:   mapping.hardwarePlatform,
           sourcePlanId:       wixEvent.planId || null,
@@ -252,6 +254,7 @@ class GrantRevokeLogic {
           accessId:           memberId,
           mappingId:          mapping.mappingId,
           roleAssignmentId:   String(roleId),
+          hardwareCallMade:   true,
           hardwareGroupId:    mapping.hardwareGroupId,
           hardwarePlatform:   mapping.hardwarePlatform,
           sourcePlanId:       wixEvent.planId || null,

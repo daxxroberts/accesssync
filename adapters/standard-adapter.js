@@ -522,9 +522,17 @@ class StandardAdapter {
       hardwarePlatform: resolvedHardwarePlatform,
     });
 
-    this._incrementActivity(tenantId, 'grants_completed').catch(err =>
-      log.warn('adapter.activity_update_failed', { field: 'grants_completed' }, err)
-    );
+    // grants_completed means "door opened", not "job ran". Wix fires 3-4 purchase webhooks and
+    // every one reaches here; only the job that actually called the door system counts (the
+    // dashboard showed 56 grants on a day with 30 — 2026-10-02). grant-revoke.js marks reused
+    // assignments hardwareCallMade:false; anything unmarked (day pass, reconcile, pending_start)
+    // keeps counting exactly as before.
+    const allReused = assignments.length > 0 && assignments.every(a => a.hardwareCallMade === false);
+    if (!allReused) {
+      this._incrementActivity(tenantId, 'grants_completed').catch(err =>
+        log.warn('adapter.activity_update_failed', { field: 'grants_completed' }, err)
+      );
+    }
 
     this._maybeFireFirstGrantEmail(tenantId, memberId).catch(err =>
       log.warn('adapter.first_grant_email_failed', {}, err)
@@ -1894,7 +1902,9 @@ class StandardAdapter {
         /already exists/i.test(err.message || '');
       if (!isAlreadyExists) throw err;
 
-      log.warn('adapter.identity.create_409_recovering', {
+      // INFO, not WARN (2026-10-15): this is the duplicate-webhook race resolving itself —
+      // the sibling job created the user a moment ago and we reuse it on the next line.
+      log.info('adapter.identity.create_409_recovering', {
         hardwarePlatform, email,
         message: 'Kisi returned 409 on createUser — re-querying by email to reuse existing ID',
       });

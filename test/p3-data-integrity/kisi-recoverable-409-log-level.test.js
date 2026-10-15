@@ -14,7 +14,8 @@ const connector = require('../../adapters/kisi/kisi-connector');
 
 const respond = (status, body = { message: 'x' }) => ({ ok: false, status, statusText: 'err', json: async () => body });
 const levelOf = () => (log.error.mock.calls.some(c => c[0] === 'kisi.response.error') ? 'error'
-  : log.warn.mock.calls.some(c => c[0] === 'kisi.response.error') ? 'warn' : 'none');
+  : log.warn.mock.calls.some(c => c[0] === 'kisi.response.error') ? 'warn'
+  : log.info.mock.calls.some(c => c[0] === 'kisi.response.error') ? 'info' : 'none');
 
 beforeEach(() => { jest.clearAllMocks(); connector.lastRequestTimes = []; });
 afterEach(() => { delete global.fetch; });
@@ -29,10 +30,10 @@ describe('[P3] Kisi connector log level for recoverable responses', () => {
     ['POST', '/users', 409],                   // new: user already exists → adapter reuses it
     ['POST', '/role_assignments', 409],        // existing
     ['DELETE', '/role_assignments/123', 404],  // existing
-  ])('%s %s %i is logged at WARN and flagged recoverable', async (method, endpoint, status) => {
+  ])('%s %s %i is logged at INFO (routine duplicate-webhook recovery) and flagged recoverable', async (method, endpoint, status) => {
     await call(method, endpoint, status);
-    expect(levelOf()).toBe('warn');
-    expect(log.warn.mock.calls.find(c => c[0] === 'kisi.response.error')[1]).toMatchObject({ recoverable: true });
+    expect(levelOf()).toBe('info');
+    expect(log.info.mock.calls.find(c => c[0] === 'kisi.response.error')[1]).toMatchObject({ recoverable: true });
   });
 
   test.each([

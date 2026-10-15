@@ -101,6 +101,7 @@ New events require an entry before shipping. Events without entries are flagged 
 | `adapter.identity.parked` | info | Member parked as pending_identity successfully |
 | `adapter.identity.park_failed` | error | Failed to park member as pending_identity |
 | `adapter.identity.gate2_cache_write_failed` | warn | Gate 2 email cache write to member_identity failed (non-fatal) |
+| `adapter.identity.create_409_recovering` | info | Kisi answered 409 to createUser — a sibling grant job (duplicate Wix webhook) created the user a moment ago; re-querying by email to reuse its ID. **PERSISTED via EVENT_REGISTRY.json override.** Was `warn` until 2026-10-15. |
 | `adapter.activity_update_failed` | warn | client_activity_summary increment failed (non-fatal) |
 | `adapter.first_grant_no_email` | info | First grant email skipped — no notification_email configured |
 | `adapter.first_grant_email_sent` | info | First grant welcome email sent successfully |
@@ -166,7 +167,7 @@ New events require an entry before shipping. Events without entries are flagged 
 |---|---|---|
 | `kisi.request` | debug | Outbound Kisi API request — every call logged with method + endpoint + retry attempt |
 | `kisi.response.success` | debug | Successful 2xx response from Kisi |
-| `kisi.response.error` | error / **warn** | Non-2xx response from Kisi — full structured context (status, Kisi body code/message, mapped error code) before throw. **Demoted to `warn` when the adapter layer is known to recover idempotently:** HTTP 409 on POST `/role_assignments` (assignRole) + HTTP 404 on DELETE `/role_assignments` (removeRole, OB-147). `recoverable: true` flag included on these warns. |
+| `kisi.response.error` | error / **info** | Non-2xx response from Kisi — full structured context (status, Kisi body code/message, mapped error code) before throw. **Demoted to `info` when the adapter layer is known to recover idempotently** (was `warn` until 2026-10-15 — at ~150/week per duplicate Wix webhook it was the largest line in diagnostic_log): HTTP 409 on POST `/role_assignments` (assignRole), HTTP 404 on DELETE `/role_assignments` (removeRole, OB-147), HTTP 409 on POST `/users` (createUser race). `recoverable: true` on these; **PERSISTED via EVENT_REGISTRY.json override** so the trace timeline keeps the recovery. Non-recoverable rows also carry `kisiBody` — the raw response (capped 1000 chars) — because Kisi's 422 bodies do not use `message` and the Sep 30 – Oct 5 dead-letter run was logged only as "Kisi 422: unknown". |
 | `kisi.rate_limit.backoff` | warn | 429 response — sleeping before retry |
 | `kisi.rate_limit.exhausted` | error | 429 retry budget exhausted (3 attempts) |
 | `kisi.user.created` | info | New Kisi user created via createUser |

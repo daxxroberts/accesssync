@@ -35,6 +35,11 @@ let _keyCache      = null;
 let _keyCacheExpiry = 0;
 const KEY_CACHE_TTL_MS = 60 * 60 * 1000;
 
+// clients.id is a uuid. A malformed clientId used to reach the query and fail with 22P02
+// (2026-10-12: "41377ole-U477-..." — 9 error rows for one bad caller); reject it up front.
+// platformMemberId is NOT checked: sub-member ids carry a '###as…' suffix (DR-029).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Cache gym branding (logo/colors) per clientId, same pattern as the Wix JWK
 // cache above — branding is effectively static for a polling session, and
 // this endpoint is polled every 3s for up to 60 polls, plus hit separately by
@@ -93,6 +98,9 @@ class MemberSyncApi {
 
       if (!platformMemberId || !clientId) {
         return res.status(400).json({ error: 'platformMemberId and clientId are required' });
+      }
+      if (!UUID_RE.test(String(clientId))) {
+        return res.status(400).json({ error: 'clientId must be a UUID' });
       }
 
       // If JWT is present, validate that the requesting member matches the query param

@@ -881,8 +881,11 @@ async function _processJobBody(job, traceId) {
 function startWorker() {
   const worker = new Worker('accesssync-events', processJob, {
     connection,
-    concurrency: 20,  // DR-035: rate limiting is per-adapter inside each connector (e.g. kisi-connector enforces 5 req/sec).
+    concurrency: 10,  // DR-035: rate limiting is per-adapter inside each connector (e.g. kisi-connector enforces 5 req/sec).
                       // Worker concurrency is not the rate limit — it's max parallel jobs across all tenants/platforms.
+                      // 2026-10-15: 20 → 10. The Supabase session pooler allows 15 connections and each job holds
+                      // one through resolveAndLock; at 20 a purchase burst hit EMAXCONNSESSION (2026-10-05 03:19,
+                      // 14 pool-exhausted recoveries). 10 leaves headroom for the admin service and the sweep.
   });
 
   worker.on('completed', (job) => {
