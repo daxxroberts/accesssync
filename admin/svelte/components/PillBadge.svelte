@@ -27,6 +27,16 @@
     unknown:     'muted',
     archived:    'muted',
     cancelled:   'danger',
+    // member_access.status since S-11 (DR-046) + member_access_sources.status + client states
+    inactive:         'muted',
+    in_flight:        'warning',
+    pending_identity: 'warning',
+    recovery_pending: 'warning',
+    pending_hardware: 'warning',
+    pending_start:    'info',
+    draft:            'muted',
+    suspended:        'warning',
+    setup:            'info',
   };
 
   $: cls = type || colorMap[text] || 'muted';

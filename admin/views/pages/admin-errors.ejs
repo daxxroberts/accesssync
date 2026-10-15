@@ -143,7 +143,7 @@
       apiFetch('/admin/clients')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-          var list = Array.isArray(d) ? d : (d.clients || []);
+          var list = Array.isArray(d) ? d : (d.data || d.clients || []);
           var sel  = document.getElementById('admin-filter-client');
           list.forEach(function(c) {
             var opt = document.createElement('option');

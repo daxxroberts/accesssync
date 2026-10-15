@@ -1,64 +1,52 @@
 /**
  * admin/svelte/main.js
- * Svelte entry point — mounts panels into the Owner Dashboard.
+ * Svelte entry point — mounts panels into the Owner dashboard (index.html).
  *
- * Each panel targets a <div id="svelte-*"> injected into index.html
- * alongside the existing vanilla JS panel shells. Svelte takes over
- * the inner content; the outer panel/nav structure stays in app.js.
+ * Four panels after the 2026-10-15 consolidation:
+ *   hub      HubPanel         landing: verdict, one row per problem, healthy chips, platform row when wrong
+ *   errors   ErrorQueuePanel  open errors across gyms, retry / dismiss
+ *   members  MembersPanel     Debug Center + Member Sync merged
+ *   gyms     ManageGymsPanel  account management: new gym, setup link, edit, key, archive, delete
+ * (Trace Timeline is the React island in logs-app.jsx, mounted by index.html.)
  *
- * Migration order (per COMPONENTS.md):
- *   1. QueuePanel       ✅ mounted
- *   2. WebhookPanel     ✅ mounted
- *   3. DebugCenterPanel ✅ mounted
- *   4. ErrorQueuePanel  ✅ mounted
- *   5. MemberSyncPanel  ✅ mounted
- *   6. ClientsPanel     ✅ mounted
+ * Panels mount on first open, not at login (app.js calls mountSveltePanel(name) from switchPanel), so a
+ * hidden panel never fetches or polls. After a panel is shown again, app.js dispatches `panel:shown`
+ * and the panel decides whether to reload.
  */
 
 import { mount } from 'svelte';
-import QueuePanel       from './panels/QueuePanel.svelte';
-import WebhookPanel     from './panels/WebhookPanel.svelte';
-import DebugCenterPanel from './panels/DebugCenterPanel.svelte';
-import ErrorQueuePanel  from './panels/ErrorQueuePanel.svelte';
-import MemberSyncPanel  from './panels/MemberSyncPanel.svelte';
-import ClientsPanel     from './panels/ClientsPanel.svelte';
-import Toast            from './components/Toast.svelte';
+import HubPanel        from './panels/HubPanel.svelte';
+import ErrorQueuePanel from './panels/ErrorQueuePanel.svelte';
+import MembersPanel    from './panels/MembersPanel.svelte';
+import ManageGymsPanel from './panels/ManageGymsPanel.svelte';
+import Toast           from './components/Toast.svelte';
 
-// mountPanels() is called by app.js after auth is confirmed — not on page load.
-// This prevents panels from making 401 API calls before the user is logged in,
-// which was causing Google Sign-In postMessage errors.
-let _mounted = false;
+const PANELS = {
+  hub:     [HubPanel,        'svelte-hub'],
+  errors:  [ErrorQueuePanel, 'svelte-errors'],
+  members: [MembersPanel,    'svelte-members'],
+  gyms:    [ManageGymsPanel, 'svelte-gyms'],
+};
+const mounted = {};
+let toastMounted = false;
 
-window.mountSveltePanels = function () {
-  if (_mounted) return;
-  _mounted = true;
-
-  const queueTarget = document.getElementById('svelte-queue');
-  if (queueTarget) mount(QueuePanel, { target: queueTarget });
-
-  const webhookTarget = document.getElementById('svelte-webhooks');
-  if (webhookTarget) mount(WebhookPanel, { target: webhookTarget });
-
-  const debugTarget = document.getElementById('svelte-debug');
-  if (debugTarget) mount(DebugCenterPanel, { target: debugTarget });
-
-  const errorsTarget = document.getElementById('svelte-errors');
-  if (errorsTarget) mount(ErrorQueuePanel, { target: errorsTarget });
-
-  const membersyncTarget = document.getElementById('svelte-membersync');
-  if (membersyncTarget) mount(MemberSyncPanel, { target: membersyncTarget });
-
-  const clientsTarget = document.getElementById('svelte-clients');
-  if (clientsTarget) mount(ClientsPanel, { target: clientsTarget });
-
-  const toastTarget = document.getElementById('svelte-toast');
-  if (toastTarget) mount(Toast, { target: toastTarget });
+window.mountSveltePanel = function (name) {
+  if (!toastMounted) {
+    const toastTarget = document.getElementById('svelte-toast');
+    if (toastTarget) { mount(Toast, { target: toastTarget }); toastMounted = true; }
+  }
+  const def = PANELS[name];
+  if (!def || mounted[name]) return;
+  const target = document.getElementById(def[1]);
+  if (!target) return;
+  mount(def[0], { target });
+  mounted[name] = true;
 };
 
-// Self-trigger: if app.js already ran showDashboard() before this module loaded
-// (race condition — ES modules are always deferred, plain scripts are not),
-// mount the panels now rather than waiting for a call that already happened.
-const dashboard = document.getElementById('dashboard');
-if (dashboard && !dashboard.classList.contains('hidden')) {
-  window.mountSveltePanels();
+// Self-trigger: if app.js already ran showDashboard() before this module loaded (ES modules are
+// deferred, plain scripts are not), mount the current panel now rather than waiting for a call
+// that already happened.
+const current = document.querySelector('.panel:not(.hidden)');
+if (current && document.getElementById('dashboard') && !document.getElementById('dashboard').classList.contains('hidden')) {
+  window.mountSveltePanel(current.id.replace(/^panel-/, ''));
 }

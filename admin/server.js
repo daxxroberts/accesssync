@@ -85,8 +85,7 @@ app.use('/admin/clients',  requireAuth, clientsRoutes);
 // Owner hub System Health: verdict + needs-action rows + per-client state across all clients
 // (reconcile age, webhook recency, open errors by owner, DB probe). Owner-only.
 app.use('/admin/system-health', requireAuth, systemHealthRoutes);
-// Wix admin presence (wix_admin_seen) — the owner hub shows "owner last seen" on each client
-// card from this. Owner-only — never exposed to operator sessions.
+// Wix admin presence (wix_admin_seen). Owner-only — never exposed to operator sessions.
 app.use('/admin/wix-admins',    requireAuth, wixAdminsRoutes);
 // Trace Timeline API — accepts admin (Daxx, cross-client) or operator (Chad,
 // scoped to their own client by the route handler). Tenant scope is enforced
@@ -152,8 +151,8 @@ app.get('/errors',       allowWixFrame, requireAuthPageOrOperator, (req, res) =>
 // Trace Timeline operator page — accepts owner OR operator. Tenant scope is
 // enforced server-side inside admin/routes/logs.js via scopedClientId(req).
 app.get('/logs',         allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/logs',         { activeTab: 'logs',         clientId: req.admin?.clientId || '', ...sessionMeta(req) }));
-// Owner hub — owner only (no iframe — no allowWixFrame). Status strip, needs-action list, clients.
-app.get('/admin-panel',  requireAuthPage, (req, res) => res.render('pages/admin-panel',  { activeTab: 'admin', ...sessionMeta(req) }));
+// The Admin tab's page (/admin-panel) was folded into the Owner Hub 2026-10-15. Old links land there.
+app.get('/admin-panel',  (req, res) => res.redirect(302, '/OwnerDashboard'));
 // Admin error queue — full cross-tenant view with raw payload, owner only
 app.get('/admin-errors', requireAuthPage, (req, res) => res.render('pages/admin-errors', { activeTab: 'admin', ...sessionMeta(req) }));
 // Onboarding — server-rendered so invite token is injected securely (never in URL)

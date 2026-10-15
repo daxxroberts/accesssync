@@ -1,7 +1,7 @@
 <!--
   ErrorQueuePanel.svelte
   @panel Error Queue
-  @route /OwnerDashboard → panel-errors
+  @route /OwnerDashboard → panel-errors (sidebar: Errors)
   @api GET /admin/errors, GET /admin/errors/:id, POST /admin/errors/:id/retry,
        POST /admin/errors/:id/dismiss, POST /admin/errors/bulk-retry
   @components PillBadge, CodeChip, TimeStamp, LoadingState, EmptyState, DataTable, Pagination, Drawer, ConfirmModal
@@ -84,7 +84,8 @@
       const json   = await res.json();
       rows  = json.data  || [];
       total = json.total || 0;
-      updateNavBadge(rows.filter(r => r.status === 'failed').length);
+      // Badge = every open error across gyms, whatever page or filter is showing.
+      if (statusFilter === 'failed' && !clientFilter) updateNavBadge(total);
     } catch (err) {
       if (err.message !== 'Unauthorized') showToast('Failed to load errors', 'error');
     } finally {
@@ -231,9 +232,9 @@
             on:change={e => toggleRow(row.id, e.target.checked)}
           />
         </td>
-        <td>{row.client_name || '<span class="muted">Unknown</span>'}</td>
+        <td>{#if row.client_name}{row.client_name}{:else}<span class="muted">No gym</span>{/if}</td>
         <td>
-          <div>{row.member_display_name || '—'}</div>
+          <div>{row.member_name || '—'}</div>
           {#if row.member_email}<div class="cell-sub">{row.member_email}</div>{/if}
         </td>
         <td><CodeChip text={row.event_type} /></td>
@@ -265,7 +266,7 @@
       <div class="detail-row"><span class="detail-label">Client</span><span>{detail.client_name || '—'}</span></div>
       <div class="detail-row">
         <span class="detail-label">Member</span>
-        <span>{detail.member_display_name || '—'}{#if detail.member_email} <span class="muted">({detail.member_email})</span>{/if}</span>
+        <span>{detail.member_name || '—'}{#if detail.member_email} <span class="muted">({detail.member_email})</span>{/if}</span>
       </div>
       <div class="detail-row"><span class="detail-label">Platform ID</span><CodeChip text={detail.platform_member_id} full={true} /></div>
       <div class="detail-row"><span class="detail-label">Event Type</span><CodeChip text={detail.event_type} full={true} /></div>

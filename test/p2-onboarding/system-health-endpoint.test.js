@@ -1,20 +1,17 @@
 /**
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │  PRIORITY 2 — OPERATOR ONBOARDING                                       │
- * │  Scenario: GET /admin/system-health endpoint contract (owner hub)       │
+ * │  Scenario: the Owner Hub's one question — "is AccessSync working for    │
+ * │  every gym, and is there anything only I can fix?"                      │
  * │                                                                         │
- * │  Covers admin/routes/system-health.js (trimmed 2026-10-15):             │
- * │    - Response shape: verdict + check_failed + status + actions[] +      │
- * │      clients[]                                                          │
- * │    - "Needs action" rows: who must act (gym / accesssync), what, where  │
- * │    - Open errors classified by core/error-guidance.js                   │
- * │    - Setup vs config gap vs inactive clients                            │
- * │    - Reconcile and webhook thresholds                                   │
- * │    - A failed query is one banner, never a red client                   │
- * │                                                                         │
- * │  Auth gate contract: the route is mounted in admin/server.js behind     │
- * │  requireAuth (owner-only). Importing the router directly bypasses the   │
- * │  mount-time middleware so the handler is exercised in isolation.        │
+ * │  Covers core/owner-health.js through GET /admin/system-health:          │
+ * │    - verdict + verdict_line + summary + problems[] + platform[] +       │
+ * │      healthy[] + clients[]                                              │
+ * │    - every reason a gym can show up (proposal §2.2) and who acts        │
+ * │    - sync freshness from the last SUCCESSFUL run (bug 1)                │
+ * │    - stuck members count as "can't get in" (bug 5)                      │
+ * │    - platform rows only when something is wrong (bug 6)                 │
+ * │    - a failed query is one banner, never a red gym                      │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -22,354 +19,307 @@ const express = require('express');
 const request = require('supertest');
 
 jest.mock('../../db', () => ({ query: jest.fn() }));
-
-jest.mock('../../core/logger', () => ({
-  log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), critical: jest.fn() },
-}));
+jest.mock('../../core/logger', () => ({ log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), critical: jest.fn() } }));
 
 const db = require('../../db');
-const systemHealthRouter = require('../../admin/routes/system-health');
+const router = require('../../admin/routes/system-health');
+const { verdictLine } = require('../../core/owner-health');
 
-function makeApp() {
-  const app = express();
-  app.use('/admin/system-health', systemHealthRouter);
-  return app;
-}
-
-const HOURS = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
+const app = express();
+app.use('/admin/system-health', router);
+const get = () => request(app).get('/admin/system-health');
+const H = (h) => new Date(Date.now() - h * 3600e3).toISOString();
 
 /**
- * Query order in admin/routes/system-health.js (Promise.all over 7 queries):
- *   1 SELECT 1 · 2 clients · 3 reconcile per client · 4 webhooks per client (last + 24h)
- *   5 open error_queue rows · 6 setup progress · 7 open sync alerts (config_alert_log)
+ * Query order in core/owner-health.js (Promise.all over 8 queries):
+ *   1 SELECT 1 · 2 clients (+connector) · 3 runs · 4 webhooks · 5 open errors · 6 stuck · 7 setup · 8 platform errors
  */
-function mockSystem({
-  clients = [{ id: 'c1', name: 'Test Client', status: 'active', created_at: HOURS(24 * 30) }],
-  reconcile = [{ client_id: 'c1', last_run_at: HOURS(1) }],
-  webhooks = [{ client_id: 'c1', last_received_at: HOURS(1), count_24h: 10 }],
-  openErrors = [],
-  setup,                       // default: every listed client fully set up
-  alerts = [],
-  fail = [],                   // 1-based query numbers that reject
+const HOG = { id: 'c1', name: 'House of Gains', status: 'active', created_at: H(24 * 190), last_webhook_at: H(1),
+  key_last_verified: H(2), key_last_error: null, key_first_failed_at: null, has_hardware_key: true, has_wix_key: true };
+const HOG_SETUP = { client_id: 'c1', location_count: 1, plans: 3, plans_with_door: 3, first_door_at: H(24 * 180), has_members: true };
+const NEW = { id: 'c2', name: '918 Fitness', status: 'active', created_at: H(5), last_webhook_at: null,
+  key_last_verified: null, key_last_error: null, key_first_failed_at: null, has_hardware_key: false, has_wix_key: false };
+const NEW_SETUP = { client_id: 'c2', location_count: 0, plans: 0, plans_with_door: 0, first_door_at: null, has_members: false };
+
+function mockWorld({
+  clients = [HOG],
+  runs = [{ client_id: 'c1', last_success_at: H(1), latest_status: 'success', latest_abort_reason: null, latest_started_at: H(1) }],
+  webhooks = [{ client_id: 'c1', first_received_at: H(24 * 180), last_received_at: H(1), count_24h: 9 }],
+  errors = [],
+  stuck = [],
+  setup = [HOG_SETUP],
+  platformErrors = 0,
+  fail = [],
 } = {}) {
-  const setupRows = setup || clients.map(c => ({ client_id: c.id, has_hardware_key: true, has_wix_key: true, location_count: 1, has_members: true }));
   const results = [
-    { rows: [{ '?column?': 1 }] }, { rows: clients }, { rows: reconcile }, { rows: webhooks },
-    { rows: openErrors }, { rows: setupRows }, { rows: alerts },
+    { rows: [{ '?column?': 1 }] }, { rows: clients }, { rows: runs }, { rows: webhooks },
+    { rows: errors }, { rows: stuck }, { rows: setup }, { rows: [{ n: platformErrors }] },
   ];
   results.forEach((r, i) => (fail.includes(i + 1) ? db.query.mockRejectedValueOnce(new Error('query ' + (i + 1) + ' failed')) : db.query.mockResolvedValueOnce(r)));
 }
+const openErr = (over = {}) => ({ client_id: 'c1', error_code: 'HARDWARE_VALIDATION_ERROR', resolution: 'RETRY', http_status: 422, occurred_count: 1, created_at: H(5), ...over });
+const gymErr = (over = {}) => openErr({ error_code: 'PLAN_NOT_MAPPED', resolution: 'REMAP_PLAN', http_status: null, ...over });
 
-const openErr = (over = {}) => ({
-  client_id: 'c1', error_code: 'HARDWARE_VALIDATION_ERROR', resolution: 'RETRY', http_status: 422,
-  occurred_count: 1, created_at: HOURS(5), ...over,
-});
+beforeEach(() => { jest.clearAllMocks(); db.query.mockReset(); });
 
-const NEW = { id: 'c2', name: 'New Wix site', status: 'active', created_at: HOURS(2) };
-const setupRow = (over = {}) => ({ client_id: 'c2', has_hardware_key: false, has_wix_key: false, location_count: 0, has_members: false, ...over });
-const HOG = { id: 'c1', name: 'HOG', status: 'active', created_at: HOURS(900) };
-const HOG_SETUP = { client_id: 'c1', has_hardware_key: true, has_wix_key: true, location_count: 1, has_members: true };
-
-describe('[P2] GET /admin/system-health — owner hub contract', () => {
-  let app;
-  const get = () => request(app).get('/admin/system-health');
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    db.query.mockReset();
-    app = makeApp();
-  });
-
-  // ── 1. Shape ───────────────────────────────────────────────────────────────
-  test('returns 200 with verdict, check_failed, status, actions, clients', async () => {
-    mockSystem();
+describe('[P2] GET /admin/system-health — the owner hub contract', () => {
+  test('a healthy gym: green, "Your 1 gym is OK", no rows, one healthy chip', async () => {
+    mockWorld();
     const res = await get();
     expect(res.status).toBe(200);
-    expect(typeof res.body.generated_at).toBe('string');
-    expect(['green', 'amber', 'red']).toContain(res.body.verdict);
-    expect(res.body.check_failed).toBeNull();
-    expect(res.body.status).toMatchObject({
-      reconcile: { state: 'green', age_hours: 1 },
-      webhooks:  { state: 'green', count_24h: 10 },
-      db:        { ok: true },
-      open_errors: { total: 0, needs_gym: 0, needs_accesssync: 0, self_clearing: 0 },
-    });
-    expect(typeof res.body.status.db.latency_ms).toBe('number');
-    expect(Array.isArray(res.body.actions)).toBe(true);
-    expect(res.body.clients[0]).toMatchObject({ client_id: 'c1', client_name: 'Test Client', state: 'green', missing: [], has_history: true });
-  });
-
-  test('a healthy fixture is green with no actions', async () => {
-    mockSystem();
-    const res = await get();
     expect(res.body.verdict).toBe('green');
-    expect(res.body.actions).toEqual([]);
+    expect(res.body.verdict_line).toBe('Your 1 gym is OK');
+    expect(res.body.check_failed).toBeNull();
+    expect(res.body.problems).toEqual([]);
+    expect(res.body.platform).toEqual([]);
+    expect(res.body.healthy).toEqual([expect.objectContaining({ client_id: 'c1', client_name: 'House of Gains' })]);
+    expect(res.body.summary).toEqual({ gyms_total: 1, gyms_ok: 1, gyms_need_you: 0, gyms_need_gym: 0, gyms_setting_up: 0, gyms_inactive: 0 });
+    expect(res.body.clients[0]).toMatchObject({ state: 'green', success_age_hours: 1, open_errors: { total: 0 }, stuck_members: 0 });
+    expect(db.query).toHaveBeenCalledTimes(8);
   });
 
-  test('exactly seven queries run', async () => {
-    mockSystem();
-    await get();
-    expect(db.query).toHaveBeenCalledTimes(7);
-  });
-
-  // ── 2. Open errors: who must act ──────────────────────────────────────────
-  describe('open errors (core/error-guidance.js decides who acts)', () => {
-    test('an error the gym must fix → red, one gym row linking to that client\'s errors page', async () => {
-      mockSystem({ openErrors: [openErr({ error_code: 'PLAN_NOT_MAPPED', resolution: 'REMAP_PLAN', http_status: null })] });
+  describe('members who cannot get in', () => {
+    test('AccessSync-owned error → red "you" row with count and a link to the gym\'s errors page', async () => {
+      mockWorld({ errors: [openErr()] });
       const res = await get();
       expect(res.body.verdict).toBe('red');
-      expect(res.body.clients[0]).toMatchObject({ state: 'red', open_errors: { total: 1, needs_gym: 1 } });
-      expect(res.body.actions).toEqual([
-        expect.objectContaining({ client_id: 'c1', owner: 'gym', kind: 'error', text: '1 open error the gym must fix', link: '/errors?clientId=c1' }),
-      ]);
+      expect(res.body.verdict_line).toBe('1 of 1 gym needs you');
+      expect(res.body.problems).toEqual([expect.objectContaining({
+        client_id: 'c1', kind: 'errors_you', owner: 'you', severity: 'red', count: 1,
+        text: "1 member can't get in: AccessSync must fix", link: '/errors?clientId=c1',
+      })]);
     });
 
-    test('a Kisi 422 is AccessSync support\'s from the first occurrence → red accesssync row', async () => {
-      mockSystem({ openErrors: [openErr()] });
-      const res = await get();
-      expect(res.body.actions).toEqual([expect.objectContaining({ owner: 'accesssync', kind: 'error', text: '1 open error for AccessSync support' })]);
-      expect(res.body.verdict).toBe('red');
-    });
-
-    test('an unclassified error is never ignored: AccessSync owns it', async () => {
-      mockSystem({ openErrors: [openErr({ error_code: 'SOMETHING_NEW', resolution: null, http_status: null })] });
-      expect((await get()).body.actions[0].owner).toBe('accesssync');
-    });
-
-    test('only self-clearing errors → amber, no row (nothing for a person to do yet)', async () => {
-      mockSystem({ openErrors: [openErr({ error_code: 'HARDWARE_API_ERROR', resolution: 'RETRY', http_status: 503, occurred_count: 1 })] });
+    test('gym-owned error → amber "gym" row; escalated text after 48h', async () => {
+      mockWorld({ errors: [gymErr({ created_at: H(60) })] });
       const res = await get();
       expect(res.body.verdict).toBe('amber');
-      expect(res.body.actions).toEqual([]);
-      expect(res.body.status.open_errors).toMatchObject({ total: 1, self_clearing: 1 });
+      expect(res.body.verdict_line).toBe('1 waiting on the gym');
+      expect(res.body.problems[0]).toMatchObject({ kind: 'errors_gym', owner: 'gym', severity: 'amber', text: "1 member can't get in: the gym must fix (not acted on for 2d)" });
+      expect(res.body.summary).toMatchObject({ gyms_need_you: 0, gyms_need_gym: 1 });
     });
 
-    test('"clears by itself" expires: a temporary error still open after 24h becomes AccessSync\'s row', async () => {
-      mockSystem({ openErrors: [openErr({ error_code: 'HARDWARE_API_ERROR', resolution: 'RETRY', http_status: 503, occurred_count: 1, created_at: HOURS(30) })] });
+    test('a fresh gym-owned error is "waiting on the gym" without the escalation', async () => {
+      mockWorld({ errors: [gymErr({ created_at: H(3) })] });
+      expect((await get()).body.problems[0].text).toBe("1 member can't get in: the gym must fix");
+    });
+
+    test('a self-clearing error is not a row and not a verdict', async () => {
+      mockWorld({ errors: [openErr({ error_code: 'HARDWARE_API_ERROR', resolution: 'RETRY', http_status: 503 })] });
       const res = await get();
-      expect(res.body.actions).toEqual([expect.objectContaining({ owner: 'accesssync', kind: 'error' })]);
-      expect(res.body.verdict).toBe('red');
-    });
-
-    test('rows for the gym and for AccessSync are counted separately', async () => {
-      mockSystem({ openErrors: [
-        openErr({ error_code: 'PLAN_NOT_MAPPED', resolution: 'REMAP_PLAN', http_status: null }),
-        openErr({ error_code: 'PLAN_NOT_MAPPED', resolution: 'REMAP_PLAN', http_status: null }),
-        openErr(),
-      ] });
-      const texts = (await get()).body.actions.map(a => a.text);
-      expect(texts).toEqual(['2 open errors the gym must fix', '1 open error for AccessSync support']);
-    });
-
-    test('errors for another client never colour this one', async () => {
-      mockSystem({ openErrors: [openErr({ client_id: 'someone-else' })] });
-      expect((await get()).body.clients[0].state).toBe('green');
-    });
-
-    test('open errors tied to no client get their own row and turn the page red', async () => {
-      mockSystem({ openErrors: [openErr({ client_id: null })] });
-      const res = await get();
-      expect(res.body.actions).toEqual([expect.objectContaining({ client_id: null, owner: 'accesssync', text: '1 open error not tied to any client', link: '/admin-errors' })]);
-      expect(res.body.verdict).toBe('red');
-      expect(res.body.clients[0].state).toBe('green');
-    });
-  });
-
-  // ── 3. Reconcile ──────────────────────────────────────────────────────────
-  describe('reconcile (runs every 12h)', () => {
-    test.each([[1, 'green'], [12, 'green'], [14, 'amber'], [25, 'amber'], [27, 'red']])(
-      'a run %ih ago → %s', async (h, state) => {
-        mockSystem({ reconcile: [{ client_id: 'c1', last_run_at: HOURS(h) }] });
-        const res = await get();
-        expect(res.body.clients[0].state).toBe(state);
-        expect(res.body.status.reconcile.state).toBe(state);
-      });
-
-    test('a stale run (>26h) is an AccessSync row', async () => {
-      mockSystem({ reconcile: [{ client_id: 'c1', last_run_at: HOURS(30) }] });
-      expect((await get()).body.actions).toEqual([expect.objectContaining({ owner: 'accesssync', kind: 'reconcile', text: 'Reconcile has not run for 30h' })]);
-    });
-
-    test('never reconciled with history to reconcile → red AccessSync row', async () => {
-      mockSystem({ reconcile: [] });
-      const res = await get();
-      expect(res.body.actions).toEqual([expect.objectContaining({ owner: 'accesssync', kind: 'reconcile', text: 'Reconcile has never run for this client' })]);
-      expect(res.body.verdict).toBe('red');
-      expect(res.body.status.reconcile).toMatchObject({ state: 'red', last_run_at: null });
-    });
-
-    test('never reconciled with nothing to reconcile yet (no members, no webhooks) → idle, no row', async () => {
-      mockSystem({ reconcile: [], webhooks: [], setup: [{ ...HOG_SETUP, has_members: false }] });
-      const res = await get();
-      expect(res.body.actions).toEqual([]);
+      expect(res.body.problems).toEqual([]);
       expect(res.body.verdict).toBe('green');
-      expect(res.body.status.reconcile.state).toBe('idle');
+      expect(res.body.clients[0].open_errors.self_clearing).toBe(1);
     });
 
-    test('reconcile ages are never amber/red when the reconcile query failed (banner instead)', async () => {
-      mockSystem({ fail: [3] });
-      const res = await get();
-      expect(res.body.check_failed).toMatch(/reconcile/);
-      expect(res.body.status.reconcile.state).toBe('unknown');
-      expect(res.body.clients[0].state).toBe('green');
-    });
-  });
-
-  // ── 4. Webhooks ───────────────────────────────────────────────────────────
-  describe('webhooks', () => {
-    test('silence after previous activity (48h+) → red AccessSync row', async () => {
-      mockSystem({ webhooks: [{ client_id: 'c1', last_received_at: HOURS(50), count_24h: 0 }] });
-      const res = await get();
-      expect(res.body.actions).toEqual([expect.objectContaining({ owner: 'accesssync', kind: 'webhook', text: 'No webhook from Wix for 50h (was active before)' })]);
-      expect(res.body.status.webhooks.state).toBe('red');
+    test('a self-clearing error still open after 24h is AccessSync\'s (red)', async () => {
+      mockWorld({ errors: [openErr({ error_code: 'HARDWARE_API_ERROR', resolution: 'RETRY', http_status: 503, created_at: H(30) })] });
+      expect((await get()).body.problems[0]).toMatchObject({ kind: 'errors_you', owner: 'you' });
     });
 
-    test('a quiet day is not silence', async () => {
-      mockSystem({ webhooks: [{ client_id: 'c1', last_received_at: HOURS(30), count_24h: 0 }] });
+    test('members stuck in an in-between state for 24h+ count as "can\'t get in" (bug 5)', async () => {
+      const oldest = H(240);
+      mockWorld({ stuck: [{ client_id: 'c1', stuck: 2, oldest }] });
       const res = await get();
-      expect(res.body.actions).toEqual([]);
-      expect(res.body.clients[0].state).toBe('green');
+      expect(res.body.problems[0]).toMatchObject({ kind: 'errors_you', count: 2, text: "2 members can't get in: AccessSync must fix", since: oldest });
+      expect(res.body.clients[0].stuck_members).toBe(2);
     });
 
-    test('never received a webhook is not a fault: idle, no row', async () => {
-      mockSystem({ webhooks: [] });
-      const res = await get();
-      expect(res.body.actions).toEqual([]);
-      expect(res.body.status.webhooks).toMatchObject({ state: 'idle', last_received_at: null, count_24h: 0 });
+    test('the stuck query excludes delayed-start plans still waiting for their own start date', async () => {
+      mockWorld();
+      await get();
+      const sql = String(db.query.mock.calls[5][0]);
+      expect(sql).toMatch(/pending_start' AND mas.scheduled_start_date < NOW\(\)/);
+      expect(sql).toMatch(/'pending_identity', 'recovery_pending', 'in_flight'/);
+      expect(db.query.mock.calls[5][1]).toEqual([24]);
+    });
+
+    test('errors and stuck members are summed into one row', async () => {
+      mockWorld({ errors: [openErr()], stuck: [{ client_id: 'c1', stuck: 1, oldest: H(30) }] });
+      expect((await get()).body.problems[0]).toMatchObject({ count: 2, text: "2 members can't get in: AccessSync must fix" });
     });
   });
 
-  // ── 5. Setup, config gap, inactive ────────────────────────────────────────
-  describe('setup state', () => {
-    test('a brand-new client missing config and with no history is "setup": amber row with a setup-link action, never red', async () => {
-      mockSystem({
-        clients: [HOG, NEW],
-        reconcile: [{ client_id: 'c1', last_run_at: HOURS(1) }],
-        webhooks: [{ client_id: 'c1', last_received_at: HOURS(1), count_24h: 3 }],
-        setup: [HOG_SETUP, setupRow()],
-      });
+  describe('sync with Wix (freshness = last SUCCESSFUL run, bug 1)', () => {
+    test('latest run aborted 1h ago, last success 2h ago → amber "you" row naming the reason', async () => {
+      mockWorld({ runs: [{ client_id: 'c1', last_success_at: H(2), latest_status: 'aborted', latest_abort_reason: 'wix_api_unavailable', latest_started_at: H(1) }] });
       const res = await get();
-      const c2 = res.body.clients.find(c => c.client_id === 'c2');
-      expect(c2).toMatchObject({ state: 'setup', missing: ['Kisi API key', 'Wix API key', 'a location'], has_history: false });
-      expect(res.body.actions).toEqual([expect.objectContaining({
-        client_id: 'c2', owner: 'gym', kind: 'setup', action: 'invite',
+      expect(res.body.problems[0]).toMatchObject({ kind: 'sync', owner: 'you', severity: 'amber', text: "Wix couldn't be read during the last sync; last good sync 2h ago", link: '/logs?clientId=c1' });
+    });
+
+    test('latest run aborted and no success in 26h+ → red', async () => {
+      mockWorld({ runs: [{ client_id: 'c1', last_success_at: H(30), latest_status: 'aborted', latest_abort_reason: 'hardware_api_unavailable', latest_started_at: H(1) }] });
+      expect((await get()).body.problems[0]).toMatchObject({ kind: 'sync', severity: 'red', text: "Kisi didn't respond during the last sync; last good sync 30h ago" });
+    });
+
+    test.each([[1, 'green'], [12, 'green'], [14, 'amber'], [25, 'amber'], [27, 'red']])('last success %ih ago → %s', async (h, state) => {
+      mockWorld({ runs: [{ client_id: 'c1', last_success_at: H(h), latest_status: 'success', latest_abort_reason: null, latest_started_at: H(h) }] });
+      const res = await get();
+      expect(res.body.clients[0].state).toBe(state);
+      if (state !== 'green') expect(res.body.problems[0]).toMatchObject({ kind: 'sync', severity: state, text: `No successful sync with Wix for ${h}h` });
+    });
+
+    test('never synced with history to sync → red row', async () => {
+      mockWorld({ runs: [] });
+      const res = await get();
+      expect(res.body.problems[0]).toMatchObject({ kind: 'sync', severity: 'red', text: 'Sync with Wix has never completed for this gym' });
+      expect(res.body.platform).toEqual([expect.objectContaining({ kind: 'sync_job', text: 'The nightly sync has never run' })]);
+    });
+
+    test('the runs query reads last_success_at only from status = success', async () => {
+      mockWorld();
+      await get();
+      const sql = String(db.query.mock.calls[2][0]);
+      expect(sql).toMatch(/FILTER \(WHERE r\.status = 'success'\) AS last_success_at/);
+      expect(sql).toMatch(/latest_abort_reason/);
+    });
+  });
+
+  describe('door key', () => {
+    test('Kisi rejected the key → red "gym" row with the error text, since the first failure', async () => {
+      const failedAt = H(10);
+      mockWorld({ clients: [{ ...HOG, key_last_error: 'Invalid API key — Kisi rejected it', key_first_failed_at: failedAt }] });
+      const res = await get();
+      expect(res.body.problems[0]).toMatchObject({ kind: 'key', owner: 'gym', severity: 'red', text: 'Door key rejected by Kisi: Invalid API key — Kisi rejected it', since: failedAt, link: '/locations?clientId=c1' });
+    });
+
+    test('key not checked for 24h+ while the check runs elsewhere → amber "you" row', async () => {
+      mockWorld({ clients: [{ ...HOG, key_last_verified: H(30) }, { ...HOG, id: 'c3', name: 'Other', key_last_verified: H(1) }],
+        runs: [{ client_id: 'c1', last_success_at: H(1), latest_status: 'success', latest_abort_reason: null, latest_started_at: H(1) }, { client_id: 'c3', last_success_at: H(1), latest_status: 'success', latest_abort_reason: null, latest_started_at: H(1) }],
+        webhooks: [{ client_id: 'c1', last_received_at: H(1), count_24h: 1 }, { client_id: 'c3', last_received_at: H(1), count_24h: 1 }],
+        setup: [HOG_SETUP, { ...HOG_SETUP, client_id: 'c3' }] });
+      const res = await get();
+      expect(res.body.problems).toEqual([expect.objectContaining({ client_id: 'c1', kind: 'key', owner: 'you', severity: 'amber', text: 'Door key not checked for 30h' })]);
+    });
+
+    test('no key ever checked anywhere → one platform row, not a row per gym', async () => {
+      mockWorld({ clients: [{ ...HOG, key_last_verified: null }] });
+      const res = await get();
+      expect(res.body.problems).toEqual([]);
+      expect(res.body.platform).toEqual([expect.objectContaining({ kind: 'key_check', owner: 'you', severity: 'amber', text: 'The 6-hourly Kisi key check has never run' })]);
+      expect(res.body.verdict).toBe('amber');
+    });
+  });
+
+  describe('purchases', () => {
+    test('silence for 48h+ after previous activity → amber "you" row', async () => {
+      mockWorld({ clients: [{ ...HOG, last_webhook_at: H(50) }], webhooks: [{ client_id: 'c1', first_received_at: H(900), last_received_at: H(50), count_24h: 0 }] });
+      expect((await get()).body.problems[0]).toMatchObject({ kind: 'webhooks', owner: 'you', severity: 'amber', text: 'No purchases from Wix for 2d (was active before)' });
+    });
+
+    test('a quiet day is not silence; never received one is not a fault', async () => {
+      mockWorld({ clients: [{ ...HOG, last_webhook_at: H(30) }], webhooks: [{ client_id: 'c1', first_received_at: H(900), last_received_at: H(30), count_24h: 0 }] });
+      expect((await get()).body.problems).toEqual([]);
+    });
+  });
+
+  describe('setup', () => {
+    test('a brand-new gym with nothing configured → amber "you" row at the missing step, with a setup-link action, never red', async () => {
+      mockWorld({ clients: [HOG, NEW], setup: [HOG_SETUP, NEW_SETUP] });
+      const res = await get();
+      expect(res.body.problems).toEqual([expect.objectContaining({
+        client_id: 'c2', kind: 'setup', owner: 'you', severity: 'amber', action: 'invite',
         text: 'Setup not finished: missing Kisi API key, Wix API key, a location',
       })]);
-      expect(res.body.verdict).toBe('amber');
+      expect(res.body.clients.find(c => c.client_id === 'c2')).toMatchObject({ state: 'setup', missing: ['Kisi API key', 'Wix API key', 'a location'] });
+      expect(res.body.summary).toMatchObject({ gyms_total: 2, gyms_ok: 1, gyms_setting_up: 1 });
+      expect(res.body.verdict_line).toBe('1 of 2 gyms needs you · 1 setting up');
     });
 
-    test('a client in setup gets no reconcile or webhook rows', async () => {
-      mockSystem({ clients: [NEW], reconcile: [], webhooks: [], setup: [setupRow({ has_wix_key: true })] });
-      const kinds = (await get()).body.actions.map(a => a.kind);
-      expect(kinds).toEqual(['setup']);
+    test('keys and location set, no plan mapped to a door yet → setup row linking to Plan Mapping', async () => {
+      mockWorld({ clients: [{ ...NEW, has_hardware_key: true, has_wix_key: true, key_last_verified: H(1) }], runs: [], webhooks: [],
+        setup: [{ ...NEW_SETUP, location_count: 1, plans: 2, plans_with_door: 0 }] });
+      expect((await get()).body.problems[0]).toMatchObject({ kind: 'setup', text: 'Setup not finished: no plan mapped to a door yet', link: '/plan-mapping?clientId=c2' });
     });
 
-    test('an ESTABLISHED client that loses its Kisi key is a real fault: red config-gap row, its errors still listed', async () => {
-      mockSystem({
-        clients: [HOG],
-        openErrors: [openErr({ error_code: 'HARDWARE_KEY_INVALID', resolution: 'ROTATE_API_KEY', http_status: 401 })],
-        setup: [{ ...HOG_SETUP, has_hardware_key: false }],
-      });
+    test('everything configured, no sale yet → "waiting for the first sale", no sync or webhook rows', async () => {
+      mockWorld({ clients: [{ ...NEW, has_hardware_key: true, has_wix_key: true, key_last_verified: H(1) }], runs: [], webhooks: [],
+        setup: [{ ...NEW_SETUP, location_count: 1, plans: 2, plans_with_door: 2 }] });
       const res = await get();
-      expect(res.body.clients[0]).toMatchObject({ state: 'red', missing: ['Kisi API key'], has_history: true });
-      expect(res.body.actions.map(a => a.kind)).toEqual(['config_gap', 'error']);
-      expect(res.body.actions[0]).toMatchObject({ owner: 'gym', text: 'Was working, now missing Kisi API key', link: '/locations?clientId=c1' });
+      expect(res.body.problems.map(p => p.kind)).toEqual(['setup']);
+      expect(res.body.problems[0].text).toBe('Setup not finished: waiting for the first sale');
     });
 
-    test('history counts even with no members: a client that already received webhooks is not "setting up"', async () => {
-      mockSystem({
-        clients: [NEW], reconcile: [],
-        webhooks: [{ client_id: 'c2', last_received_at: HOURS(1), count_24h: 1 }],
-        setup: [setupRow({ has_hardware_key: true, has_wix_key: true, location_count: 0 })],
-      });
-      const c = (await get()).body.clients[0];
-      expect(c.state).toBe('red');
-      expect(c.missing).toEqual(['a location']);
-    });
-
-    test.each(['suspended', 'cancelled'])('a %s client is inactive: no rows, never colours the page', async (status) => {
-      mockSystem({ clients: [{ ...HOG, status }], reconcile: [], webhooks: [] });
+    test('an established gym that lost its Kisi key is a red config gap for the gym, and its errors still show', async () => {
+      mockWorld({ clients: [{ ...HOG, has_hardware_key: false }], errors: [gymErr()] });
       const res = await get();
-      expect(res.body.clients[0]).toMatchObject({ state: 'inactive', status });
-      expect(res.body.actions).toEqual([]);
-      expect(res.body.verdict).toBe('green');
+      expect(res.body.problems.map(p => p.kind)).toEqual(['config_gap', 'errors_gym']);
+      expect(res.body.problems[0]).toMatchObject({ owner: 'gym', severity: 'red', text: 'Was working, now missing Kisi API key', link: '/locations?clientId=c1' });
+    });
+
+    test.each(['suspended', 'cancelled'])('a %s gym is inactive: no rows, not counted', async (status) => {
+      mockWorld({ clients: [{ ...HOG, status }] });
+      const res = await get();
+      expect(res.body.problems).toEqual([]);
+      expect(res.body.clients[0].state).toBe('inactive');
+      expect(res.body.summary).toMatchObject({ gyms_total: 0, gyms_inactive: 1 });
     });
   });
 
-  // ── 6. Held removals / sync alerts ────────────────────────────────────────
-  describe('open sync alerts', () => {
-    test('removals held for the gym → amber gym row (no link: they arrive in the daily digest)', async () => {
-      mockSystem({ alerts: [{ client_id: 'c1', open_count: 4, removals_held: 4 }] });
+  describe('platform rows (only when something is wrong)', () => {
+    test('open errors tied to no gym → red platform row linking to the Errors panel; the gym stays green', async () => {
+      mockWorld({ errors: [openErr({ client_id: null })] });
       const res = await get();
-      expect(res.body.actions).toEqual([expect.objectContaining({ owner: 'gym', kind: 'removal_held', text: '4 removals waiting for the gym to decide (in the daily digest)' })]);
-      expect(res.body.actions[0].link).toBeUndefined();
-      expect(res.body.verdict).toBe('amber');
-      expect(res.body.clients[0].open_alerts).toEqual({ open_count: 4, removals_held: 4 });
-    });
-
-    test('other open alerts → amber AccessSync row', async () => {
-      mockSystem({ alerts: [{ client_id: 'c1', open_count: 2, removals_held: 0 }] });
-      expect((await get()).body.actions).toEqual([expect.objectContaining({ owner: 'accesssync', kind: 'alert', text: '2 open sync alerts (in the daily digest)' })]);
-    });
-  });
-
-  // ── 7. A failed query is one banner, never a red client ───────────────────
-  describe('failed queries', () => {
-    test('the open-errors query failing: banner set, errors null in the strip, client stays green, no error rows', async () => {
-      mockSystem({ fail: [5] });
-      const res = await get();
-      expect(res.body.status).toHaveProperty('open_errors', null);
-      expect(res.body.check_failed).toMatch(/could not run open errors/);
+      expect(res.body.platform).toEqual([expect.objectContaining({ kind: 'errors_unassigned', severity: 'red', text: '1 open error tied to no gym', link: '/OwnerDashboard?panel=errors' })]);
       expect(res.body.clients[0].state).toBe('green');
-      expect(res.body.actions).toEqual([]);
-    });
-
-    test('several failures are named in one banner', async () => {
-      mockSystem({ fail: [4, 7] });
-      expect((await get()).body.check_failed).toMatch(/webhooks, sync alerts/);
-    });
-
-    test('the DB probe failing is the one failure that is a verdict: red', async () => {
-      mockSystem({ fail: [1] });
-      const res = await get();
-      expect(res.body.status.db).toMatchObject({ ok: false, latency_ms: null });
       expect(res.body.verdict).toBe('red');
+      expect(res.body.verdict_line).toBe('1 platform problem');
+    });
+
+    test('a burst of errors tied to no gym (10+ in 24h) → amber platform row; below the threshold nothing shows (bug 6)', async () => {
+      mockWorld({ platformErrors: 12 });
+      expect((await get()).body.platform).toEqual([expect.objectContaining({ kind: 'error_burst', severity: 'amber', text: '12 errors in 24h tied to no gym' })]);
+      db.query.mockReset();
+      mockWorld({ platformErrors: 4 });
+      expect((await get()).body.platform).toEqual([]);
+    });
+
+    test('the database probe failing → red platform row', async () => {
+      mockWorld({ fail: [1] });
+      const res = await get();
+      expect(res.body.platform).toEqual([expect.objectContaining({ kind: 'db', severity: 'red' })]);
       expect(res.body.check_failed).toMatch(/database probe/);
+      expect(res.body.db.ok).toBe(false);
+    });
+  });
+
+  describe('ordering and failed queries', () => {
+    test('rows that need you come first, red before amber, then oldest first', async () => {
+      mockWorld({
+        clients: [HOG, { ...HOG, id: 'c3', name: 'Other' }],
+        runs: [{ client_id: 'c1', last_success_at: H(1), latest_status: 'success', latest_abort_reason: null, latest_started_at: H(1) }, { client_id: 'c3', last_success_at: H(20), latest_status: 'success', latest_abort_reason: null, latest_started_at: H(20) }],
+        webhooks: [{ client_id: 'c1', last_received_at: H(1), count_24h: 1 }, { client_id: 'c3', last_received_at: H(1), count_24h: 1 }],
+        errors: [gymErr({ client_id: 'c1', created_at: H(100) }), openErr({ client_id: 'c3', created_at: H(2) })],
+        setup: [HOG_SETUP, { ...HOG_SETUP, client_id: 'c3' }],
+      });
+      const kinds = (await get()).body.problems.map(p => `${p.client_id}:${p.kind}:${p.owner}`);
+      expect(kinds).toEqual(['c3:errors_you:you', 'c3:sync:you', 'c1:errors_gym:gym']);
+    });
+
+    test('a failed query is one banner; the gym is not coloured by it', async () => {
+      mockWorld({ fail: [3, 6] });
+      const res = await get();
+      expect(res.body.check_failed).toMatch(/could not run sync runs, stuck members/);
+      expect(res.body.problems).toEqual([]);
+      expect(res.body.clients[0].state).toBe('green');
     });
 
     test('the clients query failing is a 500', async () => {
-      mockSystem({ fail: [2] });
+      mockWorld({ fail: [2] });
       const res = await get();
       expect(res.status).toBe(500);
       expect(res.body.error).toBe('Failed to load clients list');
     });
-
-    test('the setup query failing judges clients as complete (never hidden behind "setup")', async () => {
-      mockSystem({ fail: [6] });
-      const res = await get();
-      expect(res.body.clients[0]).toMatchObject({ state: 'green', missing: [] });
-      expect(res.body.check_failed).toMatch(/setup/);
-    });
   });
 
-  // ── 8. Status strip aggregates across clients ─────────────────────────────
-  test('the strip reports the latest reconcile and webhook across all clients and sums 24h counts', async () => {
-    mockSystem({
-      clients: [HOG, { ...NEW, created_at: HOURS(100) }],
-      reconcile: [{ client_id: 'c1', last_run_at: HOURS(5) }, { client_id: 'c2', last_run_at: HOURS(2) }],
-      webhooks: [{ client_id: 'c1', last_received_at: HOURS(3), count_24h: 7 }, { client_id: 'c2', last_received_at: HOURS(1), count_24h: 2 }],
-      setup: [HOG_SETUP, { ...HOG_SETUP, client_id: 'c2' }],
-    });
-    const s = (await get()).body.status;
-    expect(s.reconcile).toMatchObject({ age_hours: 2, state: 'green' });
-    expect(s.webhooks).toMatchObject({ age_hours: 1, count_24h: 9, state: 'green' });
+  test('verdictLine for several gyms', () => {
+    expect(verdictLine({ verdict: 'green', platform: [], summary: { gyms_total: 3, gyms_need_you: 0, gyms_need_gym: 0, gyms_setting_up: 0 } })).toBe('All 3 gyms OK');
+    expect(verdictLine({ verdict: 'red', platform: [], summary: { gyms_total: 3, gyms_need_you: 1, gyms_need_gym: 1, gyms_setting_up: 0 } })).toBe('1 of 3 gyms needs you · 1 waiting on the gym');
   });
 
   test('exports the reconcile thresholds used by /health', () => {
-    expect(systemHealthRouter.RECONCILE_GREEN_H).toBe(13);
-    expect(systemHealthRouter.RECONCILE_AMBER_H).toBe(26);
-    expect(systemHealthRouter.reconcileState(1)).toBe('green');
-    expect(systemHealthRouter.reconcileState(20)).toBe('amber');
-    expect(systemHealthRouter.reconcileState(40)).toBe('red');
+    expect(router.reconcileState(1)).toBe('green');
+    expect(router.reconcileState(20)).toBe('amber');
+    expect(router.reconcileState(40)).toBe('red');
   });
 });

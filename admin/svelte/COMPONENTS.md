@@ -276,22 +276,20 @@ admin/svelte/
     Toast.svelte
   stores/
     toast.js
-  panels/                    ← One file per Owner Dashboard panel (not yet built)
-    QueuePanel.svelte        ← Phase 2: first to migrate
-    WebhookPanel.svelte
-    DebugCenterPanel.svelte
-    ErrorQueuePanel.svelte
-    MemberSyncPanel.svelte
-    ClientsPanel.svelte
+  components/InviteLinkModal.svelte  ← setup link for a gym (Hub + Manage gyms)
+  panels/                    ← One file per Owner dashboard panel (2026-10-15 consolidation: 7 → 4)
+    HubPanel.svelte          ← landing: verdict, one row per problem, healthy chips, platform row when wrong
+    ErrorQueuePanel.svelte   ← open errors across gyms
+    MembersPanel.svelte      ← Debug Center + Member Sync merged
+    ManageGymsPanel.svelte   ← account management (replaces ClientsPanel + the Admin tab's Clients section)
+    PlanMappingPanel.svelte  ← operator page (own entry, plan-mapping-entry.js)
 ```
+Panels mount on first open (`window.mountSveltePanel(name)`, called by app.js) and reload on the `panel:shown`
+window event; nothing polls while hidden.
 
-## Migration Order (Panel Phase)
+## History
 
-Build simplest → most complex. Each panel is independently shippable.
-
-1. **QueuePanel** — stat cards + job table, read-only, no mutations
-2. **WebhookPanel** — table + live polling, no user actions
-3. **DebugCenterPanel** — search + table
-4. **ErrorQueuePanel** — table + retry/dismiss + bulk actions
-5. **MemberSyncPanel** — cascading selects + table + pagination
-6. **ClientsPanel** — full CRUD + drawer + modals (most complex)
+The original six panels (Queue, Webhook, DebugCenter, ErrorQueue, MemberSync, Clients) were built 2026-04/05.
+On 2026-10-15 the Owner dashboard was cut to four: Queue and Webhook were removed (Trace Timeline shows every
+webhook; the queue backlog is a Hub platform row), DebugCenter and MemberSync merged into MembersPanel, Clients
+became ManageGymsPanel, and HubPanel became the landing panel.

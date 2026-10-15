@@ -44,7 +44,8 @@ function renderNav() {
     { label: 'Logs',          href: '/logs',         key: 'logs' },
     { label: 'Errors',        href: '/errors',       key: 'errors' },
     { label: 'System Config', href: '/locations',    key: 'config' },
-    { label: 'Admin',         href: '/admin-panel',  key: 'admin' },
+    // The Admin tab (owner-only /admin-panel) was removed 2026-10-15: the owner's page is the Owner Hub at
+    // /OwnerDashboard, reached from login, never from inside a gym's dashboard. Operators never needed it.
   ];
 
   container.innerHTML = '';
@@ -68,7 +69,7 @@ function renderBreadcrumb() {
   var container = document.getElementById('subNav');
   if (!container) return;
   var activeKey = container.dataset.active || '';
-  var labels = { overview: 'Overview', members: 'Members', 'plan-mapping': 'Plan Mapping', access: 'Access', errors: 'Errors', config: 'System Config', admin: 'Admin' };
+  var labels = { overview: 'Overview', members: 'Members', 'plan-mapping': 'Plan Mapping', access: 'Access', errors: 'Errors', config: 'System Config', logs: 'Logs' };
   var label = labels[activeKey] || '';
   if (!label) return;
   var bc = document.createElement('div');

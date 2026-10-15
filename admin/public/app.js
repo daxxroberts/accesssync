@@ -1,143 +1,15 @@
 /**
  * admin/public/app.js
- * AccessSync Admin Hub — Frontend Logic
+ * AccessSync Owner dashboard — shell logic.
  *
- * Panels: Error Queue | Debug Center | Webhook Inspector | Queue Monitor
- * Auth: httpOnly cookie (adminToken) — 401 redirect to login screen
- * Polling: Queue Monitor every 5s, Webhook Inspector every 10s
+ * Owns: login (Google OAuth redirect + PIN), the sidebar, which panel is visible, and deep links
+ * (?panel=<name>, ?openTrace=<uuid>). Panel content is Svelte (admin/svelte/main.js) except Trace
+ * Timeline, a React island (logs-app.jsx). Panels mount on first open; nothing polls while hidden.
  */
 
 'use strict';
 
-// ── State ──────────────────────────────────────────────────────────
-const state = {
-  currentPanel: 'errors',
-
-  errors: {
-    status: 'failed',
-    limit: 50,
-    offset: 0,
-    total: 0,
-    selected: new Set(),
-    data: [],
-  },
-
-  webhooks: {
-    data: [],
-    lastTimestamp: null,
-    polling: true,
-    pollTimer: null,
-  },
-
-  queue: {
-    counts: {},
-    currentTab: 'waiting',
-    pollTimer: null,
-  },
-
-  members: {
-    searchTimer: null,
-  },
-};
-
-// ── Helpers ────────────────────────────────────────────────────────
-
-async function apiFetch(url, options = {}) {
-  const res = await fetch(url, { credentials: 'include', ...options });
-  if (res.status === 401) {
-    stopPolling();
-    showLogin();
-    throw new Error('Unauthorized');
-  }
-  return res;
-}
-
-function fmt(isoString) {
-  if (!isoString) return '—';
-  const d = new Date(isoString);
-  return d.toLocaleString('en-US', {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-  });
-}
-
-function pill(text, type) {
-  const map = {
-    accepted: 'success', rejected: 'danger',
-    new: 'info', duplicate: 'muted',
-    failed: 'danger', resolved: 'success', 'in-progress': 'warning',
-    active: 'success', waiting: 'warning', delayed: 'info', completed: 'muted', paused: 'muted',
-    granted: 'success', revoked: 'muted', unknown: 'muted',
-    archived: 'muted', cancelled: 'danger',
-  };
-  const cls = map[text] || 'muted';
-  return `<span class="pill pill-${cls}">${text || '—'}</span>`;
-}
-
-function esc(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-// ── Toast ──────────────────────────────────────────────────────────
-function toast(message, type = 'info') {
-  const container = document.getElementById('toast-container');
-  const el = document.createElement('div');
-  el.className = `toast toast-${type}`;
-  el.textContent = message;
-  container.appendChild(el);
-  setTimeout(() => el.classList.add('toast-visible'), 10);
-  setTimeout(() => {
-    el.classList.remove('toast-visible');
-    setTimeout(() => el.remove(), 300);
-  }, 3500);
-}
-
-// ── Modal ──────────────────────────────────────────────────────────
-function showModal({ title, body, showNote = false, onConfirm }) {
-  document.getElementById('modal-title').textContent = title;
-  document.getElementById('modal-body').textContent = body;
-  document.getElementById('modal-note').value = '';
-  const noteWrap = document.getElementById('modal-note-wrap');
-  noteWrap.classList.toggle('hidden', !showNote);
-  document.getElementById('modal-overlay').classList.remove('hidden');
-
-  const confirmBtn = document.getElementById('modal-confirm');
-  const cancelBtn  = document.getElementById('modal-cancel');
-
-  function cleanup() {
-    document.getElementById('modal-overlay').classList.add('hidden');
-    confirmBtn.replaceWith(confirmBtn.cloneNode(true));
-    cancelBtn.replaceWith(cancelBtn.cloneNode(true));
-  }
-
-  document.getElementById('modal-confirm').addEventListener('click', () => {
-    const note = showNote ? document.getElementById('modal-note').value.trim() : undefined;
-    cleanup();
-    onConfirm(note);
-  });
-  document.getElementById('modal-cancel').addEventListener('click', cleanup);
-}
-
-// ── Drawer ─────────────────────────────────────────────────────────
-function openDrawer(title, bodyHtml) {
-  document.getElementById('drawer-title').textContent = title;
-  document.getElementById('drawer-body').innerHTML = bodyHtml;
-  document.getElementById('drawer').classList.remove('hidden');
-  document.getElementById('drawer-overlay').classList.remove('hidden');
-}
-
-function closeDrawer() {
-  document.getElementById('drawer').classList.add('hidden');
-  document.getElementById('drawer-overlay').classList.add('hidden');
-}
-
-document.getElementById('drawer-close').addEventListener('click', closeDrawer);
-document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
+const PANEL_NAMES = ['hub', 'errors', 'members', 'gyms', 'logs'];
 
 // ── Auth ───────────────────────────────────────────────────────────
 function showLogin() {
@@ -149,7 +21,6 @@ function showLogin() {
 function showDashboard() {
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('dashboard').classList.remove('hidden');
-  if (typeof window.mountSveltePanels === 'function') window.mountSveltePanels();
 }
 
 let _googleInitialized = false;
@@ -157,49 +28,34 @@ let _googleInitialized = false;
 async function initGoogleSignIn() {
   if (_googleInitialized) return;
   _googleInitialized = true;
-
   try {
-    console.log('[Auth] Fetching /auth/config...');
     const res = await fetch('/auth/config');
     if (!res.ok) throw new Error(`Config endpoint failed: ${res.status}`);
     const { clientId } = await res.json();
-    console.log('[Auth] clientId received:', clientId ? clientId.slice(0, 20) + '...' : 'MISSING');
-
     if (!clientId) {
       showLoginError('Auth not configured — GOOGLE_CLIENT_ID missing on server.');
       return;
     }
-
-    // Use OAuth redirect flow directly — GIS popup flow breaks with FedCM
-    showGoogleFallbackButton(clientId);
-
+    // OAuth redirect flow — the GIS popup flow breaks with FedCM.
+    const btnEl = document.getElementById('google-signin-btn');
+    if (btnEl.querySelector('.fallback-signin-btn')) return;
+    btnEl.innerHTML = '';
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-accent fallback-signin-btn';
+    btn.style = 'width:288px;padding:10px 16px;font-size:14px;';
+    btn.textContent = 'Sign in with Google';
+    btn.addEventListener('click', () => {
+      const redirectUri = encodeURIComponent(window.location.origin + '/auth/google/callback');
+      const scope = encodeURIComponent('openid email profile');
+      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&prompt=select_account`;
+    });
+    btnEl.appendChild(btn);
   } catch (err) {
-    console.error('[Admin] Google Sign-In init failed:', err.message);
+    console.error('[Owner] Google Sign-In init failed:', err.message);
     showLoginError('Failed to load sign-in. Refresh and try again.');
     _googleInitialized = false;
   }
 }
-
-// Fallback: use Google OAuth redirect flow when GIS button is blocked by origin
-function showGoogleFallbackButton(clientId) {
-  const btnEl = document.getElementById('google-signin-btn');
-  if (btnEl.querySelector('.fallback-signin-btn')) return; // already shown
-  btnEl.innerHTML = '';
-  const btn = document.createElement('button');
-  btn.className = 'btn btn-accent fallback-signin-btn';
-  btn.style = 'width:288px;padding:10px 16px;font-size:14px;';
-  btn.textContent = 'Sign in with Google';
-  btn.addEventListener('click', () => {
-    const redirectUri = encodeURIComponent(window.location.origin + '/auth/google/callback');
-    const scope = encodeURIComponent('openid email profile');
-    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&prompt=select_account`;
-    console.log('[Auth] Redirecting to Google OAuth...');
-    window.location.href = url;
-  });
-  btnEl.appendChild(btn);
-  console.log('[Auth] Fallback button rendered');
-}
-
 
 function showLoginError(msg) {
   const el = document.getElementById('login-error');
@@ -207,21 +63,14 @@ function showLoginError(msg) {
   el.classList.remove('hidden');
 }
 
-function hideLoginError() {
-  document.getElementById('login-error').classList.add('hidden');
-}
-
-// ── PIN Auth ───────────────────────────────────────────────────────
 async function submitPin() {
   const pin = document.getElementById('pin-input').value.trim();
   if (!pin) return;
-  hideLoginError();
+  document.getElementById('login-error').classList.add('hidden');
   try {
     const res = await fetch('/auth/pin', {
-      method:      'POST',
-      credentials: 'include',
-      headers:     { 'Content-Type': 'application/json' },
-      body:        JSON.stringify({ pin }),
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }),
     });
     if (res.ok) {
       document.getElementById('pin-input').value = '';
@@ -229,7 +78,7 @@ async function submitPin() {
       initDashboard();
     } else {
       const json = await res.json().catch(() => ({}));
-      showLoginError(json.error === 'Invalid PIN' ? 'Incorrect PIN.' : 'Sign-in failed. Try again.');
+      showLoginError(json.error === 'Invalid PIN' ? 'Incorrect PIN.' : (json.error || 'Sign-in failed. Try again.'));
     }
   } catch {
     showLoginError('Network error. Try again.');
@@ -237,126 +86,49 @@ async function submitPin() {
 }
 
 document.getElementById('pin-submit').addEventListener('click', submitPin);
-document.getElementById('pin-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') submitPin();
-});
-
+document.getElementById('pin-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitPin(); });
 document.getElementById('logout-btn').addEventListener('click', async () => {
   await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
-  stopPolling();
-  showLogin();
+  window.location.href = '/OwnerDashboard';
 });
 
-// ── Panel Navigation ───────────────────────────────────────────────
+// ── Panel navigation ───────────────────────────────────────────────
 document.querySelectorAll('.nav-item[data-panel]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const panel = btn.dataset.panel;
-    switchPanel(panel);
-  });
+  btn.addEventListener('click', () => switchPanel(btn.dataset.panel, true));
 });
 
-function switchPanel(panel) {
-  state.currentPanel = panel;
-
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-  document.querySelector(`.nav-item[data-panel="${panel}"]`).classList.add('active');
-
-  document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
-  document.getElementById(`panel-${panel}`).classList.remove('hidden');
-
-  if (panel === 'errors')     loadErrors();
-  if (panel === 'webhooks')   startWebhookPolling();
-  if (panel === 'queue')      startQueuePolling();
-  if (panel === 'clients')    loadClients();
-  if (panel === 'membersync') initMemberSync();
-}
-
-// ── Dashboard Init ─────────────────────────────────────────────────
-async function initDashboard() {
-  try {
-    const res = await apiFetch('/admin/errors?limit=1');
-    if (!res.ok) return;
-    loadErrors();
-    startQueuePolling(); // background — so queue badge can update
-
-    // Deep-link: ?openTrace=<uuid> jumps straight to the Trace Timeline panel.
-    // The React island reads the same query param and pre-selects the trace.
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('openTrace')) {
-      switchPanel('logs');
-    }
-  } catch { /* redirect already handled by apiFetch */ }
-}
-
-// ══ ERROR QUEUE PANEL — migrated to Svelte (ErrorQueuePanel.svelte) ══
-// Panel content is now rendered by admin/svelte/panels/ErrorQueuePanel.svelte.
-// loadErrors() stub kept so switchPanel() / initDashboard() calls safely.
-
-function loadErrors() {
-  // No-op — ErrorQueuePanel.svelte owns its own data loading via onMount.
-}
-
-function updateNavBadge(panel, count) {
-  // Kept for any remaining callers. ErrorQueuePanel.svelte manages the errors badge directly.
-  const badge = document.getElementById(`nav-${panel}-badge`);
-  if (!badge) return;
-  if (count > 0) {
-    badge.textContent = count > 99 ? '99+' : count;
-    badge.classList.remove('hidden');
-  } else {
-    badge.classList.add('hidden');
+function switchPanel(panel, pushUrl) {
+  if (!PANEL_NAMES.includes(panel)) panel = 'hub';
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.panel === panel));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('hidden', p.id !== `panel-${panel}`));
+  if (typeof window.mountSveltePanel === 'function') window.mountSveltePanel(panel);
+  window.dispatchEvent(new CustomEvent('panel:shown', { detail: panel }));
+  if (pushUrl) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('panel', panel);
+    url.searchParams.delete('openTrace');
+    history.replaceState(null, '', url.pathname + url.search);
   }
 }
 
-// ══ DEBUG CENTER PANEL — migrated to Svelte (DebugCenterPanel.svelte) ══
-
-// ══ WEBHOOK INSPECTOR PANEL — migrated to Svelte (WebhookPanel.svelte) ══
-// Panel content is now rendered by admin/svelte/panels/WebhookPanel.svelte.
-// startWebhookPolling() stub kept so switchPanel() still calls it safely.
-
-function startWebhookPolling() {
-  // No-op — WebhookPanel.svelte owns its own polling via onMount/onDestroy.
+async function initDashboard() {
+  const params = new URLSearchParams(window.location.search);
+  // ?openTrace=<uuid> jumps to the Trace Timeline; the React island reads the same param.
+  const panel = params.get('openTrace') ? 'logs' : (params.get('panel') || 'hub');
+  switchPanel(panel, false);
 }
 
-// ══ QUEUE MONITOR PANEL — migrated to Svelte (QueuePanel.svelte) ═════
-// Panel content is now rendered by admin/svelte/panels/QueuePanel.svelte.
-// startQueuePolling() stub kept so switchPanel() still calls it safely.
+// A 401 from any panel means the session ended: back to login.
+window.addEventListener('unhandledrejection', (e) => {
+  if (e.reason && e.reason.message === 'Unauthorized') { e.preventDefault(); showLogin(); }
+});
 
-function startQueuePolling() {
-  // No-op — QueuePanel.svelte owns its own polling via onMount/onDestroy.
-}
-
-// ══ CLIENTS PANEL — migrated to Svelte (ClientsPanel.svelte) ══════════
-// Panel content is now rendered by admin/svelte/panels/ClientsPanel.svelte.
-// loadClients() stub kept so switchPanel() calls it safely.
-
-function loadClients() {
-  // No-op — ClientsPanel.svelte owns its own data loading via onMount.
-}
-
-// ══ MEMBER SYNC PANEL — migrated to Svelte (MemberSyncPanel.svelte) ══
-// Panel content is now rendered by admin/svelte/panels/MemberSyncPanel.svelte.
-// initMemberSync() stub kept so switchPanel() calls it safely.
-
-function initMemberSync() {
-  // No-op — MemberSyncPanel.svelte owns its own data loading via onMount.
-}
-
-// ── Stop all polling ────────────────────────────────────────────────
-function stopPolling() {
-  // Both webhook and queue polling now managed by Svelte panels via onDestroy.
-}
-
-// ── App Start ──────────────────────────────────────────────────────
+// ── App start ──────────────────────────────────────────────────────
 (async () => {
   try {
     const res = await fetch('/auth/check', { credentials: 'include' });
-    if (res.ok) {
-      showDashboard();
-      initDashboard();
-    } else {
-      showLogin();
-    }
+    if (res.ok) { showDashboard(); initDashboard(); }
+    else showLogin();
   } catch {
     showLogin();
   }
