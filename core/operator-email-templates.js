@@ -546,10 +546,37 @@ function describeFailedJob(row) {
   return 'Something went wrong handling ' + subject + '’s access' + onPlan + '.';
 }
 
-function renderNightlyDigest({ configAlerts, failedJobs, clientId }) {
+/** "Jamie" / "Jamie and Sam" / "Jamie, Sam and Lee" from full names. */
+function joinNames(names) {
+  const list = names.filter(Boolean);
+  if (list.length <= 1) return list[0] || '';
+  return list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
+}
+
+/**
+ * One holder who started adding people in the Member Hub and never pressed "Grant access".
+ * Written as an instruction to the gym: who to call, how to reach them, what to tell them to tap.
+ * The button label must match admin/views/pages/member-hub.ejs ("Grant access").
+ */
+function describeStuckDraft(d) {
+  const holder = d.holderName || 'A member';
+  const holderFirst = d.holderName ? d.holderName.split(' ')[0] : 'them';
+  const people = (Array.isArray(d.subMemberNames) ? d.subMemberNames : []).filter(Boolean);
+  const who = people.length ? joinNames(people) : 'someone';
+  const plan = d.planName ? ' ' + d.planName + ' membership' : ' membership';
+  const since = d.since ? ' on ' + humanDate(d.since) : '';
+  const blocked = people.length === 1 ? people[0].split(' ')[0] + ' can’t get in yet.' : 'They can’t get in yet.';
+  const contact = [d.holderPhone, d.holderEmail].filter(Boolean).join(' or ');
+  const reach = contact ? 'Reach out to ' + holderFirst + ' at ' + contact : 'Reach out to ' + holderFirst;
+  return holder + ' started adding ' + who + ' to their' + plan + since + ' but didn’t finish. ' + blocked + ' ' +
+    reach + ' and ask them to open My Access, go to Manage Members, and tap “Grant access”.';
+}
+
+function renderNightlyDigest({ configAlerts, failedJobs, stuckDrafts, clientId }) {
   const alerts = Array.isArray(configAlerts) ? configAlerts : [];
   const jobs   = Array.isArray(failedJobs)   ? failedJobs   : [];
-  const total  = alerts.length + jobs.length;
+  const drafts = Array.isArray(stuckDrafts)  ? stuckDrafts  : [];
+  const total  = alerts.length + jobs.length + drafts.length;
 
   const summary = total === 1
     ? 'One thing needs a look today.'
@@ -576,25 +603,41 @@ function renderNightlyDigest({ configAlerts, failedJobs, clientId }) {
     sectionsText.push('Member access that didn’t go through\n' + jobs.map(j => '  • ' + describeFailedJob(j)).join('\n'));
   }
 
-  const closing = 'Once you’ve handled something, dismiss it in your dashboard and it’ll stop showing up here.';
+  if (drafts.length) {
+    const items = drafts.map(d => '<li style="margin-bottom:6px;">' + escapeHtml(describeStuckDraft(d)) + '</li>').join('');
+    sections.push(
+      '<p style="margin:16px 0 6px 0;font-weight:bold;">Waiting on the member</p>' +
+      '<ul style="margin:0 0 8px 0;padding-left:20px;">' + items + '</ul>'
+    );
+    sectionsText.push('Waiting on the member\n' + drafts.map(d => '  • ' + describeStuckDraft(d)).join('\n'));
+  }
+
+  // Drafts can't be dismissed — they clear themselves once the member sends them (or removes them),
+  // so the dismiss line and the Errors-page CTA only make sense when there's an alert or a failed job.
+  const hasDismissable = alerts.length + jobs.length > 0;
+  const closingLines = [];
+  if (hasDismissable) closingLines.push('Once you’ve handled something, dismiss it in your dashboard and it’ll stop showing up here.');
+  if (drafts.length) closingLines.push('People waiting on the member drop off this list as soon as the member taps “Grant access”.');
 
   const bodyHtml =
     '<p style="margin:0 0 4px 0;">' + escapeHtml(summary) + '</p>' +
     sections.join('') +
-    '<p style="margin:16px 0 0 0;">' + escapeHtml(closing) + '</p>';
+    closingLines.map(l => '<p style="margin:16px 0 0 0;">' + escapeHtml(l) + '</p>').join('');
 
-  const bodyText = summary + '\n\n' + sectionsText.join('\n\n') + '\n\n' + closing;
+  const bodyText = summary + '\n\n' + sectionsText.join('\n\n') + '\n\n' + closingLines.join('\n');
 
   const { html, text } = renderLayout({
     heading: 'Your AccessSync summary',
     bodyHtml,
     bodyText,
     actionNeeded: true,
-    ctaText: 'Review and dismiss',
+    ctaText: hasDismissable ? 'Review and dismiss' : 'Open Members',
     // Since 2026-10-15 this is the GYM's daily (one per gym, to the gym's own notification email): the
     // CTA opens that gym's Errors page. Without a clientId (rows tied to no gym go to the owner) it points
     // at the owner's cross-tenant view, since /errors renders nothing without a client.
-    ctaUrl: clientId ? hubLink('/errors', clientId) : hubLink('/admin-errors'),
+    ctaUrl: hasDismissable
+      ? (clientId ? hubLink('/errors', clientId) : hubLink('/admin-errors'))
+      : hubLink('/members', clientId),
   });
 
   const subject = total === 1
@@ -684,4 +727,5 @@ module.exports = {
   renderOwnerDaily,
   describeConfigAlert,
   describeFailedJob,
+  describeStuckDraft,
 };

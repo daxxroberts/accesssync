@@ -3275,15 +3275,38 @@ class NightlyReconciliation {
        ORDER BY eq.client_id, eq.created_at DESC`
     );
 
+    // Sub-members a plan holder started adding in the Member Hub but never sent ("Grant access" not
+    // pressed). Nothing has failed — nothing has been tried — so no other check sees them, and the
+    // person stays locked out. Only the gym can nudge the holder, so the gym's daily names both people
+    // and gives the holder's contact details. 24h grace so a holder mid-session is never reported.
+    const stuckDraftsResult = await db.query(
+      `SELECT ma.client_id, ma.id AS access_id, h.id AS holder_id,
+              h.first_name AS holder_first, h.last_name AS holder_last,
+              h.email AS holder_email, h.phone AS holder_phone,
+              sub.first_name, sub.last_name, pm.plan_name, mas.created_at
+       FROM member_access_sources mas
+       JOIN member_access ma  ON ma.id = mas.access_id AND ma.sub_master_id IS NOT NULL
+       JOIN member_master sub ON sub.id = ma.member_master_id
+       JOIN member_master h   ON h.id = ma.sub_master_id
+       LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
+       WHERE mas.status = 'draft' AND mas.created_at < NOW() - INTERVAL '24 hours'
+       ORDER BY ma.client_id, h.id, mas.created_at`
+    ).catch((err) => {
+      // A broken drafts query must never cost the gym the rest of its daily.
+      sweepLogger.warn('reconciliation.digest_drafts_query_failed', { traceId: sweepTraceId, error: err.message, stage: 'cron' });
+      return { rows: [] };
+    });
+
     const digest = {
       generatedAt: new Date().toISOString(),
       configAlerts: configAlertsResult.rows,
       failedJobs: failedJobsResult.rows,
+      stuckDrafts: stuckDraftsResult.rows,
     };
 
-    sweepLogger.info('reconciliation.digest', { traceId: sweepTraceId, configAlerts: digest.configAlerts.length, failedJobs: digest.failedJobs.length, stage: 'cron', result: 'success' });
+    sweepLogger.info('reconciliation.digest', { traceId: sweepTraceId, configAlerts: digest.configAlerts.length, failedJobs: digest.failedJobs.length, stuckDrafts: digest.stuckDrafts.length, stage: 'cron', result: 'success' });
 
-    if (configAlertsResult.rows.length === 0 && failedJobsResult.rows.length === 0) {
+    if (configAlertsResult.rows.length === 0 && failedJobsResult.rows.length === 0 && stuckDraftsResult.rows.length === 0) {
       sweepLogger.info('reconciliation.digest_empty', { traceId: sweepTraceId, stage: 'cron', result: 'skipped' });
       return;
     }
@@ -3296,11 +3319,28 @@ class NightlyReconciliation {
     const groups = new Map();   // clientId | null → { alerts, jobs }
     const bucket = (clientId) => {
       const key = clientId || null;
-      if (!groups.has(key)) groups.set(key, { alerts: [], jobs: [] });
+      if (!groups.has(key)) groups.set(key, { alerts: [], jobs: [], drafts: new Map() });
       return groups.get(key);
     };
     for (const a of configAlertsResult.rows) bucket(a.client_id).alerts.push(a);
     for (const j of failedJobsResult.rows) bucket(j.client_id).jobs.push(j);
+    // One line per holder, listing everyone they left in draft. A multi-door plan has one draft
+    // source row per door for the same person, so de-dupe people by access row.
+    for (const d of stuckDraftsResult.rows) {
+      const byHolder = bucket(d.client_id).drafts;
+      if (!byHolder.has(d.holder_id)) {
+        byHolder.set(d.holder_id, {
+          holderName: [d.holder_first, d.holder_last].filter(Boolean).join(' ') || null,
+          holderEmail: d.holder_email || null,
+          holderPhone: d.holder_phone || null,
+          planName: d.plan_name || null,
+          since: d.created_at,
+          people: new Map(),
+        });
+      }
+      const h = byHolder.get(d.holder_id);
+      if (!h.people.has(d.access_id)) h.people.set(d.access_id, [d.first_name, d.last_name].filter(Boolean).join(' ') || null);
+    }
 
     const clientIds = [...groups.keys()].filter(Boolean);
     const gyms = new Map();
@@ -3347,6 +3387,14 @@ class NightlyReconciliation {
             plan_name: j.plan_name,
             memberName: [j.first_name, j.last_name].filter(Boolean).join(' ') || null,
           })),
+          stuckDrafts: [...g.drafts.values()].map(h => ({
+            holderName: h.holderName,
+            holderEmail: h.holderEmail,
+            holderPhone: h.holderPhone,
+            planName: h.planName,
+            since: h.since,
+            subMemberNames: [...h.people.values()],
+          })),
         },
         logContext: { alert: toGym ? 'gym_daily' : 'nightly_digest', clientId, traceId: sweepTraceId },
       });
@@ -3356,7 +3404,7 @@ class NightlyReconciliation {
         continue;
       }
       sweepLogger.info('reconciliation.digest_sent', { traceId: sweepTraceId, toEmail, clientId, stage: 'cron', result: 'success' });
-      if (toGym) log.info('email.gym_daily.sent', { clientId, toEmail, alerts: g.alerts.length, jobs: g.jobs.length });
+      if (toGym) log.info('email.gym_daily.sent', { clientId, toEmail, alerts: g.alerts.length, jobs: g.jobs.length, stuckDrafts: g.drafts.size });
     }
   }
 

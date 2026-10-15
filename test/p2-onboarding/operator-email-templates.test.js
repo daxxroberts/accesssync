@@ -492,6 +492,59 @@ describe('[P2] renderNightlyDigest', () => {
   });
 });
 
+// 2026-10-15: a real sub-member sat in draft under a Family plan for 10 days because
+// "Grant access" was below the fold. Nothing failed, so nothing told the gym. The gym's daily now does.
+describe('[P2] renderNightlyDigest — people waiting on the member (stuck drafts)', () => {
+  const taylor = {
+    holderName: 'Taylor Brooks', holderEmail: 'taylor@example.com', holderPhone: '(918) 555-0100',
+    planName: 'Family', since: '2026-10-05T18:49:31Z', subMemberNames: ['Jamie Cole'],
+  };
+
+  test('names the holder, the stuck person, how to reach the holder, and the exact button to tap', () => {
+    const line = T.describeStuckDraft(taylor);
+    expect(line).toContain('Taylor Brooks started adding Jamie Cole to their Family membership on October 5, 2026');
+    expect(line).toContain('Jamie can’t get in yet.');
+    expect(line).toContain('Reach out to Taylor at (918) 555-0100 or taylor@example.com');
+    expect(line).toContain('tap “Grant access”');
+  });
+
+  test('several people under one holder are listed together in one line', () => {
+    const line = T.describeStuckDraft({ ...taylor, subMemberNames: ['Jamie Cole', 'Sam Lee', 'Ava Patel'] });
+    expect(line).toContain('started adding Jamie Cole, Sam Lee and Ava Patel');
+    expect(line).toContain('They can’t get in yet.');
+  });
+
+  test('a holder with no phone on file still gets their email; with neither, no dangling "at"', () => {
+    expect(T.describeStuckDraft({ ...taylor, holderPhone: null })).toContain('Reach out to Taylor at taylor@example.com and');
+    const bare = T.describeStuckDraft({ ...taylor, holderPhone: null, holderEmail: null });
+    expect(bare).toContain('Reach out to Taylor and ask');
+    expect(bare).not.toMatch(/null|undefined/);
+  });
+
+  test('drafts-only digest: counted, sectioned, no dismiss line, CTA opens Members', () => {
+    const r = T.renderNightlyDigest({ configAlerts: [], failedJobs: [], stuckDrafts: [taylor], clientId: 'c1' });
+    expect(r.subject).toBe('[AccessSync] 1 thing needs a look');
+    expect(r.text).toContain('Waiting on the member');
+    expect(r.text).not.toMatch(/dismiss/i);
+    expect(r.text).toContain('Open Members: https://');
+    expect(r.text).toContain('/members?clientId=c1');
+  });
+
+  test('mixed digest keeps the Errors-page CTA and both closing lines', () => {
+    const r = T.renderNightlyDigest({ configAlerts: [{ alert_type: 'system' }], failedJobs: [], stuckDrafts: [taylor], clientId: 'c1' });
+    expect(r.subject).toBe('[AccessSync] 2 things need a look');
+    expect(r.text).toMatch(/dismiss/i);
+    expect(r.text).toContain('/errors?clientId=c1');
+    expect(r.text).toContain('as soon as the member taps “Grant access”');
+  });
+
+  test('Wix-sourced names are escaped in the HTML part', () => {
+    const r = T.renderNightlyDigest({ stuckDrafts: [{ ...taylor, subMemberNames: ['<script>x</script>'] }], clientId: 'c1' });
+    expect(r.html).not.toContain('<script>x</script>');
+    expect(r.html).toContain('&lt;script&gt;');
+  });
+});
+
 describe('[P2] renderHmacAlert — audience split', () => {
   test('carries no security jargon the operator cannot act on', () => {
     const r = T.renderHmacAlert();

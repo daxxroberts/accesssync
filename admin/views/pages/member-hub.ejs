@@ -959,7 +959,16 @@ body {
 }
 
 /* ── Submit area ──────────────────────────────────────── */
-.submit-area { margin-top: 22px; }
+/* Sits ABOVE the plan cards (2026-10-15). At the bottom it was below the fold, and holders
+   left thinking "Add member" had finished the job — a real sub-member sat in draft 10 days. */
+.submit-area {
+  margin-bottom: 16px; padding: 14px 16px 16px;
+  border-radius: 12px;
+  background: var(--amber-dim);
+  box-shadow: inset 0 0 0 1px rgba(217,119,6,0.28);
+}
+.submit-headline { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.submit-sub { font-size: 12.5px; color: var(--text2); margin-bottom: 12px; }
 .submit-note { text-align: center; margin-top: 10px; font-size: 11.5px; color: var(--text2); }
 
 /* ── Sticky CTA ───────────────────────────────────────── */
@@ -1170,6 +1179,17 @@ body {
           </button>
         </div>
 
+        <!-- Global Submit CTA — sums drafts across all plan groups. Lives at the TOP so the step
+             that actually grants access is the first thing the holder sees, not below the fold. -->
+        <div class="submit-area hidden" id="mm-submit-area" role="status">
+          <div class="submit-headline" id="mm-submit-headline"></div>
+          <div class="submit-sub">They can’t get in until you tap Grant access.</div>
+          <button class="btn-primary full" id="mm-btn-submit" onclick="mmSubmitAll()">
+            Grant access to <span id="mm-submit-label">0 members</span>
+          </button>
+          <div class="submit-note">We’ll email them an invite to set up their pass.</div>
+        </div>
+
         <!-- One plan-group card per allow_multiple plan. Rendered by mmRender(). -->
         <div id="mm-plan-groups"></div>
 
@@ -1209,16 +1229,10 @@ body {
           </div>
           <div class="btn-row">
             <button class="btn-ghost" onclick="mmCloseAddForm()">Cancel</button>
-            <button class="btn-primary" id="mm-btn-add-save" onclick="mmSaveAdd()">Add member</button>
+            <!-- Not "Add member": that read as done, but this only saves a draft. Granting is the
+                 separate "Grant access" step at the top of the tab. -->
+            <button class="btn-primary" id="mm-btn-add-save" onclick="mmSaveAdd()">Save &amp; review</button>
           </div>
-        </div>
-
-        <!-- Global Submit CTA — sums drafts across all plan groups -->
-        <div class="submit-area hidden" id="mm-submit-area">
-          <button class="btn-primary full" id="mm-btn-submit" onclick="mmSubmitAll()">
-            Grant access to <span id="mm-submit-label">0 members</span>
-          </button>
-          <div class="submit-note">We'll email them an invite to set up their pass.</div>
         </div>
 
       </div><!-- /mm-content -->
@@ -1253,7 +1267,7 @@ body {
 
 <!-- Sticky CTA (Manage Members) -->
 <div id="mm-sticky-cta" class="sticky-cta hidden">
-  <button class="btn-primary full" onclick="mmSubmitAll()">
+  <button class="btn-primary full" id="mm-sticky-submit" onclick="mmSubmitAll()">
     Grant access to <span id="mm-sticky-label">0 members</span>
   </button>
 </div>
@@ -1503,6 +1517,7 @@ function switchTab(tab) {
   const panel = document.getElementById('panel-' + tab);
   if (btn) btn.classList.add('active');
   if (panel) panel.classList.add('active');
+  mmUpdateStickyVisibility();
 
   // Load Manage Members data on first switch to that tab
   if (tab === 'members') {
@@ -2362,6 +2377,7 @@ function mmRender() {
     const t = allDrafts.length + ' member' + (allDrafts.length === 1 ? '' : 's');
     submitLabel.textContent = t;
     stickyLabel.textContent = t;
+    document.getElementById('mm-submit-headline').textContent = mmDraftHeadline(allDrafts);
     // mmSubmitAll disables the button on submit but only re-enables it on
     // failure — on the success path it stays disabled in memory (same class
     // of bug as mm-btn-add-save above). Reset here so a later batch of
@@ -2679,17 +2695,54 @@ function mmEditRowHtml(m) {
   '</div>';
 }
 
+// "Jamie isn't on your membership yet." / "Jamie and Sam aren't…" / "3 people aren't…"
+function mmDraftHeadline(drafts) {
+  const names = drafts.map(m => m.firstName).filter(Boolean);
+  if (names.length !== drafts.length || names.length > 2) {
+    return drafts.length + (drafts.length === 1 ? ' person isn’t' : ' people aren’t') + ' on your membership yet';
+  }
+  return names.length === 1
+    ? names[0] + ' isn’t on your membership yet'
+    : names[0] + ' and ' + names[1] + ' aren’t on your membership yet';
+}
+
+function mmDraftCount() {
+  return (MM.subMembers || []).filter(m => m.status === 'draft').length;
+}
+
 // ── Sticky CTA visibility ────────────────────────────────────────────
+// Shown when there are drafts and the top-of-tab Grant access banner has scrolled away
+// (e.g. the holder is down at a plan card's add form). Only ever on the Manage Members tab:
+// on the other tabs the banner is display:none, its rect is all zeros, and it read as
+// "out of view" — so the bar used to appear over My Access. Also hidden while the add or
+// edit form is open: the fixed bar sat on top of that form's Save button, so a tap meant
+// for "Save & review" landed on "Grant access" instead.
 function mmUpdateStickyVisibility() {
   const submitArea = document.getElementById('mm-submit-area');
   const stickyCta  = document.getElementById('mm-sticky-cta');
-  const drafts = MM.subMembers.filter(m => m.status === 'draft');
-  if (drafts.length === 0) { stickyCta.classList.add('hidden'); return; }
+  const formOpen   = !document.getElementById('mm-add-form').classList.contains('hidden') || !!MM.editingId;
+  if (_activeTab !== 'members' || mmDraftCount() === 0 || submitArea.classList.contains('hidden') || formOpen) {
+    stickyCta.classList.add('hidden');
+    return;
+  }
   const rect   = submitArea.getBoundingClientRect();
   const inView = rect.top < window.innerHeight && rect.bottom > 0;
   stickyCta.classList.toggle('hidden', inView);
 }
 window.addEventListener('scroll', mmUpdateStickyVisibility, { passive: true });
+window.addEventListener('resize', mmUpdateStickyVisibility, { passive: true });
+
+// Leaving with drafts unsent is how people end up stuck (the gym's daily email now
+// chases these after 24h). Ask before the tab closes. Draft state is already on the
+// server, so this is only a reminder — nothing is lost if they leave anyway.
+// Note: inside a cross-origin iframe embed this won't fire when the PARENT page
+// navigates; the top-of-tab banner on the next visit covers that case.
+let _mmSubmitting = false;
+window.addEventListener('beforeunload', function (e) {
+  if (_mmSubmitting || mmDraftCount() === 0) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 // ── Add form ─────────────────────────────────────────────────────────
 // Per-plan: caller passes the plan.id the form should write against.
@@ -2796,7 +2849,7 @@ function mmCancelConfirm()   { MM.confirmingId = null; mmRenderList(); notifyHei
 function mmBeginEdit(id) {
   MM.editingId = id; MM.confirmingId = null;
   document.getElementById('mm-add-form').classList.add('hidden');
-  mmRenderList(); notifyHeight();
+  mmRenderList(); mmUpdateStickyVisibility(); notifyHeight();
 }
 function mmCancelEdit() { MM.editingId = null; mmRenderList(); mmRender(); }
 
@@ -2860,7 +2913,10 @@ async function mmSaveAdd() {
     }
     mmCloseAddForm();
     await mmLoadData();
-    showToast(data.subMember.firstName + ' added as a draft', 'success');
+    showToast('Saved. Tap Grant access to finish adding ' + data.subMember.firstName + '.', 'info');
+    // Bring the one step that actually grants access into view.
+    const area = document.getElementById('mm-submit-area');
+    if (area && !area.classList.contains('hidden')) area.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     showToast('Something went wrong. Try again.', 'error');
     btn.disabled = false;
@@ -2911,9 +2967,12 @@ async function mmDoRemove(subId) {
 // ── API: Submit ───────────────────────────────────────────────────────
 async function mmSubmitAll() {
   const drafts = MM.subMembers.filter(m => m.status === 'draft');
-  if (!drafts.length) return;
-  const btn = document.getElementById('mm-btn-submit');
-  if (btn) btn.disabled = true;
+  if (!drafts.length || _mmSubmitting) return;
+  // Both buttons (top banner + sticky bar) call this; lock both so a double tap can't
+  // send the submit twice.
+  const btns = [document.getElementById('mm-btn-submit'), document.getElementById('mm-sticky-submit')].filter(Boolean);
+  const setBusy = (busy) => { _mmSubmitting = busy; btns.forEach(b => { b.disabled = busy; }); };
+  setBusy(true);
   try {
     const res  = await fetch(BASE + '/api/multi-member/submit', {
       method: 'POST',
@@ -2921,15 +2980,16 @@ async function mmSubmitAll() {
       body: JSON.stringify({ holderId: MM.holder.id, clientId }),
     });
     const data = await res.json();
-    if (!res.ok) { showToast(data.error || 'Submit failed.', 'error'); if (btn) btn.disabled = false; return; }
+    if (!res.ok) { showToast(data.error || 'Submit failed.', 'error'); setBusy(false); return; }
     await mmLoadData();
+    setBusy(false);
     // Watch this submit through to a settled result (active/failed) — the only
     // moment auto-refresh runs; see mmStartPollIfPending's comment above.
     mmStartPollIfPending();
     showToast('Granting access to ' + data.submitted + ' member' + (data.submitted === 1 ? '' : 's') + '…', 'info');
   } catch (e) {
     showToast('Something went wrong. Try again.', 'error');
-    if (btn) btn.disabled = false;
+    setBusy(false);
   }
 }
 
@@ -2994,6 +3054,13 @@ async function boot() {
 
   // Load My Access tab data
   loadAccessData();
+
+  // Came back with people still in draft? Open straight onto Manage Members so the
+  // Grant access banner is the first thing they see — otherwise they land on My Access
+  // and the drafts stay invisible. An explicit ?tab= (post-purchase overlay) wins.
+  if (showMembersTab && !tabParam && mmDraftCount() > 0) {
+    switchTab('members');
+  }
 
   // If Manage Members tab is active (switched before boot), load its data
   if (_activeTab === 'members' && MM.loaded) {
