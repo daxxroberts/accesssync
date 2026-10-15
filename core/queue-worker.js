@@ -29,7 +29,7 @@
  *   throw error — BullMQ retries (BUG-01 fix preserved)
  */
 
-const { Worker, UnrecoverableError } = require('bullmq');
+const { Worker, UnrecoverableError, DelayedError } = require('bullmq');
 const grantRevokeLogic = require('./grant-revoke');
 const retryEngine = require('./retry-engine');
 const standardAdapter = require('../adapters/standard-adapter');
@@ -45,6 +45,60 @@ const { runWith, registerTrace, setTraceContext } = require('./trace-context');
 const memberMailer = require('./member-mailer');
 
 const connection = getRedisConnection();
+
+// ── Per-member serialization ─────────────────────────────────────────────────────────────
+// Wix fires 3-4 webhooks per purchase (orderUpdated ×2, orderPurchased ×1-2, orderStarted) and
+// each becomes its own grant job. resolveAndLock's FOR UPDATE NOWAIT only guards the few ms the
+// row is locked inside its own transaction, so the sibling jobs ran side by side: on a 2026-10-14
+// purchase four jobs took the "lock" within 0.8 s of each other and Kisi was called seven times.
+// A per-(client × person) Redis lock makes the siblings wait their turn; the ones that run after
+// the first hit the OB-47 source-exists guard and make no door-system call at all.
+//
+// A job that finds the lock taken is parked with BullMQ's own mechanism (job.moveToDelayed +
+// DelayedError): re-queued a moment later without spending one of its retry attempts. The TTL
+// caps how long a crashed job can hold its member. The lock client is the Worker's non-blocking
+// Redis connection (set in startWorker); without one — tests build no Worker — jobs run unlocked,
+// exactly as before.
+const MEMBER_LOCK_TTL_MS   = 120 * 1000;
+const MEMBER_LOCK_RETRY_MS = 1000;
+const RELEASE_IF_OWNER_LUA =
+  "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0";
+
+let _lockClientPromise = null;
+/** Tests inject a fake client here; startWorker sets the real one. null → run unlocked. */
+function _setMemberLockClient(client) {
+  _lockClientPromise = client ? Promise.resolve(client) : null;
+}
+function memberLockKey(tenantId, platformMemberId) {
+  return `accesssync:member-lock:${tenantId}:${platformMemberId}`;
+}
+
+async function withMemberLock(job, token, fn) {
+  const { tenantId, standardEvent } = job.data || {};
+  const platformMemberId = standardEvent?.platformMemberId;
+  const client = _lockClientPromise ? await _lockClientPromise.catch(() => null) : null;
+  if (!client || typeof client.set !== 'function' || !tenantId || !platformMemberId) return fn();
+
+  const key   = memberLockKey(tenantId, platformMemberId);
+  const owner = String(job.id);
+  const acquired = await client.set(key, owner, 'PX', MEMBER_LOCK_TTL_MS, 'NX');
+  if (acquired !== 'OK') {
+    const retryInMs = MEMBER_LOCK_RETRY_MS + Math.floor(Math.random() * 250);
+    withTrace(standardEvent.traceId).info('queue.job.member_busy_parked', {
+      jobId: job.id, jobName: job.name, clientId: tenantId, platformMemberId,
+      heldBy: await client.get(key), retryInMs,
+      stage: 'queue', result: 'skipped',
+    });
+    await job.moveToDelayed(Date.now() + retryInMs, token);
+    throw new DelayedError();
+  }
+  try {
+    return await fn();
+  } finally {
+    // Compare-and-delete: never release a lock the TTL already handed to a sibling.
+    await Promise.resolve(client.eval(RELEASE_IF_OWNER_LUA, 1, key, owner)).catch(() => {});
+  }
+}
 
 /**
  * Resolves the client-level hardware API key for a tenant.
@@ -282,7 +336,7 @@ async function _resolveStoreMappings(tenantId, standardEvent, logger) {
  * DR-037: ALS does not cross process boundaries. traceId is read from job payload
  * and explicitly re-bound via runWith so all downstream log calls auto-carry it.
  */
-async function processJob(job) {
+async function processJob(job, token) {
   const { tenantId, standardEvent } = job.data || {};
   const traceId  = standardEvent?.traceId  || null;
 
@@ -295,12 +349,13 @@ async function processJob(job) {
     throw new Error('QUEUE_JOB_MISSING_TRACE_ID');
   }
 
-  return runWith(
+  // One job per (client × person) at a time — see withMemberLock.
+  return withMemberLock(job, token, () => runWith(
     // clientId: every log row written while this job runs — including from layers that never
     // receive the tenant (the Kisi connector's HTTP error log) — is stamped with its client.
     { traceId, actor: { type: 'system', id: 'queue-worker' }, clientId: tenantId || null },
     () => _processJobBody(job, traceId)
-  );
+  ));
 }
 
 async function _processJobBody(job, traceId) {
@@ -892,6 +947,11 @@ function startWorker() {
                       // 14 pool-exhausted recoveries). 10 leaves headroom for the admin service and the sweep.
   });
 
+  // The per-member lock (withMemberLock) uses the Worker's non-blocking Redis client.
+  if (worker.client && typeof worker.client.then === 'function') {
+    _lockClientPromise = worker.client;
+  }
+
   worker.on('completed', (job) => {
     const traceId = job.data?.standardEvent?.traceId || null;
     const logger = traceId ? withTrace(traceId) : log;
@@ -980,4 +1040,7 @@ function startWorker() {
   return worker;
 }
 
-module.exports = { startWorker, processJob, _processJobBody, _runDayPassGrant, _unitsBought, _resolveStoreMappings };
+module.exports = {
+  startWorker, processJob, _processJobBody, _runDayPassGrant, _unitsBought, _resolveStoreMappings,
+  withMemberLock, memberLockKey, _setMemberLockClient,
+};

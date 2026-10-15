@@ -62,6 +62,7 @@ New events require an entry before shipping. Events without entries are flagged 
 | Event | Level | Description |
 |---|---|---|
 | `queue.job.start` | info | Job dequeued from BullMQ and processing started |
+| `queue.job.member_busy_parked` | info | Another job for the same (client × person) holds the per-member lock (2026-10-15 — Wix's 3-4 webhooks per purchase used to run side by side and call Kisi up to 7×). The job is re-queued via `job.moveToDelayed` + `DelayedError` ~1 s later without spending a retry attempt. Context: `{ heldBy, retryInMs }`. Suppressed (DR-054) — per-job breadcrumb; the evidence it works is one `provisioned` row per purchase. |
 | `queue.job.complete` | info | Job completed successfully |
 | `queue.grant.complete` | info | **PERSISTED via EVENT_REGISTRY.json override.** Final success line for a grant — fires after member_access status flip in_flight→active. Closes the trace timeline. |
 | `queue.job.failed` | error | Job failed — includes lastStep and error details |

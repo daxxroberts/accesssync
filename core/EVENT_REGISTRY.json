@@ -26,6 +26,7 @@
     "reconciliation.kisi_user_disappeared_confirmed": { "persist": true },
     "reconciliation.role_assignment_drifted":         { "persist": true },
     "kisi.response.error":                            { "persist": true },
+    "queue.job.member_busy_parked":                   { "persist": false },
     "adapter.identity.create_409_recovering":         { "persist": true },
 
     "operator.sync.revoke_skipped":       { "persist": true },
