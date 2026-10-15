@@ -86,7 +86,7 @@ afterEach(() => {
 describe('[P3] OB-225 — Pass 2 source-lookup type-safe varchar matching', () => {
 
   test('Pass 2 source-check SQL casts hardware_user_id and hardware_group_id to ::text', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'client-gate-1', last_sync_at: null, interval: 'daily' }] });
     db.query.mockResolvedValueOnce({
       rows: [{
         id: CLIENT_ID,
@@ -158,7 +158,7 @@ describe('[P3] OB-225 — Pass 2 source-lookup type-safe varchar matching', () =
   });
 
   test('matching DB source row does NOT emit reconciliation.unmanaged_assignment_observed', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'client-gate-1', last_sync_at: null, interval: 'daily' }] });
     db.query.mockResolvedValueOnce({
       rows: [{
         id: CLIENT_ID,

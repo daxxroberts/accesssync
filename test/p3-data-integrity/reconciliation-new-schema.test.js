@@ -85,7 +85,7 @@ describe('[P3] Stale lock cleanup — UPDATE member_access (new schema)', () => 
   test('stale in_flight reset to recovery_pending targets member_access, not member_access_state', async () => {
     // Recurrence gate: last_sync_at is old enough to proceed
     db.query
-      .mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] })  // gate
+      .mockResolvedValueOnce({ rows: [{ id: 'client-gate-1', last_sync_at: null, interval: 'daily' }] })  // gate
       // _syncTrueSources clients query
       .mockResolvedValueOnce({ rows: [] })
       // stale in_flight UPDATE
@@ -123,7 +123,7 @@ describe('[P3] _fetchActionableRecords — member_access JOIN member_master (new
 
   test('actionable records query uses member_access JOIN member_master, not member_access_state', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'client-gate-1', last_sync_at: null, interval: 'daily' }] })
       .mockResolvedValueOnce({ rows: [] })   // _syncTrueSources
       .mockResolvedValueOnce({ rowCount: 0 }) // stale update
       .mockResolvedValueOnce({ rows: [] })   // _syncDoorLockdownStates
@@ -260,7 +260,7 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
 
   test('Kisi assignment with no matching source row logs observation, queues NO revoke', async () => {
     // Gate: last_sync_at old enough
-    db.query.mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'client-gate-1', last_sync_at: null, interval: 'daily' }] });
 
     // _syncTrueSources: one client with source creds
     db.query.mockResolvedValueOnce({
@@ -330,7 +330,7 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
   });
 
   test('Kisi assignment OUTSIDE AccessSync universe (group not in plan_mappings) is invisible — no log, no revoke', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'client-gate-1', last_sync_at: null, interval: 'daily' }] });
     db.query.mockResolvedValueOnce({
       rows: [{
         id: CLIENT_ID,
@@ -385,7 +385,7 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
   });
 
   test('Kisi assignment WITH matching member_access_sources row does NOT queue revoke', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'client-gate-1', last_sync_at: null, interval: 'daily' }] });
 
     db.query.mockResolvedValueOnce({
       rows: [{
@@ -470,7 +470,7 @@ describe('[P3] OB-185 A11 — Kisi orphan observed but NOT revoked', () => {
 describe('[P3] DR-049 — multi-member plan holder auto-grants via nightly/manual sync', () => {
 
   test('a Wix order for a multi-member-eligible plan queues a grant, not a skip', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] }); // gate
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'client-gate-1', last_sync_at: null, interval: 'daily' }] }); // gate
 
     db.query.mockResolvedValueOnce({
       rows: [{
@@ -582,7 +582,7 @@ describe('[P3] OB-202 — recovery_pending status', () => {
   it('OB-202/OB-204: stale lock cleanup writes status=recovery_pending via standardAdapter.releaseStaleLocks', async () => {
     // Drive runNightlySweep with no work so the stale UPDATE is the only mutation of interest.
     db.query
-      .mockResolvedValueOnce({ rows: [{ last_sync_at: null, interval: 'daily' }] }) // gate
+      .mockResolvedValueOnce({ rows: [{ id: 'client-gate-1', last_sync_at: null, interval: 'daily' }] }) // gate
       .mockResolvedValueOnce({ rows: [] })   // _syncTrueSources clients
       .mockResolvedValueOnce({ rowCount: 0 }) // stale in_flight UPDATE
       .mockResolvedValueOnce({ rows: [] })   // _syncDoorLockdownStates

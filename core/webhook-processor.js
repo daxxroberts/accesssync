@@ -177,7 +177,7 @@ class WebhookProcessor {
     // the grant (assigns Kisi role, writes member_access_sources). Must be enqueued.
     // The grant/revoke lists live in event-routing.js, shared with reconciliation.
     if (GRANT_EVENT_TYPES.includes(standardEvent.eventType)) {
-      await eventQueue.add('grant', { tenantId, standardEvent }, { jobId: `grant-${eventId}` });
+      await this._enqueueOrUnmark('grant', eventId, tenantId, standardEvent);
       log.info('webhook.enqueued', {
         traceId, eventId, eventType: standardEvent.eventType,
         clientId: tenantId, platformMemberId, planId,
@@ -186,7 +186,7 @@ class WebhookProcessor {
       });
 
     } else if (REVOKE_EVENT_TYPES.includes(standardEvent.eventType)) {
-      await eventQueue.add('revoke', { tenantId, standardEvent }, { jobId: `revoke-${eventId}` });
+      await this._enqueueOrUnmark('revoke', eventId, tenantId, standardEvent);
       log.info('webhook.enqueued', {
         traceId, eventId, eventType: standardEvent.eventType,
         clientId: tenantId, platformMemberId, planId,
@@ -221,6 +221,35 @@ class WebhookProcessor {
       'INSERT INTO processed_event_ids (event_id) VALUES ($1) ON CONFLICT DO NOTHING',
       [eventId]
     );
+  }
+
+  /**
+   * The event is marked processed BEFORE it is queued (so a crash mid-way cannot run it twice).
+   * If the queue itself refuses the job (Redis down, connection dropped) the mark must come off
+   * again: Wix retries the delivery, and without this the retry was rejected as a duplicate and
+   * the purchase never became a job (owner hub review 2026-10-15, bug 2). BullMQ's jobId
+   * (`grant-<eventId>`) still prevents a double job when both deliveries succeed.
+   */
+  async _unmarkEventProcessed(eventId) {
+    await db.query('DELETE FROM processed_event_ids WHERE event_id = $1', [eventId]);
+  }
+
+  async _enqueueOrUnmark(jobName, eventId, tenantId, standardEvent) {
+    const jobId = `${jobName}-${eventId}`;
+    try {
+      await eventQueue.add(jobName, { tenantId, standardEvent }, { jobId });
+    } catch (err) {
+      log.error('webhook.enqueue_failed', {
+        traceId: standardEvent.traceId || null, eventId, eventType: standardEvent.eventType,
+        clientId: tenantId, jobId, jobType: jobName, stage: 'queue', result: 'failed',
+      }, err);
+      try {
+        await this._unmarkEventProcessed(eventId);
+      } catch (unmarkErr) {
+        log.error('webhook.unmark_failed', { eventId, stage: 'queue', result: 'failed' }, unmarkErr);
+      }
+      throw err;
+    }
   }
 
   async _logToAlertLog(eventId, event, reason, clientId = null) {

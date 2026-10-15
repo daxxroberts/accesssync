@@ -24,6 +24,28 @@ const { getTraceId, getActor, setTraceContext } = require('./trace-context');
 
 class PlanMappingResolver {
 
+  /** @returns {'location_lapsed'|'group_unhealthy'|'no_group'} see resolve() */
+  async _whyNoMappings(tenantId, planId) {
+    try {
+      const r = await db.query(
+        `SELECT BOOL_OR(l.id IS NOT NULL AND bs.id IS NULL)                                   AS location_lapsed,
+                BOOL_OR(pmg.id IS NOT NULL AND COALESCE(pmg.health_status, 'ok') <> 'ok')     AS group_unhealthy
+           FROM plan_mappings pm
+           LEFT JOIN plan_mapping_groups pmg ON pmg.mapping_id = pm.id
+           LEFT JOIN locations l ON l.id = pm.location_id
+           LEFT JOIN billing_subscriptions bs ON bs.location_id = pm.location_id AND bs.status = 'active'
+          WHERE pm.client_id = $1 AND pm.source_plan_id = $2 AND pm.status = 'active'`,
+        [tenantId, planId]
+      );
+      const row = (r && r.rows && r.rows[0]) || {};
+      if (row.location_lapsed) return 'location_lapsed';
+      if (row.group_unhealthy) return 'group_unhealthy';
+    } catch (e) {
+      log.warn('plan.no_hardware_group.reason_failed', { tenantId, planId }, e);
+    }
+    return 'no_group';
+  }
+
   /**
    * Maps a source platform Plan ID to ALL active hardware group mappings for that plan.
    * Returns an array — one entry per active door/group mapped to this plan.
@@ -74,9 +96,20 @@ class PlanMappingResolver {
       );
 
       if (planExists.rows.length > 0) {
-        // Plan is mapped but has no hardware group assigned yet — Wix-first scenario
-        log.warn('plan.no_hardware_group', { tenantId, planId });
-        return []; // Empty array signals "recognized but not ready" (vs null = "unknown plan")
+        // The plan is mapped but nothing usable came back. Three different situations end here and
+        // only one of them is "not ready yet" (owner hub review 2026-10-15, bug 3):
+        //   no_group         the gym has not picked a door group yet (Wix-first flow) — park, no alarm
+        //   location_lapsed  the mapping's location has no active billing subscription — a paying
+        //                    member is parked with no door; AccessSync must act (SUBSCRIPTION_LAPSED)
+        //   group_unhealthy  every door group was marked not_found by the health check (deleted in
+        //                    Kisi) — the gym must pick a group that still exists
+        // The reason rides on the empty array as a non-enumerable property so the Array contract
+        // (and every `mappings.length === 0` caller) is unchanged.
+        const reason = await this._whyNoMappings(tenantId, planId);
+        log.warn('plan.no_hardware_group', { tenantId, planId, reason });
+        const empty = [];
+        Object.defineProperty(empty, 'noMappingReason', { value: reason, enumerable: false });
+        return empty; // Empty array signals "recognized but not ready" (vs null = "unknown plan")
       }
 
       log.warn('plan.not_mapped', { tenantId, planId });

@@ -319,6 +319,27 @@ function buildWixPayingView(reads) {
 
 class NightlyReconciliation {
 
+  /**
+   * Which clients are due for a sync. A client is due when it has never synced or its own
+   * reconciliation_interval has elapsed since its last_sync_at. Slack: last_sync_at is stamped when a
+   * sweep FINISHES and the scheduler fires every interval from when the previous sweep STARTED, so the
+   * next fire always lands a little short of a full interval; allow 10% early, at most 30 minutes.
+   * @param {Array<{id:string,last_sync_at:*,interval:string}>} rows
+   * @param {number} [now]
+   * @returns {string[]} client ids
+   */
+  static dueClientIds(rows, now = Date.now()) {
+    const intervalMs = { hourly: 3600000, '6h': 21600000, '12h': 43200000, daily: 86400000, weekly: 604800000 };
+    const due = [];
+    for (const r of rows) {
+      if (!r || !r.id) continue;
+      const minMs = intervalMs[r.interval] || 86400000;
+      const slackMs = Math.min(30 * 60 * 1000, Math.floor(minMs * 0.1));
+      if (!r.last_sync_at || (now - new Date(r.last_sync_at).getTime()) >= minMs - slackMs) due.push(r.id);
+    }
+    return due;
+  }
+
   constructor() {
     this.staleThresholdMinutes = 10;
     // The sweep reads Wix twice, this far apart, and treats a member as paying
@@ -657,29 +678,26 @@ class NightlyReconciliation {
     sweepLogger.info('reconciliation.sweep_start', { stage: 'cron', result: 'start', triggerSource });
 
     try {
-      // Recurrence gate: skip if not enough time has elapsed since last sweep (DR-018)
-      // Uses the first active client's reconciliation_interval as a global gate (V1: single client).
-      const lastSyncResult = await db.query(
-        `SELECT last_sync_at, COALESCE(reconciliation_interval, 'daily') AS interval
-         FROM clients WHERE status = 'active' ORDER BY last_sync_at DESC NULLS LAST LIMIT 1`
+      // Recurrence gate, PER CLIENT (DR-018). Until 2026-10-15 one client's last_sync_at and interval
+      // gated the whole sweep and then every client was synced: with two gyms on different intervals,
+      // one gym's setting controlled everyone's cadence (owner hub review, bug 7). Now each active
+      // client whose own interval has elapsed is synced; the rest wait for their turn.
+      const gateResult = await db.query(
+        `SELECT id, last_sync_at, COALESCE(reconciliation_interval, 'daily') AS interval
+         FROM clients WHERE status = 'active'`
       );
-      const { last_sync_at, interval } = lastSyncResult.rows[0] || {};
-      const intervalMs = { hourly: 3600000, '6h': 21600000, '12h': 43200000, daily: 86400000, weekly: 604800000 };
-      // Slack: last_sync_at is stamped when a sweep FINISHES, and the scheduler fires every interval from when the
-      // previous sweep STARTED — so the next fire always lands a little short of a full interval and was skipped,
-      // halving the cadence (a '6h' client was really synced every 12h). Allow 10% early, at most 30 minutes.
-      const minMs = intervalMs[interval] || 86400000;
-      const slackMs = Math.min(30 * 60 * 1000, Math.floor(minMs * 0.1));
-      if (last_sync_at && (Date.now() - new Date(last_sync_at).getTime()) < minMs - slackMs) {
-        sweepLogger.info('reconciliation.skipped', { reason: 'interval_not_elapsed', interval, stage: 'cron', result: 'skipped' });
+      const dueClientIds = NightlyReconciliation.dueClientIds(gateResult.rows || []);
+      if (dueClientIds.length === 0) {
+        sweepLogger.info('reconciliation.skipped', { reason: 'interval_not_elapsed', stage: 'cron', result: 'skipped' });
         return;
       }
+      sweepLogger.info('reconciliation.clients_due', { count: dueClientIds.length, stage: 'cron', result: 'start' });
 
       // Step 0: True-source sync — Wix ↔ DB diff, queue grants for paying members.
       // payingByClient collects each client's PAYING (member → plans) from this
       // sweep's Wix double read; the step-4 replay only re-grants members in it.
       const payingByClient = new Map();
-      await this._syncTrueSources(payingByClient);
+      await this._syncTrueSources(payingByClient, dueClientIds);
 
       // Step 1: Clean up stale in_flight records (crash protection).
       // OB-202: Stale lock → 'recovery_pending' (transient retry state).
@@ -718,8 +736,8 @@ class NightlyReconciliation {
       // Step 5: Send Operator Email Digest
       await this._generateAndSendDigest();
 
-      // Update last_sync_at for all active clients (DR-018)
-      await db.query(`UPDATE clients SET last_sync_at = NOW() WHERE status = 'active'`);
+      // Update last_sync_at for the clients this sweep actually synced (DR-018)
+      await db.query(`UPDATE clients SET last_sync_at = NOW() WHERE status = 'active' AND id = ANY($1::uuid[])`, [dueClientIds]);
 
       sweepLogger.info('reconciliation.sweep_complete', { stage: 'cron', result: 'success' });
     } catch (error) {
@@ -737,11 +755,13 @@ class NightlyReconciliation {
    * @param {Map} [payingByClient]  filled with clientId → Map<memberId, Set<planId>>
    *   (PAYING in either Wix read) for every client whose Wix double read succeeded.
    */
-  async _syncTrueSources(payingByClient = null) {
+  async _syncTrueSources(payingByClient = null, onlyClientIds = null) {
     const sweepLogger = this._sweepLogger || log;
     const sweepTraceId = this._sweepTraceId || null;
     sweepLogger.info('reconciliation.wix_sync_start', { traceId: sweepTraceId, stage: 'cron', result: 'start' });
 
+    // onlyClientIds: the clients whose own interval has elapsed (per-client cadence). null = every active client
+    // (operator-triggered and legacy callers).
     const clientsResult = await db.query(
       `SELECT c.id, c.source_site_id, c.source_api_key, c.last_active_member_count,
               cs.hardware_api_key, cs.hardware_platform
@@ -749,7 +769,9 @@ class NightlyReconciliation {
        JOIN connector_subscriptions cs ON cs.client_id = c.id AND cs.status = 'active'
        WHERE c.status = 'active'
          AND c.source_api_key IS NOT NULL
-         AND c.source_site_id IS NOT NULL`
+         AND c.source_site_id IS NOT NULL
+         AND ($1::uuid[] IS NULL OR c.id = ANY($1::uuid[]))`,
+      [onlyClientIds]
     );
 
     const triggerSource = this._sweepTriggerSource || 'unknown';

@@ -436,6 +436,15 @@ unaffected.
 | `admin.scheduler.armed` | info | In-process nightly reconcile scheduler armed at admin boot (OB-197). Downgraded from warn 2026-10 (routine lifecycle); the persist override in `EVENT_REGISTRY.json` still lands it in diagnostic_log. |
 | `admin.scheduler.reconcile_start` | info | In-process scheduler kicked off the nightly reconcile sweep (OB-197). Downgraded from warn 2026-10; still persisted via the override. |
 | `admin.scheduler.reconcile_complete` | info | In-process scheduler nightly reconcile sweep finished cleanly (OB-197). Downgraded from warn 2026-10; still persisted via the override. |
+| `admin.scheduler.health_check_armed` | info | In-process 6-hourly hardware key check armed at admin boot (owner hub review 2026-10-15, bug 4: the Railway cron for `core/hardware-health-check.js` never existed). Persisted via override. |
+| `admin.scheduler.health_check_start` | info | In-process scheduler kicked off the hardware key check. Persisted via override. |
+| `admin.scheduler.health_check_complete` | info | Hardware key check finished cleanly. Persisted via override. |
+| `admin.scheduler.health_check_failed` | error | Hardware key check threw. |
+| `reconciliation.clients_due` | info | Per-client recurrence gate (bug 7): how many active clients are due for a sync this run; only those are synced and stamped. Persisted via override. |
+| `webhook.enqueue_failed` | error | The job queue refused a webhook's job (Redis down). The processed mark is removed so Wix's retry goes through (bug 2). |
+| `webhook.unmark_failed` | error | Could not remove the processed mark after a failed enqueue; the event will be treated as a duplicate on retry. |
+| `queue.grant.parked.no_door` | warn | A PAYING member's plan resolved to no door because the location lapsed or every door group is gone; dead-lettered as `SUBSCRIPTION_LAPSED` / `HARDWARE_RESOURCE_NOT_FOUND` (bug 3). |
+| `plan.no_hardware_group.reason_failed` | warn | The resolver could not classify why a mapped plan has no door; treated as "no group chosen yet". |
 | `admin.scheduler.reconcile_failed` | error | In-process scheduler nightly reconcile sweep threw (OB-197). Persist override is redundant-but-explicit. |
 | `admin.wix_instance_wired` | info | **PERSISTED via EVENT_REGISTRY.json override (2026-05-27).** Wix App signed-instance verified and `clients.platform_instance_id` wired to the operator's client row. |
 | `admin.retry.unroutable_event_type` | warn | Phase 1 (2026-09-10, I-9) — a manual retry of an `error_queue` row was refused because its event type is neither a grant nor a revoke (`core/event-routing.js` `jobNameForEventType` → null). Nothing enqueued, the row is NOT marked resolved; single retry answers 422 `{ error, reason }`, bulk retry skips the row and counts it in `skipped`. Emitted by `admin/routes/errors.js` (single + bulk), `admin/routes/members.js` and the operator "Retry now" in `admin/routes/operator.js`. Context: `{ clientId, errorId, eventType, route, reason }` — `route` ∈ `admin.errors.retry`, `admin.errors.bulk_retry`, `admin.members.retry`, `operator.errors.retry`. |

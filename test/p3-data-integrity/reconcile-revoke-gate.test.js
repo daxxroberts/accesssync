@@ -334,7 +334,7 @@ function installWorld(world = {}) {
     if (s.includes('UPDATE reconciliation_run')) return { rows: [], rowCount: 1 };
 
     // ── runNightlySweep-only queries ──
-    if (s.includes('SELECT last_sync_at')) return { rows: [{ last_sync_at: world.lastSyncAt || null, interval: world.syncInterval || 'daily' }], rowCount: 1 };
+    if (s.includes('SELECT id, last_sync_at')) return { rows: [{ id: CLIENT_ID, last_sync_at: world.lastSyncAt || null, interval: world.syncInterval || 'daily' }], rowCount: 1 };
     if (s.includes('FROM clients c') && s.includes('JOIN connector_subscriptions')) {
       return { rows: [clientRow()], rowCount: 1 };
     }

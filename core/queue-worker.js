@@ -646,6 +646,33 @@ async function _processJobBody(job, traceId) {
         const lockResult = await standardAdapter.resolveAndLock(tenantId, standardEvent, 'kisi', null);
         memberId = lockResult.memberId;
         await standardAdapter.parkPendingHardware(memberId, tenantId, []);
+        // Only "no group chosen yet" is a quiet park. A lapsed location or a door group that no
+        // longer exists means a PAYING member has no door and nobody would be told: raise it as a
+        // dead-letter so it reaches the error list, the owner hub and the email (bug 3, 2026-10-15).
+        const noDoorReason = mappings.noMappingReason || 'no_group';
+        if (noDoorReason === 'location_lapsed' || noDoorReason === 'group_unhealthy') {
+          logger.warn('queue.grant.parked.no_door', {
+            clientId, memberId, eventId, reason: noDoorReason,
+            platformMemberId: standardEvent.platformMemberId,
+            planId: standardEvent.planId,
+            stage: 'grant', result: 'failed',
+          });
+          const noDoorErr = new Error(noDoorReason === 'location_lapsed'
+            ? `Location subscription lapsed — no door for plan ${standardEvent.planId}`
+            : `Every door group for plan ${standardEvent.planId} is gone from the door system`);
+          if (noDoorReason === 'location_lapsed') {
+            noDoorErr.code = 'SUBSCRIPTION_LAPSED';
+            noDoorErr.userMessage = 'A member paid for a plan at a location whose AccessSync subscription is not active, so they have no door access.';
+            noDoorErr.action = 'AccessSync will reactivate the location.';
+          } else {
+            noDoorErr.code = 'HARDWARE_RESOURCE_NOT_FOUND';
+            noDoorErr.resolution = 'REMAP_PLAN';
+            noDoorErr.userMessage = 'A member paid for a plan whose door group no longer exists in your door system, so they have no door access.';
+            noDoorErr.action = 'Open Plan Mapping and choose a door group that still exists, then press Retry.';
+          }
+          await retryEngine.handleFailure({ id: job.id, data: job.data }, noDoorErr);
+          return;
+        }
         logger.info('queue.grant.parked.no_mapping', {
           clientId, memberId, eventId,
           platformMemberId: standardEvent.platformMemberId,

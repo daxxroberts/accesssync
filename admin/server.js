@@ -342,6 +342,37 @@ if (DAY_PASS_SWEEP_ENABLED) {
   });
 }
 
+// ── In-process hardware key check (every 6h) ─────────────────────────────────
+// core/hardware-health-check.js validates each gym's stored Kisi key (and marks door groups that no
+// longer exist) and was meant to run as a Railway cron. No such cron exists: live
+// connector_subscriptions.key_last_verified was NULL and no check had run in 60 days (owner hub review
+// 2026-10-15, bug 4). Same shape as the two schedulers above; DISABLE_INPROCESS_HEALTH_CHECK=1 silences it.
+const HEALTH_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const HEALTH_CHECK_INITIAL_DELAY_MS = 10 * 60 * 1000;
+const HEALTH_CHECK_ENABLED = process.env.NODE_ENV !== 'test'
+  && process.env.DISABLE_INPROCESS_HEALTH_CHECK !== '1';
+
+if (HEALTH_CHECK_ENABLED) {
+  const fireHealthCheck = async () => {
+    try {
+      log.info('admin.scheduler.health_check_start', { trigger: 'inprocess_scheduler' });
+      const { runHealthCheck } = require('../core/hardware-health-check');
+      await runHealthCheck();
+      log.info('admin.scheduler.health_check_complete', { trigger: 'inprocess_scheduler' });
+    } catch (err) {
+      log.error('admin.scheduler.health_check_failed', { trigger: 'inprocess_scheduler' }, err);
+    }
+  };
+  setTimeout(() => {
+    fireHealthCheck();
+    setInterval(fireHealthCheck, HEALTH_CHECK_INTERVAL_MS);
+  }, HEALTH_CHECK_INITIAL_DELAY_MS);
+  log.info('admin.scheduler.health_check_armed', {
+    initial_delay_minutes: HEALTH_CHECK_INITIAL_DELAY_MS / 60000,
+    interval_hours: HEALTH_CHECK_INTERVAL_MS / 3_600_000,
+  });
+}
+
 // ── Prevent silent crashes ─────────────────────────────────────
 process.on('uncaughtException', (err) => {
   log.critical('admin.uncaught_exception', {}, err);

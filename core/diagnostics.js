@@ -53,10 +53,10 @@ async function diagnoseMember(memberId) {
   }
   const member = memberResult.rows[0];
 
-  if (member.access_status === 'failed') {
-    verdict = 'failed';
-    findings.push({ level: 'error', code: 'STATUS_FAILED', message: 'Member access status is failed — grant job exhausted retries or was never completed.' });
-  } else if (!member.access_status) {
+  // Since S-11 (DR-046) member_access.status is active / inactive / in_flight / pending_identity /
+  // recovery_pending; a failed grant is recorded on the member_access_sources row. The source check
+  // below sets the Failed verdict (owner hub review 2026-10-15, defect 9).
+  if (!member.access_status) {
     verdict = 'degraded';
     findings.push({ level: 'warn', code: 'NO_ACCESS_ROW', message: 'No member_access row found — member identity exists but no access record.' });
   } else if (member.access_status !== 'active') {
@@ -86,6 +86,7 @@ async function diagnoseMember(memberId) {
   const sourcesResult = await db.query(
     `SELECT mas.id, mas.access_id, mas.mapping_id, mas.role_assignment_id,
             mas.source_type, mas.source_plan_id, mas.effective_start, mas.valid_until,
+            mas.status AS source_status, mas.failure_reason,
             pm.plan_name, pm.status AS mapping_status
      FROM member_access_sources mas
      JOIN member_access ma ON ma.id = mas.access_id
@@ -95,6 +96,10 @@ async function diagnoseMember(memberId) {
   );
   const sources = sourcesResult.rows;
   for (const src of sources) {
+    if (src.source_status === 'failed') {
+      verdict = 'failed';
+      findings.push({ level: 'error', code: 'STATUS_FAILED', message: `Door assignment for "${src.plan_name || src.source_plan_id}" failed${src.failure_reason ? ': ' + src.failure_reason : ''} — grant exhausted retries or was never completed.` });
+    }
     if (src.mapping_status === 'inactive') {
       findings.push({ level: 'warn', code: 'SOURCE_INACTIVE_MAPPING', message: `Source row references inactive mapping "${src.plan_name}" — plan was disabled but source row was not cleaned up.` });
       if (verdict === 'healthy') verdict = 'degraded';
