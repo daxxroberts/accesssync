@@ -144,12 +144,23 @@ describe('OB-247: Pass 1.5 holder-lapse sub-member removal proposals (recorded a
       );
     });
 
-    test('…and refuses to enqueue anything while the sweep is observation-only', () => {
+    test('…and refuses to enqueue anything while the sweep is observation-only, except an explicitly armed HOLDER_LAPSE call (Phase 3b, 2026-10-15)', () => {
       expect(reconcileSrc).toMatch(/const SWEEP_OBSERVATION_ONLY = true;/);
-      const fnIdx = reconcileSrc.search(/async _enqueueApprovedRevoke\(clientId, p\) \{/);
+      const fnIdx = reconcileSrc.search(/async _enqueueApprovedRevoke\(clientId, p, \{ armed = false \} = \{\}\) \{/);
       expect(fnIdx).toBeGreaterThan(-1);
-      const body = reconcileSrc.slice(fnIdx, fnIdx + 600);
-      expect(body).toMatch(/if \(SWEEP_OBSERVATION_ONLY\) \{[\s\S]*return false;/);
+      const body = reconcileSrc.slice(fnIdx, fnIdx + 900);
+      expect(body).toMatch(/armed && !!p && p\.source === REVOKE_SOURCE\.HOLDER_LAPSE && holderLapseRemovalArmed\(\)/);
+      expect(body).toMatch(/if \(SWEEP_OBSERVATION_ONLY && !armedHolderLapse\) \{[\s\S]*return false;/);
+    });
+
+    test('Phase 3b arms HOLDER_LAPSE + ENDED only, never in an anomaly-held sweep, with removal explicitly armed', () => {
+      expect(reconcileSrc).toMatch(/p\.source === REVOKE_SOURCE\.HOLDER_LAPSE && p\.classification === 'ENDED'/);
+      expect(reconcileSrc).toMatch(/\(!anomalyHold && holderLapseRemovalArmed\(\)\)/);
+      const armedIdx = reconcileSrc.search(/proposals:\s+armedProposals,/);
+      expect(armedIdx).toBeGreaterThan(-1);
+      expect(reconcileSrc.slice(armedIdx, armedIdx + 400)).toMatch(/observationOnly: false,/);
+      // ABSENT never carries a strike, so it can never ripen
+      expect(reconcileSrc).toMatch(/const strike = String\(holderClass\) === 'ENDED'/);
     });
   });
 

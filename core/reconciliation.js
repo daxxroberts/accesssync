@@ -47,6 +47,30 @@ const { jobNameForEventType } = require('./event-routing');
 // flipping it alone arms nothing; 3b must also add the flush back.
 const SWEEP_OBSERVATION_ONLY = true;
 
+// ── Phase 3b, first arming (2026-10-15): holder-lapse removals ───────────────────────────
+// The sweep may REMOVE for exactly one source: a sub-member whose holder's Wix order for
+// that plan has ENDED (Pass 1.5, REVOKE_SOURCE.HOLDER_LAPSE, classification ENDED).
+// Everything else stays observation-only under SWEEP_OBSERVATION_ONLY above.
+//
+// Why now: the webhook path takes seats down the moment Wix ends the holder's order
+// (queue-worker.js _cascadeHolderLapse, 2026-10-15). This is the backstop for whatever
+// that misses — and for the seats that lapsed before it existed: a Family order ended
+// 2026-10-04 and its four seats held the door for eleven days while 23 sweeps proposed
+// and held them.
+//
+// Safety: an armed proposal passes the SAME policy as everything else
+// (evaluateRemovals with observationOnly:false): both Wix reads agree, no mass-removal
+// anomaly in the whole batch, clients.auto_revoke_mode 'on', AND the strike clock. A
+// sub-member carries no not-paying clock of its own, so its strike is this sweep's own
+// history (_readHolderLapseStrikes): the prior NON-anomaly sweeps that each proposed
+// this (seat, plan) with the holder ENDED — DEFAULT_STRIKE_POLICY = at least 3 of them
+// over at least 48 h. ABSENT (no order found at all) is NOT armed: that could be a read
+// gap. RECONCILE_HOLDER_LAPSE_REMOVAL=off is the kill switch (read per sweep).
+const HOLDER_LAPSE_SYNTHETIC_SOURCE = 'reconciliation.holder_lapse';
+function holderLapseRemovalArmed() {
+  return process.env.RECONCILE_HOLDER_LAPSE_REMOVAL !== 'off';
+}
+
 // config_alert_log.alert_type raised when the removal policy holds a batch
 // because the data looks wrong (as opposed to an operator mode or Phase 1's
 // observation-only hold). Anything unmapped falls back to `revoke_<reason>`.
@@ -465,6 +489,47 @@ class NightlyReconciliation {
    *
    * @returns {Promise<number>} rows recorded
    */
+  /**
+   * Phase 3b — the strike clock for holder-lapse removals, read from this sweep's own
+   * history: for each (seat, plan) that prior sweeps proposed with the holder's order
+   * ENDED, the first such sweep (`since`) and how many there were (`observations`).
+   * Sweeps the policy held as an anomaly (invalid input, unstable reads, mass removal)
+   * are left out — an anomaly-held sweep must never ripen anyone's strike. This
+   * sweep's own proposal is recorded after the decision, so it never counts itself.
+   *
+   * @returns {Promise<Map<string, {since: string, observations: number}>>}
+   *   key `${platform_member_id}|${source_plan_id}`; empty on any read failure (fail-closed)
+   */
+  async _readHolderLapseStrikes(clientId) {
+    const strikes = new Map();
+    try {
+      const res = await db.query(
+        `SELECT platform_member_id, source_plan_id,
+                MIN(created_at)        AS since,
+                COUNT(DISTINCT run_id) AS observations
+           FROM reconciliation_proposal
+          WHERE client_id = $1
+            AND kind = 'removal_pending'
+            AND source = 'holder_lapse'
+            AND classification = 'ENDED'
+            AND (hold_reason IS NULL OR hold_reason NOT IN ('invalid_proposal', 'snapshot_unstable', 'mass_revoke'))
+          GROUP BY platform_member_id, source_plan_id`,
+        [clientId]
+      );
+      for (const r of (res && res.rows) || []) {
+        const since = r.since instanceof Date ? r.since.toISOString() : (r.since ? new Date(r.since).toISOString() : null);
+        const observations = Number(r.observations);
+        if (!since || !Number.isFinite(observations)) continue;
+        strikes.set(`${r.platform_member_id}|${r.source_plan_id}`, { since, observations });
+      }
+    } catch (err) {
+      log.warn('reconciliation.holder_lapse_strike_read_failed', {
+        clientId, errorCode: (err && err.code) || null, traceId: this._sweepTraceId,
+      }, err);
+    }
+    return strikes;
+  }
+
   async _recordProposals(clientId, runId, records) {
     if (!Array.isArray(records) || records.length === 0) return 0;
     let recorded = 0;
@@ -773,7 +838,8 @@ class NightlyReconciliation {
     let granted = 0;
     // Phase 1: the sweep never enqueues a revoke. Kept in the return and the
     // reconciliation_run row (revokes_queued) so both still read honestly.
-    const revoked = 0;
+    // Phase 3b: counts the holder-lapse removals this sweep actually queued.
+    let revoked = 0;
     const skippedHolderOptin = 0; // always 0 since DR-049; kept for callers
 
     // Open the audit row immediately so even an early abort is recorded
@@ -1600,6 +1666,11 @@ class NightlyReconciliation {
     // it is not at risk and does not count.
     const pass15HolderUnits = new Set();
     try {
+      // Phase 3b: a seat's strike clock is this sweep's own history (see the arming
+      // note by SWEEP_OBSERVATION_ONLY). Read once per client; a failed read leaves
+      // every seat without a clock this sweep — never ripe, fail-closed.
+      const holderLapseStrikes = await this._readHolderLapseStrikes(client.id);
+
       const subSourcesResult = await db.query(
         `SELECT DISTINCT sub.id AS sub_access_id,
                 sub_mm.platform_member_id,
@@ -1651,11 +1722,19 @@ class NightlyReconciliation {
             sourcePlatform:   'wix',
             planId:           source.source_plan_id,
             synthetic:        true,
+            // DR-052: on the access-removed email allow-list — the seat's access
+            // really ended with the holder's order (Phase 3b).
+            syntheticSource:  HOLDER_LAPSE_SYNTHETIC_SOURCE,
+            holderPlatformMemberId: holderKey,
             traceId:          subTraceId,
           };
           const jobId = `pass1.5-${source.sub_access_id}-${source.source_plan_id}-${Date.now()}`;
-          // Proposal only — recorded and held (Phase 1). sub_member_holder_lapsed
-          // is emitted only when a revoke is actually enqueued (Phase 3b).
+          // Recorded and held — unless Phase 3b arms it below: only an ENDED holder
+          // order carries a strike (the sweep's own history); ABSENT never does.
+          // sub_member_holder_lapsed is emitted only when a revoke is actually enqueued.
+          const strike = String(holderClass) === 'ENDED'
+            ? (holderLapseStrikes.get(`${source.platform_member_id}|${source.source_plan_id}`) || null)
+            : null;
           revokeProposals.push({
             source:         REVOKE_SOURCE.HOLDER_LAPSE,
             dataSource:     DATA_SOURCE.WIX_ORDERS,
@@ -1665,6 +1744,7 @@ class NightlyReconciliation {
             accessId:       source.sub_access_id,
             holderKey,
             classification: holderClass,
+            strike,
             syntheticEvent,
             jobId,
           });
@@ -1976,6 +2056,54 @@ class NightlyReconciliation {
       : (decision.action === 'hold' ? (decision.reason || REVOKE_HOLD_REASON.INVALID_PROPOSAL) : null);
     const anomalyHold = holdReason !== null && ANOMALY_HOLD_REASONS.includes(holdReason);
 
+    // ── Phase 3b (first arming): holder-lapse removals — see the note by
+    // SWEEP_OBSERVATION_ONLY. The whole-batch decision above stays as it is; only
+    // the HOLDER_LAPSE + ENDED proposals are judged again with removal armed, and
+    // never in a sweep the whole batch held as an anomaly (the reads are suspect).
+    const flushedProposals = new Set();
+    const armedProposals = (!anomalyHold && holderLapseRemovalArmed())
+      ? revokeProposals.filter(p => p.source === REVOKE_SOURCE.HOLDER_LAPSE && p.classification === 'ENDED')
+      : [];
+    if (armedProposals.length > 0) {
+      const armedDecision = evaluateRemovals({
+        proposals:       armedProposals,
+        currentManaged,
+        populationByDataSource,
+        readDisagreement,
+        mode,
+        observationOnly: false,
+        now,
+        strikePolicy:    DEFAULT_STRIKE_POLICY,
+      });
+      for (const p of armedDecision.flush) {
+        try {
+          // DR-044 entry state, exactly as the Member Hub and the webhook cascade do.
+          await standardAdapter.markSubMemberRemoving(p.accessId);
+          if (await this._enqueueApprovedRevoke(client.id, p, { armed: true })) {
+            revoked++;
+            flushedProposals.add(p);
+          }
+        } catch (err) {
+          log.error('reconciliation.holder_lapse_removal_failed', {
+            clientId: client.id, subAccessId: p.accessId, platformMemberId: p.memberKey,
+            sourcePlanId: p.planId, traceId: this._sweepTraceId,
+          }, err);
+        }
+      }
+      log.info('reconciliation.holder_lapse_armed', {
+        clientId:      client.id,
+        armed:         armedProposals.length,
+        queued:        flushedProposals.size,
+        action:        armedDecision.action,
+        reason:        armedDecision.reason || null,
+        detail:        armedDecision.detail || null,
+        strikePending: Array.isArray(armedDecision.strikePending) ? armedDecision.strikePending.length : 0,
+        mode,
+        traceId:       this._sweepTraceId,
+      });
+    }
+    const heldRevokeCount = revokeProposals.length - flushedProposals.size;
+
     // ── When strike clocks may move (fix round 3 — Phase 3b depends on this) ──
     // THE RULE: an anomaly-held sweep never ADVANCES a clock; clears always
     // run, because clearing only ever delays a removal.
@@ -2080,7 +2208,7 @@ class NightlyReconciliation {
     }
 
     if (revokeProposals.length > 0) {
-      const heldKeys = [...new Set(revokeProposals.map(p => p.memberKey))];
+      const heldKeys = [...new Set(revokeProposals.filter(p => !flushedProposals.has(p)).map(p => p.memberKey))];
       log.warn('reconciliation.revokes_held', {
         clientId:         client.id,
         reason:           holdReason,
@@ -2088,8 +2216,9 @@ class NightlyReconciliation {
         dataSource:       decision.dataSource || null,
         mode,
         observationOnly:  SWEEP_OBSERVATION_ONLY,
-        heldCount:        revokeProposals.length,
+        heldCount:        heldRevokeCount,
         heldMembers:      heldKeys.length,
+        queuedCount:      flushedProposals.size,   // Phase 3b holder-lapse removals that reached the queue
         // What every cap counts (P-1): a family is one unit.
         heldUnits:        new Set(revokeProposals.map(proposalUnit)).size,
         bySource:         countBySource(revokeProposals),
@@ -2156,7 +2285,7 @@ class NightlyReconciliation {
       && PER_MEMBER_ALERT_SUPPRESSING_REASONS.includes(holdReason);
     if (!perMemberAlertsSuppressed) {
       const holderLapseKeys = new Set(revokeProposals
-        .filter(p => p.source === REVOKE_SOURCE.HOLDER_LAPSE).map(p => p.memberKey));
+        .filter(p => p.source === REVOKE_SOURCE.HOLDER_LAPSE && !flushedProposals.has(p)).map(p => p.memberKey));
       for (const memberKey of holderLapseKeys) {
         await this._insertAlertOnce(client.id, SWEEP_ALERT.HOLDER_LAPSE_PENDING, `member:${memberKey}`);
       }
@@ -2175,8 +2304,8 @@ class NightlyReconciliation {
 
     // ── Proposal log (reconciliation_proposal) — every proposal, one INSERT ────
     const proposalRecords = [
-      ...revokeProposals.map(p => this._proposalRecord(p, PROPOSAL_KIND.REMOVAL_PENDING, holdReason, {
-        mode, decision, payingInRead, strikeAdvanced: strikeAdvanced.has(p),
+      ...revokeProposals.map(p => this._proposalRecord(p, PROPOSAL_KIND.REMOVAL_PENDING, flushedProposals.has(p) ? null : holdReason, {
+        mode, decision, payingInRead, strikeAdvanced: strikeAdvanced.has(p), queued: flushedProposals.has(p),
       })),
       // Repairs are not armed in Phase 1 either (3a) — held, observation only.
       ...repairProposals.map(p => this._proposalRecord(p, PROPOSAL_KIND.REPAIR_PENDING, REVOKE_HOLD_REASON.OBSERVATION_ONLY, { mode, decision: null, payingInRead })),
@@ -2301,7 +2430,7 @@ class NightlyReconciliation {
       wixActive: wixMembers.size, kisiManaged: kisiMembers.size,
       granted, revoked, skippedHolderOptin,
       sanityGateTriggered, sanityGateResolved,
-      heldRevokes: revokeProposals.length, holdReason,
+      heldRevokes: heldRevokeCount, holdReason,
       repairsPending: repairProposals.length,
       heldPaymentState: heldPaymentState.length,
       observationOnly: SWEEP_OBSERVATION_ONLY, proposalsRecorded, mode,
@@ -2311,7 +2440,7 @@ class NightlyReconciliation {
 
     return this._syncResult({
       granted, revoked, skippedHolderOptin, runId, sanityGateTriggered, sanityGateResolved,
-      heldRevokes: revokeProposals.length, holdReason, proposalsRecorded,
+      heldRevokes: heldRevokeCount, holdReason, proposalsRecorded,
     });
   }
 
@@ -2326,7 +2455,7 @@ class NightlyReconciliation {
    * an observation on it (never during an anomaly hold, nor when the clock
    * read failed).
    */
-  _proposalRecord(p, kind, holdReason, { mode, decision, payingInRead, strikeAdvanced = false }) {
+  _proposalRecord(p, kind, holdReason, { mode, decision, payingInRead, strikeAdvanced = false, queued = false }) {
     const judgeKey = p.holderKey || p.memberKey;
     return {
       platformMemberId: p.memberKey,
@@ -2336,8 +2465,9 @@ class NightlyReconciliation {
       source:           p.source,
       dataSource:       p.dataSource,
       classification:   p.classification || null,
-      decision:         'held',
-      holdReason,
+      // 'queued' = Phase 3b armed this one and its revoke reached the queue.
+      decision:         queued ? 'queued' : 'held',
+      holdReason:       queued ? null : holdReason,
       evidence: {
         accessId:            p.accessId || null,
         hardwareUserId:      p.hardwareUserId || null,
@@ -2349,7 +2479,7 @@ class NightlyReconciliation {
         memberPayingInRead1: payingInRead[0].has(judgeKey),
         memberPayingInRead2: payingInRead[1].has(judgeKey),
         mode,
-        observationOnly:     SWEEP_OBSERVATION_ONLY,
+        observationOnly:     queued ? false : SWEEP_OBSERVATION_ONLY,
         policyDetail:        decision ? (decision.detail || null) : null,
         policyDataSource:    decision ? (decision.dataSource || null) : null,
       },
@@ -2370,8 +2500,11 @@ class NightlyReconciliation {
    * @param {Object} p  a proposal from _syncClient's revokeProposals
    * @returns {Promise<boolean>} true when the job reached the queue
    */
-  async _enqueueApprovedRevoke(clientId, p) {
-    if (SWEEP_OBSERVATION_ONLY) {
+  async _enqueueApprovedRevoke(clientId, p, { armed = false } = {}) {
+    // Phase 3b: the one armed source gets through; every other call is still refused
+    // while the sweep is observation-only.
+    const armedHolderLapse = armed && !!p && p.source === REVOKE_SOURCE.HOLDER_LAPSE && holderLapseRemovalArmed();
+    if (SWEEP_OBSERVATION_ONLY && !armedHolderLapse) {
       log.warn('reconciliation.revoke_enqueue_refused_observation_only', {
         clientId, source: p && p.source, platformMemberId: p && p.memberKey,
         sourcePlanId: p && p.planId, traceId: this._sweepTraceId,

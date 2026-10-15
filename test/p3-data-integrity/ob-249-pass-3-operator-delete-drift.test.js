@@ -194,12 +194,14 @@ describe('OB-249: Pass 3 operator-deleted-Kisi-user drift detection', () => {
       );
     });
 
-    test('…and it refuses to enqueue anything while the sweep is observation-only', () => {
+    test('…and it refuses to enqueue anything while the sweep is observation-only (Pass 3 sources are not the one Phase 3b armed on 2026-10-15)', () => {
       expect(reconcileSrc).toMatch(/const SWEEP_OBSERVATION_ONLY = true;/);
-      const fnIdx = reconcileSrc.search(/async _enqueueApprovedRevoke\(clientId, p\) \{/);
+      const fnIdx = reconcileSrc.search(/async _enqueueApprovedRevoke\(clientId, p, \{ armed = false \} = \{\}\) \{/);
       expect(fnIdx).toBeGreaterThan(-1);
-      const body = reconcileSrc.slice(fnIdx, fnIdx + 600);
-      expect(body).toMatch(/if \(SWEEP_OBSERVATION_ONLY\) \{[\s\S]*return false;/);
+      const body = reconcileSrc.slice(fnIdx, fnIdx + 900);
+      // only an explicitly armed HOLDER_LAPSE call gets through; KISI_USER_VANISHED / ROLE_DRIFT never do
+      expect(body).toMatch(/p\.source === REVOKE_SOURCE\.HOLDER_LAPSE && holderLapseRemovalArmed\(\)/);
+      expect(body).toMatch(/if \(SWEEP_OBSERVATION_ONLY && !armedHolderLapse\) \{[\s\S]*return false;/);
     });
 
     const overrides = JSON.parse(fs.readFileSync(

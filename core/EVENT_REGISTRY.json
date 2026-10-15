@@ -29,6 +29,7 @@
     "queue.job.member_busy_parked":                   { "persist": false },
     "queue.revoke.holder_lapse.cascade_queued":       { "persist": true },
     "queue.revoke.holder_lapse.cascade_disabled":     { "persist": true },
+    "reconciliation.holder_lapse_armed":              { "persist": true },
     "adapter.identity.create_409_recovering":         { "persist": true },
 
     "operator.sync.revoke_skipped":       { "persist": true },
