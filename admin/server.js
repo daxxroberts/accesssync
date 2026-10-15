@@ -372,6 +372,29 @@ if (HEALTH_CHECK_ENABLED) {
   });
 }
 
+// ── Owner daily email (once per UTC day, during OWNER_DAILY_HOUR_UTC) ───────────
+// core/owner-daily-email.js: the Hub's verdict and one line per problem, to the AccessSync owner, every day
+// INCLUDING an all-clear so a missing email always means something is wrong. Checked every 15 minutes; the
+// once-a-day guard is the logger's email.owner_daily.sent row, so a redeploy during the hour never sends twice.
+// DISABLE_OWNER_DAILY_EMAIL=1 silences it. Default hour 13:00 UTC (early morning US Central).
+const OWNER_DAILY_CHECK_MS = 15 * 60 * 1000;
+const OWNER_DAILY_HOUR_UTC = Number.isInteger(parseInt(process.env.OWNER_DAILY_HOUR_UTC, 10)) ? parseInt(process.env.OWNER_DAILY_HOUR_UTC, 10) : 13;
+const OWNER_DAILY_ENABLED = process.env.NODE_ENV !== 'test'
+  && process.env.DISABLE_OWNER_DAILY_EMAIL !== '1';
+
+if (OWNER_DAILY_ENABLED) {
+  const tick = async () => {
+    try {
+      const { maybeSendOwnerDaily } = require('../core/owner-daily-email');
+      await maybeSendOwnerDaily({ hourUtc: OWNER_DAILY_HOUR_UTC });
+    } catch (err) {
+      log.error('admin.scheduler.owner_daily_failed', { trigger: 'inprocess_scheduler' }, err);
+    }
+  };
+  setTimeout(() => { tick(); setInterval(tick, OWNER_DAILY_CHECK_MS); }, 60 * 1000);
+  log.info('admin.scheduler.owner_daily_armed', { hour_utc: OWNER_DAILY_HOUR_UTC, check_minutes: OWNER_DAILY_CHECK_MS / 60000 });
+}
+
 // ── Prevent silent crashes ─────────────────────────────────────
 process.on('uncaughtException', (err) => {
   log.critical('admin.uncaught_exception', {}, err);

@@ -546,7 +546,7 @@ function describeFailedJob(row) {
   return 'Something went wrong handling ' + subject + '’s access' + onPlan + '.';
 }
 
-function renderNightlyDigest({ configAlerts, failedJobs }) {
+function renderNightlyDigest({ configAlerts, failedJobs, clientId }) {
   const alerts = Array.isArray(configAlerts) ? configAlerts : [];
   const jobs   = Array.isArray(failedJobs)   ? failedJobs   : [];
   const total  = alerts.length + jobs.length;
@@ -591,10 +591,10 @@ function renderNightlyDigest({ configAlerts, failedJobs }) {
     bodyText,
     actionNeeded: true,
     ctaText: 'Review and dismiss',
-    // Cross-tenant by nature (spans every client with an open alert or failed job) —
-    // no single clientId applies, so this points at the owner's cross-tenant view
-    // instead of the per-client /errors page (which renders nothing without one).
-    ctaUrl: hubLink('/admin-errors'),
+    // Since 2026-10-15 this is the GYM's daily (one per gym, to the gym's own notification email): the
+    // CTA opens that gym's Errors page. Without a clientId (rows tied to no gym go to the owner) it points
+    // at the owner's cross-tenant view, since /errors renders nothing without a client.
+    ctaUrl: clientId ? hubLink('/errors', clientId) : hubLink('/admin-errors'),
   });
 
   const subject = total === 1
@@ -602,6 +602,71 @@ function renderNightlyDigest({ configAlerts, failedJobs }) {
     : '[AccessSync] ' + total + ' things need a look';
 
   return { subject, html, text };
+}
+
+/** "2h ago" / "3d ago" for the owner daily; past facts stay plain text. */
+function ago(iso) {
+  if (!iso) return '';
+  const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
+  if (h < 1) return 'under an hour ago';
+  if (h < 48) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+
+/**
+ * Owner daily (proposal §3): to the AccessSync owner, every day INCLUDING an all-clear. Subject = the Hub's
+ * verdict line. One line per problem: gym, what, who acts, since. Counts only — never member names (the
+ * problem texts from core/owner-health.js are counts by construction).
+ * @param health  the computeOwnerHealth() result with verdict_line
+ */
+function renderOwnerDaily(health) {
+  const h = health || {};
+  const problems = Array.isArray(h.problems) ? h.problems : [];
+  const platform = Array.isArray(h.platform) ? h.platform : [];
+  const healthy  = Array.isArray(h.healthy)  ? h.healthy  : [];
+  const verdict  = h.verdict_line || (h.verdict === 'green' ? 'All gyms OK' : 'Needs a look');
+  const who = (o) => (o === 'gym' ? 'the gym' : 'you');
+
+  const sectionsHtml = [];
+  const sectionsText = [];
+  if (problems.length) {
+    const items = problems.map(p => {
+      const line = (p.client_name || 'A gym') + ' — ' + p.text + ' (' + who(p.owner) + (p.since ? ', since ' + ago(p.since) : '') + ')';
+      const link = p.link ? hubLink(p.link) : hubLink('/dashboard', p.client_id);
+      return { line, link };
+    });
+    sectionsHtml.push('<p style="margin:16px 0 6px 0;font-weight:bold;">What needs doing</p><ul style="margin:0 0 8px 0;padding-left:20px;">' +
+      items.map(i => '<li style="margin-bottom:6px;">' + escapeHtml(i.line) + ' <a href="' + escapeHtml(i.link) + '">Open</a></li>').join('') + '</ul>');
+    sectionsText.push('What needs doing\n' + items.map(i => '  • ' + i.line + '\n    ' + i.link).join('\n'));
+  }
+  if (platform.length) {
+    sectionsHtml.push('<p style="margin:16px 0 6px 0;font-weight:bold;">Platform</p><ul style="margin:0 0 8px 0;padding-left:20px;">' +
+      platform.map(r => '<li style="margin-bottom:6px;">' + escapeHtml(r.text) + '</li>').join('') + '</ul>');
+    sectionsText.push('Platform\n' + platform.map(r => '  • ' + r.text).join('\n'));
+  }
+  if (healthy.length) {
+    const lines = healthy.map(g => g.client_name + ' — last sale ' + (g.last_webhook_at ? ago(g.last_webhook_at) : 'none yet') + ', last sync ' + (g.last_success_at ? ago(g.last_success_at) : 'none yet'));
+    sectionsHtml.push('<p style="margin:16px 0 6px 0;font-weight:bold;">' + (problems.length ? 'OK' : 'Every gym') + '</p><ul style="margin:0 0 8px 0;padding-left:20px;">' +
+      lines.map(l => '<li style="margin-bottom:6px;">' + escapeHtml(l) + '</li>').join('') + '</ul>');
+    sectionsText.push((problems.length ? 'OK' : 'Every gym') + '\n' + lines.map(l => '  • ' + l).join('\n'));
+  }
+  const actionNeeded = h.verdict !== 'green' || platform.length > 0;
+  const lead = actionNeeded
+    ? (problems.length + platform.length) + ' thing' + (problems.length + platform.length === 1 ? '' : 's') + ' to look at today.'
+    : 'Nothing needs you today. This email arrives every day; if it ever stops, something is wrong.';
+  const banner = h.check_failed ? '<p style="margin:0 0 8px 0;color:#92400e;">' + escapeHtml(h.check_failed) + '</p>' : '';
+
+  const bodyHtml = banner + '<p style="margin:0 0 4px 0;">' + escapeHtml(lead) + '</p>' + sectionsHtml.join('');
+  const bodyText = (h.check_failed ? h.check_failed + '\n\n' : '') + lead + (sectionsText.length ? '\n\n' + sectionsText.join('\n\n') : '');
+  const { html, text } = renderLayout({
+    heading: verdict,
+    bodyHtml,
+    bodyText,
+    actionNeeded,
+    ctaText: 'Open the Owner Hub',
+    ctaUrl: hubLink('/OwnerDashboard'),
+  });
+  return { subject: '[AccessSync] ' + verdict, html, text };
 }
 
 module.exports = {
@@ -616,6 +681,7 @@ module.exports = {
   renderHmacAlert,
   renderMemberFailureAlert,
   renderNightlyDigest,
+  renderOwnerDaily,
   describeConfigAlert,
   describeFailedJob,
 };

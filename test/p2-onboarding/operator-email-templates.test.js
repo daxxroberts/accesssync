@@ -162,7 +162,7 @@ describe('[P2] operator-email-templates — clientId deep links (2026-09-07 fix)
     expect(r.text).not.toContain('clientId=null');
   });
 
-  test('renderNightlyDigest always links to /admin-errors — cross-tenant, no single clientId applies', () => {
+  test('renderNightlyDigest without a clientId links to /admin-errors — rows tied to no gym go to the owner', () => {
     const r = T.renderNightlyDigest({
       configAlerts: [{ alert_type: 'group_not_found', locationName: 'Main Gym', doorName: 'Front Door' }],
       failedJobs: [],

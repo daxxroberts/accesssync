@@ -493,6 +493,19 @@ async function _maybeNotifyFailure(loc, errorType, message, platform) {
     `UPDATE connector_subscriptions SET key_last_alerted_at = NOW() WHERE id = $1`,
     [loc.connector_id]
   ).catch(e => log.error('health.connector_update_failed', { connectorId: loc.connector_id }, e));
+
+  // The AccessSync owner gets a copy (owner hub proposal 2026-10-15 §3): before this the owner only heard
+  // about a failing key when the gym had no email set, and a gym that ignores the alert has no door.
+  const ownerEmail = process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL || null;
+  if (ownerEmail && ownerEmail.toLowerCase() !== String(toEmail).toLowerCase()) {
+    const copy = await sendOperatorEmail({
+      toEmail: ownerEmail,
+      render: renderHardwareKeyAlert,
+      renderArgs: { locationName: loc.location_name, clientName: loc.client_name, platform, diagnosis: message, errorType, clientId: loc.client_id },
+      logContext: { alert: 'hardware_key_owner_copy', clientId: loc.client_id, errorType },
+    });
+    if (!copy.sent) log.warn('health.owner_copy_failed', { toEmail: ownerEmail, location: loc.location_name, reason: copy.reason });
+  }
 }
 
 // Executable entry point for Railway Cron

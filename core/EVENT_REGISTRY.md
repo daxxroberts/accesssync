@@ -441,6 +441,16 @@ unaffected.
 | `admin.scheduler.health_check_complete` | info | Hardware key check finished cleanly. Persisted via override. |
 | `admin.scheduler.health_check_failed` | error | Hardware key check threw. |
 | `reconciliation.clients_due` | info | Per-client recurrence gate (bug 7): how many active clients are due for a sync this run; only those are synced and stamped. Persisted via override. |
+| `admin.scheduler.owner_daily_armed` | info | Owner daily email scheduler armed at admin boot (sends once per UTC day during OWNER_DAILY_HOUR_UTC). Persisted via override. |
+| `admin.scheduler.owner_daily_failed` | error | The owner daily tick threw. |
+| `email.owner_daily.sent` | info | The owner daily (verdict + one line per problem, counts only) was sent. Persisted: this row is the once-a-day guard. |
+| `email.owner_daily.failed` | error | The owner daily could not be sent. |
+| `email.owner_daily.no_recipient` | warn | ACCESSSYNC_OWNER_NOTIFICATION_EMAIL is not set, so no owner daily goes out. |
+| `email.owner_daily.health_failed` | error | computeOwnerHealth() threw while preparing the owner daily. |
+| `email.owner_daily.guard_failed` | warn | The sent-today lookup failed; the daily may be sent twice on a restart. |
+| `email.gym_daily.sent` | info | A gym's daily (member-level detail, to the gym's notification email) was sent. Persisted: this row is the once-a-day-per-gym guard. |
+| `reconciliation.digest_gym_skipped` | info | The gym's daily was already sent in the last 23h; breadcrumb. |
+| `health.owner_copy_failed` | warn | The owner's copy of a Kisi key alert could not be sent (the gym's copy was). |
 | `webhook.enqueue_failed` | error | The job queue refused a webhook's job (Redis down). The processed mark is removed so Wix's retry goes through (bug 2). |
 | `webhook.unmark_failed` | error | Could not remove the processed mark after a failed enqueue; the event will be treated as a duplicate on retry. |
 | `queue.grant.parked.no_door` | warn | A PAYING member's plan resolved to no door because the location lapsed or every door group is gone; dead-lettered as `SUBSCRIPTION_LAPSED` / `HARDWARE_RESOURCE_NOT_FOUND` (bug 3). |

@@ -3288,44 +3288,90 @@ class NightlyReconciliation {
       return;
     }
 
-    // DR-020: Send nightly digest via Resend — same pattern as retry-engine._notifyOperator
-    const toEmail = process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL || null;
-    if (!toEmail) {
-      log.warn('reconciliation.no_notification_email', {});
-      return;
+    // Gym daily (owner hub proposal 2026-10-15 §3): one email PER GYM, to that gym's own notification
+    // email, with the member-level detail. Before this the whole cross-tenant digest went to the
+    // AccessSync owner, written as if to a gym. Rows tied to no gym, and gyms with no notification
+    // email, still go to the owner. The owner's own daily (counts, verdict) is core/owner-daily-email.js.
+    const ownerEmail = process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL || null;
+    const groups = new Map();   // clientId | null → { alerts, jobs }
+    const bucket = (clientId) => {
+      const key = clientId || null;
+      if (!groups.has(key)) groups.set(key, { alerts: [], jobs: [] });
+      return groups.get(key);
+    };
+    for (const a of configAlertsResult.rows) bucket(a.client_id).alerts.push(a);
+    for (const j of failedJobsResult.rows) bucket(j.client_id).jobs.push(j);
+
+    const clientIds = [...groups.keys()].filter(Boolean);
+    const gyms = new Map();
+    if (clientIds.length) {
+      const r = await db.query(
+        `SELECT id, name, notification_email FROM clients WHERE id = ANY($1::uuid[])`, [clientIds]
+      ).catch(() => ({ rows: [] }));
+      for (const g of (r && r.rows) || []) gyms.set(g.id, g);
     }
 
-    const { sent, reason } = await sendOperatorEmail({
-      toEmail,
-      render: renderNightlyDigest,
-      renderArgs: {
-        configAlerts: digest.configAlerts.map(a => ({
-          alert_type: a.alert_type,
-          // This email goes to the AccessSync owner across every gym: name the gym too when the location doesn't.
-          locationName: a.location_name
-            ? (a.client_name && a.location_name !== a.client_name && !String(a.location_name).includes(a.client_name)
-              ? a.location_name + ' (' + a.client_name + ')' : a.location_name)
-            : (a.client_name || null),
-          doorName: a.hardware_ref || null,
-          memberName: a.member_name || null,
-          affectedMembers: a.affected_member_count || 0,
-        })),
-        failedJobs: digest.failedJobs.map(j => ({
-          event_type: j.event_type,
-          user_message: j.user_message,
-          action_text: j.action_text,
-          plan_name: j.plan_name,
-          memberName: [j.first_name, j.last_name].filter(Boolean).join(' ') || null,
-        })),
-      },
-      logContext: { alert: 'nightly_digest', traceId: sweepTraceId },
-    });
+    for (const [clientId, g] of groups) {
+      const gym = clientId ? gyms.get(clientId) : null;
+      const toGym = !!(gym && gym.notification_email);
+      const toEmail = toGym ? gym.notification_email : ownerEmail;
+      if (!toEmail) {
+        log.warn('reconciliation.no_notification_email', { clientId });
+        continue;
+      }
+      // Once a day per gym: the sweep runs several times a day, the gym's daily should not.
+      if (toGym && await this._gymDigestSentRecently(clientId)) {
+        sweepLogger.info('reconciliation.digest_gym_skipped', { traceId: sweepTraceId, clientId, reason: 'sent_in_last_24h', stage: 'cron', result: 'skipped' });
+        continue;
+      }
+      const { sent, reason } = await sendOperatorEmail({
+        toEmail,
+        render: renderNightlyDigest,
+        renderArgs: {
+          clientId: toGym ? clientId : null,
+          configAlerts: g.alerts.map(a => ({
+            alert_type: a.alert_type,
+            // To the owner (cross-tenant rows) name the gym too when the location doesn't; to the gym, the location alone.
+            locationName: a.location_name
+              ? (!toGym && a.client_name && a.location_name !== a.client_name && !String(a.location_name).includes(a.client_name)
+                ? a.location_name + ' (' + a.client_name + ')' : a.location_name)
+              : (a.client_name || null),
+            doorName: a.hardware_ref || null,
+            memberName: a.member_name || null,
+            affectedMembers: a.affected_member_count || 0,
+          })),
+          failedJobs: g.jobs.map(j => ({
+            event_type: j.event_type,
+            user_message: j.user_message,
+            action_text: j.action_text,
+            plan_name: j.plan_name,
+            memberName: [j.first_name, j.last_name].filter(Boolean).join(' ') || null,
+          })),
+        },
+        logContext: { alert: toGym ? 'gym_daily' : 'nightly_digest', clientId, traceId: sweepTraceId },
+      });
 
-    if (!sent) {
-      sweepLogger.error('reconciliation.digest_send_failed', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'failed', reason });
-      return;
+      if (!sent) {
+        sweepLogger.error('reconciliation.digest_send_failed', { traceId: sweepTraceId, toEmail, clientId, stage: 'cron', result: 'failed', reason });
+        continue;
+      }
+      sweepLogger.info('reconciliation.digest_sent', { traceId: sweepTraceId, toEmail, clientId, stage: 'cron', result: 'success' });
+      if (toGym) log.info('email.gym_daily.sent', { clientId, toEmail, alerts: g.alerts.length, jobs: g.jobs.length });
     }
-    sweepLogger.info('reconciliation.digest_sent', { traceId: sweepTraceId, toEmail, stage: 'cron', result: 'success' });
+  }
+
+  /** Did this gym get its daily in the last 23 hours? (the logger persists email.gym_daily.sent) */
+  async _gymDigestSentRecently(clientId) {
+    try {
+      const r = await db.query(
+        `SELECT 1 FROM diagnostic_log
+          WHERE client_id = $1 AND error_code = 'EMAIL_GYM_DAILY_SENT'
+            AND created_at > NOW() - INTERVAL '23 hours'
+          LIMIT 1`,
+        [clientId]
+      );
+      return !!(r && r.rows && r.rows.length);
+    } catch { return false; }
   }
 
   _sleep(ms) {
