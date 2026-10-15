@@ -22,6 +22,7 @@ Thumbs.db
 
 # Svelte build output — built on Railway deploy via npm run build
 admin/public/dist/
+admin/public/vendor/
 
 # Supabase migration working artifacts (DR-047 / OB-180, 2026-05-20)
 # Final products migrations/supabase-bootstrap.sql + migrations/supabase-data.sql

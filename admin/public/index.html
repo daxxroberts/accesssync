@@ -228,9 +228,9 @@
        Loads after Svelte so it doesn't slow first paint. Mounts into #logs-root.
        humanize.js is loaded first so the React island can read it as a global. -->
   <script src="/humanize.js"></script>
-  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+  <script src="/vendor/react.production.min.js"></script>
+  <script src="/vendor/react-dom.production.min.js"></script>
+  <script src="/vendor/babel.min.js"></script>
   <script type="text/babel" src="/logs-app.jsx"></script>
 </body>
 </html>

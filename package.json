@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "cron": "node core/reconciliation.js",
-    "build": "vite build",
+    "build": "vite build && node scripts/vendor-frontend.js",
     "test": "jest",
     "test:p1": "jest test/p1-critical-path --verbose",
     "test:p2": "jest test/p2-onboarding --verbose",
@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@babel/standalone": "^7.29.0",
     "@sveltejs/vite-plugin-svelte": "^4.0.4",
     "bullmq": "^4.0.0",
     "cookie-parser": "^1.4.6",
@@ -43,6 +44,8 @@
     "multer": "^2.2.0",
     "pg": "^8.11.3",
     "playwright": "^1.59.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "resend": "^3.0.0",
     "svelte": "^5.55.3",
     "vite": "~5.4.21"
