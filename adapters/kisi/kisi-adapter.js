@@ -49,6 +49,19 @@ function parseAccessSyncMarker(notes) {
 }
 
 /**
+ * The display name to give a Kisi user, or null when we have no real one.
+ * Collapses whitespace, caps at 255, and never returns the email itself (Kisi
+ * already falls back to the email when the name is absent).
+ */
+function normalizeKisiName(name, email) {
+  if (!name || typeof name !== 'string') return null;
+  const clean = name.replace(/\s+/g, ' ').trim().slice(0, 255);
+  if (!clean || /^(null|undefined)$/i.test(clean)) return null;
+  if (email && clean.toLowerCase() === String(email).trim().toLowerCase()) return null;
+  return clean;
+}
+
+/**
  * Normalize a Kisi POST/GET /group_links response. The shareable-URL field name and
  * the QR image encoding are not confirmed live (api.kisi.io/docs renders client-side),
  * so every plausible field is read and the image is accepted as a data URI, raw base64,
@@ -353,13 +366,15 @@ class KisiAdapter {
 
     const notes = buildAccessSyncMarker(clientId, 'Created by AccessSync');
 
-    // Kisi POST /users accepts: email, send_emails, confirm, notes (verified 2026-05-13).
-    // notes carries the [AS|managed|clientId|createdAt] marker that deleteUser checks
-    // before destroying the user.
+    // Kisi POST /users accepts: email, send_emails, confirm, notes (verified 2026-05-13), plus
+    // name (the Name column in the Kisi dashboard; one field, no first/last split). notes carries the [AS|managed|clientId|createdAt] marker that deleteUser checks
+    // before destroying the user. Without a name Kisi shows the email in the Name
+    // column, so send one whenever we have a real one (never the email itself).
+    const kisiName = normalizeKisiName(name, email);
     const data = await kisiConnector.makeRequest('/users', {
       method: 'POST',
       body: JSON.stringify({
-        user: { email, send_emails: sendEmails, confirm: true, notes }
+        user: { ...(kisiName ? { name: kisiName } : {}), email, send_emails: sendEmails, confirm: true, notes }
       })
     }, apiKey);
     log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id, clientId });
@@ -541,6 +556,40 @@ class KisiAdapter {
       log.error('kisi.user.enable_failed', { userId, statusCode: err.statusCode }, err);
       throw err;
     }
+  }
+
+  /**
+   * Set the display name on a Kisi user AccessSync created. PATCHes `name` only —
+   * notes (the ownership marker), access_enabled and role assignments are untouched.
+   * Refuses unless the user's notes marker names this client, so a gym's own Kisi
+   * users are never renamed. Used by scripts/backfill-kisi-names.js.
+   */
+  async setUserName(apiKey, userId, name, options = {}) {
+    const clientId = options.clientId;
+    if (!clientId) throw new Error('[KisiAdapter] setUserName requires options.clientId');
+    const kisiName = normalizeKisiName(name, null);
+    if (!kisiName) throw new Error('[KisiAdapter] setUserName requires a non-empty name');
+
+    const user = await this.getUserById(apiKey, userId);
+    if (!user) {
+      const err = new Error('Kisi user not found');
+      err.code = 'NOT_FOUND';
+      err.userId = userId;
+      throw err;
+    }
+    const marker = parseAccessSyncMarker(user.notes);
+    if (!marker || marker.clientId !== clientId) {
+      const err = new Error('Kisi user is not AccessSync-managed for this client — refusing rename');
+      err.code = marker ? 'CLIENT_MISMATCH' : 'NOT_ACCESSSYNC_MANAGED';
+      err.userId = userId;
+      throw err;
+    }
+
+    await kisiConnector.makeRequest(`/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ user: { name: kisiName } })
+    }, apiKey);
+    log.info('kisi.user.renamed', { userId, clientId });
   }
 
   /**
@@ -958,6 +1007,7 @@ class KisiAdapter {
 const adapter = new KisiAdapter();
 adapter.buildAccessSyncMarker = buildAccessSyncMarker;
 adapter.parseAccessSyncMarker = parseAccessSyncMarker;
+adapter.normalizeKisiName = normalizeKisiName;
 adapter.findElevatedAssignments = findElevatedAssignments;
 adapter._normalizeGroupLink = _normalizeGroupLink;
 module.exports = adapter;
