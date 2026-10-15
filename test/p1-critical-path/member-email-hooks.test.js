@@ -316,6 +316,15 @@ describe('[P1] DR-052 access-removed capture — suppression matrix', () => {
     expect(ctx).not.toBeNull();
   });
 
+  test('holder\'s plan ended in Wix → the seat\'s cascade revoke is captured (real access loss for the sub)', async () => {
+    mockDb({ memberRow: MEMBER, planRows: [{ plan_name: 'Family' }] });
+    const ctx = await mailer.captureAccessRemovedContext({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'plan.cancelled', synthetic: true, syntheticSource: 'holder_lapse.cascade', planId: 'sp-1' },
+    });
+    expect(ctx).not.toBeNull();
+  });
+
   test('reconcile-sourced revoke → null', async () => {
     const ctx = await mailer.captureAccessRemovedContext({
       clientId: CLIENT, accessId: ACCESS,

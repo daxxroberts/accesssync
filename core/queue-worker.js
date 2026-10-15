@@ -41,7 +41,7 @@ const db = require('../db');
 const { decryptApiKey } = require('./crypto-utils');
 const { extractBillingSnapshot } = require('./billing-snapshot');
 const { log, withTrace } = require('./logger');
-const { runWith, registerTrace, setTraceContext } = require('./trace-context');
+const { runWith, registerTrace, setTraceContext, mintTraceId } = require('./trace-context');
 const memberMailer = require('./member-mailer');
 
 const connection = getRedisConnection();
@@ -98,6 +98,104 @@ async function withMemberLock(job, token, fn) {
     // Compare-and-delete: never release a lock the TTL already handed to a sibling.
     await Promise.resolve(client.eval(RELEASE_IF_OWNER_LUA, 1, key, owner)).catch(() => {});
   }
+}
+
+// ── Holder-lapse seat cascade ─────────────────────────────────────────────────────────────
+// When Wix ends a plan holder's order (orderEnded / orderCanceled → plan.cancelled), the webhook
+// revokes the HOLDER only. The seats on that plan (sub-members: member_access.sub_master_id →
+// the holder's member_master, with a source row on the same source_plan_id) were left to the
+// reconcile's Pass 1.5, which runs observation-only and never enqueues. 2026-10-15 review: a
+// Family order ended on Oct 4 and its four seats still opened the door eleven days later.
+//
+// Each active seat now gets the same synthetic per-plan revoke the Member Hub's "remove
+// sub-member" path has used in production since DR-044 (markSubMemberRemoving → plan.cancelled
+// with planId → processRevoke targets that source row → finalizeRevoke purges). Job ids are
+// deterministic per (seat, plan, holder webhook) so a retried holder job never queues a seat
+// twice. The cascade runs before the holder's own revoke so a holder who already released their
+// own seat (DR-051: no active access row → no_identity) still takes the seats down with them.
+// HOLDER_LAPSE_CASCADE=off is the kill switch.
+const HOLDER_LAPSE_CASCADE_SOURCE = 'holder_lapse.cascade';
+
+async function _cascadeHolderLapse(tenantId, standardEvent, logger, holderJobId) {
+  const { eventType, planId, platformMemberId } = standardEvent || {};
+  if (eventType !== 'plan.cancelled' || standardEvent.synthetic || !planId || !platformMemberId) return 0;
+
+  const eventId = standardEvent.eventId || holderJobId;
+  if (process.env.HOLDER_LAPSE_CASCADE === 'off') {
+    logger.info('queue.revoke.holder_lapse.cascade_disabled', {
+      clientId: tenantId, eventId, holderPlatformMemberId: platformMemberId, planId,
+      stage: 'revoke', result: 'skipped',
+    });
+    return 0;
+  }
+
+  const seats = await db.query(
+    `SELECT sub.id              AS sub_access_id,
+            sub_mm.platform_member_id,
+            sub.status          AS sub_status,
+            sub.hardware_user_id,
+            mas.status          AS source_status
+       FROM member_master holder_mm
+       JOIN member_access sub          ON sub.sub_master_id = holder_mm.id
+                                      AND sub.client_id     = holder_mm.client_id
+       JOIN member_master sub_mm       ON sub_mm.id = sub.member_master_id
+       JOIN member_access_sources mas  ON mas.access_id      = sub.id
+                                      AND mas.source_plan_id = $3
+                                      AND mas.status NOT IN ('cancelled', 'revoked')
+      WHERE holder_mm.client_id          = $1
+        AND holder_mm.source_platform    = $2
+        AND holder_mm.platform_member_id = $4
+        AND sub.status NOT IN ('deleted', 'removing')`,
+    [tenantId, standardEvent.sourcePlatform || 'wix', planId, platformMemberId]
+  );
+
+  let queued = 0;
+  for (const seat of seats.rows) {
+    const common = {
+      clientId: tenantId, eventId, holderPlatformMemberId: platformMemberId, planId,
+      subAccessId: seat.sub_access_id, subPlatformMemberId: seat.platform_member_id,
+    };
+    // Only a seat that actually holds a door is revoked here. A seat still pending (no hardware
+    // yet) has nothing to take back; it is logged so the Member Hub / sweep can deal with it.
+    if (seat.sub_status !== 'active' || seat.source_status !== 'active' || !seat.hardware_user_id) {
+      logger.warn('queue.revoke.holder_lapse.seat_skipped', {
+        ...common, subStatus: seat.sub_status, sourceStatus: seat.source_status,
+        hasHardwareUser: !!seat.hardware_user_id, stage: 'revoke', result: 'skipped',
+      });
+      continue;
+    }
+    const seatTraceId = mintTraceId();
+    const jobId = `revoke-holder-lapse-${seat.sub_access_id}-${planId}-${eventId}`;
+    try {
+      await standardAdapter.markSubMemberRemoving(seat.sub_access_id);
+      registerTrace(seatTraceId, {
+        entryPoint: 'queue', clientId: tenantId, memberId: seat.sub_access_id,
+        actorType: 'system', actorId: 'queue-worker',
+      });
+      await eventQueue.add('revoke', {
+        tenantId,
+        standardEvent: {
+          eventType:        'plan.cancelled',
+          platformMemberId: seat.platform_member_id,
+          sourcePlatform:   standardEvent.sourcePlatform || 'wix',
+          planId,
+          synthetic:        true,
+          syntheticSource:  HOLDER_LAPSE_CASCADE_SOURCE,   // DR-052: the seat's access really ended → email allowed
+          holderPlatformMemberId: platformMemberId,
+          holderEventId:    eventId,
+          traceId:          seatTraceId,
+        },
+      }, { jobId });
+      queued++;
+      logger.info('queue.revoke.holder_lapse.cascade_queued', {
+        ...common, jobId, seatTraceId, stage: 'revoke', result: 'success',
+      });
+    } catch (err) {
+      // One seat failing never stops the rest; the row is visible in diagnostic_log.
+      logger.error('queue.revoke.holder_lapse.cascade_failed', { ...common, jobId, stage: 'revoke', result: 'failed' }, err);
+    }
+  }
+  return queued;
 }
 
 /**
@@ -729,6 +827,12 @@ async function _processJobBody(job, traceId) {
       }).catch(() => {});
 
     } else if (job.name === 'revoke') {
+      // Step 0: a holder's plan ending takes its seats with it — queued as their own jobs
+      // (see _cascadeHolderLapse). Runs before the holder's own revoke on purpose: a holder
+      // with no active access row of their own (DR-051 self-release) returns at Step 1.
+      lastStep = 'revoke.holder_lapse_cascade';
+      await _cascadeHolderLapse(tenantId, standardEvent, logger, job.id);
+
       // Step 1: Resolve identity + acquire lock (reads hardwarePlatform from existing row).
       // Revoke is per-member (all access rows), not per-plan — planMappingId=null.
       lastStep = 'revoke.resolve_and_lock';
@@ -1043,4 +1147,5 @@ function startWorker() {
 module.exports = {
   startWorker, processJob, _processJobBody, _runDayPassGrant, _unitsBought, _resolveStoreMappings,
   withMemberLock, memberLockKey, _setMemberLockClient,
+  _cascadeHolderLapse, HOLDER_LAPSE_CASCADE_SOURCE,
 };

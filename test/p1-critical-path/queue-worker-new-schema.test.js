@@ -229,17 +229,21 @@ describe('[P1] Revoke trace enrichment — member_access_sources JOIN plan_mappi
       roleAssignmentIds: [RA_ID],
     });
 
-    // trace enrichment DB query (revokeMappingRow)
-    db.query.mockResolvedValueOnce({
-      rows: [{ plan_name: 'Couples Plan', door_name: 'Main Entrance', mapping_id: MAPPING_ID }],
-    });
+    // trace enrichment DB query (revokeMappingRow). Since 2026-10-15 the revoke path first runs
+    // the holder-lapse seat lookup (_cascadeHolderLapse), so answer by query shape, not by order.
+    db.query.mockImplementation(async (sql) => ({
+      rows: /JOIN plan_mappings/.test(sql)
+        ? [{ plan_name: 'Couples Plan', door_name: 'Main Entrance', mapping_id: MAPPING_ID }]
+        : [],
+    }));
 
     grantRevoke.processRevoke.mockResolvedValue('revoked');
     standardAdapter.completeRevoke.mockResolvedValue();
 
     await _processJobBody(baseRevokeJob, 'trace-s3-002');
 
-    const enrichmentCall = db.query.mock.calls[0];
+    const enrichmentCall = db.query.mock.calls.find(c => /JOIN plan_mappings/.test(c[0]));
+    expect(enrichmentCall).toBeDefined();
     expect(enrichmentCall[0]).toMatch(/FROM member_access_sources/);
     expect(enrichmentCall[0]).toMatch(/JOIN plan_mappings/);
     expect(enrichmentCall[0]).toMatch(/access_id\s*=\s*\$1/);
