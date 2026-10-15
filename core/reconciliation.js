@@ -30,6 +30,7 @@ const { listActiveOrders, listConfirmedBookings, listOrdersClassified } = requir
 const { extractBillingSnapshot } = require('./billing-snapshot');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { log, withTrace } = require('./logger');
+const { ALERT_CONTEXT_COLUMNS, ALERT_CONTEXT_JOINS } = require('./alert-context');
 const { runWith, withClient, mintTraceId, getTraceId, getActor } = require('./trace-context');
 const { sendOperatorEmail } = require('./operator-mailer');
 const { renderNightlyDigest } = require('./operator-email-templates');
@@ -3098,16 +3099,10 @@ class NightlyReconciliation {
     // Location/client names come along so the digest can name the place in plain English
     // instead of printing a client_id.
     const configAlertsResult = await db.query(
-      `SELECT cal.client_id, cal.alert_type, cal.hardware_ref, cal.created_at,
-              c.name AS client_name,
-              mm.first_name AS member_first_name, mm.last_name AS member_last_name
-       FROM config_alert_log cal
-       LEFT JOIN clients c ON c.id = cal.client_id
-       -- finalize_refused_* alerts carry "member_id=<member_access.id>" in hardware_ref;
-       -- resolving it lets the digest name the person instead of "a member".
-       LEFT JOIN member_access ma
-         ON ma.id::text = substring(cal.hardware_ref FROM 'member_id=([0-9a-fA-F-]{36})')
-       LEFT JOIN member_master mm ON mm.id = ma.member_master_id
+      // Who and where (core/alert-context.js — the same lookup the gym's alerts list uses): the member, and the
+      // real location from the member's own plans, so the email never says "a member at one of your locations".
+      `SELECT cal.client_id, cal.alert_type, cal.hardware_ref, cal.created_at, cal.affected_member_count,${ALERT_CONTEXT_COLUMNS}
+       FROM config_alert_log cal${ALERT_CONTEXT_JOINS}
        WHERE cal.resolved_at IS NULL
        ORDER BY cal.client_id, cal.created_at DESC`
     );
@@ -3151,9 +3146,14 @@ class NightlyReconciliation {
       renderArgs: {
         configAlerts: digest.configAlerts.map(a => ({
           alert_type: a.alert_type,
-          locationName: a.client_name || null,
+          // This email goes to the AccessSync owner across every gym: name the gym too when the location doesn't.
+          locationName: a.location_name
+            ? (a.client_name && a.location_name !== a.client_name && !String(a.location_name).includes(a.client_name)
+              ? a.location_name + ' (' + a.client_name + ')' : a.location_name)
+            : (a.client_name || null),
           doorName: a.hardware_ref || null,
-          memberName: [a.member_first_name, a.member_last_name].filter(Boolean).join(' ') || null,
+          memberName: a.member_name || null,
+          affectedMembers: a.affected_member_count || 0,
         })),
         failedJobs: digest.failedJobs.map(j => ({
           event_type: j.event_type,

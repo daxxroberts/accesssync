@@ -100,6 +100,16 @@ Daxx: "Continue using bot." SAGE picked L17, the top open item. FORGE built it, 
 | L18 | The nightly digest email still says "A member" for sweep alerts. Its query resolves only `member_id=` refs, not `member:<platform id>`, and passes first/last names that `describeConfigAlert` doesn't read (`memberName`). | nit | Reuse the API's member lookup in the digest. |
 | L19 | Alert sentences say "at one of your locations", because sweep alerts carry no location. | nit | Add the location to the alert ref when the sweep knows it. |
 
+### No vague locations (2026-10-15, Daxx: "remove all the ambiguity … we want clarity")
+
+| # | Decision | Why |
+|---|---|---|
+| D35 | Alert sentences never say "one of your locations". They name the real location when it's known for certain; otherwise they leave location out. | An alert must say exactly what and where. A guessed or vague place reads as uncertainty. |
+| D36 | One shared lookup (`core/alert-context.js`) feeds the gym's alerts list and the nightly digest. **Member:** from the alert ref, inside its own client. **Location:** from that member's own plans (plan mapping → location), live sources first. If that finds nothing and the client has exactly one location, that location. A whole-gym alert gets the gym's only location, or its name if it has several. | The screen and the email name the same place, worked out the same way. Verified read-only on production: all 6 open alerts resolve to "House of Gains - Roland" from the member's own plans. |
+| D37 | The owner's digest adds the gym's name when the location's name doesn't already contain it. | The digest covers every gym; the owner needs to know which one. |
+
+L18 (digest said "A member") and L19 ("one of your locations") are **resolved** by D35–D37. A test fails if any alert type ever produces the vague wording again; it was checked against the old wording, where 12 cases fail.
+
 ### Process note
 SAGE did **not** merge or deploy, wrote nothing to production, and made no change to House of Gains data. Tests: the new
 retry-engine test (`test/p1-critical-path/retry-engine-dead-letter.test.js`) fails on the old engine (10 of 19), as do the

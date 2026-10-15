@@ -1509,6 +1509,9 @@ describe('[P3] Phase 1 — error_queue replay (_processRecordTargeted)', () => {
     expect(replays[0][1].standardEvent).toEqual(expect.objectContaining({ eventType: 'plan.started', platformMemberId: 'p' }));
     expect(warnCall('reconciliation.requeue_record_failed')[1]).toEqual(expect.objectContaining({ memberId: 'ma-bad' }));
     expect(sqlCalls('FROM config_alert_log cal')).toHaveLength(1);        // the digest still ran
+    // the digest names the real member and location (core/alert-context.js), never "one of your locations"
+    expect(String(sqlCalls('FROM config_alert_log cal')[0][0])).toMatch(/AS location_name/);
+    expect(String(sqlCalls('FROM config_alert_log cal')[0][0])).toMatch(/JOIN locations l ON l\.id = pm\.location_id/);
     expect(sqlCalls('UPDATE clients SET last_sync_at')).toHaveLength(1); // and last_sync_at was stamped
   });
 });

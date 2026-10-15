@@ -33,6 +33,7 @@ const standardAdapter = require('../../adapters/standard-adapter');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { guidanceFor, retryRefusal, dismissRefusal } = require('../../core/error-guidance');
 const { describeConfigAlert } = require('../../core/operator-email-templates');
+const { ALERT_CONTEXT_COLUMNS, ALERT_CONTEXT_JOINS } = require('../../core/alert-context');
 // Held-removal alerts: the gym decides (remove in Kisi, or leave them in). Mirrors core/reconciliation.js
 // GYM_DECIDES_ALERTS — a dismissal of one keeps it quiet for 30 days.
 const GYM_DECIDES_ALERT_TYPES = new Set(['sweep_removal_pending', 'revoke_holder_lapse_pending', 'revoke_held_payment_state']);
@@ -3012,26 +3013,12 @@ router.get('/:clientId/recent-members', async (req, res) => {
 router.get('/:clientId/alerts', async (req, res) => {
   const { clientId } = req.params;
   try {
-    // The member an alert is about: sweep alerts carry "member:<platform member id>", finalize guards carry
-    // "member_id=<member_access id>". Both are looked up inside THIS client only.
+    // Who and where each alert is about (core/alert-context.js — the same lookup the nightly digest uses):
+    // the member, and the real location from that member's own plans. Never a guess.
     const result = await db.query(
       `SELECT cal.id, cal.alert_type, cal.hardware_ref, cal.affected_member_count, cal.resolved_at,
-              cal.created_at, cal.last_seen_at,
-              COALESCE(NULLIF(TRIM(m.display_name), ''),
-                       NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), '')) AS member_name
-       FROM config_alert_log cal
-       LEFT JOIN LATERAL (
-         SELECT mm.display_name, mm.first_name, mm.last_name
-           FROM member_master mm
-          WHERE mm.client_id = cal.client_id
-            AND (
-                  (cal.hardware_ref LIKE 'member:%' AND mm.platform_member_id = substring(cal.hardware_ref FROM 8))
-               OR mm.id = (SELECT ma.member_master_id FROM member_access ma
-                            WHERE ma.client_id = cal.client_id
-                              AND ma.id::text = substring(cal.hardware_ref FROM 'member_id=([0-9a-fA-F-]{36})'))
-                )
-          LIMIT 1
-       ) m ON TRUE
+              cal.created_at, cal.last_seen_at,${ALERT_CONTEXT_COLUMNS}
+       FROM config_alert_log cal${ALERT_CONTEXT_JOINS}
        WHERE cal.client_id = $1
          AND cal.resolved_at IS NULL
        ORDER BY cal.last_seen_at DESC NULLS LAST, cal.created_at DESC
@@ -3044,6 +3031,7 @@ router.get('/:clientId/alerts', async (req, res) => {
       message: describeConfigAlert({
         alert_type: a.alert_type,
         memberName: a.member_name || null,
+        locationName: a.location_name || null,
         affectedMembers: a.affected_member_count || 0,
         platform: 'Kisi',
       }),

@@ -128,14 +128,16 @@ describe('[P3] GET /operator/:clientId/alerts — the gym can read its sync aler
   test('each alert carries the digest sentence (naming the member when known) and whether the gym decides it', async () => {
     db.query.mockResolvedValueOnce({ rows: [
       { id: 'a1', alert_type: 'revoke_holder_lapse_pending', hardware_ref: 'member:wix-9', affected_member_count: null,
-        resolved_at: null, created_at: '2026-10-04T09:54:00Z', last_seen_at: null, member_name: 'Pat Example' },
+        resolved_at: null, created_at: '2026-10-04T09:54:00Z', last_seen_at: null, member_name: 'Pat Example',
+        location_name: 'House of Gains - Roland' },
       { id: 'a2', alert_type: 'sweep_repair_pending', hardware_ref: 'member:wix-7', affected_member_count: null,
         resolved_at: null, created_at: '2026-10-04T09:54:00Z', last_seen_at: null, member_name: null },
     ] });
     const res = await request(app).get('/operator/client-hog/alerts');
     expect(res.status).toBe(200);
     const [a1, a2] = res.body.alerts;
-    expect(a1.message).toMatch(/^Pat Example /);
+    expect(a1.message).toMatch(/^Pat Example at House of Gains - Roland is on a shared plan/);
+    expect(a2.message).not.toMatch(/one of your locations/);   // location unknown → left out, never guessed
     expect(a1.message).toMatch(/nothing was removed/);
     expect(a1.gym_decides).toBe(true);
     expect(a2.message).toMatch(/door access/);
@@ -151,5 +153,8 @@ describe('[P3] GET /operator/:clientId/alerts — the gym can read its sync aler
     expect(sql).toMatch(/mm\.client_id = cal\.client_id/);
     expect(sql).toMatch(/ma\.client_id = cal\.client_id/);
     expect(sql).toMatch(/cal\.resolved_at IS NULL/);
+    // location from the member's own plans, inside this client only (core/alert-context.js)
+    expect(sql).toMatch(/JOIN plan_mappings pm ON pm\.id = mas\.mapping_id AND pm\.client_id = cal\.client_id/);
+    expect(sql).toMatch(/JOIN locations l ON l\.id = pm\.location_id AND l\.client_id = cal\.client_id/);
   });
 });
