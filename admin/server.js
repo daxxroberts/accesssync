@@ -82,12 +82,11 @@ app.use('/admin/members',  requireAuth, membersRoutes);
 app.use('/admin/webhooks', requireAuth, webhooksRoutes);
 app.use('/admin/queue',    requireAuth, queueRoutes);
 app.use('/admin/clients',  requireAuth, clientsRoutes);
-// OB-195: Owner-only System Health surface. Aggregates infrastructure observability
-// across all clients (reconcile freshness, webhook ingestion, error queue, diagnostic log)
-// plus a global DB health probe. Gated by requireAuth — never exposed to operator sessions.
+// Owner hub System Health: verdict + needs-action rows + per-client state across all clients
+// (reconcile age, webhook recency, open errors by owner, DB probe). Owner-only.
 app.use('/admin/system-health', requireAuth, systemHealthRoutes);
-// OB-195 Administrators follow-up: Wix admin presence tracking. Surfaces wix_admin_seen
-// for /admin-panel Administrators section. Owner-only — never exposed to operator sessions.
+// Wix admin presence (wix_admin_seen) — the owner hub shows "owner last seen" on each client
+// card from this. Owner-only — never exposed to operator sessions.
 app.use('/admin/wix-admins',    requireAuth, wixAdminsRoutes);
 // Trace Timeline API — accepts admin (Daxx, cross-client) or operator (Chad,
 // scoped to their own client by the route handler). Tenant scope is enforced
@@ -119,7 +118,8 @@ app.get('/health', async (req, res) => {
     if (latest) {
       const ageHours = Math.floor((Date.now() - new Date(latest).getTime()) / 3_600_000);
       out.reconcile_age_hours = ageHours;
-      out.reconcile_health = ageHours < 24 ? 'green' : (ageHours < 72 ? 'amber' : 'red');
+      // Same thresholds as the owner hub's System Health (one source of truth).
+      out.reconcile_health = require('./routes/system-health').reconcileState(ageHours);
     } else {
       out.reconcile_health = 'red';
       out.reconcile_health_reason = 'no_reconciliation_run_rows';
@@ -152,7 +152,7 @@ app.get('/errors',       allowWixFrame, requireAuthPageOrOperator, (req, res) =>
 // Trace Timeline operator page — accepts owner OR operator. Tenant scope is
 // enforced server-side inside admin/routes/logs.js via scopedClientId(req).
 app.get('/logs',         allowWixFrame, requireAuthPageOrOperator, (req, res) => res.render('pages/logs',         { activeTab: 'logs',         clientId: req.admin?.clientId || '', ...sessionMeta(req) }));
-// Admin panel — owner only (no iframe — no allowWixFrame)
+// Owner hub — owner only (no iframe — no allowWixFrame). Status strip, needs-action list, clients.
 app.get('/admin-panel',  requireAuthPage, (req, res) => res.render('pages/admin-panel',  { activeTab: 'admin', ...sessionMeta(req) }));
 // Admin error queue — full cross-tenant view with raw payload, owner only
 app.get('/admin-errors', requireAuthPage, (req, res) => res.render('pages/admin-errors', { activeTab: 'admin', ...sessionMeta(req) }));

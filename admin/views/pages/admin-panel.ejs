@@ -2,251 +2,142 @@
   @file admin-panel.ejs
   @layer admin/pages
   @route /admin-panel
-  @role admin-management
+  @role owner-hub
   @tab Admin
-  @status live (Wix admin tracking via /admin/wix-admins)
+  @data GET /admin/system-health, GET /admin/queue/counts, GET /admin/wix-admins,
+        GET /admin/clients, POST /admin/clients, PATCH /admin/clients/:id,
+        POST /admin/clients/:id/invite, POST /admin/clients/:id/archive, /restore, DELETE /admin/clients/:id,
+        GET /admin/clients/:id/api-key/status, GET /admin/clients/:id/api-key/test, POST /admin/clients/:id/api-key
+  @status owner-only — no allowWixFrame, no operator access
+
+  The owner's one page (2026-10-15 consolidation). Three sections, top to bottom:
+    1. Status strip — verdict, reconcile age, webhook recency, database, queue depth.
+    2. Needs action — hidden when empty. One row per thing a person must do, who, and where.
+    3. Clients — one card per client with every client action: setup link, dashboard, edit,
+       key (set / rotate / test), archive or restore, delete.
+  Shared plumbing comes from operator-nav.js: apiFetch (401 → session-expired modal), showToast, esc.
 %>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
 <head>
-  <%- include('../partials/head', { title: 'Operator Dashboard: Administration' }) %>
+  <%- include('../partials/head', { title: 'Owner Hub' }) %>
   <style>
-    .dash-content { max-width: 720px; }
+    .dash-content { max-width: 760px; }
+    #toast:not(.visible) { visibility: hidden; }
 
-    /* ── Admin table ── */
-    .admin-list { list-style: none; padding: 0; margin: 0; }
-    .admin-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px 0;
-      border-bottom: 1px solid var(--border, #e2e8f0);
-      gap: 12px;
+    /* ── Banner (a health query failed) ── */
+    .check-banner {
+      display: none; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px;
+      background: var(--amber-dim); border: 1px solid rgba(245,166,35,0.35); color: var(--text); font-size: 13px; line-height: 1.5;
     }
-    .admin-item:last-child { border-bottom: none; }
-    .admin-item-main { flex: 1; min-width: 0; }
-    .admin-item-name { font-weight: 600; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
-    .admin-perm { white-space: nowrap; }
-    .admin-item-meta { font-size: 12px; color: var(--muted, #64748b); margin-top: 2px; overflow-wrap: anywhere; }
-    .admin-item-seen { text-align: right; font-size: 12px; flex-shrink: 0; }
-    .admin-item-last-seen { color: var(--muted, #64748b); }
-    .admin-item-count { color: var(--muted, #64748b); margin-top: 2px; font-size: 11px; }
-    .admin-loading, .admin-empty, .admin-error {
-      padding: 12px 0;
-      font-size: 13px;
-      color: var(--muted, #64748b);
-      font-style: italic;
-    }
-    .admin-error { color: #991b1b; }
+    .check-banner.show { display: block; }
 
-    /* ── Logged-in-as strip ── */
-    .logged-in-strip {
-      display: flex; align-items: center; gap: 10px;
-      padding: 12px 16px; background: var(--surface);
-      border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px;
+    /* ── Status strip ── */
+    .status-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; }
+    .status-item { padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); min-width: 0; }
+    .status-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .status-value { font-size: 15px; font-weight: 700; color: var(--text); margin-top: 3px; overflow-wrap: anywhere; }
+    .status-sub   { font-size: 11px; color: var(--text2); margin-top: 2px; }
+    .status-item.state-green .status-value { color: #047857; }
+    .status-item.state-amber .status-value { color: #92400e; }
+    .status-item.state-red   .status-value { color: #991b1b; }
+    [data-mode="dark"] .status-item.state-green .status-value { color: #4ade80; }
+    [data-mode="dark"] .status-item.state-amber .status-value { color: #fbbf24; }
+    [data-mode="dark"] .status-item.state-red   .status-value { color: #f87171; }
+    .verdict-pill {
+      display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700;
+      padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
     }
-    .logged-in-avatar {
-      width: 32px; height: 32px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--brand), #3D5BD4);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 700; color: #fff;
-    }
-    .logged-in-info { flex: 1; }
-    .logged-in-name   { font-size: 13px; font-weight: 600; color: var(--text); }
-    .logged-in-detail { font-size: 11px; color: var(--muted); }
-    .logged-in-badge  { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 5px; background: var(--brand-dim); color: var(--brand); }
+    .verdict-pill::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--border2); }
+    .verdict-pill.state-green::before { background: var(--sage); }
+    .verdict-pill.state-amber::before { background: var(--amber); }
+    .verdict-pill.state-red::before   { background: var(--red); }
 
-    /* ── Info toggle section ── */
-    .info-toggle-btn {
-      display: flex; align-items: center; gap: 6px;
-      background: none; border: 1px solid var(--border); border-radius: 8px;
-      padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
-      cursor: pointer; font-family: inherit; transition: all 0.15s;
+    /* ── Needs action ── */
+    #actionsCard { display: none; }
+    #actionsCard.show { display: block; }
+    .action-list { list-style: none; padding: 0; margin: 0; }
+    .action-row {
+      display: flex; align-items: center; gap: 12px; padding: 11px 0;
+      border-bottom: 1px solid var(--border); font-size: 13px;
     }
-    .info-toggle-btn:hover { border-color: var(--border2); color: var(--text2); }
-    .info-toggle-btn .chevron { font-size: 10px; transition: transform 0.2s; display: inline-block; }
-    .info-toggle-btn.open .chevron { transform: rotate(180deg); }
-    .info-body { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
-    .info-body.open { max-height: 500px; }
-    .info-content { padding-top: 16px; }
-    .info-item {
-      display: flex; align-items: flex-start; gap: 10px;
-      padding: 10px 0; border-bottom: 1px solid var(--border);
-      font-size: 13px; color: var(--muted); line-height: 1.5;
+    .action-row:last-child { border-bottom: none; }
+    .action-main { flex: 1; min-width: 0; }
+    .action-text { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+    .action-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .owner-tag {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 4px; white-space: nowrap;
     }
-    .info-item:last-child { border-bottom: none; }
-    .info-item-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .owner-tag.gym        { background: var(--amber-dim); color: #92400e; }
+    .owner-tag.accesssync { background: var(--brand-dim); color: var(--brand); }
+    [data-mode="dark"] .owner-tag.gym { color: #fbbf24; }
+    .action-row .btn, .action-row .action-link { flex-shrink: 0; }
+    .action-link { color: var(--brand); font-weight: 600; text-decoration: none; font-size: 13px; padding: 4px 2px; }
+    .action-link:hover { text-decoration: underline; }
 
-    /* ── System Health section ── */
-    .system-health-aggregate { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
-    .system-health-aggregate::before { content: ''; width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .system-health-aggregate.health-state-green::before { background: var(--sage, #4ADE80); }
-    .system-health-aggregate.health-state-amber::before { background: #f59e0b; }
-    .system-health-aggregate.health-state-red::before { background: #ef4444; }
-    .system-health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
-    .health-card { border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 12px; background: var(--card); border-left-width: 4px; }
-    .health-card.health-state-green { border-left-color: var(--sage, #4ADE80); }
-    .health-card.health-state-amber { border-left-color: #f59e0b; }
-    .health-card.health-state-red { border-left-color: #ef4444; }
-    .health-card.health-state-setup { border-left-color: var(--border2, #cbd5e1); }
-    .health-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .health-card-title { font-weight: 600; font-size: 14px; }
-    .health-card-state-pill { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.04em; }
-    .health-card.health-state-green .health-card-state-pill { background: #d1fae5; color: #065f46; }
-    .health-card.health-state-amber .health-card-state-pill { background: #fef3c7; color: #92400e; }
-    .health-card.health-state-red .health-card-state-pill { background: #fee2e2; color: #991b1b; }
-    .health-card.health-state-setup .health-card-state-pill { background: var(--surface); color: var(--text2); border: 1px solid var(--border); }
-    .health-setup { font-size: 12px; color: var(--text2); line-height: 1.5; }
-    .health-setup strong { color: var(--text); }
-    .health-sub { display: block; font-size: 11px; color: var(--text2); margin-top: 1px; text-align: right; }
-    .health-link { color: #3447C4; font-weight: 600; text-decoration: none; padding: 4px 2px; display: inline-block; }
-    .health-link:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
-    .health-card.health-state-inactive { border-left-color: var(--border2, #cbd5e1); }
-    .health-card.health-state-inactive .health-card-state-pill { background: var(--surface); color: var(--text2); border: 1px solid var(--border); }
-    .health-gap { font-size: 12px; color: #991b1b; font-weight: 600; margin: 0 0 8px; line-height: 1.5; }
-    .health-setup .btn { margin-top: 8px; }
-    /* Dark mode: the state colours above were hard-coded for a white card (red text was 2:1 on the dark card). */
-    [data-mode="dark"] .health-check-state.health-state-green { color: #4ade80; }
-    [data-mode="dark"] .health-check-state.health-state-amber { color: #fbbf24; }
-    [data-mode="dark"] .health-check-state.health-state-red   { color: #f87171; }
-    [data-mode="dark"] .health-gap { color: #f87171; }
-    [data-mode="dark"] .health-link { color: #93a5ff; }
-    [data-mode="dark"] .health-card.health-state-green .health-card-state-pill { background: rgba(74,222,128,.15); color: #4ade80; }
-    [data-mode="dark"] .health-card.health-state-amber .health-card-state-pill { background: rgba(251,191,36,.15); color: #fbbf24; }
-    [data-mode="dark"] .health-card.health-state-red   .health-card-state-pill { background: rgba(248,113,113,.15); color: #f87171; }
-    .health-link:hover { text-decoration: underline; }
-    .system-health-aggregate.health-state-setup::before { background: var(--border2, #cbd5e1); }
-    .health-checks { display: grid; grid-template-columns: 1fr; gap: 4px; font-size: 12px; }
-    .health-check { display: flex; justify-content: space-between; }
-    .health-check-label { color: var(--text2, #4A5568); }   /* was --muted: 3:1 on light, ~2:1 on dark */
-    .health-note { margin-top: 8px; font-size: 12px; color: var(--text2, #4A5568); }
-    .health-check-state.health-state-green { color: #047857; }
-    .health-check-state.health-state-amber { color: #92400e; }
-    .health-check-state.health-state-red { color: #991b1b; font-weight: 600; }
-    .health-check-state.health-state-idle { color: var(--text2); }
-    .health-check { gap: 8px; }
-    .health-check-state { text-align: right; min-width: 0; overflow-wrap: anywhere; }
-    .health-db-row { display: flex; justify-content: space-between; padding: 10px 12px; border-radius: 6px; background: var(--surface); border-left: 4px solid; font-size: 13px; }
-    .health-db-row.health-state-green { border-left-color: var(--sage, #4ADE80); }
-    .health-db-row.health-state-amber { border-left-color: #f59e0b; }
-    .health-db-row.health-state-red { border-left-color: #ef4444; }
-    .health-db-label { font-weight: 600; }
-    #toast:not(.visible) { visibility: hidden; }   /* off-screen but laid out otherwise: it showed as a dark pill mid-page */
-    .health-db-detail { color: var(--text2, #4A5568); }
-    .health-empty { color: var(--muted, #64748b); font-size: 13px; padding: 8px 0; }
-
-    /* ── Clients section ── */
-    .clients-filter-group { display: inline-flex; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; overflow: hidden; }
+    /* ── Clients ── */
+    .clients-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .clients-filter-group { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
     .clients-filter-btn {
-      background: transparent; border: none; padding: 6px 12px;
-      font-size: 12px; font-weight: 600; color: var(--muted, #64748b);
-      cursor: pointer; font-family: inherit;
-      border-right: 1px solid var(--border, #e2e8f0);
-      transition: background 0.15s, color 0.15s;
+      background: transparent; border: none; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var(--muted);
+      cursor: pointer; font-family: inherit; border-right: 1px solid var(--border); transition: background 0.15s, color 0.15s;
     }
     .clients-filter-btn:last-child { border-right: none; }
     .clients-filter-btn:hover { background: var(--surface); color: var(--text2); }
     .clients-filter-btn.active { background: var(--brand-dim); color: var(--brand); }
-
     .clients-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 12px; }
-    .client-card {
-      border: 1px solid var(--border, #e2e8f0);
-      border-radius: 8px;
-      padding: 14px;
-      background: var(--card);
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 12px;
-    }
-    .client-card-main { flex: 1; min-width: 0; }
-    .client-card-name-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .client-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--card); border-left-width: 4px; }
+    .client-card.state-green { border-left-color: var(--sage); }
+    .client-card.state-amber, .client-card.state-setup { border-left-color: var(--amber); }
+    .client-card.state-red   { border-left-color: var(--red); }
+    .client-card.state-inactive, .client-card.state-archived { border-left-color: var(--border2); }
+    .client-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    .client-card-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .client-card-name { font-weight: 700; font-size: 15px; color: var(--text); }
-    .client-card-badge {
-      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px;
-      letter-spacing: 0.04em; text-transform: uppercase;
-    }
-    .client-card-badge.status-active   { background: var(--sage-dim, #d1fae5); color: #065f46; }
-    .client-card-badge.status-archived { background: #f1f5f9; color: #64748b; }
-    .client-card-badge.status-inactive { background: #fef3c7; color: #92400e; }
-    /* dark mode: the light badge text colours sit at ~2:1 on the dark card */
+    .client-card-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .client-card-badge.status-active   { background: var(--sage-dim); color: #065f46; }
+    .client-card-badge.status-archived { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+    .client-card-badge.status-inactive { background: var(--amber-dim); color: #92400e; }
     [data-mode="dark"] .client-card-badge.status-active   { color: #4ADE80; }
-    [data-mode="dark"] .client-card-badge.status-archived { background: #252B35; color: #A0AEC0; }
-    [data-mode="dark"] .client-card-badge.status-inactive { background: rgba(245,166,35,0.15); color: #F5A623; }
-    .client-card-meta { font-size: 12px; color: var(--muted, #64748b); line-height: 1.5; }
+    [data-mode="dark"] .client-card-badge.status-inactive { color: #F5A623; }
+    .client-card-meta { font-size: 12px; color: var(--muted); line-height: 1.6; margin-top: 4px; }
     .client-card-meta span + span::before { content: ' · '; }
-    .client-card-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
-
-    .clients-loading, .clients-empty, .clients-error {
-      padding: 16px 0; font-size: 13px; color: var(--muted, #64748b); font-style: italic; text-align: center;
-    }
+    .client-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .clients-loading, .clients-empty, .clients-error { padding: 16px 0; font-size: 13px; color: var(--muted); font-style: italic; text-align: center; }
     .clients-error { color: #991b1b; }
 
-    /* ── Confirm-delete modal ── */
-    .modal-backdrop {
-      position: fixed; inset: 0; background: rgba(15,23,42,0.55);
-      display: none; align-items: center; justify-content: center;
-      z-index: 1000; padding: 16px;
-    }
+    /* ── Modals ── */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.55); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
     .modal-backdrop.open { display: flex; }
-    .modal-dialog {
-      background: var(--card);
-      border-radius: 10px;
-      max-width: 460px; width: 100%;
-      padding: 22px;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.25);
-      border: 1px solid var(--border, #e2e8f0);
-    }
+    .modal-dialog { background: var(--card); border-radius: 10px; max-width: 460px; width: 100%; padding: 22px; box-shadow: 0 20px 50px rgba(0,0,0,0.25); border: 1px solid var(--border); max-height: 92vh; overflow-y: auto; }
     .modal-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
-    .modal-warning {
-      background: #fef2f2; border-left: 3px solid #ef4444;
-      padding: 10px 12px; border-radius: 6px;
-      font-size: 13px; color: #7f1d1d; line-height: 1.45;
-      margin-bottom: 14px;
+    .modal-sub { font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 14px; }
+    .modal-warning { background: #fef2f2; border-left: 3px solid #ef4444; padding: 10px 12px; border-radius: 6px; font-size: 13px; color: #7f1d1d; line-height: 1.45; margin-bottom: 14px; }
+    .modal-label { font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; display: block; }
+    .modal-confirm-string { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--surface); padding: 2px 6px; border-radius: 4px; color: var(--text); border: 1px solid var(--border); }
+    .modal-input, .modal-select {
+      width: 100%; padding: 9px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px;
+      font-family: inherit; color: var(--text); background: var(--card); box-sizing: border-box;
     }
-    .modal-label { font-size: 12px; font-weight: 600; color: var(--text2, #4a5568); margin-bottom: 6px; display: block; }
-    .modal-confirm-string {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px; background: var(--surface); padding: 2px 6px; border-radius: 4px;
-      color: var(--text); border: 1px solid var(--border);
-    }
-    .modal-input {
-      width: 100%; padding: 9px 12px; font-size: 13px;
-      border: 1px solid var(--border, #e2e8f0); border-radius: 6px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      color: var(--text); background: var(--card);
-      margin-bottom: 16px; box-sizing: border-box;
-    }
-    .modal-input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-dim); }
-    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
-    .modal-sub { font-size: 13px; color: var(--text2, #475569); line-height: 1.5; margin-bottom: 14px; }
+    .modal-input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .modal-input:focus, .modal-select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-dim); }
     .modal-field { margin-bottom: 12px; }
-    .modal-field .modal-input { margin-bottom: 4px; font-family: inherit; }
-    .modal-hint { font-size: 11px; color: var(--muted, #64748b); line-height: 1.45; }
-    .modal-error {
-      display: none; background: #fef2f2; border-left: 3px solid #ef4444; color: #7f1d1d;
-      padding: 8px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;
-    }
+    .modal-hint { font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 4px; }
+    .modal-error { display: none; background: #fef2f2; border-left: 3px solid #ef4444; color: #7f1d1d; padding: 8px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; }
     .modal-error.show { display: block; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 16px; }
     .invite-link-row { display: flex; gap: 8px; margin-bottom: 12px; }
-    .invite-link-row .modal-input { margin-bottom: 0; flex: 1; min-width: 0; text-overflow: ellipsis; }
-    .invite-note {
-      background: var(--surface, #f8fafc); border: 1px solid var(--border, #e2e8f0);
-      border-radius: 6px; padding: 10px 12px; font-size: 12px; color: var(--text2, #475569);
-      line-height: 1.55; margin-bottom: 16px;
-    }
+    .invite-link-row .modal-input { flex: 1; min-width: 0; text-overflow: ellipsis; }
+    .invite-note { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 12px; color: var(--text2); line-height: 1.55; }
     .invite-note strong { color: var(--text); }
-    .clients-header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .key-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); font-size: 13px; margin-bottom: 14px; flex-wrap: wrap; }
 
     @media (max-width: 640px) {
       .page-title { font-size: 20px; }
       .page-header { flex-direction: column; }
-      .admin-item { flex-wrap: wrap; }
-      .admin-item-main { flex-basis: 100%; }
-      .admin-item-seen { text-align: left; flex-shrink: 1; }
-      .health-db-row { flex-direction: column; gap: 2px; }
-      .client-card { flex-direction: column; align-items: stretch; }
-      .client-card-actions { justify-content: flex-start; }
+      .action-row { flex-wrap: wrap; }
+      .action-main { flex-basis: 100%; }
     }
   </style>
 </head>
@@ -257,37 +148,32 @@
   <div class="dash-content">
     <div class="page-header">
       <div>
-        <div class="page-title">Administration</div>
-        <div class="page-subtitle" id="pageSubtitle"></div>
+        <div class="page-title">Owner Hub</div>
+        <div class="page-subtitle" id="pageSubtitle">Loading&hellip;</div>
+      </div>
+      <span class="verdict-pill" id="verdictPill">Checking&hellip;</span>
+    </div>
+
+    <div class="check-banner" id="checkBanner" role="status"></div>
+
+    <div class="section-card">
+      <div class="status-strip" id="statusStrip">
+        <div class="status-item" id="st-reconcile"><div class="status-label">Reconcile</div><div class="status-value">&hellip;</div><div class="status-sub"></div></div>
+        <div class="status-item" id="st-webhooks"><div class="status-label">Webhooks</div><div class="status-value">&hellip;</div><div class="status-sub"></div></div>
+        <div class="status-item" id="st-errors"><div class="status-label">Open errors</div><div class="status-value">&hellip;</div><div class="status-sub"></div></div>
+        <div class="status-item" id="st-db"><div class="status-label">Database</div><div class="status-value">&hellip;</div><div class="status-sub"></div></div>
+        <div class="status-item" id="st-queue"><div class="status-label">Queue</div><div class="status-value">&hellip;</div><div class="status-sub"></div></div>
       </div>
     </div>
 
-    <div class="logged-in-strip" id="loggedInStrip"></div>
-
-    <div class="section-card">
+    <div class="section-card" id="actionsCard">
       <div class="section-header">
         <div>
-          <div class="section-title">Administrators</div>
-          <div class="section-subtitle" id="adminCount"></div>
+          <div class="section-title">Needs action</div>
+          <div class="section-subtitle" id="actionsSubtitle"></div>
         </div>
       </div>
-      <ul class="admin-list" id="adminList"></ul>
-    </div>
-
-    <div class="section-card">
-      <div class="section-header">
-        <div>
-          <div class="section-title">System Health</div>
-          <div class="section-subtitle" id="systemHealthSubtitle">Loading&hellip;</div>
-        </div>
-        <div class="system-health-aggregate" id="systemHealthAggregate"></div>
-      </div>
-      <div class="system-health-grid" id="systemHealthGrid">
-        <!-- per-client cards inject here -->
-      </div>
-      <div class="system-health-db" id="systemHealthDb">
-        <!-- DB health row injects here -->
-      </div>
+      <ul class="action-list" id="actionList"></ul>
     </div>
 
     <div class="section-card">
@@ -297,27 +183,19 @@
           <div class="section-subtitle" id="clientsSubtitle">Loading&hellip;</div>
         </div>
         <div class="clients-header-actions">
-        <button type="button" class="btn btn-sm btn-primary" onclick="openNewClientModal()">New client</button>
-        <div class="clients-filter-group" role="tablist" aria-label="Filter clients by status">
-          <button type="button" class="clients-filter-btn active" data-status="active"   onclick="setClientsFilter('active')">Active</button>
-          <button type="button" class="clients-filter-btn"        data-status="archived" onclick="setClientsFilter('archived')">Archived</button>
-          <button type="button" class="clients-filter-btn"        data-status="all"      onclick="setClientsFilter('all')">All</button>
-        </div>
+          <button type="button" class="btn btn-sm btn-primary" onclick="openNewClientModal()">New client</button>
+          <div class="clients-filter-group" role="tablist" aria-label="Filter clients by status">
+            <button type="button" class="clients-filter-btn active" data-status="active"   onclick="setClientsFilter('active')">Active</button>
+            <button type="button" class="clients-filter-btn"        data-status="archived" onclick="setClientsFilter('archived')">Archived</button>
+            <button type="button" class="clients-filter-btn"        data-status="all"      onclick="setClientsFilter('all')">All</button>
+          </div>
         </div>
       </div>
       <div class="clients-grid" id="clientsGrid"></div>
     </div>
-
-    <div class="section-card">
-      <button class="info-toggle-btn" id="infoToggle" onclick="toggleInfo()">
-        <span>&#9432;</span> How administrator access works <span class="chevron">&#9660;</span>
-      </button>
-      <div class="info-body" id="infoBody">
-        <div class="info-content" id="infoContent"></div>
-      </div>
-    </div>
   </div>
 
+  <!-- Delete client: typed confirmation -->
   <div class="modal-backdrop" id="deleteClientModal" role="dialog" aria-modal="true" aria-labelledby="deleteClientModalTitle">
     <div class="modal-dialog">
       <div class="modal-title" id="deleteClientModalTitle">Delete client?</div>
@@ -328,9 +206,9 @@
       <label class="modal-label" for="deleteClientInput">
         Type <span class="modal-confirm-string" id="deleteClientExpected"></span> to confirm:
       </label>
-      <input type="text" class="modal-input" id="deleteClientInput" autocomplete="off" spellcheck="false" />
+      <input type="text" class="modal-input mono" id="deleteClientInput" autocomplete="off" spellcheck="false" />
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" onclick="closeDeleteClientModal()">Cancel</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModal('deleteClientModal')">Cancel</button>
         <button type="button" class="btn btn-danger" id="deleteClientConfirmBtn" disabled onclick="confirmDeleteClient()">Delete forever</button>
       </div>
     </div>
@@ -357,13 +235,13 @@
         <div class="modal-hint">Leave blank and they enter it during setup.</div>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" onclick="closeNewClientModal()">Cancel</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModal('newClientModal')">Cancel</button>
         <button type="button" class="btn btn-primary" id="ncSubmit" onclick="submitNewClient()">Create and get setup link</button>
       </div>
     </div>
   </div>
 
-  <!-- Setup link: copy it, or open an email draft. Delivery is yours — see the note. -->
+  <!-- Setup link: copy it, or open an email draft. -->
   <div class="modal-backdrop" id="inviteModal" role="dialog" aria-modal="true" aria-labelledby="inviteTitle">
     <div class="modal-dialog">
       <div class="modal-title" id="inviteTitle">Setup link</div>
@@ -378,8 +256,56 @@
         Opening the link doesn't use it up, so it's safe if an email scanner clicks it first. It only ever opens <em>this</em> gym's setup. To cancel every link for a gym, archive it.
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" onclick="closeInviteModal()">Done</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal('inviteModal')">Done</button>
         <a class="btn btn-secondary" id="inviteMailto" href="#">Open email draft</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit client -->
+  <div class="modal-backdrop" id="editClientModal" role="dialog" aria-modal="true" aria-labelledby="editClientTitle">
+    <div class="modal-dialog">
+      <div class="modal-title" id="editClientTitle">Edit client</div>
+      <div class="modal-error" id="editClientError" role="alert"></div>
+      <div class="modal-field"><label class="modal-label" for="ecName">Name</label><input type="text" class="modal-input" id="ecName" autocomplete="off" /></div>
+      <div class="modal-field"><label class="modal-label" for="ecEmail">Notification email</label><input type="email" class="modal-input" id="ecEmail" autocomplete="off" /></div>
+      <div class="modal-field"><label class="modal-label" for="ecSiteName">Wix site name</label><input type="text" class="modal-input" id="ecSiteName" autocomplete="off" /></div>
+      <div class="modal-field"><label class="modal-label" for="ecSiteId">Wix site ID</label><input type="text" class="modal-input mono" id="ecSiteId" autocomplete="off" /></div>
+      <div class="modal-field"><label class="modal-label" for="ecHardware">Hardware platform</label>
+        <select class="modal-select" id="ecHardware"><option value="">— Not set —</option><option value="kisi">Kisi</option><option value="seam">Seam</option></select>
+        <div class="modal-hint">Cannot be changed once members are provisioned.</div>
+      </div>
+      <div class="modal-field"><label class="modal-label" for="ecTier">Tier</label>
+        <select class="modal-select" id="ecTier"><option value="">— Not set —</option><option value="Base">Base</option><option value="Pro">Pro</option><option value="Connect">Connect</option></select>
+      </div>
+      <div class="modal-field"><label class="modal-label" for="ecStatus">Status</label>
+        <select class="modal-select" id="ecStatus"><option value="active">Active</option><option value="suspended">Suspended</option><option value="cancelled">Cancelled</option></select>
+        <div class="modal-hint">Suspended and cancelled clients are not synced. Use Archive to hide a client.</div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('editClientModal')">Cancel</button>
+        <button type="button" class="btn btn-primary" id="ecSubmit" onclick="submitEditClient()">Save changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hardware API key: set, rotate, test -->
+  <div class="modal-backdrop" id="keyModal" role="dialog" aria-modal="true" aria-labelledby="keyTitle">
+    <div class="modal-dialog">
+      <div class="modal-title" id="keyTitle">Hardware API key</div>
+      <div class="modal-sub">Write-only. Once saved, the key cannot be viewed, only replaced. Encrypted at rest (AES-256-GCM).</div>
+      <div class="modal-error" id="keyError" role="alert"></div>
+      <div class="key-status">
+        <span id="keyStatusText">Checking&hellip;</span>
+        <button type="button" class="btn btn-sm btn-secondary" id="keyTestBtn" onclick="testKey()" disabled>Test key</button>
+      </div>
+      <div class="modal-field">
+        <label class="modal-label" for="keyInput" id="keyInputLabel">New key</label>
+        <input type="password" class="modal-input mono" id="keyInput" autocomplete="off" placeholder="Paste the Kisi API key…" />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('keyModal')">Close</button>
+        <button type="button" class="btn btn-primary" id="keySaveBtn" onclick="saveKey()">Save key</button>
       </div>
     </div>
   </div>
@@ -388,540 +314,306 @@
 
   <script src="/operator-nav.js"></script>
   <script>
-    var currentUser = { name: 'Daxx Roberts', email: 'daxxroberts@gmail.com', role: 'owner' };
+    // ── Shared state ───────────────────────────────────────────────
+    var _clientsFilter = 'active';
+    var _clients = [];                 // from /admin/clients
+    var _healthByClient = {};          // client_id → system-health client row
+    var _adminSeenByClient = {};       // client_id → latest Wix admin last_seen_at
+    var _pendingDeleteClient = null;   // { id, name }
+    var _editing = null;               // client being edited
+    var _keyClient = null;             // { id, name }
+    var _inviteState = null;
 
-    function renderLoggedIn() {
-      var el = document.getElementById('loggedInStrip');
-      var initials = currentUser.name.split(' ').map(function(n) { return n[0]; }).join('');
-      el.innerHTML =
-        '<div class="logged-in-avatar">' + initials + '</div>' +
-        '<div class="logged-in-info">' +
-          '<div class="logged-in-name">' + currentUser.name + '</div>' +
-          '<div class="logged-in-detail">Signed in via Wix · ' + currentUser.email + '</div>' +
-        '</div>' +
-        '<div class="logged-in-badge">' + currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1) + '</div>';
-    }
-
-    function renderAdmins() {
-      var el = document.getElementById('adminList');
-      var countEl = document.getElementById('adminCount');
-      el.innerHTML = '<li class="admin-loading">Loading&hellip;</li>';
-      countEl.textContent = '';
-
-      fetch('/admin/wix-admins', { credentials: 'include' })
-        .then(function(res) {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.json();
-        })
-        .then(function(data) {
-          var admins = data.admins || [];
-          if (admins.length === 0) {
-            el.innerHTML = '<li class="admin-empty">No Wix admins have logged into AccessSync yet. Anyone who opens the AccessSync dashboard from inside Wix will be listed here.</li>';
-            countEl.textContent = 'No admins on record yet';
-            return;
-          }
-          countEl.textContent = admins.length + ' Wix admin' + (admins.length === 1 ? '' : 's') + ' on record';
-          el.innerHTML = admins.map(renderAdminRow).join('');
-        })
-        .catch(function(err) {
-          el.innerHTML = '<li class="admin-error">Failed to load Wix admin list (' + escapeHtml(err.message) + ')</li>';
-          countEl.textContent = '';
-        });
-    }
-
-    function renderAdminRow(a) {
-      // notification_email is the CLIENT's contact, so it only identifies the owner. Anyone else
-      // Wix lets into the dashboard (co-admins, staff) is shown by their Wix user id.
-      var isOwner     = a.permissions === 'OWNER';
-      var displayName = (isOwner && a.notification_email) || ('Wix user ' + (a.wix_uid || '').slice(0, 8) + '…' + (isOwner ? '' : ' (staff)'));
-      var clientLine  = a.client_name || '—';
-      var perms       = a.permissions ? ' · ' + a.permissions : '';
-      var lastSeen    = a.last_seen_at ? formatRelativeTime(a.last_seen_at) : 'never';
-      var seenCount   = a.seen_count != null ? a.seen_count + ' session' + (a.seen_count === 1 ? '' : 's') : '';
-      return '<li class="admin-item">' +
-        '<div class="admin-item-main">' +
-          '<div class="admin-item-name">' + escapeHtml(displayName) + '</div>' +
-          '<div class="admin-item-meta">' + escapeHtml(clientLine) + (a.permissions ? ' · <span class="admin-perm">' + escapeHtml(a.permissions) + '</span>' : '') + '</div>' +
-        '</div>' +
-        '<div class="admin-item-seen">' +
-          '<div class="admin-item-last-seen">Last seen ' + escapeHtml(lastSeen) + '</div>' +
-          '<div class="admin-item-count">' + escapeHtml(seenCount) + '</div>' +
-        '</div>' +
-      '</li>';
-    }
-
-    function formatRelativeTime(iso) {
+    function relTime(iso) {
+      if (!iso) return null;
       var then = new Date(iso).getTime();
-      if (isNaN(then)) return 'unknown';
-      var diff = Date.now() - then;
-      var s = Math.floor(diff / 1000);
-      if (s < 60) return s + 's ago';
-      var m = Math.floor(s / 60);
-      if (m < 60) return m + 'm ago';
-      var h = Math.floor(m / 60);
-      if (h < 24) return h + 'h ago';
-      var d = Math.floor(h / 24);
-      if (d < 30) return d + 'd ago';
-      var months = Math.floor(d / 30);
-      if (months < 12) return months + 'mo ago';
-      var y = Math.floor(d / 365);
-      return y + 'y ago';
+      if (isNaN(then)) return null;
+      var s = Math.floor((Date.now() - then) / 1000);
+      if (s < 60) return 'just now';
+      var m = Math.floor(s / 60); if (m < 60) return m + 'm ago';
+      var h = Math.floor(m / 60); if (h < 48) return h + 'h ago';
+      var d = Math.floor(h / 24); if (d < 60) return d + 'd ago';
+      return Math.floor(d / 30) + 'mo ago';
+    }
+    function hoursText(h) { return h == null ? '' : (h < 48 ? h + 'h' : Math.floor(h / 24) + 'd'); }
+    function agoText(h) { return h == null ? '—' : (h === 0 ? 'Just now' : hoursText(h) + ' ago'); }
+    function readJson(r) { return r.json().catch(function() { return {}; }).then(function(b) { return { ok: r.ok, status: r.status, body: b || {} }; }); }
+    function showErr(id, msg) { var el = document.getElementById(id); el.textContent = msg || ''; el.classList.toggle('show', !!msg); }
+    function openModal(id) { document.getElementById(id).classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); if (id === 'deleteClientModal') _pendingDeleteClient = null; if (id === 'inviteModal') _inviteState = null; }
+
+    // ── Status strip + needs-action ────────────────────────────────
+    function setStatus(id, state, value, sub) {
+      var el = document.getElementById(id);
+      el.className = 'status-item' + (state ? ' state-' + state : '');
+      el.querySelector('.status-value').textContent = value;
+      el.querySelector('.status-sub').textContent = sub || '';
     }
 
-    function renderInfoSection() {
-      var items = [
-        { icon: '&#128274;', text: 'Administrator access is determined by your Wix site roles. Any member with an Owner or Admin role automatically has access to this dashboard.' },
-        { icon: '&#128100;', text: 'When a Wix site member navigates to AccessSync, their session is validated automatically — no separate login required.' },
-        { icon: '&#9881;',   text: 'To add or remove administrators, manage their roles directly in your Wix site dashboard under Site Members.' },
-      ];
-      document.getElementById('infoContent').innerHTML = items.map(function(item) {
-        return '<div class="info-item"><span class="info-item-icon">' + item.icon + '</span><span>' + item.text + '</span></div>';
+    function loadHealth() {
+      return apiFetch('/admin/system-health').then(readJson).then(function(r) {
+        if (!r.ok) throw new Error(r.body.error || ('HTTP ' + r.status));
+        renderHealth(r.body);
+      }).catch(function(err) {
+        var pill = document.getElementById('verdictPill');
+        pill.className = 'verdict-pill state-amber';
+        pill.textContent = 'Health check failed';
+        document.getElementById('pageSubtitle').textContent = 'Could not load system health (' + err.message + ').';
+        ['st-reconcile', 'st-webhooks', 'st-errors', 'st-db'].forEach(function(id) { setStatus(id, '', '—', 'unavailable'); });
+      });
+    }
+
+    function renderHealth(h) {
+      var pill = document.getElementById('verdictPill');
+      pill.className = 'verdict-pill state-' + h.verdict;
+      var n = (h.actions || []).length;
+      pill.textContent = h.verdict === 'green' ? 'All clear' : (h.verdict === 'amber' ? 'Needs a look' : 'Needs action');
+      document.getElementById('pageSubtitle').textContent = n
+        ? (n === 1 ? '1 thing needs attention.' : n + ' things need attention.')
+        : 'Nothing needs your attention.';
+
+      var banner = document.getElementById('checkBanner');
+      banner.textContent = h.check_failed || '';
+      banner.classList.toggle('show', !!h.check_failed);
+
+      var s = h.status || {};
+      var rc = s.reconcile || {};
+      setStatus('st-reconcile', rc.state === 'unknown' ? '' : (rc.state === 'idle' ? '' : rc.state),
+        rc.state === 'unknown' ? '—' : (rc.last_run_at ? agoText(rc.age_hours) : 'Never'),
+        rc.state === 'idle' ? 'nothing to sync yet' : (rc.last_run_at ? 'runs every 12h' : ''));
+      var wh = s.webhooks || {};
+      setStatus('st-webhooks', wh.state === 'unknown' || wh.state === 'idle' ? '' : wh.state,
+        wh.state === 'unknown' ? '—' : (wh.last_received_at ? agoText(wh.age_hours) : 'None yet'),
+        wh.last_received_at ? (wh.count_24h || 0) + ' in 24h' : 'waiting for first sale');
+      var oe = s.open_errors;
+      setStatus('st-errors', !oe ? '' : (oe.needs_gym + oe.needs_accesssync > 0 ? 'red' : (oe.self_clearing ? 'amber' : 'green')),
+        oe ? String(oe.total) : '—',
+        !oe ? 'unavailable' : (oe.total === 0 ? 'none open' : [
+          oe.needs_gym ? oe.needs_gym + ' gym' : '',
+          oe.needs_accesssync ? oe.needs_accesssync + ' AccessSync' : '',
+          oe.self_clearing ? oe.self_clearing + ' self-clearing' : '',
+        ].filter(Boolean).join(' · ')));
+      var db = s.db || {};
+      setStatus('st-db', db.ok ? (db.latency_ms >= 100 ? 'amber' : 'green') : 'red', db.ok ? 'OK' : 'Down', db.ok ? 'probe ' + db.latency_ms + 'ms' : 'not responding');
+
+      _healthByClient = {};
+      (h.clients || []).forEach(function(c) { _healthByClient[c.client_id] = c; });
+      renderActions(h.actions || []);
+      renderClients();
+    }
+
+    function renderActions(actions) {
+      var card = document.getElementById('actionsCard');
+      card.classList.toggle('show', actions.length > 0);
+      if (!actions.length) return;
+      var gym = actions.filter(function(a) { return a.owner === 'gym'; }).length;
+      document.getElementById('actionsSubtitle').textContent =
+        (gym ? gym + ' for a gym' : '') + (gym && actions.length - gym ? ' · ' : '') + (actions.length - gym ? (actions.length - gym) + ' for AccessSync' : '');
+      document.getElementById('actionList').innerHTML = actions.map(function(a) {
+        var right = a.action === 'invite'
+          ? '<button type="button" class="btn btn-sm btn-primary" data-action="invite" data-id="' + esc(a.client_id) + '" data-name="' + esc(a.client_name || '') + '">Send setup link</button>'
+          : (a.link ? '<a class="action-link" href="' + esc(a.link) + '">Open &rarr;</a>' : '');
+        return '<li class="action-row">' +
+          '<span class="owner-tag ' + (a.owner === 'gym' ? 'gym' : 'accesssync') + '">' + (a.owner === 'gym' ? 'Gym' : 'AccessSync') + '</span>' +
+          '<div class="action-main"><div class="action-text">' + esc(a.text) + '</div>' +
+            '<div class="action-meta">' + esc(a.client_name || 'No client') + '</div></div>' +
+          right +
+        '</li>';
       }).join('');
     }
 
-    function toggleInfo() {
-      document.getElementById('infoToggle').classList.toggle('open');
-      document.getElementById('infoBody').classList.toggle('open');
+    function loadQueue() {
+      return apiFetch('/admin/queue/counts').then(readJson).then(function(r) {
+        if (!r.ok) throw new Error(r.body.error || ('HTTP ' + r.status));
+        var q = r.body;
+        var backlog = (q.waiting || 0) + (q.delayed || 0);
+        setStatus('st-queue', q.failed > 0 ? 'amber' : 'green', String(backlog), (q.active || 0) + ' active · ' + (q.failed || 0) + ' failed');
+      }).catch(function() { setStatus('st-queue', '', '—', 'unavailable'); });
     }
 
-    // ── System Health (OB-195) ──
-    async function loadSystemHealth() {
-      try {
-        var res = await fetch('/admin/system-health', { credentials: 'include' });
-        if (!res.ok) {
-          document.getElementById('systemHealthSubtitle').textContent = 'Health check failed (HTTP ' + res.status + ')';
-          return;
-        }
-        var data = await res.json();
-        renderSystemHealth(data);
-      } catch (err) {
-        document.getElementById('systemHealthSubtitle').textContent = 'Health check failed (' + err.message + ')';
-      }
+    function loadAdminsSeen() {
+      return apiFetch('/admin/wix-admins').then(readJson).then(function(r) {
+        if (!r.ok) return;
+        _adminSeenByClient = {};
+        (r.body.admins || []).forEach(function(a) {
+          var cur = _adminSeenByClient[a.client_id];
+          if (!cur || new Date(a.last_seen_at) > new Date(cur)) _adminSeenByClient[a.client_id] = a.last_seen_at;
+        });
+        renderClients();
+      }).catch(function() {});
     }
 
-    function renderSystemHealth(data) {
-      var stateOrder = { red: 0, amber: 1, setup: 2, green: 3, inactive: 4 };
-      var clients = (data.clients || []).slice().sort(function(a, b) {
-        var av = stateOrder[a.worst_state]; if (av == null) av = 99;
-        var bv = stateOrder[b.worst_state]; if (bv == null) bv = 99;
-        return av - bv;
-      });
-      // Aggregate pill
-      var agg = document.getElementById('systemHealthAggregate');
-      var aggState = (data.aggregate && data.aggregate.worst_state) || 'green';
-      agg.className = 'system-health-aggregate health-state-' + aggState;
-      var needN = (data.aggregate && data.aggregate.clients_needing_attention) || 0;
-      var setupN = (data.aggregate && data.aggregate.clients_setting_up) || 0;
-      var setupNote = setupN ? ' · ' + setupN + ' setting up' : '';
-      var dbStateNow = (data.db_health && data.db_health.state) || 'green';
-      var unassignedN = (data.platform && data.platform.unassigned_open_errors) || 0;
-      var aggText;
-      if (data.aggregate && data.aggregate._error) aggText = 'Health check partly failed: some results below are missing' + setupNote;
-      else if (aggState === 'green') aggText = 'Nothing needs your attention' + setupNote;
-      else if (needN === 0 && dbStateNow === 'green' && unassignedN) aggText = unassignedN + (unassignedN === 1 ? ' open error is' : ' open errors are') + ' not tied to any client' + setupNote;
-      else if (needN === 0 && dbStateNow !== 'green') aggText = (dbStateNow === 'red' ? 'The database is not responding' : 'The database is slow') + setupNote;   // the colour comes from the database, not a client
-      else if (aggState === 'amber') aggText = (needN === 1 ? '1 client needs a look' : needN + ' clients need a look') + setupNote;
-      else aggText = (needN === 1 ? '1 client needs action' : needN + ' clients need action') + setupNote;
-      agg.textContent = aggText;
-      // Subtitle
-      var subtitle = document.getElementById('systemHealthSubtitle');
-      var ageH = data.aggregate ? data.aggregate.latest_reconcile_age_hours : null;
-      subtitle.textContent = (data.aggregate && data.aggregate._error)
-        ? 'Reconcile status unavailable'
-        : (ageH != null
-          ? 'Latest reconcile ' + ageH + 'h ago across all clients'
-          : 'No reconcile runs on record');
-      // Per-client cards
-      var grid = document.getElementById('systemHealthGrid');
-      grid.innerHTML = clients.length
-        ? clients.map(function(c) { return renderHealthCard(c); }).join('')
-        : '<div class="health-empty">No active clients.</div>';
-      // DB health
-      var db = document.getElementById('systemHealthDb');
-      var dbState = (data.db_health && data.db_health.state) || 'green';
-      var dbWord = dbState === 'green' ? 'OK' : (dbState === 'amber' ? 'Slow' : 'Down');
-      var dbProbe = (data.db_health && data.db_health.probe_latency_ms != null)
-        ? data.db_health.probe_latency_ms + 'ms'
-        : 'unreachable';
-      var dbSlow = (data.db_health && data.db_health.slow_query_24h != null) ? data.db_health.slow_query_24h : 0;
-      var platformErrs = (data.platform && data.platform.error_count_24h) || 0;
-      db.innerHTML = '<div class="health-db-row health-state-' + dbState + '">' +
-        '<span class="health-db-label">Supabase DB \u00b7 ' + dbWord + '</span>' +
-        '<span class="health-db-detail">Probe ' + dbProbe + ' \u00b7 ' + dbSlow + ' slow queries / 24h</span>' +
-        '</div>' +
-        ((data.platform && data.platform.unassigned_open_errors)
-          ? '<div class="health-db-row health-state-amber" style="margin-top:6px;">' +
-              '<span class="health-db-label">Open errors not tied to a client</span>' +
-              '<span class="health-db-detail">' + data.platform.unassigned_open_errors + '</span>' +
-            '</div>'
-          : '') +
-        (platformErrs
-          ? '<div class="health-db-row health-state-amber" style="margin-top:6px;">' +
-              '<span class="health-db-label">Not tied to a client</span>' +
-              '<span class="health-db-detail">' + platformErrs + ' error' + (platformErrs === 1 ? '' : 's') + ' in 24h</span>' +
-            '</div>'
-          : '');
-    }
-
-    function renderHealthCard(c) {
-      var checks = c.checks || {};
-      var pill = c.worst_state === 'setup' ? 'SETTING UP'
-               : c.worst_state === 'inactive' ? 'INACTIVE'
-               : (c.setup && c.setup.stalled) ? 'SETUP STALLED'
-               : String(c.worst_state || '').toUpperCase();
-      var body;
-      var inviteBtn = '<button type="button" class="btn btn-sm btn-primary" data-action="invite" data-id="' + escapeHtml(c.client_id) +
-                      '" data-name="' + escapeHtml(c.client_name || '') + '">Send setup link</button>';
-      if (c.worst_state === 'inactive') {
-        body = '<div class="health-setup">This client is <strong>' + escapeHtml(c.status || 'not active') + '</strong>, so nothing is synced for it and nothing is expected of it.</div>';
-      } else if (c.setup) {
-        // Not broken, just not finished: say what is missing and for how long, no red.
-        var age = c.setup.age_hours == null ? '' : (c.setup.age_hours < 48 ? c.setup.age_hours + 'h' : Math.floor(c.setup.age_hours / 24) + ' days');
-        body = '<div class="health-setup">' +
-          (c.setup.stalled ? '<strong>Setup has stalled</strong>' : '<strong>Setup in progress</strong>') +
-          (age ? ' \u00b7 started ' + escapeHtml(age) + ' ago' : '') + '<br>' +
-          'Still missing: ' + escapeHtml(c.setup.missing.join(', ')) + '.' +
-          (c.setup.stalled ? '<br>Send the gym a fresh link:<br>' + inviteBtn : '') +
-          '</div>';
-      } else {
-        // An established client that lost part of its configuration is a real fault: say so above its checks.
-        var gap = (c.config_gap && c.config_gap.length)
-          ? '<div class="health-gap">Setup is incomplete: ' + escapeHtml(c.config_gap.join(', ')) + ' missing. This client was working, so this needs fixing.</div>'
-          : '';
-        if (c.setup_check_failed) gap += '<div class="health-gap">Check failed: could not read this client\'s setup, so a missing key or location would not show here.</div>';
-        var al = c.open_alerts;
-        var alertNote = (al && al.open_count)
-          ? '<div class="health-note">' + (al.removals_held === al.open_count
-              ? al.open_count + (al.open_count === 1 ? ' removal is' : ' removals are') + ' waiting for the gym to decide (nothing was removed; sent in the daily digest).'
-              : al.open_count + ' open sync alert' + (al.open_count === 1 ? '' : 's') + (al.removals_held ? ', ' + al.removals_held + ' of them removals waiting for the gym' : '') + ' (sent in the daily digest).') +
-            '</div>'
-          : '';
-        body = gap + '<div class="health-checks">' +
-          renderCheck('Reconcile', checks.reconcile_freshness, formatReconcile) +
-          renderCheck('Webhooks', checks.webhook_ingestion, formatWebhook) +
-          renderErrorsCheck(checks.error_queue) +
-          renderCheck('Diagnostics', checks.diagnostic_log, formatDiagnostics) +
-        '</div>' + alertNote;
-      }
-      return '<div class="health-card health-state-' + (c.setup && c.setup.stalled ? 'amber' : c.worst_state) + '">' +
-        '<div class="health-card-header">' +
-          '<span class="health-card-title">' + escapeHtml(c.client_name) + '</span>' +
-          '<span class="health-card-state-pill">' + pill + '</span>' +
-        '</div>' +
-        body +
-      '</div>';
-    }
-
-    // Errors: say WHO has to act and link to the list, so an error is never a dead end.
-    function renderErrorsCheck(q) {
-      if (!q) return '';
-      var detail = '', link = '';
-      if (q.state !== 'green' && q.open_count) {
-        var parts = [];
-        if (q.needs_gym) parts.push(q.needs_gym + ' for the gym');
-        if (q.needs_accesssync) parts.push(q.needs_accesssync + ' for AccessSync support');
-        if (q.self_clearing) parts.push(q.self_clearing + ' will clear itself');
-        var age = q.oldest_age_hours == null ? '' : ' \u00b7 oldest ' + (q.oldest_age_hours < 48 ? q.oldest_age_hours + 'h' : Math.floor(q.oldest_age_hours / 24) + 'd');
-        detail = '<span class="health-sub">' + escapeHtml(parts.join(' \u00b7 ') + age) + '</span>';
-        if (q.link) link = ' <a class="health-link" href="' + escapeHtml(q.link) + '">See errors &rarr;</a>';
-      }
-      return '<div class="health-check">' +
-        '<span class="health-check-label">Errors</span>' +
-        '<span class="health-check-state health-state-' + q.state + '">' + formatErrors(q) + link + detail + '</span>' +
-      '</div>';
-    }
-
-    function renderCheck(label, check, formatFn) {
-      if (!check) return '';
-      return '<div class="health-check">' +
-        '<span class="health-check-label">' + label + '</span>' +
-        '<span class="health-check-state health-state-' + check.state + '">' + formatFn(check) + '</span>' +
-      '</div>';
-    }
-
-    function formatReconcile(c) {
-      if (c.state === 'idle') return 'Waiting for first sync';
-      if (c.state === 'red' && c._error) return 'Check failed';
-      if (c.age_hours == null) return 'Never run';
-      if (c.state === 'green') return 'Fresh (' + c.age_hours + 'h ago)';
-      if (c.state === 'amber') return 'Stale (' + c.age_hours + 'h ago)';
-      return '>' + c.age_hours + 'h ago';
-    }
-    function formatWebhook(c) {
-      if (c.state === 'idle') return 'Waiting for first sale';
-      if (c.state === 'red' && c._error) return 'Check failed';
-      if (c.state === 'green') return 'Active (' + (c.count_24h || 0) + ' today)';
-      if (c.state === 'amber') return 'Slow (' + (c.count_24h || 0) + ' today)';
-      return 'Silent';
-    }
-    function formatErrors(c) {
-      if (c.open_count == null) return 'Check failed';
-      if (c.state === 'green') return 'None open';
-      if (c.state === 'amber') return c.open_count + ' open';
-      return c.open_count + ' need action';
-    }
-    function formatDiagnostics(c) {
-      if (c.state === 'red' && c._error) return 'Check failed';
-      if (c.state === 'amber') return (c.error_count_24h || 0) + ' errors / 24h';
-      return 'No error burst';
-    }
-
-    function escapeHtml(s) {
-      if (s == null) return '';
-      return String(s).replace(/[&<>"']/g, function(ch) {
-        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
-      });
-    }
-
-    // ── Clients Panel ──
-    var _clientsFilter = 'active';
-    var _pendingDeleteClient = null; // { id, name }
-
+    // ── Clients ────────────────────────────────────────────────────
     function setClientsFilter(status) {
       if (status !== 'active' && status !== 'archived' && status !== 'all') return;
       _clientsFilter = status;
-      var btns = document.querySelectorAll('.clients-filter-btn');
-      for (var i = 0; i < btns.length; i++) {
-        var b = btns[i];
-        if (b.dataset.status === status) b.classList.add('active');
-        else b.classList.remove('active');
-      }
+      document.querySelectorAll('.clients-filter-btn').forEach(function(b) { b.classList.toggle('active', b.dataset.status === status); });
       loadClients();
     }
 
     function loadClients() {
-      var grid = document.getElementById('clientsGrid');
-      var subtitle = document.getElementById('clientsSubtitle');
-      grid.innerHTML = '<div class="clients-loading">Loading clients&hellip;</div>';
-      subtitle.textContent = 'Loading…';
-
-      fetch('/admin/clients?status=' + encodeURIComponent(_clientsFilter), { credentials: 'include' })
-        .then(function(res) {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.json();
-        })
-        .then(function(payload) {
-          var clients = (payload && payload.data) || [];
-          renderClients(clients);
-        })
-        .catch(function(err) {
-          grid.innerHTML = '<div class="clients-error">Failed to load clients (' + escapeHtml(err.message) + ')</div>';
-          subtitle.textContent = '';
-        });
+      document.getElementById('clientsGrid').innerHTML = '<div class="clients-loading">Loading clients&hellip;</div>';
+      document.getElementById('clientsSubtitle').textContent = 'Loading…';
+      return apiFetch('/admin/clients?status=' + encodeURIComponent(_clientsFilter)).then(readJson).then(function(r) {
+        if (!r.ok) throw new Error(r.body.error || ('HTTP ' + r.status));
+        _clients = (r.body && r.body.data) || [];
+        renderClients();
+      }).catch(function(err) {
+        document.getElementById('clientsGrid').innerHTML = '<div class="clients-error">Failed to load clients (' + esc(err.message) + ')</div>';
+        document.getElementById('clientsSubtitle').textContent = '';
+      });
     }
 
-    function renderClients(clients) {
+    function renderClients() {
       var grid = document.getElementById('clientsGrid');
       var subtitle = document.getElementById('clientsSubtitle');
-      if (!clients.length) {
-        var emptyMsg = _clientsFilter === 'archived'
-          ? 'No archived clients.'
-          : (_clientsFilter === 'all' ? 'No clients on record.' : 'No active clients.');
-        grid.innerHTML = '<div class="clients-empty">' + emptyMsg + '</div>';
+      if (!_clients.length) {
+        if (grid.querySelector('.clients-loading')) return;   // still loading
+        grid.innerHTML = '<div class="clients-empty">' + (_clientsFilter === 'archived' ? 'No archived clients.' : (_clientsFilter === 'all' ? 'No clients on record.' : 'No active clients.')) + '</div>';
         subtitle.textContent = '0 clients';
         return;
       }
-      subtitle.textContent = clients.length + ' client' + (clients.length === 1 ? '' : 's') +
-        ' (filter: ' + _clientsFilter + ')';
-      grid.innerHTML = clients.map(renderClientCard).join('');
+      subtitle.textContent = _clients.length + ' client' + (_clients.length === 1 ? '' : 's') + (_clientsFilter === 'active' ? '' : ' (' + _clientsFilter + ')');
+      grid.innerHTML = _clients.map(renderClientCard).join('');
     }
 
     function renderClientCard(c) {
-      // Suspended / cancelled clients are not active: say so (the health card already does).
+      var h = _healthByClient[c.id];
       var statusKey = (c.status === 'archived') ? 'archived' : (!c.status || c.status === 'active') ? 'active' : 'inactive';
       var statusLabel = statusKey === 'inactive' ? String(c.status).toUpperCase() : statusKey.toUpperCase();
-      var created  = c.created_at  ? new Date(c.created_at).toLocaleDateString()  : '—';
-      var lastSync = c.last_sync_at ? formatRelativeTime(c.last_sync_at)            : '—';
-      var members  = (c.member_count != null) ? c.member_count : 0;
-      var active   = (c.active_count != null) ? c.active_count : 0;
-      // Client names are operator-editable, so they never go into an inline handler or a
-      // JS string: buttons carry data-* (HTML-escaped) and one delegated listener reads them.
-      var dataAttrs = ' data-id="' + escapeHtml(c.id) + '" data-name="' + escapeHtml(c.name || '') + '"';
+      var state = statusKey === 'archived' ? 'archived' : (h ? h.state : '');
+      var members = c.member_count || 0, active = c.active_count || 0;
+      var seen = _adminSeenByClient[c.id];
+      // Client names are operator-editable: buttons carry data-* (HTML-escaped) and one delegated listener reads them.
+      var dataAttrs = ' data-id="' + esc(c.id) + '" data-name="' + esc(c.name || '') + '"';
+      var btn = function(action, cls, label) { return '<button type="button" class="btn btn-sm ' + cls + '" data-action="' + action + '"' + dataAttrs + '>' + label + '</button>'; };
 
-      var actionBtn = statusKey === 'archived'
-        ? '<button type="button" class="btn btn-sm btn-secondary" data-action="restore"' + dataAttrs + '>Restore</button>'
-        : '<button type="button" class="btn btn-sm btn-secondary" data-action="archive"' + dataAttrs + '>Archive</button>';
-      var inviteBtn = statusKey === 'archived' ? ''
-        : '<button type="button" class="btn btn-sm btn-primary" data-action="invite"' + dataAttrs + '>Setup link</button>';
+      var meta = [
+        '<span>' + active + ' active member' + (active === 1 ? '' : 's') + (members > active ? ' · ' + (members - active) + ' pending' : '') + '</span>',
+        h && h.last_webhook_at ? '<span>Last sale ' + esc(relTime(h.last_webhook_at)) + '</span>' : (h && h.state !== 'inactive' ? '<span>No sales yet</span>' : ''),
+        h && h.last_reconcile_at ? '<span>Synced ' + esc(relTime(h.last_reconcile_at)) + '</span>' : '',
+        seen ? '<span>Owner seen ' + esc(relTime(seen)) + '</span>' : '',
+        h && h.missing && h.missing.length ? '<span>Missing ' + esc(h.missing.join(', ')) + '</span>' : '',
+        '<span>Created ' + esc(c.created_at ? new Date(c.created_at).toLocaleDateString() : '—') + '</span>',
+      ].filter(Boolean).join('');
 
-      return '<div class="client-card">' +
-        '<div class="client-card-main">' +
+      var actions = statusKey === 'archived'
+        ? btn('restore', 'btn-secondary', 'Restore') + btn('delete', 'btn-danger', 'Delete')
+        : btn('invite', 'btn-primary', 'Setup link') +
+          '<a class="btn btn-sm btn-outline" href="/dashboard?clientId=' + encodeURIComponent(c.id) + '">Dashboard</a>' +
+          btn('edit', 'btn-secondary', 'Edit') +
+          btn('key', 'btn-secondary', 'Key') +
+          btn('archive', 'btn-ghost', 'Archive') +
+          btn('delete', 'btn-danger', 'Delete');
+
+      return '<div class="client-card state-' + esc(state) + '">' +
+        '<div class="client-card-top"><div>' +
           '<div class="client-card-name-row">' +
-            '<span class="client-card-name">' + escapeHtml(c.name || '(unnamed)') + '</span>' +
-            '<span class="client-card-badge status-' + statusKey + '">' + statusLabel + '</span>' +
+            '<span class="client-card-name">' + esc(c.name || '(unnamed)') + '</span>' +
+            '<span class="client-card-badge status-' + statusKey + '">' + esc(statusLabel) + '</span>' +
+            (h && h.state === 'setup' ? '<span class="client-card-badge status-inactive">Setting up</span>' : '') +
           '</div>' +
-          '<div class="client-card-meta">' +
-            '<span>Created ' + escapeHtml(created) + '</span>' +
-            '<span>Last sync ' + escapeHtml(lastSync) + '</span>' +
-            // Same definition as the main dashboard's "Active Members": people with active access,
-            // sub-members included. Former/deleted members are not counted. Anyone AccessSync is
-            // responsible for but not yet active shows as pending.
-            '<span>' + active + ' active member' + (active === 1 ? '' : 's') +
-              (members > active ? ' \u00b7 ' + (members - active) + ' pending' : '') + '</span>' +
-          '</div>' +
-        '</div>' +
-        '<div class="client-card-actions">' +
-          inviteBtn +
-          '<a class="btn btn-sm btn-outline" href="/dashboard?clientId=' + encodeURIComponent(c.id) + '">View Dashboard</a>' +
-          actionBtn +
-          '<button type="button" class="btn btn-sm btn-danger" data-action="delete"' + dataAttrs + '>Delete</button>' +
-        '</div>' +
+          '<div class="client-card-meta">' + meta + '</div>' +
+        '</div></div>' +
+        '<div class="client-card-actions">' + actions + '</div>' +
       '</div>';
     }
 
+    function findClient(id) { for (var i = 0; i < _clients.length; i++) if (_clients[i].id === id) return _clients[i]; return null; }
+
+    function postAction(url, okMsg, failMsg) {
+      return apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } }).then(readJson).then(function(r) {
+        if (!r.ok) throw new Error(r.body.error || ('HTTP ' + r.status));
+        showToast('success', okMsg);
+        refreshAll();
+      }).catch(function(err) { showToast('error', failMsg + ': ' + err.message); });
+    }
     function archiveClient(id, name) {
       if (!confirm('Archive "' + name + '"? They can be restored later.')) return;
-      fetch('/admin/clients/' + encodeURIComponent(id) + '/archive', {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      })
-        .then(function(res) {
-          return res.json().then(function(body) { return { res: res, body: body }; });
-        })
-        .then(function(r) {
-          if (!r.res.ok) throw new Error(r.body.error || ('HTTP ' + r.res.status));
-          if (typeof showToast === 'function') showToast('success', 'Archived "' + escapeHtml(name) + '"');
-          loadClients();
-        })
-        .catch(function(err) {
-          if (typeof showToast === 'function') showToast('error', 'Archive failed: ' + err.message);
-        });
+      postAction('/admin/clients/' + encodeURIComponent(id) + '/archive', 'Archived "' + esc(name) + '"', 'Archive failed');
     }
-
     function restoreClient(id, name) {
-      fetch('/admin/clients/' + encodeURIComponent(id) + '/restore', {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      })
-        .then(function(res) {
-          return res.json().then(function(body) { return { res: res, body: body }; });
-        })
-        .then(function(r) {
-          if (!r.res.ok) throw new Error(r.body.error || ('HTTP ' + r.res.status));
-          if (typeof showToast === 'function') showToast('success', 'Restored "' + escapeHtml(name) + '"');
-          loadClients();
-        })
-        .catch(function(err) {
-          if (typeof showToast === 'function') showToast('error', 'Restore failed: ' + err.message);
-        });
+      postAction('/admin/clients/' + encodeURIComponent(id) + '/restore', 'Restored "' + esc(name) + '"', 'Restore failed');
     }
 
+    // ── Delete ─────────────────────────────────────────────────────
     function openDeleteClientModal(id, name) {
       _pendingDeleteClient = { id: id, name: name };
       var expected = 'DELETE ' + name;
       document.getElementById('deleteClientModalTitle').textContent = 'Delete ' + name + '?';
       document.getElementById('deleteClientExpected').textContent = expected;
       var input = document.getElementById('deleteClientInput');
-      input.value = '';
-      input.placeholder = expected;
+      input.value = ''; input.placeholder = expected;
       document.getElementById('deleteClientConfirmBtn').disabled = true;
-      document.getElementById('deleteClientModal').classList.add('open');
+      openModal('deleteClientModal');
       setTimeout(function() { input.focus(); }, 50);
     }
-
-    function closeDeleteClientModal() {
-      document.getElementById('deleteClientModal').classList.remove('open');
-      _pendingDeleteClient = null;
-    }
-
     function onDeleteClientInputChange() {
       if (!_pendingDeleteClient) return;
-      var expected = 'DELETE ' + _pendingDeleteClient.name;
-      var val = document.getElementById('deleteClientInput').value;
-      document.getElementById('deleteClientConfirmBtn').disabled = (val !== expected);
+      document.getElementById('deleteClientConfirmBtn').disabled = (document.getElementById('deleteClientInput').value !== 'DELETE ' + _pendingDeleteClient.name);
     }
-
     function confirmDeleteClient() {
       if (!_pendingDeleteClient) return;
       var pending = _pendingDeleteClient;
-      var confirmStr = 'DELETE ' + pending.name;
       var btn = document.getElementById('deleteClientConfirmBtn');
       btn.disabled = true;
-      fetch('/admin/clients/' + encodeURIComponent(pending.id), {
-        method: 'DELETE', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm: confirmStr }),
-      })
-        .then(function(res) {
-          return res.json().then(function(body) { return { res: res, body: body }; });
-        })
-        .then(function(r) {
-          if (!r.res.ok) throw new Error(r.body.error || ('HTTP ' + r.res.status));
-          if (typeof showToast === 'function') showToast('success', 'Deleted "' + escapeHtml(pending.name) + '"');
-          closeDeleteClientModal();
-          loadClients();
-        })
-        .catch(function(err) {
-          if (typeof showToast === 'function') showToast('error', 'Delete failed: ' + err.message);
-          btn.disabled = false;
-        });
+      apiFetch('/admin/clients/' + encodeURIComponent(pending.id), {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'DELETE ' + pending.name }),
+      }).then(readJson).then(function(r) {
+        if (!r.ok) throw new Error(r.body.error || ('HTTP ' + r.status));
+        showToast('success', 'Deleted "' + esc(pending.name) + '"');
+        closeModal('deleteClientModal');
+        refreshAll();
+      }).catch(function(err) { showToast('error', 'Delete failed: ' + err.message); btn.disabled = false; });
     }
 
-    // ── New client + setup link ──────────────────────────────────
-    var _inviteState = null; // { url, clientName, email, ttlHours }
-
-    function _showErr(id, msg) {
-      var el = document.getElementById(id);
-      el.textContent = msg || '';
-      el.classList.toggle('show', !!msg);
-    }
-
+    // ── New client + setup link ────────────────────────────────────
     function openNewClientModal() {
       ['ncName', 'ncEmail', 'ncSite'].forEach(function(id) { document.getElementById(id).value = ''; });
-      _showErr('newClientError', '');
+      showErr('newClientError', '');
       document.getElementById('ncSubmit').disabled = false;
-      document.getElementById('newClientModal').classList.add('open');
+      openModal('newClientModal');
       setTimeout(function() { document.getElementById('ncName').focus(); }, 50);
     }
-    function closeNewClientModal() { document.getElementById('newClientModal').classList.remove('open'); }
-
     function submitNewClient() {
       var name  = document.getElementById('ncName').value.trim();
       var email = document.getElementById('ncEmail').value.trim();
       var site  = document.getElementById('ncSite').value.trim();
-      if (!name)  return _showErr('newClientError', 'Enter the gym or business name.');
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return _showErr('newClientError', 'Enter a valid email address.');
+      if (!name)  return showErr('newClientError', 'Enter the gym or business name.');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showErr('newClientError', 'Enter a valid email address.');
       if (site && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(site)) {
-        return _showErr('newClientError', 'That Wix site ID doesn’t look right — it should look like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx, or leave it blank.');
+        return showErr('newClientError', 'That Wix site ID doesn’t look right — it should look like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx, or leave it blank.');
       }
-      _showErr('newClientError', '');
+      showErr('newClientError', '');
       var btn = document.getElementById('ncSubmit');
       btn.disabled = true;
-      fetch('/admin/clients', {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+      apiFetch('/admin/clients', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name, notification_email: email, source_site_id: site || null }),
-      })
-        .then(function(res) { return res.json().then(function(b) { return { res: res, body: b }; }); })
-        .then(function(r) {
-          if (!r.res.ok) throw new Error(r.body.error || ('HTTP ' + r.res.status));
-          closeNewClientModal();
-          loadClients();
-          openInviteModal(r.body.client.id, r.body.client.name);
-        })
-        .catch(function(err) {
-          btn.disabled = false;
-          _showErr('newClientError', err.message === 'Site ID already in use'
-            ? 'That Wix site is already connected to another client.'
-            : 'Could not create the client: ' + err.message);
-        });
+      }).then(readJson).then(function(r) {
+        if (!r.ok) throw new Error(r.body.error || ('HTTP ' + r.status));
+        closeModal('newClientModal');
+        refreshAll();
+        openInviteModal(r.body.client.id, r.body.client.name);
+      }).catch(function(err) {
+        btn.disabled = false;
+        showErr('newClientError', err.message === 'Site ID already in use' ? 'That Wix site is already connected to another client.' : 'Could not create the client: ' + err.message);
+      });
     }
 
     function openInviteModal(id, name) {
       _inviteState = null;
-      _showErr('inviteError', '');
+      showErr('inviteError', '');
       document.getElementById('inviteTitle').textContent = 'Setup link for ' + name;
       document.getElementById('inviteSub').textContent = 'Creating link…';
       document.getElementById('inviteUrl').value = '';
       document.getElementById('inviteCopy').disabled = true;
       document.getElementById('inviteMailto').setAttribute('href', '#');
-      document.getElementById('inviteModal').classList.add('open');
-      fetch('/admin/clients/' + encodeURIComponent(id) + '/invite', {
-        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-      })
-        .then(function(res) { return res.json().then(function(b) { return { res: res, body: b }; }); })
-        .then(function(r) {
-          if (!r.res.ok) throw new Error(r.body.error || ('HTTP ' + r.res.status));
+      openModal('inviteModal');
+      apiFetch('/admin/clients/' + encodeURIComponent(id) + '/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        .then(readJson).then(function(r) {
+          if (!r.ok) throw new Error(r.body.error || ('HTTP ' + r.status));
           var b = r.body;
           _inviteState = { url: b.url, clientName: b.clientName || name, email: b.notificationEmail || '', ttlHours: b.ttlHours };
           document.getElementById('inviteSub').textContent =
@@ -934,63 +626,157 @@
             b.url + '\n\nThe link works for ' + b.ttlHours + ' hours. If it expires, tell me and I’ll send a new one.';
           document.getElementById('inviteMailto').setAttribute('href',
             'mailto:' + encodeURIComponent(_inviteState.email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body));
-        })
-        .catch(function(err) {
+        }).catch(function(err) {
           document.getElementById('inviteSub').textContent = '';
-          _showErr('inviteError', 'Could not create a setup link: ' + err.message);
+          showErr('inviteError', 'Could not create a setup link: ' + err.message);
         });
     }
-    function closeInviteModal() { document.getElementById('inviteModal').classList.remove('open'); _inviteState = null; }
-
     function copyInviteLink() {
       var input = document.getElementById('inviteUrl');
       if (!input.value) return;
-      var done = function() { if (typeof showToast === 'function') showToast('success', 'Setup link copied'); };
-      var fallback = function() { input.select(); try { document.execCommand('copy'); done(); } catch (e) { _showErr('inviteError', 'Copy failed — select the link and copy it manually.'); } };
+      var done = function() { showToast('success', 'Setup link copied'); };
+      var fallback = function() { input.select(); try { document.execCommand('copy'); done(); } catch (e) { showErr('inviteError', 'Copy failed — select the link and copy it manually.'); } };
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(done, fallback);
       else fallback();
     }
 
-    // The "Send setup link" button on a setup card (System Health) uses the same data-action contract.
-    document.getElementById('systemHealthGrid').addEventListener('click', function(e) {
+    // ── Edit client ────────────────────────────────────────────────
+    function openEditClientModal(id) {
+      var c = findClient(id);
+      if (!c) return;
+      _editing = c;
+      showErr('editClientError', '');
+      document.getElementById('editClientTitle').textContent = 'Edit ' + (c.name || 'client');
+      document.getElementById('ecName').value = c.name || '';
+      document.getElementById('ecEmail').value = c.notification_email || '';
+      document.getElementById('ecSiteName').value = c.source_site_name || '';
+      document.getElementById('ecSiteId').value = c.source_site_id || '';
+      document.getElementById('ecHardware').value = (c.connector && c.connector.platform) || '';
+      document.getElementById('ecTier').value = (c.billing && c.billing.tier) || '';
+      var st = document.getElementById('ecStatus');
+      st.value = c.status || 'active';
+      if (st.value !== (c.status || 'active')) { var o = document.createElement('option'); o.value = c.status; o.textContent = c.status; st.appendChild(o); st.value = c.status; }
+      document.getElementById('ecSubmit').disabled = false;
+      openModal('editClientModal');
+      setTimeout(function() { document.getElementById('ecName').focus(); }, 50);
+    }
+    function submitEditClient() {
+      if (!_editing) return;
+      var c = _editing;
+      var name = document.getElementById('ecName').value.trim();
+      var email = document.getElementById('ecEmail').value.trim();
+      var siteId = document.getElementById('ecSiteId').value.trim();
+      if (!name) return showErr('editClientError', 'Name is required.');
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showErr('editClientError', 'Enter a valid email address.');
+      if (siteId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(siteId)) return showErr('editClientError', 'That Wix site ID doesn’t look right.');
+      showErr('editClientError', '');
+      var body = {
+        name: name,
+        notification_email: email || null,
+        source_site_name: document.getElementById('ecSiteName').value.trim() || null,
+        source_site_id: siteId || null,
+        status: document.getElementById('ecStatus').value,
+      };
+      var hw = document.getElementById('ecHardware').value;
+      if (hw && hw !== ((c.connector && c.connector.platform) || '')) body.hardware_platform = hw;
+      var tier = document.getElementById('ecTier').value;
+      if (tier !== ((c.billing && c.billing.tier) || '')) body.tier = tier || null;
+      var btn = document.getElementById('ecSubmit');
+      btn.disabled = true;
+      apiFetch('/admin/clients/' + encodeURIComponent(c.id), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      }).then(readJson).then(function(r) {
+        if (!r.ok) throw new Error(r.body.error || ('HTTP ' + r.status));
+        showToast('success', 'Saved "' + esc(name) + '"');
+        closeModal('editClientModal');
+        refreshAll();
+      }).catch(function(err) { btn.disabled = false; showErr('editClientError', 'Could not save: ' + err.message); });
+    }
+
+    // ── Hardware API key ───────────────────────────────────────────
+    function openKeyModal(id, name) {
+      _keyClient = { id: id, name: name };
+      showErr('keyError', '');
+      document.getElementById('keyTitle').textContent = 'Hardware API key · ' + name;
+      document.getElementById('keyInput').value = '';
+      document.getElementById('keySaveBtn').disabled = false;
+      openModal('keyModal');
+      loadKeyStatus();
+    }
+    function loadKeyStatus() {
+      var txt = document.getElementById('keyStatusText'), test = document.getElementById('keyTestBtn'), label = document.getElementById('keyInputLabel');
+      txt.textContent = 'Checking…'; test.disabled = true;
+      apiFetch('/admin/clients/' + encodeURIComponent(_keyClient.id) + '/api-key/status').then(readJson).then(function(r) {
+        if (!r.ok) throw new Error(r.body.error || ('HTTP ' + r.status));
+        var has = !!r.body.hasKey;
+        txt.textContent = has ? 'A key is stored (••••••••)' : 'No key stored';
+        test.disabled = !has;
+        label.textContent = has ? 'Replace with a new key' : 'Key';
+      }).catch(function(err) { txt.textContent = 'Could not read key status (' + err.message + ')'; });
+    }
+    function testKey() {
+      var test = document.getElementById('keyTestBtn');
+      test.disabled = true; test.textContent = 'Testing…';
+      apiFetch('/admin/clients/' + encodeURIComponent(_keyClient.id) + '/api-key/test').then(readJson).then(function(r) {
+        if (r.body.valid) showToast('success', 'Key valid — Kisi accepted it');
+        else showToast('error', 'Key rejected: ' + (r.body.error || ('HTTP ' + r.status)));
+      }).catch(function(err) { showToast('error', 'Test failed: ' + err.message); })
+        .then(function() { test.disabled = false; test.textContent = 'Test key'; });
+    }
+    function saveKey() {
+      var key = document.getElementById('keyInput').value.trim();
+      if (!key) return showErr('keyError', 'Paste the key first.');
+      if (key.length < 20) return showErr('keyError', 'That looks too short to be an API key (20 characters minimum).');
+      showErr('keyError', '');
+      var btn = document.getElementById('keySaveBtn');
+      btn.disabled = true;
+      apiFetch('/admin/clients/' + encodeURIComponent(_keyClient.id) + '/api-key', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey: key }),
+      }).then(readJson).then(function(r) {
+        if (!r.ok) throw new Error(r.body.error || ('HTTP ' + r.status));
+        showToast('success', 'Key saved');
+        document.getElementById('keyInput').value = '';
+        btn.disabled = false;
+        loadKeyStatus();
+        loadHealth();
+      }).catch(function(err) { btn.disabled = false; showErr('keyError', 'Could not save: ' + err.message); });
+    }
+
+    // ── Wiring ─────────────────────────────────────────────────────
+    function refreshAll() { loadHealth(); loadClients(); }
+
+    document.getElementById('actionList').addEventListener('click', function(e) {
       var b = e.target.closest('button[data-action="invite"]');
       if (b) openInviteModal(b.getAttribute('data-id'), b.getAttribute('data-name'));
     });
-
-    // One delegated listener for every client-card button (see renderClientCard).
     document.getElementById('clientsGrid').addEventListener('click', function(e) {
       var b = e.target.closest('button[data-action]');
       if (!b) return;
       var id = b.getAttribute('data-id'), name = b.getAttribute('data-name');
-      if (b.dataset.action === 'archive')      archiveClient(id, name);
-      else if (b.dataset.action === 'restore') restoreClient(id, name);
-      else if (b.dataset.action === 'delete')  openDeleteClientModal(id, name);
-      else if (b.dataset.action === 'invite')  openInviteModal(id, name);
+      switch (b.dataset.action) {
+        case 'archive': archiveClient(id, name); break;
+        case 'restore': restoreClient(id, name); break;
+        case 'delete':  openDeleteClientModal(id, name); break;
+        case 'invite':  openInviteModal(id, name); break;
+        case 'edit':    openEditClientModal(id); break;
+        case 'key':     openKeyModal(id, name); break;
+      }
     });
 
-    // wire input listener + ESC-to-close
     document.addEventListener('DOMContentLoaded', function() {
-      var inp = document.getElementById('deleteClientInput');
-      if (inp) inp.addEventListener('input', onDeleteClientInputChange);
-      document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-          if (document.getElementById('deleteClientModal').classList.contains('open')) closeDeleteClientModal();
-          if (document.getElementById('newClientModal').classList.contains('open'))    closeNewClientModal();
-          if (document.getElementById('inviteModal').classList.contains('open'))       closeInviteModal();
-        }
+      document.getElementById('deleteClientInput').addEventListener('input', onDeleteClientInputChange);
+      document.querySelectorAll('.modal-backdrop').forEach(function(bd) {
+        bd.addEventListener('click', function(e) { if (e.target === bd) closeModal(bd.id); });
       });
-      var backdrop = document.getElementById('deleteClientModal');
-      if (backdrop) backdrop.addEventListener('click', function(e) {
-        if (e.target === backdrop) closeDeleteClientModal();
+      document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        document.querySelectorAll('.modal-backdrop.open').forEach(function(bd) { closeModal(bd.id); });
       });
     });
 
-    renderLoggedIn();
-    renderAdmins();
-    renderInfoSection();
-    document.getElementById('pageSubtitle').textContent =
-      'Wix users who have actually logged into AccessSync.';
-    loadSystemHealth();
+    loadHealth();
+    loadQueue();
+    loadAdminsSeen();
     loadClients();
   </script>
 </body>
