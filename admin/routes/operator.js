@@ -32,6 +32,11 @@ const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
 const standardAdapter = require('../../adapters/standard-adapter');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { guidanceFor, retryRefusal, dismissRefusal } = require('../../core/error-guidance');
+const { describeConfigAlert } = require('../../core/operator-email-templates');
+const { ALERT_CONTEXT_COLUMNS, ALERT_CONTEXT_JOINS } = require('../../core/alert-context');
+// Held-removal alerts: the gym decides (remove in Kisi, or leave them in). Mirrors core/reconciliation.js
+// GYM_DECIDES_ALERTS — a dismissal of one keeps it quiet for 30 days.
+const GYM_DECIDES_ALERT_TYPES = new Set(['sweep_removal_pending', 'revoke_holder_lapse_pending', 'revoke_held_payment_state']);
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
@@ -3008,17 +3013,31 @@ router.get('/:clientId/recent-members', async (req, res) => {
 router.get('/:clientId/alerts', async (req, res) => {
   const { clientId } = req.params;
   try {
+    // Who and where each alert is about (core/alert-context.js — the same lookup the nightly digest uses):
+    // the member, and the real location from that member's own plans. Never a guess.
     const result = await db.query(
-      `SELECT id, alert_type, hardware_ref, affected_member_count, resolved_at,
-              created_at, last_seen_at
-       FROM config_alert_log
-       WHERE client_id = $1
-         AND resolved_at IS NULL
-       ORDER BY last_seen_at DESC
+      `SELECT cal.id, cal.alert_type, cal.hardware_ref, cal.affected_member_count, cal.resolved_at,
+              cal.created_at, cal.last_seen_at,${ALERT_CONTEXT_COLUMNS}
+       FROM config_alert_log cal${ALERT_CONTEXT_JOINS}
+       WHERE cal.client_id = $1
+         AND cal.resolved_at IS NULL
+       ORDER BY cal.last_seen_at DESC NULLS LAST, cal.created_at DESC
        LIMIT 50`,
       [clientId]
     );
-    res.json({ alerts: result.rows });
+    // Same sentence the nightly digest email uses, so the screen and the email never disagree.
+    const alerts = result.rows.map(a => ({
+      ...a,
+      message: describeConfigAlert({
+        alert_type: a.alert_type,
+        memberName: a.member_name || null,
+        locationName: a.location_name || null,
+        affectedMembers: a.affected_member_count || 0,
+        platform: 'Kisi',
+      }),
+      gym_decides: GYM_DECIDES_ALERT_TYPES.has(a.alert_type),
+    }));
+    res.json({ alerts });
   } catch (err) {
     log.error('operator.alerts.list_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });

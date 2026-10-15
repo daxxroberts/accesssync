@@ -195,13 +195,17 @@ body {
 /* ── Toast ── */
 .toast {
   position: fixed; bottom: -60px; left: 50%; transform: translateX(-50%);
-  background: var(--text); color: #fff; padding: 12px 20px;
+  /* --bg on --text: dark text on a light pill in dark mode (it was #fff on #E8ECF2 there — unreadable). */
+  background: var(--text); color: var(--bg); padding: 12px 20px;
   border-radius: 10px; font-size: 13px; font-weight: 600;
   box-shadow: var(--shadow-md);
-  z-index: 800; transition: transform 0.3s ease;
+  z-index: 800;
+  /* Hidden while off-screen: a parked toast could still show as an empty pill (mobile toolbars, tall pages). */
+  visibility: hidden; transition: transform 0.3s ease, visibility 0s linear 0.3s;
   display: flex; align-items: center; gap: 8px;
+  width: max-content; max-width: calc(100vw - 32px); box-sizing: border-box;
 }
-.toast.visible { transform: translateX(-50%) translateY(-80px); }
+.toast.visible { transform: translateX(-50%) translateY(-80px); visibility: visible; transition: transform 0.3s ease, visibility 0s; }
 .toast.success { border-left: 4px solid var(--sage-dark); }
 .toast.error   { border-left: 4px solid var(--red); }
 .toast.info    { border-left: 4px solid var(--brand); }

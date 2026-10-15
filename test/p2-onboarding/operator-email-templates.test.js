@@ -221,6 +221,16 @@ describe('[P2] describeConfigAlert', () => {
     expect(s).not.toMatch(/\bnull\b|undefined/);
   });
 
+  test.each(ALL_ALERT_TYPES)('%s never says a vague "one of your locations": the real location or none at all', (alertType) => {
+    const without = T.describeConfigAlert({ alert_type: alertType, memberName: 'Pat' });
+    expect(without).not.toMatch(/one of your locations/i);
+    expect(without).not.toMatch(/\bat\s+(\.|,| is| no| uses| that| the| during| was| and| it)\b/);   // no dangling "at"
+    expect(without).not.toMatch(/\bfor\s+(during|stopped)\b/);                                          // no dangling "for"
+    expect(without).not.toMatch(/  /);                                                                    // no double spaces
+    const named = T.describeConfigAlert({ alert_type: alertType, memberName: 'Pat', locationName: 'House of Gains - Roland' });
+    if (!['notification_delivery_failed'].includes(alertType)) expect(named).toContain('House of Gains - Roland');
+  });
+
   test('affected member count is pluralized, not "member(s)"', () => {
     expect(T.describeConfigAlert({ alert_type: 'group_not_found', affectedMembers: 1 })).toContain('1 member ');
     expect(T.describeConfigAlert({ alert_type: 'group_not_found', affectedMembers: 3 })).toContain('3 members');

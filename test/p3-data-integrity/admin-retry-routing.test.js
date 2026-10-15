@@ -793,3 +793,70 @@ describe('[P3] dashboard Sync button — aborted-sync wording (F14)', () => {
     expect(resultMessage({ error: 'Sync failed' }, false)).toEqual({ kind: 'error', text: 'Sync failed' });
   });
 });
+
+describe('[P3] errors page — sync alerts the gym can read and mark handled (L17)', () => {
+  const src = readRepoFile('admin', 'views', 'pages', 'errors.ejs');
+  function page(response) {
+    const toasts = [];
+    const box = { hidden: true, innerHTML: '' };
+    const apiFetch = jest.fn(() => Promise.resolve(response));
+    const fns = liftFunctions(src, ['readJsonResponse', 'loadAlerts', 'renderAlerts', 'dismissAlert', 'timeAgo'], {
+      _clientId: 'c1', _isOwnerView: false, apiFetch, esc: realEsc,
+      showToast: (type, msg) => toasts.push({ type, msg }),
+      document: { getElementById: () => box },
+      console: { error: () => {} },
+    });
+    return { ...fns, toasts, box, apiFetch };
+  }
+
+  test('renders each alert with its sentence, HTML-escaped, and a Mark handled button', () => {
+    const p = page();
+    p.renderAlerts([{ id: 'a1', gym_decides: true, created_at: new Date().toISOString(),
+      message: 'Pat <img src=x onerror=alert(1)> is on a shared plan…' }]);
+    expect(p.box.hidden).toBe(false);
+    expect(p.box.innerHTML).toContain('Waiting for your decision (1)');
+    expect(p.box.innerHTML).toContain('Nothing was removed');
+    expect(p.box.innerHTML).not.toContain('Needs attention');
+    expect(p.box.innerHTML).toContain('&lt;img');
+    expect(p.box.innerHTML).not.toContain('<img');
+    expect(p.box.innerHTML).toMatch(/data-alert-id="a1" data-gym-decides="1">Mark handled</);
+  });
+
+  test('a missing-access alert is never under "nothing was removed": it gets its own group', () => {
+    const p = page();
+    p.renderAlerts([{ id: 'r1', gym_decides: false, message: 'Riley is a paying member, but their door access is missing in Kisi.' }]);
+    expect(p.box.innerHTML).toContain('Needs attention (1)');
+    expect(p.box.innerHTML).not.toContain('Nothing was removed');
+    p.renderAlerts([
+      { id: 'r1', gym_decides: false, message: 'missing access' },
+      { id: 'd1', gym_decides: true, message: 'held removal' },
+    ]);
+    const html = p.box.innerHTML;
+    expect(html.indexOf('missing access')).toBeLessThan(html.indexOf('Waiting for your decision'));
+    expect(html.indexOf('held removal')).toBeGreaterThan(html.indexOf('Nothing was removed'));
+  });
+
+  test('no open alerts → the section is hidden', () => {
+    const p = page();
+    p.renderAlerts([]);
+    expect(p.box.hidden).toBe(true);
+  });
+
+  test('Mark handled calls the gym\'s own dismiss route and explains the 30-day quiet period', async () => {
+    const p = page(fakeResponse(200, { id: 'a1' }));
+    const btn = { disabled: false, textContent: 'Mark handled' };
+    p.dismissAlert('a1', true, btn);
+    for (let i = 0; i < 4; i++) await settle();
+    expect(p.apiFetch.mock.calls[0]).toEqual(['/operator/c1/alerts/a1/dismiss', { method: 'POST' }]);
+    expect(p.toasts[0]).toEqual({ type: 'success', msg: expect.stringMatching(/won’t raise this member again for 30 days/) });
+  });
+
+  test('a refused dismiss shows the server\'s reason and re-enables the button', async () => {
+    const p = page(fakeResponse(404, { error: 'Alert not found' }));
+    const btn = { disabled: false, textContent: 'Mark handled' };
+    p.dismissAlert('a9', false, btn);
+    for (let i = 0; i < 4; i++) await settle();
+    expect(p.toasts[0]).toEqual({ type: 'error', msg: 'Alert not found' });
+    expect(btn).toEqual({ disabled: false, textContent: 'Mark handled' });
+  });
+});

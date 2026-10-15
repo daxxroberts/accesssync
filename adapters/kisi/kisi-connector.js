@@ -135,12 +135,15 @@ class KisiConnector {
       //   - 409 on POST /users → standard-adapter.js re-queries by email and reuses the existing user
       //     (the user was created between findUserByEmail and createUser). ~18 a day for House of Gains;
       //     logged at ERROR they kept the owner panel's Diagnostics card permanently amber.
+      //   - 404 on GET / DELETE /group_links/:id → kisi-adapter.js getGroupLink / deleteGroupLink treat it as
+      //     "already gone" (Kisi removes an expired day-pass link itself); every expired day pass logged an ERROR.
       // All other 4xx/5xx stay at ERROR (real failures the operator must see).
       const method = options.method || 'GET';
       const isLikelyRecoverable =
         (response.status === 409 && method === 'POST'   && endpoint.startsWith('/role_assignments')) ||
         (response.status === 404 && method === 'DELETE' && endpoint.startsWith('/role_assignments')) ||
-        (response.status === 409 && method === 'POST'   && endpoint === '/users');
+        (response.status === 409 && method === 'POST'   && endpoint === '/users') ||
+        (response.status === 404 && (method === 'GET' || method === 'DELETE') && /^\/group_links\/[^/?]+$/.test(endpoint));
       // 2026-10-15: recoverable shapes moved WARN → INFO. Every Wix purchase fires 3-4 grant jobs
       // and each one after the first gets a 409 here (~150/week at HOG); at WARN they were the
       // single largest line in diagnostic_log. Still persisted (EVENT_REGISTRY.json) so a trace

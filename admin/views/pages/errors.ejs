@@ -29,6 +29,14 @@
     .filter-select { padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 11px; color: var(--text2); background: var(--card); cursor: pointer; }
 
     /* ── Error card ── */
+    .sync-alerts { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--amber, #F5A623); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
+    .sync-alerts h2 { font-size: 14px; font-weight: 700; color: var(--text); margin: 0 0 4px 0; }
+    .sync-alerts-intro { font-size: 12px; color: var(--text2); line-height: 1.5; margin: 0 0 10px 0; }
+    .sync-alert { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+    .sync-alert-text { flex: 1 1 240px; min-width: 0; font-size: 13px; color: var(--text); line-height: 1.55; overflow-wrap: anywhere; }
+    .sync-alert-when { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .sync-alert button { flex: 0 0 auto; min-height: 40px; }
+    .sync-alerts .sync-alerts-second { margin-top: 16px; }
     .err-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
     .err-card-main { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; }
     .err-card-body { flex: 1; min-width: 0; }
@@ -123,6 +131,10 @@
         <option value="">All error types</option>
       </select>
     </div>
+
+    <!-- Sync alerts (config_alert_log): held removals and other things the nightly sync wants a person to decide.
+         Before this section they reached the gym only in the daily digest email, with no way to clear them. -->
+    <div id="sync-alerts" class="sync-alerts" hidden></div>
 
     <!-- Error list -->
     <div id="error-list">
@@ -312,6 +324,66 @@
         .catch(function(e) { console.error('[errors] summary load failed:', e); });
     }
 
+    // ── Sync alerts (held removals etc.) ──────────────────────────
+    // GET /operator/:clientId/alerts returns each open alert with the same sentence the daily digest email uses.
+    function loadAlerts() {
+      if (!_clientId) return;
+      apiFetch('/operator/' + _clientId + '/alerts')
+        .then(function(r) { return r.ok ? r.json() : { alerts: [] }; })
+        .then(function(d) { renderAlerts(d.alerts || []); })
+        .catch(function(e) { console.error('[errors] alerts load failed:', e); });
+    }
+
+    function renderAlerts(alerts) {
+      var box = document.getElementById('sync-alerts');
+      if (!box) return;
+      if (!alerts.length) { box.hidden = true; box.innerHTML = ''; return; }
+      // Two kinds, never mixed under one intro: a held removal (the member can still get in, the gym decides) and
+      // everything else (e.g. a paying member whose door access is missing — that one is NOT "nothing was removed").
+      var decide = alerts.filter(function(a) { return a.gym_decides; });
+      var other  = alerts.filter(function(a) { return !a.gym_decides; });
+      function item(a) {
+        var first = a.created_at ? new Date(a.created_at) : null;
+        return '<div class="sync-alert">' +
+          '<div class="sync-alert-text">' + esc(a.message || a.alert_type) +
+            '<span class="sync-alert-when">First raised ' + esc(timeAgo(first)) + '</span></div>' +
+          '<button type="button" class="btn btn-secondary btn-sm" data-alert-id="' + esc(a.id) + '" data-gym-decides="' + (a.gym_decides ? '1' : '') + '">Mark handled</button>' +
+        '</div>';
+      }
+      var html = '';
+      if (other.length) {
+        html += '<h2>Needs attention (' + other.length + ')</h2>' +
+          '<p class="sync-alerts-intro">Found by the automatic sync. Check each one and fix it where it says, then mark it handled. ' +
+          'If the problem is still there at the next sync, it comes back.</p>' + other.map(item).join('');
+      }
+      if (decide.length) {
+        html += '<h2' + (other.length ? ' class="sync-alerts-second"' : '') + '>Waiting for your decision (' + decide.length + ')</h2>' +
+          '<p class="sync-alerts-intro">Nothing was removed — these members can still get in. Check each one in Wix; if they really should lose access, remove them in Kisi. ' +
+          'Then mark it handled. Marking it handled also means \u201cleave them in\u201d: AccessSync won\u2019t raise the same member again for 30 days.</p>' +
+          decide.map(item).join('');
+      }
+      box.innerHTML = html;
+      box.hidden = false;
+    }
+
+    function dismissAlert(id, gymDecides, btn) {
+      btn.disabled = true; btn.textContent = '…';
+      apiFetch('/operator/' + _clientId + '/alerts/' + encodeURIComponent(id) + '/dismiss', { method: 'POST' })
+        .then(readJsonResponse)
+        .then(function(res) {
+          if (!res.ok) {
+            showToast('error', esc((res.body && res.body.error) || ('Could not mark handled (HTTP ' + res.status + ')')));
+            btn.disabled = false; btn.textContent = 'Mark handled';
+            return;
+          }
+          showToast('success', gymDecides
+            ? 'Marked handled. AccessSync won\u2019t raise this member again for 30 days.'
+            : 'Marked handled. If it is still a problem at the next sync, it will come back.');
+          loadAlerts();
+        })
+        .catch(function() { showToast('error', 'Could not mark handled'); btn.disabled = false; btn.textContent = 'Mark handled'; });
+    }
+
     // ── Filters ───────────────────────────────────────────────────
     function setFilter(f) {
       _currentFilter = f;
@@ -377,7 +449,7 @@
           '<div class="empty-state">' +
             '<span class="no-err-badge">' +
               '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="var(--sage-dark)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-              'All clear — no errors here' +
+              'No failed member updates' +   // not "All clear": sync alerts above may still need a look
             '</span>' +
           '</div>';
         return;
@@ -724,7 +796,13 @@
         return;
       }
       loadSummary();
+      loadAlerts();
       startPolling();
+      document.getElementById('sync-alerts').addEventListener('click', function(ev) {
+        var btn = ev.target.closest && ev.target.closest('button[data-alert-id]');
+        if (!btn || btn.disabled) return;
+        dismissAlert(btn.getAttribute('data-alert-id'), btn.getAttribute('data-gym-decides') === '1', btn);
+      });
     });
   </script>
 </body>

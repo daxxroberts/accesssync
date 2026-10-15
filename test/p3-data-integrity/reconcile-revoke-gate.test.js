@@ -1667,6 +1667,9 @@ describe('[P3] Phase 1 — error_queue replay (_processRecordTargeted)', () => {
     expect(replays[0][1].standardEvent).toEqual(expect.objectContaining({ eventType: 'plan.started', platformMemberId: 'p' }));
     expect(warnCall('reconciliation.requeue_record_failed')[1]).toEqual(expect.objectContaining({ memberId: 'ma-bad' }));
     expect(sqlCalls('FROM config_alert_log cal')).toHaveLength(1);        // the digest still ran
+    // the digest names the real member and location (core/alert-context.js), never "one of your locations"
+    expect(String(sqlCalls('FROM config_alert_log cal')[0][0])).toMatch(/AS location_name/);
+    expect(String(sqlCalls('FROM config_alert_log cal')[0][0])).toMatch(/JOIN locations l ON l\.id = pm\.location_id/);
     expect(sqlCalls('UPDATE clients SET last_sync_at')).toHaveLength(1); // and last_sync_at was stamped
   });
 });
@@ -2515,6 +2518,22 @@ describe('[P3] sweep cadence gate — a 6h client is really synced every 6h (L10
   test('a sweep fired well inside the interval (e.g. a restart 2h later) is still skipped', async () => {
     await sweepWith(HOURS_AGO(2));
     expect(sqlCalls('UPDATE clients SET last_sync_at')).toHaveLength(0);
+  });
+});
+
+describe('[P3] a gym\'s "mark handled" on a held removal holds for 30 days (L17)', () => {
+  test('held-removal types are quiet for 30 days after the gym resolves them; repair alerts never are', async () => {
+    installWorld({ members: [], read1: reads([]) });
+    for (const type of ['sweep_removal_pending', 'revoke_holder_lapse_pending', 'revoke_held_payment_state']) {
+      await reconciliation._insertAlertOnce(CLIENT_ID, type, 'member:x');
+      const { sql, params } = state.alerts[state.alerts.length - 1];
+      expect(sql).toMatch(/resolved_at IS NULL\s+OR \(\$7::boolean AND resolved_at > NOW\(\) - make_interval\(days => \$8::int\)\)/);
+      expect(params.slice(6)).toEqual([true, 30]);
+    }
+    await reconciliation._insertAlertOnce(CLIENT_ID, 'sweep_repair_pending', 'member:x');
+    expect(state.alerts[state.alerts.length - 1].params.slice(6)).toEqual([false, 30]);
+    await reconciliation._insertAlertOnce(CLIENT_ID, 'kisi_api_unavailable', 'x');
+    expect(state.alerts[state.alerts.length - 1].params.slice(6)).toEqual([false, 30]);
   });
 });
 

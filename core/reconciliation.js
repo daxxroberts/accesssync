@@ -30,6 +30,7 @@ const { listActiveOrders, listConfirmedBookings, listOrdersClassified } = requir
 const { extractBillingSnapshot } = require('./billing-snapshot');
 const planMappingResolver = require('./plan-mapping-resolver');
 const { log, withTrace } = require('./logger');
+const { ALERT_CONTEXT_COLUMNS, ALERT_CONTEXT_JOINS } = require('./alert-context');
 const { runWith, withClient, mintTraceId, getTraceId, getActor } = require('./trace-context');
 const { sendOperatorEmail } = require('./operator-mailer');
 const { renderNightlyDigest } = require('./operator-email-templates');
@@ -87,6 +88,14 @@ const SWEEP_ALERT = Object.freeze({
   HOLDER_LAPSE_PENDING: 'revoke_holder_lapse_pending', // Pass 1.5 — holder no longer paying for the sub's plan
   HELD_PAYMENT_STATE:   'revoke_held_payment_state',   // 3B / Pass 1.5 — payment declined, pending or unrecognised: left alone
 });
+
+// Held-removal alerts the GYM decides on (remove the member in Kisi, or leave them in). A dismissal of one of these
+// keeps the same member's alert quiet for GYM_DECISION_QUIET_DAYS (see _insertAlertOnce). sweep_repair_pending is
+// deliberately absent: a paying member without door access is never silenced.
+const GYM_DECIDES_ALERTS = new Set([
+  SWEEP_ALERT.REMOVAL_PENDING, SWEEP_ALERT.HOLDER_LAPSE_PENDING, SWEEP_ALERT.HELD_PAYMENT_STATE,
+]);
+const GYM_DECISION_QUIET_DAYS = 30;
 
 // reconciliation_proposal.kind
 const PROPOSAL_KIND = Object.freeze({
@@ -457,6 +466,10 @@ class NightlyReconciliation {
   async _insertAlertOnce(clientId, alertType, hardwareRef) {
     const type = alertType || 'revoke_unknown';
     const _actor = getActor() || {};
+    // A held removal is the gym's decision ("leave them in" is a valid answer). Once the gym marks one handled, the
+    // same member's alert stays quiet for GYM_DECISION_QUIET_DAYS instead of returning at the next sweep (every 6h).
+    // NOT for sweep_repair_pending (a paying member without door access must always come back) or any other type.
+    const quietWhenResolved = GYM_DECIDES_ALERTS.has(type);
     try {
       const r = await db.query(
         `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
@@ -466,12 +479,14 @@ class NightlyReconciliation {
            WHERE client_id    = $1::uuid
              AND alert_type   = $2::varchar
              AND hardware_ref = $3::varchar
-             AND resolved_at IS NULL
+             AND (resolved_at IS NULL
+                  OR ($7::boolean AND resolved_at > NOW() - make_interval(days => $8::int)))
          )`,
         [
           clientId, type, alertRef(hardwareRef),
           this._sweepTraceId || getTraceId() || null,
           _actor.type || null, _actor.id || null,
+          quietWhenResolved, GYM_DECISION_QUIET_DAYS,
         ]
       );
       return !!(r && r.rowCount > 0);
@@ -3217,16 +3232,10 @@ class NightlyReconciliation {
     // Location/client names come along so the digest can name the place in plain English
     // instead of printing a client_id.
     const configAlertsResult = await db.query(
-      `SELECT cal.client_id, cal.alert_type, cal.hardware_ref, cal.created_at,
-              c.name AS client_name,
-              mm.first_name AS member_first_name, mm.last_name AS member_last_name
-       FROM config_alert_log cal
-       LEFT JOIN clients c ON c.id = cal.client_id
-       -- finalize_refused_* alerts carry "member_id=<member_access.id>" in hardware_ref;
-       -- resolving it lets the digest name the person instead of "a member".
-       LEFT JOIN member_access ma
-         ON ma.id::text = substring(cal.hardware_ref FROM 'member_id=([0-9a-fA-F-]{36})')
-       LEFT JOIN member_master mm ON mm.id = ma.member_master_id
+      // Who and where (core/alert-context.js — the same lookup the gym's alerts list uses): the member, and the
+      // real location from the member's own plans, so the email never says "a member at one of your locations".
+      `SELECT cal.client_id, cal.alert_type, cal.hardware_ref, cal.created_at, cal.affected_member_count,${ALERT_CONTEXT_COLUMNS}
+       FROM config_alert_log cal${ALERT_CONTEXT_JOINS}
        WHERE cal.resolved_at IS NULL
        ORDER BY cal.client_id, cal.created_at DESC`
     );
@@ -3270,9 +3279,14 @@ class NightlyReconciliation {
       renderArgs: {
         configAlerts: digest.configAlerts.map(a => ({
           alert_type: a.alert_type,
-          locationName: a.client_name || null,
+          // This email goes to the AccessSync owner across every gym: name the gym too when the location doesn't.
+          locationName: a.location_name
+            ? (a.client_name && a.location_name !== a.client_name && !String(a.location_name).includes(a.client_name)
+              ? a.location_name + ' (' + a.client_name + ')' : a.location_name)
+            : (a.client_name || null),
           doorName: a.hardware_ref || null,
-          memberName: [a.member_first_name, a.member_last_name].filter(Boolean).join(' ') || null,
+          memberName: a.member_name || null,
+          affectedMembers: a.affected_member_count || 0,
         })),
         failedJobs: digest.failedJobs.map(j => ({
           event_type: j.event_type,

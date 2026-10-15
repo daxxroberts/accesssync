@@ -397,7 +397,12 @@ function renderMemberFailureAlert({ userMessage, actionText, memberName, planNam
  */
 function describeConfigAlert(row) {
   const r        = row || {};
-  const location = r.locationName || 'one of your locations';
+  // The location is named only when it is known for certain (core/alert-context.js resolves it from the member's
+  // own plans, or the client's only location). When it is not known the sentence leaves it out — it never says a
+  // vague "one of your locations" (Daxx, 2026-10-15: an alert must say exactly what and where).
+  const loc      = r.locationName ? String(r.locationName) : null;
+  const at       = loc ? ' at ' + loc : '';        // "... door access at Main St ..."
+  const forLoc   = loc ? ' for ' + loc : '';       // "... couldn't reach Kisi for Main St ..."
   const door     = r.doorName || 'A door group';
   const platform = r.platform || 'your access system';
   const affected = Number(r.affectedMembers) || 0;
@@ -407,8 +412,6 @@ function describeConfigAlert(row) {
   // read r.doorName: for these types config_alert_log.hardware_ref carries machine
   // detail (counts like "proposed=12", Kisi user ids), not a door name. Each one
   // says whether anyone lost access and what, if anything, to do.
-  // r.memberName is optional — the nightly digest does not pass one today, so
-  // every sentence reads naturally without it.
   const person     = r.memberName || null;
   const whoStart   = person || 'A member';                    // sentence start
   const possessive = person ? person + '’s' : 'a member’s';
@@ -426,40 +429,40 @@ function describeConfigAlert(row) {
   // readable generic sentence from `default`.
   switch (r.alert_type) {
     case 'revoke_batch_mass_revoke':
-      return 'AccessSync was about to remove door access for an unusually large number of members at '
-        + location + ' at once, so it stopped and removed no one. Nobody lost access. '
+      return 'AccessSync was about to remove door access for an unusually large number of members' + at
+        + ' at once, so it stopped and removed no one. Nobody lost access. '
         + 'Check that your plans and memberships in Wix look right — if they do, reply to this email and we’ll look into it.';
     case 'wix_snapshot_anomaly':
-      return 'Wix gave AccessSync membership numbers for ' + location
+      return 'Wix gave AccessSync membership numbers' + forLoc
         + ' that didn’t add up, so AccessSync paused removals rather than guess. Nobody lost access. '
         + 'No action needed — AccessSync checks again on the next sync.';
     case 'revoke_invalid_proposal':
-      return 'AccessSync ran into an internal problem while checking memberships at ' + location
+      return 'AccessSync ran into an internal problem while checking memberships' + at
         + ' and stopped before changing anything. Nobody lost access. '
         + 'No action needed on your side — AccessSync tries again on the next sync.';
     case 'finalize_refused_other_assignments':
-      return 'AccessSync didn’t delete ' + possessive + ' ' + hardware + ' account because they still have door access at '
-        + location + ' that wasn’t added by AccessSync — nothing was removed. '
+      return 'AccessSync didn’t delete ' + possessive + ' ' + hardware + ' account because they still have door access'
+        + at + ' that wasn’t added by AccessSync — nothing was removed. '
         + 'If they shouldn’t have that access anymore, remove it in ' + hardware + '.';
     case 'finalize_refused_shared_user':
-      return 'AccessSync didn’t delete ' + possessive + ' ' + hardware + ' account because another member at '
-        + location + ' uses the same ' + hardware + ' account — nothing was removed. '
+      return 'AccessSync didn’t delete ' + possessive + ' ' + hardware + ' account because another member'
+        + at + ' uses the same ' + hardware + ' account — nothing was removed. '
         + 'Check in ' + hardware + ' that each person has their own account.';
     case 'sweep_repair_pending':
       return (person
-        ? person + ' is a paying member, but their door access at ' + location + ' is missing in ' + hardware + '. '
-        : 'A paying member’s door access at ' + location + ' is missing in ' + hardware + '. ')
+        ? person + ' is a paying member, but their door access' + at + ' is missing in ' + hardware + '. '
+        : 'A paying member’s door access' + at + ' is missing in ' + hardware + '. ')
         + 'AccessSync will restore it once automatic repair is switched on; until then you can re-add it in ' + hardware + '.';
     case 'sweep_removal_pending':
-      return whoStart + ' at ' + location + ' no longer shows as paying in Wix. ' + pausedNote + ' '
+      return whoStart + at + ' no longer shows as paying in Wix. ' + pausedNote + ' '
         + 'Check their membership in Wix — if they really have stopped paying and shouldn’t get in, you can remove their access in '
         + hardware + '.';
     case 'revoke_holder_lapse_pending':
-      return whoStart + ' at ' + location + ' is on a shared plan whose main member no longer shows as paying in Wix. '
+      return whoStart + at + ' is on a shared plan whose main member no longer shows as paying in Wix. '
         + pausedNote + ' Check the main member’s plan in Wix — if it has really ended, you can remove '
         + (person ? possessive : 'their') + ' access in ' + hardware + '.';
     case 'revoke_held_payment_state':
-      return (person ? possessive + ' Wix payment' : 'A member’s Wix payment') + ' at ' + location
+      return (person ? possessive + ' Wix payment' : 'A member’s Wix payment') + at
         + ' is declined, pending or unrecognized — AccessSync is leaving their door access alone. Nobody lost access. '
         + 'Check the payment in Wix — if it doesn’t go through and they shouldn’t get in, you can remove their access in '
         + hardware + '.';
@@ -468,35 +471,35 @@ function describeConfigAlert(row) {
     // anything (reconciliation aborts the client's sync). hardware_ref carries
     // "status=… code=…" — never shown.
     case 'kisi_api_unavailable':
-      return 'AccessSync couldn’t reach Kisi for ' + location
+      return 'AccessSync couldn’t reach Kisi' + forLoc
         + ' during a sync — it stopped and changed nothing. Nobody lost access. '
         + 'This usually clears up on its own; AccessSync tries again on the next sync.';
     case 'hardware_api_unavailable':
-      return 'AccessSync couldn’t reach ' + platform + ' for ' + location
+      return 'AccessSync couldn’t reach ' + platform + forLoc
         + ' during a sync — it stopped and changed nothing. Nobody lost access. '
         + 'This usually clears up on its own; AccessSync tries again on the next sync.';
 
     case 'group_not_found':
     case 'missing_group':
-      return door + ' at ' + location + ' is no longer in ' + platform + '.' + memberNote;
+      return door + at + ' is no longer in ' + platform + '.' + memberNote;
     case 'api_key_invalid_after_rotation':
-      return 'The access key for ' + location + ' stopped working after it was changed.';
+      return 'The access key' + forLoc + ' stopped working after it was changed.';
     case 'wix_api_unavailable':
-      return 'AccessSync couldn’t reach Wix for ' + location + ' during a sync. This usually clears up on its own.';
+      return 'AccessSync couldn’t reach Wix' + forLoc + ' during a sync. This usually clears up on its own.';
     case 'lockdown_detected':
-      return 'A door at ' + location + ' was in lockdown, so AccessSync skipped it instead of forcing a change.';
+      return 'A door' + at + ' was in lockdown, so AccessSync skipped it instead of forcing a change.';
     case 'untraceable_hardware_access':
-      return 'Someone has door access at ' + location + ' that AccessSync didn’t set up. It was left alone — worth a look if that’s unexpected.';
+      return 'Someone has door access' + at + ' that AccessSync didn’t set up. It was left alone — worth a look if that’s unexpected.';
     case 'member_deleted_review':
-      return 'A member was deleted at ' + location + ' and is worth a quick review.';
+      return 'A member was deleted' + at + ' and is worth a quick review.';
     case 'notification_delivery_failed':
       return 'AccessSync tried to email you about something and the email didn’t go through.';
     case 'system':
-      return 'AccessSync logged an internal issue at ' + location + '.';
+      return 'AccessSync logged an internal issue' + at + '.';
     case 'unknown':
-      return 'AccessSync logged an issue at ' + location + ' it couldn’t categorize.';
+      return 'AccessSync logged an issue' + at + ' it couldn’t categorize.';
     default:
-      return 'AccessSync logged an issue at ' + location
+      return 'AccessSync logged an issue' + at
         + (r.alert_type ? ' (' + r.alert_type + ')' : '') + '.';
   }
 }
