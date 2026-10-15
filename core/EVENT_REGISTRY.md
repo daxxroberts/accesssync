@@ -441,7 +441,7 @@ unaffected.
 | `admin.scheduler.health_check_complete` | info | Hardware key check finished cleanly. Persisted via override. |
 | `admin.scheduler.health_check_failed` | error | Hardware key check threw. |
 | `reconciliation.clients_due` | info | Per-client recurrence gate (bug 7): how many active clients are due for a sync this run; only those are synced and stamped. Persisted via override. |
-| `admin.scheduler.owner_daily_armed` | info | Owner daily email scheduler armed at admin boot (sends once per UTC day during OWNER_DAILY_HOUR_UTC). Persisted via override. |
+| `admin.scheduler.owner_daily_armed` | info | Owner daily email scheduler armed at admin boot (sends once a day during OWNER_DAILY_HOUR in OWNER_DAILY_TZ, default 7:00 America/Chicago). Persisted via override. |
 | `admin.scheduler.owner_daily_failed` | error | The owner daily tick threw. |
 | `email.owner_daily.sent` | info | The owner daily (verdict + one line per problem, counts only) was sent. Persisted: this row is the once-a-day guard. |
 | `email.owner_daily.failed` | error | The owner daily could not be sent. |

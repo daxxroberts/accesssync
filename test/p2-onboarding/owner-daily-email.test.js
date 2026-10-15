@@ -113,35 +113,58 @@ describe('[P2] sendOwnerDaily', () => {
   });
 });
 
-describe('[P2] maybeSendOwnerDaily — once per UTC day during the configured hour', () => {
-  const at = (hour, minute = 5, day = '2026-10-15') => new Date(`${day}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00Z`);
+describe('[P2] maybeSendOwnerDaily — once a day during the hour, in Central time (never UTC)', () => {
+  // 2026-10-15 is CDT (UTC-5): 7:00 Central = 12:00Z. 2026-12-15 is CST (UTC-6): 7:00 Central = 13:00Z.
+  const z = (iso) => new Date(iso);
 
-  test('outside the hour: nothing', async () => {
-    expect(await daily.maybeSendOwnerDaily({ hourUtc: 13, now: at(12, 59) })).toEqual({ sent: false, reason: 'not_the_hour' });
-    expect(sendOperatorEmail).not.toHaveBeenCalled();
+  test('defaults: 7:00 America/Chicago; 12:00Z in October is the hour, 11:59Z is not', async () => {
+    computeOwnerHealth.mockResolvedValue({ ...GREEN });
+    expect(await daily.maybeSendOwnerDaily({ now: z('2026-10-15T11:59:00Z') })).toEqual({ sent: false, reason: 'not_the_hour' });
+    expect((await daily.maybeSendOwnerDaily({ now: z('2026-10-15T12:05:00Z') })).sent).toBe(true);
   });
 
-  test('during the hour: sends once; the second tick in the same day is skipped', async () => {
+  test('daylight saving is handled: in December 7:00 Central is 13:00Z', async () => {
     computeOwnerHealth.mockResolvedValue({ ...GREEN });
-    expect((await daily.maybeSendOwnerDaily({ hourUtc: 13, now: at(13, 5) })).sent).toBe(true);
-    expect(await daily.maybeSendOwnerDaily({ hourUtc: 13, now: at(13, 20) })).toEqual({ sent: false, reason: 'already_sent_today' });
+    expect(await daily.maybeSendOwnerDaily({ now: z('2026-12-15T12:05:00Z') })).toEqual({ sent: false, reason: 'not_the_hour' });
+    expect((await daily.maybeSendOwnerDaily({ now: z('2026-12-15T13:05:00Z') })).sent).toBe(true);
+  });
+
+  test('the second tick in the same hour is skipped', async () => {
+    computeOwnerHealth.mockResolvedValue({ ...GREEN });
+    expect((await daily.maybeSendOwnerDaily({ now: z('2026-10-15T12:05:00Z') })).sent).toBe(true);
+    expect(await daily.maybeSendOwnerDaily({ now: z('2026-10-15T12:20:00Z') })).toEqual({ sent: false, reason: 'already_sent_today' });
     expect(sendOperatorEmail).toHaveBeenCalledTimes(1);
   });
 
-  test('after a restart the logger\'s sent row is the guard: no second email', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });   // diagnostic_log says: sent today
-    expect(await daily.maybeSendOwnerDaily({ hourUtc: 13, now: at(13, 35) })).toEqual({ sent: false, reason: 'already_sent_today' });
+  test('after a restart the logger\'s sent row is the guard, judged on the Central calendar day', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ created_at: '2026-10-15T12:07:00Z' }] });   // sent 7:07 Central today
+    expect(await daily.maybeSendOwnerDaily({ now: z('2026-10-15T12:35:00Z') })).toEqual({ sent: false, reason: 'already_sent_today' });
     expect(sendOperatorEmail).not.toHaveBeenCalled();
-    const sql = String(db.query.mock.calls[0][0]);
-    expect(sql).toMatch(/EMAIL_OWNER_DAILY_SENT/);
-    expect(sql).toMatch(/date_trunc\('day', NOW\(\)\)/);
+    expect(String(db.query.mock.calls[0][0])).toMatch(/EMAIL_OWNER_DAILY_SENT/);
+  });
+
+  test('a row from yesterday Central (even if the same UTC day) does not block today', async () => {
+    computeOwnerHealth.mockResolvedValue({ ...GREEN });
+    db.query.mockResolvedValueOnce({ rows: [{ created_at: '2026-10-15T03:30:00Z' }] });   // 22:30 Central on the 14th
+    expect((await daily.maybeSendOwnerDaily({ now: z('2026-10-15T12:05:00Z') })).sent).toBe(true);
   });
 
   test('a new day sends again', async () => {
     computeOwnerHealth.mockResolvedValue({ ...GREEN });
-    await daily.maybeSendOwnerDaily({ hourUtc: 13, now: at(13, 5, '2026-10-15') });
-    await daily.maybeSendOwnerDaily({ hourUtc: 13, now: at(13, 5, '2026-10-16') });
+    await daily.maybeSendOwnerDaily({ now: z('2026-10-15T12:05:00Z') });
+    await daily.maybeSendOwnerDaily({ now: z('2026-10-16T12:05:00Z') });
     expect(sendOperatorEmail).toHaveBeenCalledTimes(2);
+  });
+
+  test('OWNER_DAILY_HOUR and OWNER_DAILY_TZ override the defaults', async () => {
+    computeOwnerHealth.mockResolvedValue({ ...GREEN });
+    expect((await daily.maybeSendOwnerDaily({ hour: 9, timeZone: 'America/New_York', now: z('2026-10-15T13:10:00Z') })).sent).toBe(true);
+  });
+
+  test('localParts: Central day and hour from a UTC instant', () => {
+    expect(daily.localParts(z('2026-10-15T03:30:00Z'), 'America/Chicago')).toEqual({ day: '2026-10-14', hour: 22 });
+    expect(daily.DEFAULT_TZ).toBe('America/Chicago');
+    expect(daily.DEFAULT_HOUR).toBe(7);
   });
 });
 

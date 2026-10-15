@@ -11,9 +11,11 @@
  * verdict line. One line per gym problem (reason, who acts, since), counts only, never member names. It renders
  * from the same computation as the Hub (core/owner-health.js), so the page and the email cannot disagree.
  *
- * Scheduled by admin/server.js: every 15 minutes it asks maybeSendOwnerDaily(), which sends once per UTC day
- * during OWNER_DAILY_HOUR_UTC (default 13:00 UTC, early morning US Central). The once-a-day guard is the
- * diagnostic_log row the logger writes for email.owner_daily.sent, so a restart during the hour does not send twice.
+ * Scheduled by admin/server.js: every 15 minutes it asks maybeSendOwnerDaily(), which sends once per day
+ * during OWNER_DAILY_HOUR in OWNER_DAILY_TZ (default 7:00 America/Chicago — Daxx's rule 2026-10-15: Central
+ * time, never UTC). Hour and day are computed in that zone whatever the server's own clock is set to. The
+ * once-a-day guard is the diagnostic_log row the logger writes for email.owner_daily.sent, so a restart during
+ * the hour does not send twice.
  */
 
 'use strict';
@@ -24,17 +26,27 @@ const { computeOwnerHealth, verdictLine } = require('./owner-health');
 const { sendOperatorEmail } = require('./operator-mailer');
 const { renderOwnerDaily } = require('./operator-email-templates');
 
-let _lastSentDay = null;
-const dayOf = (d) => d.toISOString().slice(0, 10);
+const DEFAULT_TZ = 'America/Chicago';
+const DEFAULT_HOUR = 7;
 
-async function sentToday() {
+let _lastSentDay = null;
+
+/** Calendar day (YYYY-MM-DD) and hour of `d` in the given IANA zone. */
+function localParts(d, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' })
+    .formatToParts(d).reduce((o, p) => (o[p.type] = p.value, o), {});
+  return { day: `${parts.year}-${parts.month}-${parts.day}`, hour: parseInt(parts.hour, 10) };
+}
+
+async function sentOn(day, timeZone) {
   try {
     const r = await db.query(
-      `SELECT 1 FROM diagnostic_log
-        WHERE error_code = 'EMAIL_OWNER_DAILY_SENT' AND created_at >= date_trunc('day', NOW())
-        LIMIT 1`
+      `SELECT created_at FROM diagnostic_log
+        WHERE error_code = 'EMAIL_OWNER_DAILY_SENT' AND created_at > NOW() - INTERVAL '2 days'
+        ORDER BY created_at DESC LIMIT 1`
     );
-    return !!(r && r.rows && r.rows.length);
+    const last = r && r.rows && r.rows[0] && r.rows[0].created_at;
+    return !!last && localParts(new Date(last), timeZone).day === day;
   } catch (err) {
     log.warn('email.owner_daily.guard_failed', {}, err);
     return false;
@@ -63,7 +75,7 @@ async function sendOwnerDaily() {
     logContext: { alert: 'owner_daily', verdict: health.verdict },
   });
   if (result.sent) {
-    _lastSentDay = dayOf(new Date());
+    _lastSentDay = localParts(new Date(), process.env.OWNER_DAILY_TZ || DEFAULT_TZ).day;
     log.info('email.owner_daily.sent', { toEmail, verdict: health.verdict, problems: health.problems.length, platform: health.platform.length });
   } else {
     log.error('email.owner_daily.failed', { toEmail, reason: result.reason });
@@ -71,16 +83,21 @@ async function sendOwnerDaily() {
   return result;
 }
 
-/** Called every 15 minutes by the scheduler: sends once per UTC day, only during hourUtc. */
-async function maybeSendOwnerDaily({ hourUtc = 13, now = new Date() } = {}) {
-  if (now.getUTCHours() !== hourUtc) return { sent: false, reason: 'not_the_hour' };
-  const day = dayOf(now);
-  if (_lastSentDay === day) return { sent: false, reason: 'already_sent_today' };
-  if (await sentToday()) { _lastSentDay = day; return { sent: false, reason: 'already_sent_today' }; }
+/**
+ * Called every 15 minutes by the scheduler: sends once per local day, only during `hour` in `timeZone`.
+ * @param {{ hour?: number, timeZone?: string, now?: Date }} opts  defaults: 7, America/Chicago, now
+ */
+async function maybeSendOwnerDaily({ hour, timeZone, now = new Date() } = {}) {
+  const tz = timeZone || process.env.OWNER_DAILY_TZ || DEFAULT_TZ;
+  const h = Number.isInteger(hour) ? hour : (Number.isInteger(parseInt(process.env.OWNER_DAILY_HOUR, 10)) ? parseInt(process.env.OWNER_DAILY_HOUR, 10) : DEFAULT_HOUR);
+  const local = localParts(now, tz);
+  if (local.hour !== h) return { sent: false, reason: 'not_the_hour' };
+  if (_lastSentDay === local.day) return { sent: false, reason: 'already_sent_today' };
+  if (await sentOn(local.day, tz)) { _lastSentDay = local.day; return { sent: false, reason: 'already_sent_today' }; }
   return sendOwnerDaily();
 }
 
 /** Test hook. */
 function _resetForTests() { _lastSentDay = null; }
 
-module.exports = { sendOwnerDaily, maybeSendOwnerDaily, _resetForTests };
+module.exports = { sendOwnerDaily, maybeSendOwnerDaily, localParts, DEFAULT_TZ, DEFAULT_HOUR, _resetForTests };
