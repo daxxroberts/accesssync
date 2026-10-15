@@ -42,6 +42,7 @@ jest.mock('../../adapters/standard-adapter', () => ({
   rollupAccessStatusByPlatformMember: jest.fn().mockResolvedValue(),
   recordNotPayingObservation:         jest.fn(),
   clearNotPayingObservation:          jest.fn(),
+  markSubMemberRemoving:              jest.fn().mockResolvedValue(),
 }));
 
 jest.mock('../../adapters/wix/wix-plans-api', () => ({
@@ -287,6 +288,15 @@ function installWorld(world = {}) {
       }
       return { rows, rowCount: rows.length };
     }
+    // Phase 3b: holder-lapse strike history (reconciliation_proposal, ENDED, non-anomaly sweeps)
+    if (s.includes('FROM reconciliation_proposal') && s.includes("source = 'holder_lapse'")) {
+      if (world.holderLapseHistoryThrows) throw Object.assign(new Error('statement timeout'), { code: '57014' });
+      const rows = (world.holderLapseHistory || []).map(h => ({
+        platform_member_id: h.memberKey, source_plan_id: h.planId,
+        since: h.since, observations: String(h.observations),
+      }));
+      return { rows, rowCount: rows.length };
+    }
     // Strike clocks
     if (s.includes('MIN(not_paying_since)')) {
       if (world.strikeColumnsMissing) {
@@ -372,6 +382,13 @@ const alertsOf     = (type) => state.alerts.filter(a => a.type === type);
 function lastPolicyArgs() {
   const calls = revokePolicy.evaluateRemovals.mock.calls;
   return calls.length ? calls[calls.length - 1][0] : null;
+}
+// The whole-batch decision is always the policy's FIRST call. Since Phase 3b
+// (2026-10-15) a sweep with an armed holder-lapse proposal makes a second,
+// narrower call; tests about the batch read the first.
+function firstPolicyArgs() {
+  const calls = revokePolicy.evaluateRemovals.mock.calls;
+  return calls.length ? calls[0][0] : null;
 }
 
 // `${accessId}:${planId}` for each call to an L3 strike primitive, sorted.
@@ -459,9 +476,13 @@ beforeEach(() => {
   reconciliation._strikeColumnsMissingWarned = false;
 });
 
-// THE PHASE 1 TRIPWIRE — no test in this file may let a revoke reach the queue.
+// THE PHASE 1 TRIPWIRE — no test in this file may let a revoke reach the queue,
+// except the Phase 3b describe at the end, which arms exactly one source and says so.
+let phase3bArmed = false;
 afterEach(() => {
-  expect(revokeCalls()).toEqual([]);
+  if (!phase3bArmed) expect(revokeCalls()).toEqual([]);
+  phase3bArmed = false;
+  delete process.env.RECONCILE_HOLDER_LAPSE_REMOVAL;
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -581,6 +602,143 @@ describe('[P3] Phase 1 — the sweep never enqueues a revoke', () => {
     expect(warnCall('reconciliation.revoke_enqueue_refused_observation_only')[1]).toEqual(expect.objectContaining({
       clientId: CLIENT_ID, source: 'wix_absence', platformMemberId: 'c', sourcePlanId: PLAN_ID,
     }));
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Phase 3b, first arming (2026-10-15) — holder-lapse removals, and nothing else
+// ════════════════════════════════════════════════════════════════════════════
+//
+// A seat (sub-member) whose holder's order for that plan has ENDED in Wix may be
+// removed by the sweep — once the policy agrees: both reads agree, no anomaly,
+// mode 'on', and the strike (the sweep's own history: ≥3 non-anomaly sweeps over
+// ≥48 h proposing it with the holder ENDED). Everything else in the batch stays
+// held exactly as in Phase 1.
+
+describe('[P3] Phase 3b — holder-lapse removals armed, every other source still held', () => {
+  const daysAgo = (d) => new Date(Date.now() - d * 86400e3).toISOString();
+  // Holder 'a' pays PLAN_ID but their PLAN_B order has ENDED; seat 's' rides on PLAN_B.
+  const family = () => [
+    ...'abc'.split('').map(k => member(k)),
+    member('s', { isSub: true, holderKey: 'a', plans: [PLAN_B] }),
+  ];
+  const holderEndedReads = () => reads([...paying(['a', 'b', 'c']), order('a', PLAN_B, 'ENDED')]);
+  const ripe   = () => [{ memberKey: 's', planId: PLAN_B, since: daysAgo(3), observations: 5 }];
+  const unripe = () => [{ memberKey: 's', planId: PLAN_B, since: daysAgo(3), observations: 2 }];
+  const holderLapseInfo = () => infoCalls('reconciliation.holder_lapse_armed').map(c => c[1]);
+
+  beforeEach(() => { phase3bArmed = true; });
+
+  test("ripe strike + mode 'on' + holder ENDED → the seat's revoke is queued through the DR-044 path, recorded as 'queued'", async () => {
+    installWorld({ mode: 'on', members: family(), read1: holderEndedReads(), holderLapseHistory: ripe() });
+
+    const result = await runSync();
+
+    expect(revokeCalls()).toHaveLength(1);
+    const [, payload, opts] = revokeCalls()[0];
+    expect(payload.tenantId).toBe(CLIENT_ID);
+    expect(payload.standardEvent).toEqual(expect.objectContaining({
+      eventType: 'plan.cancelled', platformMemberId: 's', planId: PLAN_B, synthetic: true,
+      syntheticSource: 'reconciliation.holder_lapse', holderPlatformMemberId: 'a',
+    }));
+    expect(opts.jobId).toMatch(/^pass1\.5-ma-s-plan-annual-\d+$/);
+    expect(standardAdapter.markSubMemberRemoving).toHaveBeenCalledWith('ma-s');
+    expect(result.revoked).toBe(1);
+    expect(runClose().revokesQueued).toBe(1);
+    expect(result.heldRevokes).toBe(0);
+    expect(infoCalls('reconciliation.sub_member_holder_lapsed')).toHaveLength(1);
+    expect(holderLapseInfo()[0]).toEqual(expect.objectContaining({ armed: 1, queued: 1, action: 'proceed', mode: 'on' }));
+    // the proposal row says what happened, and the strike it was judged on
+    const row = proposalRows().find(r => r.platform_member_id === 's');
+    expect(row).toEqual(expect.objectContaining({ decision: 'queued', hold_reason: null, classification: 'ENDED', source: 'holder_lapse' }));
+    expect(row.evidence.strike).toEqual({ since: expect.any(String), observations: 5 });
+    expect(row.evidence.observationOnly).toBe(false);
+    // no "pending" alert for a seat that is being removed
+    expect(alertsOf('revoke_holder_lapse_pending')).toHaveLength(0);
+    // the armed decision is the policy's last call, with removal explicitly armed
+    expect(lastPolicyArgs()).toEqual(expect.objectContaining({ observationOnly: false, mode: 'on' }));
+    expect(lastPolicyArgs().proposals).toHaveLength(1);
+  });
+
+  test("mode 'dry_run' holds it (reason dry_run) — the operator has not turned removals on", async () => {
+    installWorld({ mode: 'dry_run', members: family(), read1: holderEndedReads(), holderLapseHistory: ripe() });
+    const result = await runSync();
+    expect(revokeCalls()).toHaveLength(0);
+    expect(result.revoked).toBe(0);
+    expect(holderLapseInfo()[0]).toEqual(expect.objectContaining({ armed: 1, queued: 0, action: 'hold', reason: 'dry_run' }));
+    expect(standardAdapter.markSubMemberRemoving).not.toHaveBeenCalled();
+    expect(proposalRows().find(r => r.platform_member_id === 's').decision).toBe('held');
+  });
+
+  test('an unripe strike (2 of 3 sweeps) holds it as strike_pending; no history at all is never ripe', async () => {
+    installWorld({ mode: 'on', members: family(), read1: holderEndedReads(), holderLapseHistory: unripe() });
+    await runSync();
+    expect(revokeCalls()).toHaveLength(0);
+    expect(holderLapseInfo()[0]).toEqual(expect.objectContaining({ action: 'hold', reason: 'strike_pending', strikePending: 1 }));
+
+    jest.clearAllMocks(); eventQueue.add.mockResolvedValue({});
+    installWorld({ mode: 'on', members: family(), read1: holderEndedReads() });   // no history
+    await runSync();
+    expect(revokeCalls()).toHaveLength(0);
+    expect(holderLapseInfo()[0]).toEqual(expect.objectContaining({ action: 'hold', reason: 'strike_pending' }));
+  });
+
+  test('a holder with NO order at all for the plan (ABSENT) is never armed, however old the history', async () => {
+    installWorld({ mode: 'on', members: family(), read1: reads(paying(['a', 'b', 'c'])), holderLapseHistory: ripe() });
+    const result = await runSync();
+    expect(revokeCalls()).toHaveLength(0);
+    expect(holderLapseInfo()).toHaveLength(0);                                      // nothing was armed
+    expect(result.holdReason).toBe('observation_only');
+    expect(proposalRows().find(r => r.platform_member_id === 's')).toEqual(expect.objectContaining({ classification: 'ABSENT', decision: 'held' }));
+  });
+
+  test('RECONCILE_HOLDER_LAPSE_REMOVAL=off is a kill switch: back to Phase 1 behaviour', async () => {
+    process.env.RECONCILE_HOLDER_LAPSE_REMOVAL = 'off';
+    installWorld({ mode: 'on', members: family(), read1: holderEndedReads(), holderLapseHistory: ripe() });
+    await runSync();
+    expect(revokeCalls()).toHaveLength(0);
+    expect(holderLapseInfo()).toHaveLength(0);
+    expect(lastPolicyArgs().observationOnly).toBe(true);
+  });
+
+  test('a failed strike-history read leaves every seat without a clock this sweep (fail-closed)', async () => {
+    installWorld({ mode: 'on', members: family(), read1: holderEndedReads(), holderLapseHistoryThrows: true });
+    await runSync();
+    expect(revokeCalls()).toHaveLength(0);
+    expect(warnCall('reconciliation.holder_lapse_strike_read_failed')).toBeDefined();
+    expect(holderLapseInfo()[0]).toEqual(expect.objectContaining({ action: 'hold', reason: 'strike_pending' }));
+  });
+
+  test("a primary member's own lapse (3B, wix_absence) stays held even with a ripe clock and mode 'on' — only holder-lapse is armed", async () => {
+    installWorld({
+      mode: 'on',
+      members: [member('a'), member('b'), member('c')],
+      read1: reads([...paying(['a', 'b']), order('c', PLAN_ID, 'ENDED')]),
+      strikes: [{ accessId: 'ma-c', planId: PLAN_ID, since: daysAgo(3), observations: 5 }],
+    });
+    const result = await runSync();
+    expect(revokeCalls()).toHaveLength(0);
+    expect(result.holdReason).toBe('observation_only');
+    expect(holderLapseInfo()).toHaveLength(0);
+    expect(lastPolicyArgs().observationOnly).toBe(true);
+  });
+
+  test('one seat failing to queue does not stop another, and is logged', async () => {
+    const members = [
+      ...'abc'.split('').map(k => member(k)),
+      member('s1', { isSub: true, holderKey: 'a', plans: [PLAN_B] }),
+      member('s2', { isSub: true, holderKey: 'a', plans: [PLAN_B] }),
+    ];
+    installWorld({ mode: 'on', members, read1: holderEndedReads(), holderLapseHistory: [
+      { memberKey: 's1', planId: PLAN_B, since: daysAgo(3), observations: 4 },
+      { memberKey: 's2', planId: PLAN_B, since: daysAgo(3), observations: 4 },
+    ] });
+    eventQueue.add.mockRejectedValueOnce(new Error('redis hiccup')).mockResolvedValue({});
+    const result = await runSync();
+    expect(eventQueue.add).toHaveBeenCalledTimes(2);
+    expect(result.revoked).toBe(1);
+    expect(log.error).toHaveBeenCalledWith('reconciliation.sub_member_holder_lapsed_queue_failed', expect.anything(), expect.any(Error));
+    expect(holderLapseInfo()[0]).toEqual(expect.objectContaining({ armed: 2, queued: 1 }));
   });
 });
 
@@ -1814,7 +1972,7 @@ describe('[P3] Fix round F6/F8 — decisions are made in units: a family is one'
 
     const result = await runSync();
 
-    const args = lastPolicyArgs();
+    const args = firstPolicyArgs();
     expect(args.proposals.map(p => `${p.source}:${p.memberKey}:${p.unitKey}:${p.classification}`).sort()).toEqual([
       'holder_lapse:s1:h:ENDED', 'holder_lapse:s2:h:ENDED', 'wix_absence:h:h:ENDED',
     ]);
@@ -2300,7 +2458,7 @@ describe('[P3] Fix round 3 — clears always run; only advancing a clock is ever
 
     await runSync();
 
-    const args = lastPolicyArgs();
+    const args = firstPolicyArgs();
     expect(new Set(args.proposals.map(p => p.source)))
       .toEqual(new Set(['wix_absence', 'kisi_user_vanished', 'role_drift', 'holder_lapse']));
     for (const p of args.proposals) {

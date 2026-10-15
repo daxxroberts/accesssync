@@ -325,6 +325,15 @@ describe('[P1] DR-052 access-removed capture — suppression matrix', () => {
     expect(ctx).not.toBeNull();
   });
 
+  test("the sweep's own holder-lapse removal (Phase 3b) → captured, like the cascade", async () => {
+    mockDb({ memberRow: MEMBER, planRows: [{ plan_name: 'Family' }] });
+    const ctx = await mailer.captureAccessRemovedContext({
+      clientId: CLIENT, accessId: ACCESS,
+      standardEvent: { eventType: 'plan.cancelled', synthetic: true, syntheticSource: 'reconciliation.holder_lapse', planId: 'sp-1' },
+    });
+    expect(ctx).not.toBeNull();
+  });
+
   test('reconcile-sourced revoke → null', async () => {
     const ctx = await mailer.captureAccessRemovedContext({
       clientId: CLIENT, accessId: ACCESS,

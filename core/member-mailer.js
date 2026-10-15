@@ -182,7 +182,8 @@ const templates = require('./email-templates');
 const GRANT_ALLOWED_SYNTHETIC  = new Set(['multi-member.submit', 'multi-member.holder_claim']);
 // 'holder_lapse.cascade' (2026-10-15): a seat revoked because the holder's plan ended in Wix.
 // The seat's access genuinely ended — the same moment as a real plan.cancelled for them.
-const REVOKE_ALLOWED_SYNTHETIC = new Set(['multi-member.remove_sub', 'holder_lapse.cascade']);
+// 'reconciliation.holder_lapse' (2026-10-15, Phase 3b): the same end, found by the nightly sweep.
+const REVOKE_ALLOWED_SYNTHETIC = new Set(['multi-member.remove_sub', 'holder_lapse.cascade', 'reconciliation.holder_lapse']);
 const REVOKE_EMAIL_EVENT_TYPES = new Set(['plan.cancelled', 'booking.cancelled']);
 
 function _grantEmailAllowed(standardEvent) {
