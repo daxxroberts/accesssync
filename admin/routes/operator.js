@@ -32,6 +32,10 @@ const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
 const standardAdapter = require('../../adapters/standard-adapter');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { guidanceFor, retryRefusal, dismissRefusal } = require('../../core/error-guidance');
+const { describeConfigAlert } = require('../../core/operator-email-templates');
+// Held-removal alerts: the gym decides (remove in Kisi, or leave them in). Mirrors core/reconciliation.js
+// GYM_DECIDES_ALERTS — a dismissal of one keeps it quiet for 30 days.
+const GYM_DECIDES_ALERT_TYPES = new Set(['sweep_removal_pending', 'revoke_holder_lapse_pending', 'revoke_held_payment_state']);
 const { suspendLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
@@ -3008,17 +3012,44 @@ router.get('/:clientId/recent-members', async (req, res) => {
 router.get('/:clientId/alerts', async (req, res) => {
   const { clientId } = req.params;
   try {
+    // The member an alert is about: sweep alerts carry "member:<platform member id>", finalize guards carry
+    // "member_id=<member_access id>". Both are looked up inside THIS client only.
     const result = await db.query(
-      `SELECT id, alert_type, hardware_ref, affected_member_count, resolved_at,
-              created_at, last_seen_at
-       FROM config_alert_log
-       WHERE client_id = $1
-         AND resolved_at IS NULL
-       ORDER BY last_seen_at DESC
+      `SELECT cal.id, cal.alert_type, cal.hardware_ref, cal.affected_member_count, cal.resolved_at,
+              cal.created_at, cal.last_seen_at,
+              COALESCE(NULLIF(TRIM(m.display_name), ''),
+                       NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), '')) AS member_name
+       FROM config_alert_log cal
+       LEFT JOIN LATERAL (
+         SELECT mm.display_name, mm.first_name, mm.last_name
+           FROM member_master mm
+          WHERE mm.client_id = cal.client_id
+            AND (
+                  (cal.hardware_ref LIKE 'member:%' AND mm.platform_member_id = substring(cal.hardware_ref FROM 8))
+               OR mm.id = (SELECT ma.member_master_id FROM member_access ma
+                            WHERE ma.client_id = cal.client_id
+                              AND ma.id::text = substring(cal.hardware_ref FROM 'member_id=([0-9a-fA-F-]{36})'))
+                )
+          LIMIT 1
+       ) m ON TRUE
+       WHERE cal.client_id = $1
+         AND cal.resolved_at IS NULL
+       ORDER BY cal.last_seen_at DESC NULLS LAST, cal.created_at DESC
        LIMIT 50`,
       [clientId]
     );
-    res.json({ alerts: result.rows });
+    // Same sentence the nightly digest email uses, so the screen and the email never disagree.
+    const alerts = result.rows.map(a => ({
+      ...a,
+      message: describeConfigAlert({
+        alert_type: a.alert_type,
+        memberName: a.member_name || null,
+        affectedMembers: a.affected_member_count || 0,
+        platform: 'Kisi',
+      }),
+      gym_decides: GYM_DECIDES_ALERT_TYPES.has(a.alert_type),
+    }));
+    res.json({ alerts });
   } catch (err) {
     log.error('operator.alerts.list_failed', { clientId }, err);
     res.status(500).json({ error: 'Internal server error' });

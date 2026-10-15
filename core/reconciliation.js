@@ -64,6 +64,14 @@ const SWEEP_ALERT = Object.freeze({
   HELD_PAYMENT_STATE:   'revoke_held_payment_state',   // 3B / Pass 1.5 — payment declined, pending or unrecognised: left alone
 });
 
+// Held-removal alerts the GYM decides on (remove the member in Kisi, or leave them in). A dismissal of one of these
+// keeps the same member's alert quiet for GYM_DECISION_QUIET_DAYS (see _insertAlertOnce). sweep_repair_pending is
+// deliberately absent: a paying member without door access is never silenced.
+const GYM_DECIDES_ALERTS = new Set([
+  SWEEP_ALERT.REMOVAL_PENDING, SWEEP_ALERT.HOLDER_LAPSE_PENDING, SWEEP_ALERT.HELD_PAYMENT_STATE,
+]);
+const GYM_DECISION_QUIET_DAYS = 30;
+
 // reconciliation_proposal.kind
 const PROPOSAL_KIND = Object.freeze({
   REMOVAL_PENDING:    'removal_pending',
@@ -433,6 +441,10 @@ class NightlyReconciliation {
   async _insertAlertOnce(clientId, alertType, hardwareRef) {
     const type = alertType || 'revoke_unknown';
     const _actor = getActor() || {};
+    // A held removal is the gym's decision ("leave them in" is a valid answer). Once the gym marks one handled, the
+    // same member's alert stays quiet for GYM_DECISION_QUIET_DAYS instead of returning at the next sweep (every 6h).
+    // NOT for sweep_repair_pending (a paying member without door access must always come back) or any other type.
+    const quietWhenResolved = GYM_DECIDES_ALERTS.has(type);
     try {
       const r = await db.query(
         `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
@@ -442,12 +454,14 @@ class NightlyReconciliation {
            WHERE client_id    = $1::uuid
              AND alert_type   = $2::varchar
              AND hardware_ref = $3::varchar
-             AND resolved_at IS NULL
+             AND (resolved_at IS NULL
+                  OR ($7::boolean AND resolved_at > NOW() - make_interval(days => $8::int)))
          )`,
         [
           clientId, type, alertRef(hardwareRef),
           this._sweepTraceId || getTraceId() || null,
           _actor.type || null, _actor.id || null,
+          quietWhenResolved, GYM_DECISION_QUIET_DAYS,
         ]
       );
       return !!(r && r.rowCount > 0);

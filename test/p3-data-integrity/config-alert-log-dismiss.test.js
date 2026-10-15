@@ -120,3 +120,36 @@ describe('[P3] POST /operator/:clientId/alerts/:alertId/dismiss', () => {
     );
   });
 });
+
+describe('[P3] GET /operator/:clientId/alerts — the gym can read its sync alerts (L17)', () => {
+  let app;
+  beforeAll(() => { app = makeApp(require('../../admin/routes/operator'), '/operator'); });
+
+  test('each alert carries the digest sentence (naming the member when known) and whether the gym decides it', async () => {
+    db.query.mockResolvedValueOnce({ rows: [
+      { id: 'a1', alert_type: 'revoke_holder_lapse_pending', hardware_ref: 'member:wix-9', affected_member_count: null,
+        resolved_at: null, created_at: '2026-10-04T09:54:00Z', last_seen_at: null, member_name: 'Pat Example' },
+      { id: 'a2', alert_type: 'sweep_repair_pending', hardware_ref: 'member:wix-7', affected_member_count: null,
+        resolved_at: null, created_at: '2026-10-04T09:54:00Z', last_seen_at: null, member_name: null },
+    ] });
+    const res = await request(app).get('/operator/client-hog/alerts');
+    expect(res.status).toBe(200);
+    const [a1, a2] = res.body.alerts;
+    expect(a1.message).toMatch(/^Pat Example /);
+    expect(a1.message).toMatch(/nothing was removed/);
+    expect(a1.gym_decides).toBe(true);
+    expect(a2.message).toMatch(/door access/);
+    expect(a2.gym_decides).toBe(false);          // a paying member without access is never "leave it"
+  });
+
+  test('scoped to the requested client, member lookups included', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await request(app).get('/operator/client-hog/alerts');
+    const [sql, params] = db.query.mock.calls[0];
+    expect(params).toEqual(['client-hog']);
+    expect(sql).toMatch(/WHERE cal\.client_id = \$1/);
+    expect(sql).toMatch(/mm\.client_id = cal\.client_id/);
+    expect(sql).toMatch(/ma\.client_id = cal\.client_id/);
+    expect(sql).toMatch(/cal\.resolved_at IS NULL/);
+  });
+});

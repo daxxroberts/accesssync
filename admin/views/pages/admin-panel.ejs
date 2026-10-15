@@ -592,8 +592,9 @@
         var al = c.open_alerts;
         var alertNote = (al && al.open_count)
           ? '<div class="health-note">' + (al.removals_held === al.open_count
-              ? al.open_count + (al.open_count === 1 ? ' removal is' : ' removals are') + ' waiting for the gym to decide (nothing was removed; sent in the daily digest).'
+              ? al.open_count + (al.open_count === 1 ? ' removal is' : ' removals are') + ' waiting for the gym to decide (nothing was removed; the gym can mark them handled on its Errors page).'
               : al.open_count + ' open sync alert' + (al.open_count === 1 ? '' : 's') + (al.removals_held ? ', ' + al.removals_held + ' of them removals waiting for the gym' : '') + ' (sent in the daily digest).') +
+            ' <a class="health-link" href="/errors?clientId=' + encodeURIComponent(c.client_id) + '">See them \u2192</a>' +
             '</div>'
           : '';
         body = gap + '<div class="health-checks">' +
