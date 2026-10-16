@@ -90,13 +90,24 @@ class StandardAdapter {
         // Step 3: UPSERT access record — sets in_flight sentinel (Option B stall recovery).
         // plan_holder = true for primary members (event.planHolderId null means they are the holder).
         // S-11: ON CONFLICT key is now (member_master_id, client_id) per the new UNIQUE.
+        //
+        // A 'deleted' row (DR-044 finalize) keeps its hardware_user_id as lineage, but
+        // finalize deleted that Kisi user. A re-purchase starts a new lifecycle, so the
+        // dead id is dropped here; resolveIdentity then finds or creates a live user.
+        // Without this its cache hit returned the dead id and assignRole failed with
+        // Kisi 422 "assignee must exist" (2026-10-15: cancelled 21:15, re-bought 21:19,
+        // all three grant jobs failed). The old id stays in member_access_log / logs.
+        // In DO UPDATE, member_access.status is the pre-update value.
         const isPlanHolder = !event.planHolderId;
         const accessResult = await dbClient.query(
           `INSERT INTO member_access
              (member_master_id, client_id, source_platform, platform_member_id, status, plan_holder)
            VALUES ($1, $2, $3, $4, 'in_flight', $5)
            ON CONFLICT (member_master_id, client_id) DO UPDATE
-             SET status = 'in_flight', updated_at = NOW()
+             SET status = 'in_flight',
+                 hardware_user_id = CASE WHEN member_access.status = 'deleted'
+                                         THEN NULL ELSE member_access.hardware_user_id END,
+                 updated_at = NOW()
            RETURNING id, hardware_user_id`,
           [memberMasterId, tenantId, event.sourcePlatform || 'wix', event.platformMemberId, isPlanHolder]
         );
