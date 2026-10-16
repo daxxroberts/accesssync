@@ -71,13 +71,16 @@ class StandardAdapter {
         // S-11: lock scope is per-(person × client). Two webhooks for the same person
         // serialize through this lock regardless of which plan triggered them.
         // 55P03 = lock_not_available — thrown by FOR UPDATE NOWAIT when row is already locked.
+        // The prior row (absent for a brand-new member) feeds the dropped-id log below.
+        let priorAccess = null;
         try {
-          await dbClient.query(
-            `SELECT id FROM member_access
+          const lockResult = await dbClient.query(
+            `SELECT id, status, hardware_user_id FROM member_access
              WHERE member_master_id = $1 AND client_id = $2
              FOR UPDATE NOWAIT`,
             [memberMasterId, tenantId]
           );
+          priorAccess = lockResult?.rows?.[0] || null;
         } catch (lockErr) {
           if (lockErr.code === '55P03') {
             const err = new Error(`in_flight lock active — concurrent modification rejected for member ${event.platformMemberId} (clientId=${tenantId})`);
@@ -96,7 +99,8 @@ class StandardAdapter {
         // dead id is dropped here; resolveIdentity then finds or creates a live user.
         // Without this its cache hit returned the dead id and assignRole failed with
         // Kisi 422 "assignee must exist" (2026-10-15: cancelled 21:15, re-bought 21:19,
-        // all three grant jobs failed). The old id stays in member_access_log / logs.
+        // all three grant jobs failed). The old id stays in member_access_log / logs, and
+        // adapter.identity_dropped_after_finalize records it (DR-044 lineage).
         // In DO UPDATE, member_access.status is the pre-update value.
         const isPlanHolder = !event.planHolderId;
         const accessResult = await dbClient.query(
@@ -113,6 +117,16 @@ class StandardAdapter {
         );
         memberId = accessResult.rows[0].id;
         hardwareUserId = accessResult.rows[0].hardware_user_id;
+
+        // Warn level on purpose: rare, and it must persist as the dead id's lineage record.
+        if (priorAccess && priorAccess.status === 'deleted' && priorAccess.hardware_user_id) {
+          log.warn('adapter.identity_dropped_after_finalize', {
+            memberId, memberMasterId, tenantId,
+            platformMemberId: event.platformMemberId,
+            droppedHardwareUserId: priorAccess.hardware_user_id,
+            stage: 'resolve', result: 'success',
+          });
+        }
 
       } else {
         // REVOKE path — revoke applies to ALL active access rows for this member.
