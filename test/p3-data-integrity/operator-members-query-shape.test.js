@@ -157,6 +157,16 @@ describe('[P3] Members API — main SELECT structure', () => {
     }
   });
 
+  // Regression 2026-10-16: dashboard said "1 pending" (a stuck sub-member draft) while the
+  // Members page showed nobody pending — it had no pending rule at all. needs_sync must use
+  // the exact status lists the dashboard's pending_members uses (operator-sync-metrics.test.js).
+  test('needs_sync uses the same managed/unsynced rule as the dashboard pending count', () => {
+    expect(mainSql).toMatch(/AS needs_sync\b/);
+    expect(mainSql).toMatch(/ma\.status IN \('active', 'in_flight', 'pending_identity', 'recovery_pending'\)/);
+    expect(mainSql).toMatch(/mas\.status IN \('pending_hardware', 'pending_start', 'failed'\)/);
+    expect(mainSql).toMatch(/ma\.status <> 'active'/);
+  });
+
   test('holder-fallback branch exists for exactly the 4 COALESCE\'d plan fields', () => {
     // plan_names, plan_ids, plan_mapping_ids, plan_name each fall back to
     // aggregating the holder's sub-members' source rows.

@@ -13,7 +13,11 @@ function App() {
   const [members, setMembers] = useState(() => window.MEMBERS || []);
   const [pageContext, setPageContext] = useState(() => window.__MEMBERS_CONTEXT || {});
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("all");
+  // The dashboard's "N pending — View in Members" link lands here with ?filter=pending.
+  const [filter, setFilter] = useState(() => {
+    const f = new URLSearchParams(window.location.search).get("filter");
+    return (window.FILTERS || []).some(x => x.id === f) ? f : "all";
+  });
   const [sort, setSort] = useState({ key: "since", dir: "desc" });
   const [expandedPlans, setExpandedPlans] = useState(() => new Set());
   const [expandedSubs, setExpandedSubs] = useState(() => new Set());
@@ -50,6 +54,7 @@ function App() {
     let rows = members;
     if (filter === "holder") rows = rows.filter(m => m.role === "holder");
     else if (filter === "sub") rows = rows.filter(m => m.role === "sub");
+    else if (filter === "pending") rows = rows.filter(m => m.pending);
     else if (filter === "suspended") rows = rows.filter(m => m.hasError);
 
     const q = query.trim().toLowerCase();
@@ -84,11 +89,13 @@ function App() {
 
   const counts = useMemo(() => ({
     all: members.length,
-    active: members.filter(m => !m.hasError).length,
+    active: members.filter(m => !m.hasError && !m.pending).length,
+    activeHolder: members.filter(m => !m.hasError && !m.pending && m.role === "holder").length,
+    activeSub: members.filter(m => !m.hasError && !m.pending && m.role === "sub").length,
     holder: members.filter(m => m.role === "holder").length,
     sub: members.filter(m => m.role === "sub").length,
     suspended: members.filter(m => m.hasError).length,
-    pending: 0,
+    pending: members.filter(m => m.pending).length,
   }), [members]);
 
   // Subs are now first-class top-level people. The "additional members" framing is retired;
@@ -192,7 +199,7 @@ function App() {
           <div className="stat">
             <div className="stat-label">Active members</div>
             <div className="stat-value tabular">{counts.active}</div>
-            <div className="stat-meta"><span>{counts.holder} holders + {counts.sub} sub-members</span></div>
+            <div className="stat-meta"><span>{counts.activeHolder} holders + {counts.activeSub} sub-members</span></div>
           </div>
           <div className="stat">
             <div className="stat-label">Plan holders</div>
@@ -206,11 +213,6 @@ function App() {
                       : "—")}
               </span>
             </div>
-          </div>
-          <div className="stat">
-            <div className="stat-label">Door entries · today</div>
-            <div className="stat-value tabular">—</div>
-            <div className="stat-meta"><span>not yet wired</span></div>
           </div>
           <div className="stat">
             <div className="stat-label">Needs attention</div>
@@ -305,7 +307,7 @@ function App() {
 
               // Avatar shading: muted by default — pull status only if there's an error,
               // since we don't want a colored pill cluttering the quiet state.
-              const avatarKind = m.hasError ? "suspended" : "active";
+              const avatarKind = m.hasError ? "suspended" : (m.pending ? "pending" : "active");
 
               // Top-level person row
               rows.push(
@@ -319,6 +321,11 @@ function App() {
                           {m.hasError && (
                             <span className="member-tag" style={{background:"var(--rose-dim, #fde8eb)",color:"var(--rose, #b42044)",borderColor:"rgba(180,32,68,.22)"}}>
                               Needs attention
+                            </span>
+                          )}
+                          {m.pending && !m.hasError && (
+                            <span className="member-tag" style={{background:"var(--amber-dim, #fef3c7)",color:"var(--amber, #d97706)",borderColor:"rgba(217,119,6,.22)"}}>
+                              Pending
                             </span>
                           )}
                           {m.leavingOn && (

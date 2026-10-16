@@ -34,6 +34,13 @@ const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const { guidanceFor, retryRefusal, dismissRefusal } = require('../../core/error-guidance');
 const { describeConfigAlert } = require('../../core/operator-email-templates');
 const { ALERT_CONTEXT_COLUMNS, ALERT_CONTEXT_JOINS } = require('../../core/alert-context');
+// One definition of "pending" shared by the dashboard Synced tile (GET /:clientId) and the
+// Members page (GET /:clientId/members). A person is pending when AccessSync is responsible
+// for them (MANAGED) but they are not fully live in hardware: access row not 'active', or
+// any of their source rows stuck in an incomplete state. The two surfaces once used
+// different rules and disagreed ("1 pending" on the dashboard, nobody on Members).
+const MANAGED_ACCESS_STATUSES = `('active', 'in_flight', 'pending_identity', 'recovery_pending')`;
+const UNSYNCED_SOURCE_STATUSES = `('pending_hardware', 'pending_start', 'failed')`;
 // Held-removal alerts: the gym decides (remove in Kisi, or leave them in). Mirrors core/reconciliation.js
 // GYM_DECIDES_ALERTS — a dismissal of one keeps it quiet for 30 days.
 const GYM_DECIDES_ALERT_TYPES = new Set(['sweep_removal_pending', 'revoke_holder_lapse_pending', 'revoke_held_payment_state']);
@@ -1485,7 +1492,7 @@ router.get('/:clientId', async (req, res) => {
              JOIN member_access_sources mas ON mas.access_id = ma2.id
              WHERE ma2.member_master_id = ma.member_master_id
                AND ma2.client_id = ma.client_id
-               AND mas.status IN ('pending_hardware', 'pending_start', 'failed')
+               AND mas.status IN ${UNSYNCED_SOURCE_STATUSES}
            )`,
         [clientId]
       ),
@@ -1497,7 +1504,7 @@ router.get('/:clientId', async (req, res) => {
         `SELECT COUNT(DISTINCT member_master_id)::int AS count
          FROM member_access
          WHERE client_id = $1
-           AND status IN ('active', 'in_flight', 'pending_identity', 'recovery_pending')`,
+           AND status IN ${MANAGED_ACCESS_STATUSES}`,
         [clientId]
       ),
       db.query(
@@ -2834,6 +2841,13 @@ router.get('/:clientId/members', async (req, res) => {
                   ORDER BY mas.created_at ASC
                   LIMIT 1
                 )                                AS sub_plan_name,
+                -- Same rule as the dashboard's pending_members (see MANAGED_ACCESS_STATUSES),
+                -- so the Members page Pending count always equals the dashboard's.
+                (ma.status IN ${MANAGED_ACCESS_STATUSES}
+                  AND (ma.status <> 'active' OR EXISTS (
+                    SELECT 1 FROM member_access_sources mas
+                    WHERE mas.access_id = ma.id AND mas.status IN ${UNSYNCED_SOURCE_STATUSES}
+                  )))                            AS needs_sync,
                 CASE WHEN ma.sub_master_id IS NULL THEN 'holder' ELSE 'sub' END AS role,
                 holder_mm.id          AS holder_id,
                 holder_mm.display_name AS holder_name,

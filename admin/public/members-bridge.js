@@ -172,8 +172,6 @@
       subscriptionId:    billing.subscriptionId,
       orderId:           billing.orderId,
       billing:           billing,
-      lastVisit:         "—",
-      visits30d:         0,
       error:             null,
       plans:             [],   // populated by buildMembersArray for holder rows
       _raw:              r,
@@ -361,6 +359,10 @@
       personRow.hasError = plans.some(function (p) {
         return p.rawStatus === "suspended" || p.rawStatus === "failed" || p.rawStatus === "revoked";
       });
+
+      // Pending = server-computed needs_sync, the same rule as the dashboard's
+      // "N pending" (operator.js MANAGED_ACCESS_STATUSES) — the two counts must match.
+      personRow.pending = group.rows.some(function (r) { return r.needs_sync === true; });
 
       // Top-row role: "holder" if any of their access rows is a holder; else "sub"
       personRow.role = group.rows.some(function (r) { return !r.plan_holder_id; })

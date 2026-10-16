@@ -9,6 +9,7 @@ const FILTERS = [
   { id: "all",       label: "All" },
   { id: "holder",    label: "Plan Holders" },
   { id: "sub",       label: "Sub-members" },
+  { id: "pending",   label: "Pending" },
   { id: "suspended", label: "Needs attention" },
 ];
 
