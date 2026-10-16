@@ -59,6 +59,15 @@ const PLATFORM_ERROR_BURST = 10;
 
 const thresholds = Object.freeze({ RECONCILE_AMBER_H, RECONCILE_RED_H, WEBHOOK_SILENT_H, STUCK_H, GYM_IGNORED_H, KEY_CHECK_STALE_H, PLATFORM_ERROR_BURST });
 
+// One definition of "stuck", shared by the Hub's can't-get-in count (computeOwnerHealth) and the member list the
+// Errors tab shows (listStuckMembers), so the two cannot disagree. $1 = STUCK_H. A delayed-start plan waiting for
+// its own start date is not stuck.
+const STUCK_ACCESS_WHERE = `ma.status IN ('pending_identity', 'recovery_pending', 'in_flight')
+          AND ma.updated_at < NOW() - make_interval(hours => $1)`;
+const STUCK_SOURCE_WHERE = `(mas.status = 'failed'
+               OR (mas.status = 'pending_hardware' AND COALESCE(mas.updated_at, mas.created_at) < NOW() - make_interval(hours => $1))
+               OR (mas.status = 'pending_start' AND mas.scheduled_start_date < NOW() - make_interval(hours => $1)))`;
+
 const SEV = { green: 0, amber: 1, red: 2 };
 const worst = (a, b) => (SEV[b] > SEV[a] ? b : a);
 
@@ -138,15 +147,12 @@ async function computeOwnerHealth() {
     `SELECT client_id, SUM(n)::int AS stuck, MIN(since) AS oldest FROM (
        SELECT ma.client_id, COUNT(*) AS n, MIN(ma.updated_at) AS since
          FROM member_access ma
-        WHERE ma.status IN ('pending_identity', 'recovery_pending', 'in_flight')
-          AND ma.updated_at < NOW() - make_interval(hours => $1)
+        WHERE ${STUCK_ACCESS_WHERE}
         GROUP BY ma.client_id
        UNION ALL
        SELECT mas.client_id, COUNT(*) AS n, MIN(COALESCE(mas.updated_at, mas.created_at)) AS since
          FROM member_access_sources mas
-        WHERE (mas.status = 'failed'
-               OR (mas.status = 'pending_hardware' AND COALESCE(mas.updated_at, mas.created_at) < NOW() - make_interval(hours => $1))
-               OR (mas.status = 'pending_start' AND mas.scheduled_start_date < NOW() - make_interval(hours => $1)))
+        WHERE ${STUCK_SOURCE_WHERE}
         GROUP BY mas.client_id
      ) s GROUP BY client_id`,
     [STUCK_H]
@@ -358,6 +364,39 @@ async function computeOwnerHealth() {
   return { generated_at, verdict, check_failed, summary, problems, platform, healthy, clients, db: { ok: dbR.ok, latency_ms: dbR.latency_ms } };
 }
 
+/**
+ * The members behind the Hub's "can't get in: AccessSync must fix" count that are not error_queue rows: one row per
+ * stuck access row or stuck plan row, the same units computeOwnerHealth counts. The Errors tab lists these next to
+ * the error_queue rows, so a red Hub row always opens onto what it counted. Pass clientId to scope to one gym.
+ */
+async function listStuckMembers({ clientId = null } = {}) {
+  const params = [STUCK_H];
+  if (clientId) params.push(clientId);
+  const result = await db.query(
+    `SELECT x.client_id, c.name AS client_name, x.access_id, x.kind, x.status, x.since, pm.plan_name,
+            mm.display_name AS member_name, mm.email AS member_email, (ma.sub_master_id IS NOT NULL) AS is_sub_member
+       FROM (
+         SELECT ma.client_id, ma.id AS access_id, 'access'::text AS kind, ma.status::text AS status,
+                NULL::uuid AS mapping_id, ma.updated_at AS since
+           FROM member_access ma
+          WHERE ${STUCK_ACCESS_WHERE}
+         UNION ALL
+         SELECT mas.client_id, mas.access_id, 'plan'::text, mas.status::text,
+                mas.mapping_id, COALESCE(mas.updated_at, mas.created_at)
+           FROM member_access_sources mas
+          WHERE ${STUCK_SOURCE_WHERE}
+       ) x
+       JOIN member_access ma ON ma.id = x.access_id
+       JOIN member_master mm ON mm.id = ma.member_master_id
+       LEFT JOIN clients c ON c.id = x.client_id
+       LEFT JOIN plan_mappings pm ON pm.id = x.mapping_id
+      ${clientId ? 'WHERE x.client_id = $2' : ''}
+      ORDER BY x.since ASC`,
+    params
+  );
+  return result.rows;
+}
+
 /** Subject-line verdict: "All 3 gyms OK" / "1 of 3 gyms needs you · 1 waiting on the gym". */
 function verdictLine(h) {
   const s = h.summary;
@@ -371,4 +410,4 @@ function verdictLine(h) {
   return parts.join(' · ') || 'Needs a look';
 }
 
-module.exports = { computeOwnerHealth, verdictLine, reconcileState, thresholds, ageHours };
+module.exports = { computeOwnerHealth, listStuckMembers, verdictLine, reconcileState, thresholds, ageHours };

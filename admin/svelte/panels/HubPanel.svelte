@@ -66,6 +66,10 @@
   $: platformRows = h ? [...h.platform, ...queueRows] : [];
   $: verdict = !h ? 'unknown' : (platformRows.some(r => r.severity === 'red') ? 'red' : (platformRows.length && h.verdict === 'green' ? 'amber' : h.verdict));
 
+  // "AccessSync must fix" rows are the owner's: open the owner Errors tab, which lists the same members the row
+  // counted (GET /admin/errors → listStuckMembers). The gym-facing /errors link stays on the row for the emails.
+  const rowLink = (p) => (p.kind === 'errors_you' ? '/OwnerDashboard?panel=errors' : p.link);
+
   function rel(iso) {
     if (!iso) return '';
     const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -134,7 +138,7 @@
             {#if p.action === 'invite'}
               <button class="btn btn-sm btn-accent" on:click={() => openInvite(p)}>Send setup link</button>
             {:else if p.link}
-              <a class="btn btn-sm btn-secondary" href={p.link}>Open</a>
+              <a class="btn btn-sm btn-secondary" href={rowLink(p)}>Open</a>
             {:else}
               <a class="btn btn-sm btn-secondary" href={'/dashboard?clientId=' + encodeURIComponent(p.client_id)}>Open gym</a>
             {/if}

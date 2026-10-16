@@ -2,7 +2,7 @@
  * admin/routes/errors.js
  * Admin Hub — Error Queue Manager
  *
- * GET  /admin/errors              Paginated error queue across all tenants
+ * GET  /admin/errors              Paginated error queue across all tenants, plus the stuck members the Hub also counts
  * GET  /admin/errors/:id          Full detail for one error
  * POST /admin/errors/:id/dismiss  Mark resolved with note
  * POST /admin/errors/:id/retry    Re-enqueue to BullMQ
@@ -17,6 +17,7 @@ const { getRedisConnection } = require('../../core/redis-utils');
 const { mintTraceId } = require('../../core/trace-context');
 const { jobNameForEventType } = require('../../core/event-routing');
 const { guidanceFor, retryRefusal } = require('../../core/error-guidance');
+const { listStuckMembers } = require('../../core/owner-health');
 
 const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
 
@@ -152,8 +153,13 @@ router.get('/', async (req, res) => {
       params.slice(0, -2)
     );
 
+    // The Hub counts these members as "can't get in" too (core/owner-health.js). They are not error_queue rows,
+    // so list them beside the open errors — only on the open view, since they have no resolved state.
+    const stuck = status === 'failed' ? await listStuckMembers({ clientId: client_id || null }) : [];
+
     res.json({
       data:   result.rows.map(r => ({ ...r, guidance: guidanceFor(r) })),
+      stuck,
       total:  parseInt(countResult.rows[0].count),
       limit:  parseInt(limit),
       offset: parseInt(offset)

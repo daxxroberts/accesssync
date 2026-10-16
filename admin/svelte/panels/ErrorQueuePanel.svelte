@@ -20,6 +20,9 @@
   import { showToast }  from '../stores/toast.js';
 
   const COLUMNS = ['', 'Client', 'Member', 'Event Type', 'Reason', 'Status', 'Created', 'Actions'];
+  const STUCK_COLUMNS = ['Client', 'Member', 'Plan', 'Status', 'Stuck since'];
+  const QUEUE_COLUMNS = ['Finished', 'Event', 'Reason', 'Tries', 'Member ID'];
+  const QUEUE_SHOWN   = 50;
 
   // ── State ──────────────────────────────────────────────────────────
   let statusFilter = 'failed';
@@ -29,6 +32,8 @@
   let offset       = 0;
   let total        = 0;
   let rows         = [];
+  let stuck        = [];   // members the Hub counts as "can't get in" that are not error_queue rows
+  let queueFailed  = [];   // the job queue's retained failures — what the Hub's "N jobs failed in the queue" row counts
   let loading      = false;
   let selected     = new Set();
 
@@ -76,6 +81,8 @@
   async function load() {
     loading  = true;
     rows     = [];
+    stuck    = [];
+    queueFailed = [];
     selected = new Set();
     try {
       const params = new URLSearchParams({ status: statusFilter, limit, offset });
@@ -84,13 +91,28 @@
       const json   = await res.json();
       rows  = json.data  || [];
       total = json.total || 0;
-      // Badge = every open error across gyms, whatever page or filter is showing.
-      if (statusFilter === 'failed' && !clientFilter) updateNavBadge(total);
+      stuck = json.stuck || [];
+      // Badge = everything the Hub counts as open across gyms, whatever page or filter is showing.
+      if (statusFilter === 'failed' && !clientFilter) updateNavBadge(total + stuck.length);
+      await loadQueueFailed();
     } catch (err) {
       if (err.message !== 'Unauthorized') showToast('Failed to load errors', 'error');
     } finally {
       loading = false;
     }
+  }
+
+  // The Hub's "N jobs failed in the queue" row counts the queue's failed jobs. List them from the same endpoint
+  // family (GET /admin/queue/jobs, admin/routes/queue.js) so that row opens onto what it counted. Open view only.
+  async function loadQueueFailed() {
+    if (statusFilter !== 'failed') return;
+    try {
+      const res  = await apiFetch('/admin/queue/jobs?state=failed&limit=500');
+      const json = await res.json();
+      queueFailed = (json.data || [])
+        .filter(j => !clientFilter || j.tenantId === clientFilter)
+        .sort((a, b) => (b.finishedOn || 0) - (a.finishedOn || 0));
+    } catch { /* non-fatal: the Hub row still shows the count */ }
   }
 
   async function openDetail(row) {
@@ -203,7 +225,7 @@
 <!-- ── Loading / Empty / Table ───────────────────────────────────── -->
 <LoadingState message="Loading errors…" hidden={!loading} />
 
-{#if !loading && rows.length === 0}
+{#if !loading && rows.length === 0 && stuck.length === 0 && queueFailed.length === 0}
   <EmptyState message="No errors found">
     <svelte:fragment slot="icon">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -211,6 +233,41 @@
       </svg>
     </svelte:fragment>
   </EmptyState>
+{/if}
+
+{#if !loading && stuck.length > 0}
+  <h3 class="detail-section-title">Members who can't get in ({stuck.length})</h3>
+  <p class="muted">Not in the error queue, but the Hub counts them. Nothing to retry here.</p>
+  <DataTable columns={STUCK_COLUMNS}>
+    {#each stuck as s (s.access_id + ':' + s.kind)}
+      <tr>
+        <td>{#if s.client_name}{s.client_name}{:else}<span class="muted">No gym</span>{/if}</td>
+        <td>
+          <div>{s.member_name || '—'}{#if s.is_sub_member} <span class="muted">(sub-member)</span>{/if}</div>
+          {#if s.member_email}<div class="cell-sub">{s.member_email}</div>{/if}
+        </td>
+        <td>{s.plan_name || '—'}</td>
+        <td><PillBadge text={s.status} /></td>
+        <td><TimeStamp iso={s.since} /></td>
+      </tr>
+    {/each}
+  </DataTable>
+{/if}
+
+{#if !loading && queueFailed.length > 0}
+  <h3 class="detail-section-title">Failed jobs in the queue ({queueFailed.length})</h3>
+  <p class="muted">The Hub counts these too. The queue keeps its last 500 failed jobs, so older ones stay listed after they are fixed. Showing the newest {Math.min(QUEUE_SHOWN, queueFailed.length)}.</p>
+  <DataTable columns={QUEUE_COLUMNS}>
+    {#each queueFailed.slice(0, QUEUE_SHOWN) as j (j.id)}
+      <tr>
+        <td>{#if j.finishedOn}<TimeStamp iso={new Date(j.finishedOn).toISOString()} />{:else}—{/if}</td>
+        <td><CodeChip text={j.eventType || j.name} /></td>
+        <td class="reason-cell" title={j.failedReason || ''}>{j.failedReason || '—'}</td>
+        <td>{j.attemptsMade ?? '—'}</td>
+        <td><CodeChip text={j.memberId || '—'} /></td>
+      </tr>
+    {/each}
+  </DataTable>
 {/if}
 
 {#if !loading && rows.length > 0}
