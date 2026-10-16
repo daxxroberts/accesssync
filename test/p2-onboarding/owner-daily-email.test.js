@@ -5,7 +5,7 @@
  * │                                                                         │
  * │  - subject = the Hub's verdict line; sent every day INCLUDING all-clear │
  * │  - one line per problem: gym, what, who acts, since; counts only        │
- * │  - once per UTC day during the configured hour; a restart during the    │
+ * │  - once per Central day during the configured hour; a restart in the    │
  * │    hour does not send twice (the logger's sent row is the guard)        │
  * │  - the gym daily goes to the gym's own notification email               │
  * └─────────────────────────────────────────────────────────────────────────┘

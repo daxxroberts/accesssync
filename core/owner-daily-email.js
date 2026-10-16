@@ -53,8 +53,12 @@ async function sentOn(day, timeZone) {
   }
 }
 
-/** Send the owner daily now, whatever the hour. Returns { sent, reason? }. */
-async function sendOwnerDaily() {
+/**
+ * Send the owner daily now, whatever the hour. Returns { sent, reason? }.
+ * @param {{ now?: Date, timeZone?: string }} opts  the instant and zone the send counts against for the
+ *   once-a-day guard; maybeSendOwnerDaily passes the tick it judged, so the guard and the hour check agree.
+ */
+async function sendOwnerDaily({ now = new Date(), timeZone } = {}) {
   const toEmail = process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL || null;
   if (!toEmail) {
     log.warn('email.owner_daily.no_recipient', {});
@@ -75,7 +79,7 @@ async function sendOwnerDaily() {
     logContext: { alert: 'owner_daily', verdict: health.verdict },
   });
   if (result.sent) {
-    _lastSentDay = localParts(new Date(), process.env.OWNER_DAILY_TZ || DEFAULT_TZ).day;
+    _lastSentDay = localParts(now, timeZone || process.env.OWNER_DAILY_TZ || DEFAULT_TZ).day;
     log.info('email.owner_daily.sent', { toEmail, verdict: health.verdict, problems: health.problems.length, platform: health.platform.length });
   } else {
     log.error('email.owner_daily.failed', { toEmail, reason: result.reason });
@@ -94,7 +98,7 @@ async function maybeSendOwnerDaily({ hour, timeZone, now = new Date() } = {}) {
   if (local.hour !== h) return { sent: false, reason: 'not_the_hour' };
   if (_lastSentDay === local.day) return { sent: false, reason: 'already_sent_today' };
   if (await sentOn(local.day, tz)) { _lastSentDay = local.day; return { sent: false, reason: 'already_sent_today' }; }
-  return sendOwnerDaily();
+  return sendOwnerDaily({ now, timeZone: tz });
 }
 
 /** Test hook. */
