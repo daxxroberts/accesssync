@@ -109,6 +109,69 @@ describe('[P1] resolveAndLock grant path — a deleted row drops its dead Kisi i
   });
 });
 
+describe('[P1] resolveAndLock grant path — the dropped id is logged (DR-044 lineage)', () => {
+  const { log } = require('../../core/logger');
+  const EVENT = { platformMemberId: 'wix-member-1', sourcePlatform: 'wix' };
+
+  function mockLockRow(lockRows) {
+    txClient.query.mockImplementation(async (sql) => {
+      if (/INSERT INTO member_master/.test(sql)) return { rows: [{ id: MEMBER_MASTER_ID }] };
+      if (/FROM member_access\s+WHERE member_master_id = \$1 AND client_id = \$2\s+FOR UPDATE NOWAIT/.test(sql)) {
+        return { rows: lockRows };
+      }
+      if (/INSERT INTO member_access\b/.test(sql)) return { rows: [{ id: MEMBER_ACCESS_ID, hardware_user_id: null }] };
+      return { rows: [] };
+    });
+  }
+
+  function droppedWarns() {
+    return log.warn.mock.calls.filter(c => c[0] === 'adapter.identity_dropped_after_finalize');
+  }
+
+  test('the lock query reads the prior status and hardware_user_id', async () => {
+    mockLockRow([]);
+    await adapter.resolveAndLock(TENANT_ID, EVENT, 'kisi');
+    const lockCall = txClient.query.mock.calls.find(c => /FOR UPDATE NOWAIT/.test(c[0]));
+    expect(lockCall[0]).toMatch(/SELECT id, status, hardware_user_id FROM member_access/);
+  });
+
+  test('prior row deleted with a Kisi id → warn logged once with the dropped id', async () => {
+    mockLockRow([{ id: MEMBER_ACCESS_ID, status: 'deleted', hardware_user_id: '105806071' }]);
+
+    const result = await adapter.resolveAndLock(TENANT_ID, EVENT, 'kisi');
+
+    expect(result).toEqual({ memberId: MEMBER_ACCESS_ID });
+    const warns = droppedWarns();
+    expect(warns).toHaveLength(1);
+    expect(warns[0][1]).toEqual({
+      memberId: MEMBER_ACCESS_ID,
+      memberMasterId: MEMBER_MASTER_ID,
+      tenantId: TENANT_ID,
+      platformMemberId: 'wix-member-1',
+      droppedHardwareUserId: '105806071',
+      stage: 'resolve', result: 'success',
+    });
+  });
+
+  test('prior row inactive (id kept, not dropped) → no dropped-id warn', async () => {
+    mockLockRow([{ id: MEMBER_ACCESS_ID, status: 'inactive', hardware_user_id: '105806071' }]);
+
+    const result = await adapter.resolveAndLock(TENANT_ID, EVENT, 'kisi');
+
+    expect(result).toEqual({ memberId: MEMBER_ACCESS_ID });
+    expect(droppedWarns()).toHaveLength(0);
+  });
+
+  test('no prior row (brand-new member) → no warn, no crash', async () => {
+    mockLockRow([]);
+
+    const result = await adapter.resolveAndLock(TENANT_ID, EVENT, 'kisi');
+
+    expect(result).toEqual({ memberId: MEMBER_ACCESS_ID });
+    expect(droppedWarns()).toHaveLength(0);
+  });
+});
+
 describe('[P1] resolveIdentity after the id is dropped', () => {
   test('null cached id → find-or-create runs and the live Kisi id is cached', async () => {
     db.query

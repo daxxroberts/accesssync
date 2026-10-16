@@ -428,6 +428,69 @@ async function _resolveStoreMappings(tenantId, standardEvent, logger) {
 }
 
 /**
+ * processGrant, recovering ONCE from a Kisi user that no longer exists.
+ *
+ * member_access.hardware_user_id is a cache: resolveIdentity returns it without asking
+ * the door system. When that Kisi user is deleted (our finalizeRevoke, or the gym in the
+ * Kisi dashboard), every grant answers HARDWARE_USER_GONE, dead-letters on attempt 1,
+ * and reconcile re-queues the same grant with the same dead id — forever. A Couples plan
+ * holder failed 12 grants this way from 2026-09-30 (trace 8c92ad90, 2026-10-15).
+ *
+ * On HARDWARE_USER_GONE: resolveIdentity(force) skips the cache, finds-or-creates the
+ * user (with the OB-89 email-recovery ladder), runs the OB-80 purge on an id change and
+ * caches the new id — then processGrant runs once more with it. Hard cap: processGrant
+ * runs at most twice per job.
+ *   resolveIdentity → null      → parked pending_identity; returns null (caller exits)
+ *   resolveIdentity → same id   → the original error is rethrown (no loop)
+ *   second processGrant throws  → that error propagates unchanged (dead-letters as today)
+ * Any other first-call error propagates unchanged.
+ *
+ * @returns {Promise<{assignments: Array, hardwareUserId: string}|null>}
+ *          hardwareUserId is the id the assignments were made with (the new one after a
+ *          recreate); null means the member was parked pending_identity.
+ */
+async function _processGrantRecoveringUser({
+  tenantId, memberId, hardwareUserId, mappings, standardEvent, apiKey, eventId, logger, onStep,
+}) {
+  try {
+    const assignments = await grantRevokeLogic.processGrant(
+      tenantId, memberId, hardwareUserId, mappings, standardEvent
+    );
+    return { assignments, hardwareUserId };
+  } catch (err) {
+    if (!err || err.code !== 'HARDWARE_USER_GONE') throw err;
+
+    const ctx = {
+      clientId: tenantId, memberId, eventId,
+      platformMemberId: standardEvent.platformMemberId,
+      staleHardwareUserId: hardwareUserId,
+    };
+    logger.warn('queue.grant.user_gone_recreating', { ...ctx, stage: 'identity', result: 'retry' });
+
+    if (onStep) onStep('recreate_identity');
+    const newHardwareUserId = await standardAdapter.resolveIdentity(
+      memberId, standardEvent.email, standardEvent.name,
+      mappings[0].hardwarePlatform, apiKey,
+      { tenantId, platformMemberId: standardEvent.platformMemberId, force: true }
+    );
+    if (newHardwareUserId === null) return null; // parked as pending_identity
+    if (String(newHardwareUserId) === String(hardwareUserId)) throw err;
+
+    if (onStep) onStep('process_grant_recreated');
+    const assignments = await grantRevokeLogic.processGrant(
+      tenantId, memberId, newHardwareUserId, mappings, standardEvent
+    );
+    // warn, not info: persists without an EVENT_REGISTRY entry, and a recreated
+    // door-system user is worth an operator's eye.
+    logger.warn('queue.grant.user_recreated', {
+      ...ctx, newHardwareUserId, assignments: assignments.length,
+      stage: 'identity', result: 'success',
+    });
+    return { assignments, hardwareUserId: newHardwareUserId };
+  }
+}
+
+/**
  * Job processor function.
  * BullMQ calls this for every job dequeued. Returning normally = success. Throwing = retry.
  *
@@ -574,9 +637,13 @@ async function _processJobBody(job, traceId) {
         if (startedHardwareUserId === null) return; // parked as pending_identity
 
         lastStep = 'grant.started.process_grant';
-        const startedAssignments = await grantRevokeLogic.processGrant(
-          tenantId, memberId, startedHardwareUserId, mappings, standardEvent
-        );
+        const startedGrant = await _processGrantRecoveringUser({
+          tenantId, memberId, hardwareUserId: startedHardwareUserId, mappings, standardEvent,
+          apiKey: startedApiKey, eventId, logger,
+          onStep: (s) => { lastStep = `grant.started.${s}`; },
+        });
+        if (startedGrant === null) return; // recreate parked as pending_identity
+        const startedAssignments = startedGrant.assignments;
 
         lastStep = 'grant.started.complete_grant';
         const startedBilling = extractBillingSnapshot(standardEvent.rawPayload);
@@ -753,7 +820,8 @@ async function _processJobBody(job, traceId) {
       // missing email via Wix Members API. If ladder exhausts, resolveIdentity returns
       // null and the member is parked as pending_identity — we exit cleanly (not a failure).
       lastStep = 'grant.resolve_identity';
-      const hardwareUserId = await standardAdapter.resolveIdentity(
+      // let: replaced by the recreated user's id if Kisi says this one is gone (Step 5).
+      let hardwareUserId = await standardAdapter.resolveIdentity(
         memberId, standardEvent.email, standardEvent.name,
         mappings[0].hardwarePlatform, apiKey,
         { tenantId, platformMemberId: standardEvent.platformMemberId }
@@ -814,13 +882,26 @@ async function _processJobBody(job, traceId) {
         return;
       }
 
-      // Step 5: Execute hardware grant across all active mappings
+      // Step 5: Execute hardware grant across all active mappings — recreating the Kisi
+      // user once if the cached one is gone (see _processGrantRecoveringUser).
       lastStep = 'grant.process_grant';
-      const assignments = await grantRevokeLogic.processGrant(
-        tenantId, memberId, hardwareUserId, mappings, standardEvent
-      );
+      const grantResult = await _processGrantRecoveringUser({
+        tenantId, memberId, hardwareUserId, mappings, standardEvent, apiKey, eventId, logger,
+        onStep: (s) => { lastStep = `grant.${s}`; },
+      });
+      if (grantResult === null) {
+        logger.warn('queue.grant.parked.pending_identity', {
+          clientId, memberId, eventId,
+          platformMemberId: standardEvent.platformMemberId,
+          planId: standardEvent.planId,
+          stage: 'identity', result: 'skipped',
+        });
+        return;
+      }
+      const assignments = grantResult.assignments;
+      hardwareUserId = grantResult.hardwareUserId;
       logger.info('queue.grant.hardware_calls_complete', {
-        clientId, memberId, eventId,
+        clientId, memberId, eventId, hardwareUserId,
         platformMemberId: standardEvent.platformMemberId,
         assignments: assignments.length,
         roleAssignmentIds: assignments.map(a => a.roleAssignmentId),

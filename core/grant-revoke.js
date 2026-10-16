@@ -66,6 +66,18 @@ function _isGenuineBillingCancellation(wixEvent) {
   return BILLING_CANCEL_ALLOWED_SYNTHETIC.has(wixEvent.syntheticSource);
 }
 
+/**
+ * Is this assignRole failure Kisi's "the assignee does not exist" answer? Kisi answers
+ * 422 assignee must exist for a deleted user, not 404 (trace 8c92ad90, 2026-10-15) —
+ * kisi-connector maps it to HARDWARE_VALIDATION_ERROR with the body attached. Matched
+ * narrowly (422 + errors.assignee + "must exist") so every other 422 still rethrows.
+ */
+function _isAssigneeMissing(err) {
+  if (!err || err.statusCode !== 422) return false;
+  const assignee = err.body && err.body.errors && err.body.errors.assignee;
+  return Array.isArray(assignee) && assignee.some(m => typeof m === 'string' && /must exist/i.test(m));
+}
+
 class GrantRevokeLogic {
 
   /**
@@ -268,7 +280,12 @@ class GrantRevokeLogic {
           planEndDate:        wixEvent.endDate || null,
         });
       } catch (err) {
-        if (err.code === 'HARDWARE_RESOURCE_NOT_FOUND') {
+        // Kisi answers 422 assignee must exist for a deleted user, not 404 (trace
+        // 8c92ad90, 2026-10-15). It goes through the same user lookup as a 404, but a
+        // 422 names the ASSIGNEE — it is never evidence the group is gone, so it can
+        // never reach the group-flagging branch below.
+        const assigneeMissing = _isAssigneeMissing(err);
+        if (err.code === 'HARDWARE_RESOURCE_NOT_FOUND' || assigneeMissing) {
           // Phase 1 (I-6): a 404 on assignRole is ambiguous — Kisi returns it when the
           // GROUP is gone AND when the USER is gone. Flagging the group on a user-gone
           // 404 marks a working door 'not_found' and hides it from every member. So
@@ -311,11 +328,12 @@ class GrantRevokeLogic {
           if (hardwareUser === null) {
             const goneErr = new Error(
               `Hardware user ${hardwareUserId} no longer exists on ${mapping.hardwarePlatform} ` +
-              `(assignRole 404 on group ${mapping.hardwareGroupId}); group not flagged`
+              `(assignRole ${err.statusCode || 404} on group ${mapping.hardwareGroupId}); group not flagged`
             );
             goneErr.code = 'HARDWARE_USER_GONE';
-            // Carry the 404 status so queue-worker's 4xx classification dead-letters
-            // this immediately (UnrecoverableError) — a retry would 404 the same way.
+            // Carry the 404/422 status so queue-worker's 4xx classification dead-letters
+            // this immediately (UnrecoverableError) — a retry would fail the same way.
+            // queue-worker first recreates the user once (_processGrantRecoveringUser).
             goneErr.statusCode = err.statusCode || 404;
             goneErr.hardwareUserId = hardwareUserId;
             goneErr.hardwarePlatform = mapping.hardwarePlatform;
@@ -344,6 +362,21 @@ class GrantRevokeLogic {
               stage: 'grant', result: 'failed',
             }, err);
             failedGroups.push({ mapping, err, reason: 'not_found_ambiguous' });
+            continue;
+          }
+
+          // The user exists but Kisi still said the assignee must exist. We can't say
+          // why — but it is not the group, so record the 422 and leave group health alone.
+          if (assigneeMissing) {
+            log.warn('grant.assignee_missing_user_present', {
+              clientId: tenantId, memberId, hardwareUserId,
+              platformMemberId: wixEvent.platformMemberId,
+              mappingId: mapping.mappingId,
+              hardwareGroupId: mapping.hardwareGroupId,
+              collectedSoFar: assignments.length,
+              stage: 'grant', result: 'failed',
+            }, err);
+            failedGroups.push({ mapping, err, reason: 'assignee_missing_user_present' });
             continue;
           }
 
