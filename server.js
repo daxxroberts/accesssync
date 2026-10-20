@@ -36,16 +36,28 @@ app.use(traceContextMiddleware);
 
 // --- Routes ---
 
-// Health Check for Railway and the outside uptime checker.
-// DB and Redis (the job queue) — without either, a Wix webhook cannot be stored or queued,
-// so it is answered 5xx and Wix retries. Say so here instead of reporting "ok".
-app.get('/health', async (req, res) => {
+// Health checks. Two endpoints on purpose (SAGE, 2026-10-19):
+//
+//   /health       Railway's deploy check (railway.toml healthcheckPath). Fails (503) only when
+//                 the DB is unreachable, exactly as before. Redis is reported but never fails it,
+//                 so a fix can still be deployed during a Redis outage.
+//   /health/full  For the outside uptime checker. Fails (503) when the DB OR Redis (the job
+//                 queue) is unreachable: without either, Wix webhooks are answered 5xx and pile
+//                 up as Wix retries, so someone should be told.
+async function healthStatus() {
   const [dbOk, redisOk] = await Promise.all([db.healthCheck(), pingRedis()]);
-  const body = { db: dbOk ? 'connected' : 'unreachable', redis: redisOk ? 'connected' : 'unreachable' };
-  if (!dbOk || !redisOk) {
-    return res.status(503).json({ status: 'error', ...body });
-  }
-  res.status(200).json({ status: 'ok', ...body });
+  return { dbOk, redisOk, body: { db: dbOk ? 'connected' : 'unreachable', redis: redisOk ? 'connected' : 'unreachable' } };
+}
+
+app.get('/health', async (req, res) => {
+  const { dbOk, body } = await healthStatus();
+  res.status(dbOk ? 200 : 503).json({ status: dbOk ? 'ok' : 'error', ...body });
+});
+
+app.get('/health/full', async (req, res) => {
+  const { dbOk, redisOk, body } = await healthStatus();
+  const ok = dbOk && redisOk;
+  res.status(ok ? 200 : 503).json({ status: ok ? 'ok' : 'error', ...body });
 });
 
 // Wix Connector: Webhook Entry (Layer 1)

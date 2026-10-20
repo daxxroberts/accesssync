@@ -1,9 +1,11 @@
 /**
- * PRIORITY 3 — Core /health reports the job queue too (BOT review 2026-10-19).
+ * PRIORITY 3 — Core health checks report the job queue too (BOT review 2026-10-19).
  *
  * /health only checked the DB, so with Redis down it said "ok" while every Wix webhook was
- * failing to queue. It now PINGs Redis as well and answers 503 when either is unreachable, so
- * Railway and the outside uptime checker see the outage.
+ * failing to queue. SAGE ruling: two endpoints.
+ *   /health       Railway's deploy check. 503 only for the DB, as before, so a Redis outage never
+ *                 blocks deploying a fix. Redis is reported in the body.
+ *   /health/full  The outside uptime checker's URL. 503 when the DB or Redis is down.
  */
 
 'use strict';
@@ -27,11 +29,11 @@ const { app, serverInstance } = require('../../server');
 
 afterAll(() => new Promise((resolve) => serverInstance.close(resolve)));
 
-describe('[P3] GET /health checks the DB and Redis', () => {
+describe('[P3] GET /health/full (uptime checker) fails on the DB or Redis', () => {
   test('both up → 200 ok', async () => {
     db.healthCheck.mockResolvedValue(true);
     pingRedis.mockResolvedValue(true);
-    const res = await request(app).get('/health');
+    const res = await request(app).get('/health/full');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: 'ok', db: 'connected', redis: 'connected' });
   });
@@ -39,7 +41,7 @@ describe('[P3] GET /health checks the DB and Redis', () => {
   test('Redis down → 503 naming Redis (webhooks cannot be queued)', async () => {
     db.healthCheck.mockResolvedValue(true);
     pingRedis.mockResolvedValue(false);
-    const res = await request(app).get('/health');
+    const res = await request(app).get('/health/full');
     expect(res.status).toBe(503);
     expect(res.body).toEqual({ status: 'error', db: 'connected', redis: 'unreachable' });
   });
@@ -47,9 +49,32 @@ describe('[P3] GET /health checks the DB and Redis', () => {
   test('DB down → 503 naming the DB', async () => {
     db.healthCheck.mockResolvedValue(false);
     pingRedis.mockResolvedValue(true);
-    const res = await request(app).get('/health');
+    const res = await request(app).get('/health/full');
     expect(res.status).toBe(503);
     expect(res.body.db).toBe('unreachable');
+  });
+});
+
+describe('[P3] GET /health (Railway deploy check) keeps its old pass/fail rule', () => {
+  test('Redis down → still 200, Redis reported in the body (a fix can still deploy)', async () => {
+    db.healthCheck.mockResolvedValue(true);
+    pingRedis.mockResolvedValue(false);
+    const res = await request(app).get('/health');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'ok', db: 'connected', redis: 'unreachable' });
+  });
+
+  test('DB down → 503, as before', async () => {
+    db.healthCheck.mockResolvedValue(false);
+    pingRedis.mockResolvedValue(true);
+    const res = await request(app).get('/health');
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ status: 'error', db: 'unreachable', redis: 'connected' });
+  });
+
+  test('railway.toml still points the deploy check at /health', () => {
+    const toml = require('fs').readFileSync(require('path').join(__dirname, '../../railway.toml'), 'utf8');
+    expect(toml).toMatch(/healthcheckPath\s*=\s*"\/health"/);
   });
 });
 
