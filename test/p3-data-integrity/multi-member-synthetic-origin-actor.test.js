@@ -72,15 +72,15 @@ function findInsert(table) {
   );
 }
 
-const HOLDER_ID = 'holder-master-uuid';
-const CLIENT_ID = 'c1';
+const HOLDER_ID = '00000000-0000-4000-8000-00000000cc02';
+const CLIENT_ID = '00000000-0000-4000-8000-0000000000c1';
 
 /** Query sequence for POST /api/multi-member/submit with one draft. */
 function mockSubmitHappyPath() {
   db.query
     // 1. drafts SELECT
     .mockResolvedValueOnce({ rows: [{
-      access_id:          'sub-access-1',
+      access_id:          '00000000-0000-4000-8000-00000000dd04',
       platform_member_id: 'wix-holder-1###asab12cd',
       first_name:         'Drew',
       last_name:          'Roberts',
@@ -125,7 +125,7 @@ describe('[P3] synthetic-origin actor — submit (sub_member.grant_queued)', () 
     expect(params[2]).toBe('admin');
     expect(params[3]).toBe('admin@test.com');
     expect(params[4]).toBe('trace-actor-test');
-    expect(JSON.parse(params[5])).toMatchObject({ subMemberId: 'sub-access-1', planId: 'plan-1' });
+    expect(JSON.parse(params[5])).toMatchObject({ subMemberId: '00000000-0000-4000-8000-00000000dd04', planId: 'plan-1' });
   });
 
   test('admin without email: actor_id falls back to ADMIN_ALLOWED_EMAIL', async () => {
@@ -193,7 +193,7 @@ describe('[P3] synthetic-origin actor — remove (sub_member.revoke_queued)', ()
     db.query
       // 1. sub-member lookup
       .mockResolvedValueOnce({ rows: [{
-        access_id:          'sub-access-1',
+        access_id:          '00000000-0000-4000-8000-00000000dd04',
         access_status:      'active',
         source_status:      'active',
         hardware_user_id:   '99001',
@@ -205,14 +205,14 @@ describe('[P3] synthetic-origin actor — remove (sub_member.revoke_queued)', ()
       // 2. standardAdapter.markSubMemberRemoving (same db mock via module registry)
       .mockResolvedValueOnce({ rows: [] });
 
-    const res = await request(app).delete('/api/multi-member/members/sub-access-1');
+    const res = await request(app).delete('/api/multi-member/members/00000000-0000-4000-8000-00000000dd04');
     expect(res.status).toBe(200);
     await flushImmediates();
 
     const [, params] = findInsert('activity_event');
     expect(params[1]).toBe('sub_member.revoke_queued');
     expect(params[2]).toBe('member-hub');
-    expect(params[3]).toBe('sub-access-1');
-    expect(JSON.parse(params[5])).toMatchObject({ subMemberId: 'sub-access-1', planId: 'plan-1' });
+    expect(params[3]).toBe('00000000-0000-4000-8000-00000000dd04');
+    expect(JSON.parse(params[5])).toMatchObject({ subMemberId: '00000000-0000-4000-8000-00000000dd04', planId: 'plan-1' });
   });
 });

@@ -11,7 +11,7 @@
 
 jest.mock('../../core/logger', () => ({ log: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('../../core/redis-utils', () => ({
-  getRedisConnection: jest.fn(() => ({
+  getRedisClient: jest.fn(() => ({
     lpush: jest.fn().mockResolvedValue(1), ltrim: jest.fn().mockResolvedValue(), expire: jest.fn().mockResolvedValue(),
     lrange: jest.fn().mockResolvedValue([String(Math.floor(Date.now() / 1000)), String(Math.floor(Date.now() / 1000)), String(Math.floor(Date.now() / 1000))]),
     get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue('OK'),

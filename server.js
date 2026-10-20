@@ -17,6 +17,7 @@ const wixConnector = require('./adapters/wix/wix-connector');
 const wixAppMarket = require('./core/wix-app-market');
 const memberSyncApi = require('./core/member-sync-api');
 const db = require('./db');
+const { pingRedis } = require('./core/redis-utils');
 const { startWorker } = require('./core/queue-worker');
 const { log } = require('./core/logger');
 const { traceContextMiddleware } = require('./admin/middleware/trace-context');
@@ -35,14 +36,16 @@ app.use(traceContextMiddleware);
 
 // --- Routes ---
 
-// Health Check for Railway
-// Checks DB connectivity — Railway stops routing traffic on non-200
+// Health Check for Railway and the outside uptime checker.
+// DB and Redis (the job queue) — without either, a Wix webhook cannot be stored or queued,
+// so it is answered 5xx and Wix retries. Say so here instead of reporting "ok".
 app.get('/health', async (req, res) => {
-  const dbOk = await db.healthCheck();
-  if (!dbOk) {
-    return res.status(503).json({ status: 'error', db: 'unreachable' });
+  const [dbOk, redisOk] = await Promise.all([db.healthCheck(), pingRedis()]);
+  const body = { db: dbOk ? 'connected' : 'unreachable', redis: redisOk ? 'connected' : 'unreachable' };
+  if (!dbOk || !redisOk) {
+    return res.status(503).json({ status: 'error', ...body });
   }
-  res.status(200).json({ status: 'ok', db: 'connected' });
+  res.status(200).json({ status: 'ok', ...body });
 });
 
 // Wix Connector: Webhook Entry (Layer 1)
@@ -107,3 +110,5 @@ process.on('SIGTERM', () => {
         process.exit(1);
     }, 15000).unref();
 });
+
+module.exports = { app, serverInstance }; // for tests (test/p3-data-integrity/core-health-redis-ping.test.js)

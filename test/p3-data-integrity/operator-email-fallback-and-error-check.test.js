@@ -165,7 +165,7 @@ describe('[P3] hmac-monitor spike alert', () => {
     process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL = 'daxx@accesssync.io';
     const now = Math.floor(Date.now() / 1000);
     jest.doMock('../../core/redis-utils', () => ({
-      getRedisConnection: jest.fn(() => mockRedis([now, now, now])),
+      getRedisClient: jest.fn(() => mockRedis([now, now, now])),
     }));
     const { recordFailure } = require('../../core/hmac-monitor');
     await recordFailure('client-1');
@@ -178,7 +178,7 @@ describe('[P3] hmac-monitor spike alert', () => {
     process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL = 'daxx@accesssync.io';
     const now = Math.floor(Date.now() / 1000);
     jest.doMock('../../core/redis-utils', () => ({
-      getRedisConnection: jest.fn(() => mockRedis([now, now, now])),
+      getRedisClient: jest.fn(() => mockRedis([now, now, now])),
     }));
     mockResendSend.mockResolvedValue({ data: null, error: { message: 'domain is not verified' } });
     const { recordFailure } = require('../../core/hmac-monitor');
