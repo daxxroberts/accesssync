@@ -5,6 +5,10 @@
  * they would reach diagnostic_log. That kept the owner panel's Diagnostics card permanently amber
  * and buried the few real warnings. They are now info, and the event registry still persists them
  * (so the trace timeline keeps them) — except the one that carries the member's email.
+ *
+ * 2026-10-19 (BOT review): the 15-minute day-pass sweep wrote three rows per tick. Only the
+ * scheduler's `_complete` row is kept (it is the heartbeat, and carries the counts); the
+ * scheduler `_start` and the sweep's own `.complete` are not persisted.
  */
 
 'use strict';
@@ -24,8 +28,10 @@ const PERSISTED_INFO = [
   'adapter.complete_grant.entry', 'adapter.complete_grant.lookup',
   'wix.parse.unpaid_order_dropped',
   'admin.scheduler.armed', 'admin.scheduler.reconcile_start', 'admin.scheduler.reconcile_complete',
-  'admin.scheduler.day_pass_sweep_start', 'admin.scheduler.day_pass_sweep_complete', 'admin.scheduler.day_pass_sweep_armed',
+  'admin.scheduler.day_pass_sweep_complete', 'admin.scheduler.day_pass_sweep_armed',
 ];
+
+const SUPPRESSED_SWEEP_NOISE = ['admin.scheduler.day_pass_sweep_start', 'day_pass_sweep.complete'];
 
 beforeEach(() => { db.query.mockClear(); });
 
@@ -44,6 +50,12 @@ describe('[P3] routine breadcrumbs: info level, still persisted', () => {
     expect(inserts()).toHaveLength(0);
   });
 
+  test.each(SUPPRESSED_SWEEP_NOISE)('%s (day-pass sweep noise) is NOT written to diagnostic_log', async (event) => {
+    log.info(event, { trigger: 'inprocess_scheduler', expiredEnqueued: 0, orphansDeleted: 0 });
+    await flush();
+    expect(inserts()).toHaveLength(0);
+  });
+
   test('a real anomaly under the same event name still persists as a WARN', async () => {
     log.warn('adapter.resolve_and_lock.post_commit_verify', { clientId: 'c1', verifyRowCount: 0 });
     await flush();
@@ -54,6 +66,7 @@ describe('[P3] routine breadcrumbs: info level, still persisted', () => {
     const reg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../core/EVENT_REGISTRY.json'), 'utf8')).overrides;
     for (const e of PERSISTED_INFO) expect(reg[e]).toEqual({ persist: true });
     expect(reg['kisi.user.created.full_response']).toEqual({ persist: false });
+    for (const e of SUPPRESSED_SWEEP_NOISE) expect(reg[e]).toEqual({ persist: false });
 
     const read = (p) => fs.readFileSync(path.join(__dirname, '../..', p), 'utf8');
     expect(read('adapters/standard-adapter.js')).not.toMatch(/log\.warn\('adapter\.(resolve_and_lock\.committed|complete_grant\.entry)'/);

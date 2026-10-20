@@ -298,13 +298,16 @@ async function _notifyOrphanedGroups(loc, orphans, platform) {
  * Informational only — archived plans still function until member subscriptions expire.
  */
 async function _reconcileWixPlans(loc) {
-  // Load source platform API credentials for this client
+  // Load source platform API credentials for this client.
+  // The Wix REST API is addressed by SITE id (clients.source_site_id, the wix-site-id header),
+  // not by the app-install id (platform_instance_id): passing the install id 404'd every
+  // 6 hours (BOT review 2026-10-19). Reconciliation reads source_site_id the same way.
   const clientResult = await db.query(
-    `SELECT source_api_key, platform_instance_id FROM clients WHERE id = $1`,
+    `SELECT source_api_key, source_site_id FROM clients WHERE id = $1`,
     [loc.client_id]
   );
   const client = clientResult.rows[0];
-  if (!client || !client.source_api_key || !client.platform_instance_id) return;
+  if (!client || !client.source_api_key || !client.source_site_id) return;
 
   let wixApiKey;
   try {
@@ -316,7 +319,7 @@ async function _reconcileWixPlans(loc) {
   const wixPlansApi = require('../adapters/wix/wix-plans-api');
   let wixPlans;
   try {
-    wixPlans = await wixPlansApi.listPricingPlans(wixApiKey, client.platform_instance_id);
+    wixPlans = await wixPlansApi.listPricingPlans(wixApiKey, client.source_site_id);
   } catch (err) {
     log.warn('health.wix_plans_fetch_failed', { clientId: loc.client_id }, err);
     return;
@@ -515,4 +518,4 @@ if (require.main === module) {
     .catch(err => { log.critical('health.fatal', {}, err); process.exit(1); });
 }
 
-module.exports = { runHealthCheck, _shouldSendKeyAlert };
+module.exports = { runHealthCheck, _shouldSendKeyAlert, _reconcileWixPlans };

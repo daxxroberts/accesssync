@@ -7,11 +7,17 @@
  * - Auth headers (KISI-LOGIN)
  * - Rate limiting (DR-008: 5 req/sec local enforcement)
  * - 429 backoff
+ * - Per-request timeout (REQUEST_TIMEOUT_MS)
  *
  * No business logic here. Business methods live in kisi-adapter.js (Layer 6).
  */
 
 const { log } = require('../../core/logger');
+
+// A Kisi call that never answers used to hang its job forever. The job holds a 120s per-member
+// Redis lock (queue-worker MEMBER_LOCK_TTL_MS) and makes a handful of Kisi calls, so each call
+// gets 15s: a stuck one fails (BullMQ retries it) long before the lock can expire under it.
+const REQUEST_TIMEOUT_MS = 15 * 1000;
 
 class KisiConnector {
   constructor() {
@@ -65,10 +71,23 @@ class KisiConnector {
     // System boundary log — every outbound Kisi call recorded
     log.debug('kisi.request', { method: options.method || 'GET', endpoint, attempt });
 
-    const response = await fetch(url, {
-      ...options,
-      headers: this.getHeaders(apiKey)
-    });
+    let response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers: this.getHeaders(apiKey),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (fetchErr) {
+      if (fetchErr && fetchErr.name === 'TimeoutError') {
+        const err = new Error(`Kisi did not answer within ${REQUEST_TIMEOUT_MS / 1000}s`);
+        err.code = 'HARDWARE_API_ERROR';
+        err.cause = fetchErr;
+        log.error('kisi.request.timeout', { method: options.method || 'GET', endpoint, attempt, timeoutMs: REQUEST_TIMEOUT_MS }, err);
+        throw err;
+      }
+      throw fetchErr;
+    }
 
     if (response.status === 429) {
       if (attempt >= 3) {
@@ -194,3 +213,4 @@ class KisiConnector {
 }
 
 module.exports = new KisiConnector();
+module.exports.REQUEST_TIMEOUT_MS = REQUEST_TIMEOUT_MS;

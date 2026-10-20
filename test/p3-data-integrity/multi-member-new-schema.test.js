@@ -49,8 +49,8 @@ function makeApp() {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    req.admin    = { clientId: 'c1', email: 'admin@test.com', actorType: 'admin' };
-    req.operator = { clientId: 'c1', actorType: 'operator' };
+    req.admin    = { clientId: '00000000-0000-4000-8000-0000000000c1', email: 'admin@test.com', actorType: 'admin' };
+    req.operator = { clientId: '00000000-0000-4000-8000-0000000000c1', actorType: 'operator' };
     next();
   });
   // multi-member.js mounts routes at top level — mount at /
@@ -88,12 +88,12 @@ describe('[P3] multi-member — GET /member/:memberId/widget-data', () => {
 
   test('holder lookup uses member_master JOIN member_access not member_identity', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', access_id: 'a1', platform_member_id: 'p1', first_name: 'Joe', last_name: 'Smith', email: 'j@test.com', phone: '555', access_status: 'active', provisioned_at: null }] })
+      .mockResolvedValueOnce({ rows: [{ member_master_id: '00000000-0000-4000-8000-00000000aa01', access_id: '00000000-0000-4000-8000-00000000dd01', platform_member_id: 'p1', first_name: 'Joe', last_name: 'Smith', email: 'j@test.com', phone: '555', access_status: 'active', provisioned_at: null }] })
       .mockResolvedValueOnce({ rows: [] }) // plans
       .mockResolvedValueOnce({ rows: [] }) // sub-members
       .mockResolvedValueOnce({ rows: [] }); // holder slot check
 
-    await request(app).get('/member/mm1/widget-data').query({ clientId: 'c1' });
+    await request(app).get('/member/mm1/widget-data').query({ clientId: '00000000-0000-4000-8000-0000000000c1' });
 
     const sql = capturedQueries().join('\n');
     expect(sql).toMatch(/member_master/);
@@ -104,12 +104,12 @@ describe('[P3] multi-member — GET /member/:memberId/widget-data', () => {
 
   test('sub-members fetched via member_access WHERE sub_master_id not plan_holder_id', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', access_id: 'a1', platform_member_id: 'p1', first_name: 'Joe', last_name: 'Smith', email: 'j@test.com', phone: '555', access_status: 'active', provisioned_at: null }] })
+      .mockResolvedValueOnce({ rows: [{ member_master_id: '00000000-0000-4000-8000-00000000aa01', access_id: '00000000-0000-4000-8000-00000000dd01', platform_member_id: 'p1', first_name: 'Joe', last_name: 'Smith', email: 'j@test.com', phone: '555', access_status: 'active', provisioned_at: null }] })
       .mockResolvedValueOnce({ rows: [] }) // plans
       .mockResolvedValueOnce({ rows: [] }) // sub-members
       .mockResolvedValueOnce({ rows: [] }); // holder slot check
 
-    await request(app).get('/member/mm1/widget-data').query({ clientId: 'c1' });
+    await request(app).get('/member/mm1/widget-data').query({ clientId: '00000000-0000-4000-8000-0000000000c1' });
 
     const subMemberQuery = db.query.mock.calls[2]?.[0] || '';
     expect(subMemberQuery).toMatch(/sub_master_id/);
@@ -123,11 +123,11 @@ describe('[P3] multi-member — GET /member/:memberId/widget-data', () => {
     // query) as the single source of truth. Assert the flag is read and no legacy
     // role-assignment table is referenced.
     db.query
-      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', access_id: 'a1', platform_member_id: 'p1', first_name: 'Joe', last_name: 'Smith', email: 'j@test.com', phone: '555', access_status: 'active', provisioned_at: null }] })
+      .mockResolvedValueOnce({ rows: [{ member_master_id: '00000000-0000-4000-8000-00000000aa01', access_id: '00000000-0000-4000-8000-00000000dd01', platform_member_id: 'p1', first_name: 'Joe', last_name: 'Smith', email: 'j@test.com', phone: '555', access_status: 'active', provisioned_at: null }] })
       .mockResolvedValueOnce({ rows: [] }) // plans (SELECTs mb.holder_seated)
       .mockResolvedValueOnce({ rows: [] }); // sub-members
 
-    await request(app).get('/member/mm1/widget-data').query({ clientId: 'c1' });
+    await request(app).get('/member/mm1/widget-data').query({ clientId: '00000000-0000-4000-8000-0000000000c1' });
 
     const allSql = capturedQueries().join('\n');
     expect(allSql).toMatch(/holder_seated/);
@@ -136,7 +136,7 @@ describe('[P3] multi-member — GET /member/:memberId/widget-data', () => {
 
   test('returns 404 when holder not found', async () => {
     db.query.mockResolvedValueOnce({ rows: [] });
-    const res = await request(app).get('/member/missing/widget-data').query({ clientId: 'c1' });
+    const res = await request(app).get('/member/missing/widget-data').query({ clientId: '00000000-0000-4000-8000-0000000000c1' });
     expect(res.status).toBe(404);
   });
 });
@@ -152,9 +152,9 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
   test('INSERT splits into member_master + member_access rows', async () => {
     db.query
       // holder check
-      .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'holder-pid', source_platform: 'wix' }] })
+      .mockResolvedValueOnce({ rows: [{ access_id: '00000000-0000-4000-8000-00000000dd01', hardware_platform: 'kisi', platform_member_id: 'holder-pid', source_platform: 'wix' }] })
       // plan check
-      .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000bb01', max_members: 3 }] })
       // holder's own slot count (holder not occupying this plan)
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] })
       // sub-member slot count
@@ -163,11 +163,11 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
       // INSERT member_master
       .mockResolvedValueOnce({ rows: [{ id: 'mm-new', platform_member_id: 'holder-pid###asabc123', first_name: 'Jane', last_name: 'Doe', email: 'jane@test.com', phone: '555' }] })
       // INSERT member_access
-      .mockResolvedValueOnce({ rows: [{ id: 'acc-new', status: 'pending', plan_mapping_id: 'pm1' }] });
+      .mockResolvedValueOnce({ rows: [{ id: 'acc-new', status: 'pending', plan_mapping_id: '00000000-0000-4000-8000-00000000bb01' }] });
 
     const res = await request(app)
       .post('/api/multi-member/members')
-      .send({ holderId: 'mm1', clientId: 'c1', firstName: 'Jane', lastName: 'Doe', email: 'jane@test.com', phone: '555-1234', planMappingId: 'pm1' });
+      .send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', firstName: 'Jane', lastName: 'Doe', email: 'jane@test.com', phone: '555-1234', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
 
     expect(res.status).toBe(201);
 
@@ -180,16 +180,16 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
 
   test('slot count query uses member_access not member_identity', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'holder-pid', source_platform: 'wix' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ access_id: '00000000-0000-4000-8000-00000000dd01', hardware_platform: 'kisi', platform_member_id: 'holder-pid', source_platform: 'wix' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000bb01', max_members: 2 }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] }) // holder slot count — not occupying
       .mockResolvedValueOnce({ rows: [{ cnt: 1 }] }) // sub-member slot count — one slot taken
       .mockResolvedValueOnce({ rows: [{ id: 'mm-new', platform_member_id: 'p2', first_name: 'X', last_name: 'Y', email: 'x@test.com', phone: '555' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'a2', status: 'pending', plan_mapping_id: 'pm1' }] });
+      .mockResolvedValueOnce({ rows: [{ id: 'a2', status: 'pending', plan_mapping_id: '00000000-0000-4000-8000-00000000bb01' }] });
 
     await request(app)
       .post('/api/multi-member/members')
-      .send({ holderId: 'mm1', clientId: 'c1', firstName: 'X', lastName: 'Y', email: 'x@test.com', phone: '555', planMappingId: 'pm1' });
+      .send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', firstName: 'X', lastName: 'Y', email: 'x@test.com', phone: '555', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
 
     const slotSql = db.query.mock.calls[3]?.[0] || '';
     expect(slotSql).toMatch(/member_access/);
@@ -200,8 +200,8 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
 
   test('DR-040 / S-11: slot count is scoped to mapping via member_access_sources', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'holder-pid', source_platform: 'wix' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 2, source_plan_id: 'sp-1', hardware_group_id: 'g-1' }] })
+      .mockResolvedValueOnce({ rows: [{ access_id: '00000000-0000-4000-8000-00000000dd01', hardware_platform: 'kisi', platform_member_id: 'holder-pid', source_platform: 'wix' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000bb01', max_members: 2, source_plan_id: 'sp-1', hardware_group_id: 'g-1' }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] }) // holder slot count
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] }) // sub-member slot count
       .mockResolvedValueOnce({ rows: [{ id: 'mm-new', platform_member_id: 'p3', first_name: 'A', last_name: 'B', email: 'a@test.com', phone: '555' }] })
@@ -210,7 +210,7 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
 
     await request(app)
       .post('/api/multi-member/members')
-      .send({ holderId: 'mm1', clientId: 'c1', firstName: 'A', lastName: 'B', email: 'a@test.com', phone: '555', planMappingId: 'pm1' });
+      .send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', firstName: 'A', lastName: 'B', email: 'a@test.com', phone: '555', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
 
     // S-11/DR-046: slot count joins member_access_sources for per-mapping scoping.
     const slotSql = db.query.mock.calls[3]?.[0] || '';
@@ -220,14 +220,14 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
 
   test('returns 409 when plan is full (sub-members alone reach max)', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'hp', source_platform: 'wix' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ access_id: '00000000-0000-4000-8000-00000000dd01', hardware_platform: 'kisi', platform_member_id: 'hp', source_platform: 'wix' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000bb01', max_members: 1 }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] }) // holder not occupying
       .mockResolvedValueOnce({ rows: [{ cnt: 1 }] }); // full
 
     const res = await request(app)
       .post('/api/multi-member/members')
-      .send({ holderId: 'mm1', clientId: 'c1', firstName: 'Z', lastName: 'Z', email: 'z@test.com', phone: '555', planMappingId: 'pm1' });
+      .send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', firstName: 'Z', lastName: 'Z', email: 'z@test.com', phone: '555', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
 
     expect(res.status).toBe(409);
   });
@@ -238,14 +238,14 @@ describe('[P3] multi-member — POST /api/multi-member/members', () => {
     // rejected — previously this endpoint only counted sub-members and would
     // have allowed a 3rd person on a 2-person plan.
     db.query
-      .mockResolvedValueOnce({ rows: [{ access_id: 'a1', hardware_platform: 'kisi', platform_member_id: 'hp', source_platform: 'wix' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'pm1', max_members: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ access_id: '00000000-0000-4000-8000-00000000dd01', hardware_platform: 'kisi', platform_member_id: 'hp', source_platform: 'wix' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000bb01', max_members: 2 }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 1 }] }) // holder occupies a seat
       .mockResolvedValueOnce({ rows: [{ cnt: 1 }] }); // one sub-member already added
 
     const res = await request(app)
       .post('/api/multi-member/members')
-      .send({ holderId: 'mm1', clientId: 'c1', firstName: 'Z', lastName: 'Z', email: 'z@test.com', phone: '555', planMappingId: 'pm1' });
+      .send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', firstName: 'Z', lastName: 'Z', email: 'z@test.com', phone: '555', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
 
     expect(res.status).toBe(409);
   });
@@ -263,11 +263,11 @@ describe('[P3] multi-member — DELETE /api/multi-member/members/:subId (OB-150)
   test('OB-150: syntheticEvent.planId is populated from plan_mappings JOIN (non-null)', async () => {
     db.query.mockResolvedValueOnce({
       rows: [{
-        id:               'acc-sub',
+        id:               '00000000-0000-4000-8000-00000000dd02',
         status:           'active',
         hardware_user_id: 'kisi-user-99',
-        client_id:        'c1',
-        plan_mapping_id:  'pm1',
+        client_id:        '00000000-0000-4000-8000-0000000000c1',
+        plan_mapping_id:  '00000000-0000-4000-8000-00000000bb01',
         member_master_id: 'mm-sub',
         sub_master_id:    'mm-holder',
         platform_member_id: 'holder###as001',
@@ -277,7 +277,7 @@ describe('[P3] multi-member — DELETE /api/multi-member/members/:subId (OB-150)
     // UPDATE status='removing'
     db.query.mockResolvedValueOnce({ rows: [] });
 
-    const res = await request(app).delete('/api/multi-member/members/acc-sub');
+    const res = await request(app).delete('/api/multi-member/members/00000000-0000-4000-8000-00000000dd02');
 
     expect(res.status).toBe(200);
     expect(mockQueueAdd).toHaveBeenCalledTimes(1);
@@ -290,10 +290,10 @@ describe('[P3] multi-member — DELETE /api/multi-member/members/:subId (OB-150)
   });
 
   test('S-11/OB-150: query gets source_plan_id from member_access_sources LATERAL JOIN', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ id: 'a1', access_status: 'active', hardware_user_id: 'ku1', client_id: 'c1', plan_mapping_id: 'pm1', source_status: 'active', member_master_id: 'mm1', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: 'pid-1' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000dd01', access_status: 'active', hardware_user_id: 'ku1', client_id: '00000000-0000-4000-8000-0000000000c1', plan_mapping_id: '00000000-0000-4000-8000-00000000bb01', source_status: 'active', member_master_id: '00000000-0000-4000-8000-00000000aa01', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: 'pid-1' }] });
     db.query.mockResolvedValueOnce({ rows: [] });
 
-    await request(app).delete('/api/multi-member/members/a1');
+    await request(app).delete('/api/multi-member/members/00000000-0000-4000-8000-00000000dd01');
 
     // S-11/DR-046: source_plan_id now comes from member_access_sources, not plan_mappings JOIN.
     const memberLookupSql = db.query.mock.calls[0][0];
@@ -305,11 +305,11 @@ describe('[P3] multi-member — DELETE /api/multi-member/members/:subId (OB-150)
 
   test('pending sub-member: hard deletes member_access and member_master', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'a1', status: 'pending', hardware_user_id: null, client_id: 'c1', plan_mapping_id: 'pm1', member_master_id: 'mm1', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: 'pid' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000dd01', status: 'pending', hardware_user_id: null, client_id: '00000000-0000-4000-8000-0000000000c1', plan_mapping_id: '00000000-0000-4000-8000-00000000bb01', member_master_id: '00000000-0000-4000-8000-00000000aa01', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: 'pid' }] })
       .mockResolvedValueOnce({ rows: [] }) // DELETE member_access
       .mockResolvedValueOnce({ rows: [] }); // DELETE member_master if orphan
 
-    const res = await request(app).delete('/api/multi-member/members/a1');
+    const res = await request(app).delete('/api/multi-member/members/00000000-0000-4000-8000-00000000dd01');
 
     expect(res.status).toBe(200);
     const deleteSqls = capturedQueries().filter(q => /DELETE/i.test(q));
@@ -320,11 +320,11 @@ describe('[P3] multi-member — DELETE /api/multi-member/members/:subId (OB-150)
 
   test('active sub-member without hardware: hard deletes immediately', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ id: 'a1', status: 'active', hardware_user_id: null, client_id: 'c1', plan_mapping_id: 'pm1', member_master_id: 'mm1', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: 'pid' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000dd01', status: 'active', hardware_user_id: null, client_id: '00000000-0000-4000-8000-0000000000c1', plan_mapping_id: '00000000-0000-4000-8000-00000000bb01', member_master_id: '00000000-0000-4000-8000-00000000aa01', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: 'pid' }] })
       .mockResolvedValueOnce({ rows: [] }) // DELETE member_access
       .mockResolvedValueOnce({ rows: [] }); // DELETE member_master
 
-    const res = await request(app).delete('/api/multi-member/members/a1');
+    const res = await request(app).delete('/api/multi-member/members/00000000-0000-4000-8000-00000000dd01');
 
     expect(res.status).toBe(200);
     expect(mockQueueAdd).not.toHaveBeenCalled();
@@ -333,9 +333,9 @@ describe('[P3] multi-member — DELETE /api/multi-member/members/:subId (OB-150)
   test('terminal state: returns 410 when access_status is deleted', async () => {
     // S-11/DR-046: SELECT now returns access_status (was status). 'deleted' is sub-member-only
     // terminal state from DR-044 soft-delete.
-    db.query.mockResolvedValueOnce({ rows: [{ id: 'a1', access_status: 'deleted', hardware_user_id: null, client_id: 'c1', plan_mapping_id: 'pm1', source_status: null, member_master_id: 'mm1', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: null }] });
+    db.query.mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000dd01', access_status: 'deleted', hardware_user_id: null, client_id: '00000000-0000-4000-8000-0000000000c1', plan_mapping_id: '00000000-0000-4000-8000-00000000bb01', source_status: null, member_master_id: '00000000-0000-4000-8000-00000000aa01', sub_master_id: 'mh1', platform_member_id: 'p1', source_plan_id: null }] });
 
-    const res = await request(app).delete('/api/multi-member/members/a1');
+    const res = await request(app).delete('/api/multi-member/members/00000000-0000-4000-8000-00000000dd01');
 
     expect(res.status).toBe(410);
   });
@@ -343,7 +343,7 @@ describe('[P3] multi-member — DELETE /api/multi-member/members/:subId (OB-150)
   test('returns 404 when sub-member not found', async () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
-    const res = await request(app).delete('/api/multi-member/members/missing');
+    const res = await request(app).delete('/api/multi-member/members/00000000-0000-4000-8000-00000000ee00');
 
     expect(res.status).toBe(404);
   });
@@ -359,11 +359,11 @@ describe('[P3] multi-member — POST /api/multi-member/submit', () => {
 
   test('fetches drafts from member_access not member_identity', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ access_id: 'a1', platform_member_id: 'p1', plan_mapping_id: 'pm1', first_name: 'A', last_name: 'B', email: 'a@x.com', phone: '1', source_plan_id: 'sp1' }] })
+      .mockResolvedValueOnce({ rows: [{ access_id: '00000000-0000-4000-8000-00000000dd01', platform_member_id: 'p1', plan_mapping_id: '00000000-0000-4000-8000-00000000bb01', first_name: 'A', last_name: 'B', email: 'a@x.com', phone: '1', source_plan_id: 'sp1' }] })
       .mockResolvedValueOnce({ rows: [] }) // UPDATE status
       ;
 
-    await request(app).post('/api/multi-member/submit').send({ holderId: 'hh1', clientId: 'c1' });
+    await request(app).post('/api/multi-member/submit').send({ holderId: '00000000-0000-4000-8000-00000000cc01', clientId: '00000000-0000-4000-8000-0000000000c1' });
 
     const fetchSql = db.query.mock.calls[0][0];
     expect(fetchSql).toMatch(/member_access/);
@@ -374,10 +374,10 @@ describe('[P3] multi-member — POST /api/multi-member/submit', () => {
 
   test('UPDATE sets status to pending_hardware not submitted, member_access_state is NOT written', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ access_id: 'a1', platform_member_id: 'p1', plan_mapping_id: 'pm1', first_name: 'A', last_name: 'B', email: 'a@x.com', phone: '1', source_plan_id: 'sp1' }] })
+      .mockResolvedValueOnce({ rows: [{ access_id: '00000000-0000-4000-8000-00000000dd01', platform_member_id: 'p1', plan_mapping_id: '00000000-0000-4000-8000-00000000bb01', first_name: 'A', last_name: 'B', email: 'a@x.com', phone: '1', source_plan_id: 'sp1' }] })
       .mockResolvedValueOnce({ rows: [] }); // UPDATE
 
-    await request(app).post('/api/multi-member/submit').send({ holderId: 'hh1', clientId: 'c1' });
+    await request(app).post('/api/multi-member/submit').send({ holderId: '00000000-0000-4000-8000-00000000cc01', clientId: '00000000-0000-4000-8000-0000000000c1' });
 
     const allSql = capturedQueries().join('\n');
     expect(allSql).toMatch(/pending_hardware/);
@@ -388,12 +388,12 @@ describe('[P3] multi-member — POST /api/multi-member/submit', () => {
   test('enqueues one BullMQ grant job per draft with correct planId', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [
-        { access_id: 'a1', platform_member_id: 'p1', plan_mapping_id: 'pm1', first_name: 'A', last_name: 'B', email: 'a@x.com', phone: '1', source_plan_id: 'plan-aaa' },
+        { access_id: '00000000-0000-4000-8000-00000000dd01', platform_member_id: 'p1', plan_mapping_id: '00000000-0000-4000-8000-00000000bb01', first_name: 'A', last_name: 'B', email: 'a@x.com', phone: '1', source_plan_id: 'plan-aaa' },
         { access_id: 'a2', platform_member_id: 'p2', plan_mapping_id: 'pm2', first_name: 'C', last_name: 'D', email: 'c@x.com', phone: '2', source_plan_id: 'plan-bbb' },
       ]})
       .mockResolvedValueOnce({ rows: [] }); // UPDATE
 
-    await request(app).post('/api/multi-member/submit').send({ holderId: 'hh1', clientId: 'c1' });
+    await request(app).post('/api/multi-member/submit').send({ holderId: '00000000-0000-4000-8000-00000000cc01', clientId: '00000000-0000-4000-8000-0000000000c1' });
 
     expect(mockQueueAdd).toHaveBeenCalledTimes(2);
     const [, job1] = mockQueueAdd.mock.calls[0];
@@ -413,12 +413,12 @@ describe('[P3] multi-member — POST /api/multi-member/holder-claim-slot', () =>
 
   test('slot count uses member_access not member_role_assignments', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', platform_member_id: 'p1', first_name: 'H', last_name: 'H', email: 'h@x.com' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'pm1', source_plan_id: 'sp1', max_members: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ member_master_id: '00000000-0000-4000-8000-00000000aa01', platform_member_id: 'p1', first_name: 'H', last_name: 'H', email: 'h@x.com' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000bb01', source_plan_id: 'sp1', max_members: 3 }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] }) // holder slot check
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] }); // sub count
 
-    await request(app).post('/api/multi-member/holder-claim-slot').send({ holderId: 'mm1', clientId: 'c1', planMappingId: 'pm1' });
+    await request(app).post('/api/multi-member/holder-claim-slot').send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
 
     const allSql = capturedQueries().join('\n');
     expect(allSql).not.toMatch(/member_role_assignments/);
@@ -428,12 +428,12 @@ describe('[P3] multi-member — POST /api/multi-member/holder-claim-slot', () =>
 
   test('DR-040 / S-11: holder slot check is scoped via member_access_sources mapping_id', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', platform_member_id: 'p1', first_name: 'H', last_name: 'H', email: 'h@x.com' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'pm1', source_plan_id: 'sp1', max_members: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ member_master_id: '00000000-0000-4000-8000-00000000aa01', platform_member_id: 'p1', first_name: 'H', last_name: 'H', email: 'h@x.com' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000bb01', source_plan_id: 'sp1', max_members: 3 }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] });
 
-    await request(app).post('/api/multi-member/holder-claim-slot').send({ holderId: 'mm1', clientId: 'c1', planMappingId: 'pm1' });
+    await request(app).post('/api/multi-member/holder-claim-slot').send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
 
     // S-11/DR-046: per-plan slot check now joins member_access_sources to scope by mapping_id.
     const holderSlotSql = db.query.mock.calls[2]?.[0] || '';
@@ -443,22 +443,22 @@ describe('[P3] multi-member — POST /api/multi-member/holder-claim-slot', () =>
 
   test('returns 409 when holder already has slot', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', platform_member_id: 'p1', first_name: 'H', last_name: 'H', email: 'h@x.com' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'pm1', source_plan_id: 'sp1', max_members: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ member_master_id: '00000000-0000-4000-8000-00000000aa01', platform_member_id: 'p1', first_name: 'H', last_name: 'H', email: 'h@x.com' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000bb01', source_plan_id: 'sp1', max_members: 3 }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 1 }] }); // already has slot
 
-    const res = await request(app).post('/api/multi-member/holder-claim-slot').send({ holderId: 'mm1', clientId: 'c1', planMappingId: 'pm1' });
+    const res = await request(app).post('/api/multi-member/holder-claim-slot').send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
     expect(res.status).toBe(409);
   });
 
   test('enqueues grant job with correct planId', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', platform_member_id: 'holder-pid', first_name: 'H', last_name: 'H', email: 'h@x.com' }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'pm1', source_plan_id: 'plan-claim-xyz', max_members: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ member_master_id: '00000000-0000-4000-8000-00000000aa01', platform_member_id: 'holder-pid', first_name: 'H', last_name: 'H', email: 'h@x.com' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '00000000-0000-4000-8000-00000000bb01', source_plan_id: 'plan-claim-xyz', max_members: 3 }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] });
 
-    await request(app).post('/api/multi-member/holder-claim-slot').send({ holderId: 'mm1', clientId: 'c1', planMappingId: 'pm1' });
+    await request(app).post('/api/multi-member/holder-claim-slot').send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
 
     expect(mockQueueAdd).toHaveBeenCalledTimes(1);
     const [, payload] = mockQueueAdd.mock.calls[0];
@@ -476,10 +476,10 @@ describe('[P3] multi-member — POST /api/multi-member/holder-release-slot', () 
 
   test('assignment check uses member_access_sources not member_role_assignments', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', platform_member_id: 'p1' }] })
+      .mockResolvedValueOnce({ rows: [{ member_master_id: '00000000-0000-4000-8000-00000000aa01', platform_member_id: 'p1' }] })
       .mockResolvedValueOnce({ rows: [{ role_assignment_id: 'ra1' }] }); // member_access_sources
 
-    await request(app).post('/api/multi-member/holder-release-slot').send({ holderId: 'mm1', clientId: 'c1', planMappingId: 'pm1' });
+    await request(app).post('/api/multi-member/holder-release-slot').send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
 
     const assignmentSql = db.query.mock.calls[1]?.[0] || '';
     expect(assignmentSql).toMatch(/member_access_sources/);
@@ -488,19 +488,19 @@ describe('[P3] multi-member — POST /api/multi-member/holder-release-slot', () 
 
   test('returns 409 when holder is not on the plan', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', platform_member_id: 'p1' }] })
+      .mockResolvedValueOnce({ rows: [{ member_master_id: '00000000-0000-4000-8000-00000000aa01', platform_member_id: 'p1' }] })
       .mockResolvedValueOnce({ rows: [] }); // no assignment
 
-    const res = await request(app).post('/api/multi-member/holder-release-slot').send({ holderId: 'mm1', clientId: 'c1', planMappingId: 'pm1' });
+    const res = await request(app).post('/api/multi-member/holder-release-slot').send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
     expect(res.status).toBe(409);
   });
 
   test('enqueues revoke job when holder releases slot', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [{ member_master_id: 'mm1', platform_member_id: 'release-pid' }] })
+      .mockResolvedValueOnce({ rows: [{ member_master_id: '00000000-0000-4000-8000-00000000aa01', platform_member_id: 'release-pid' }] })
       .mockResolvedValueOnce({ rows: [{ role_assignment_id: 'ra1', source_plan_id: 'sp-release-1' }] });
 
-    await request(app).post('/api/multi-member/holder-release-slot').send({ holderId: 'mm1', clientId: 'c1', planMappingId: 'pm1' });
+    await request(app).post('/api/multi-member/holder-release-slot').send({ holderId: '00000000-0000-4000-8000-00000000aa01', clientId: '00000000-0000-4000-8000-0000000000c1', planMappingId: '00000000-0000-4000-8000-00000000bb01' });
 
     expect(mockQueueAdd).toHaveBeenCalledTimes(1);
     const [jobType, payload] = mockQueueAdd.mock.calls[0];
@@ -529,7 +529,7 @@ describe('[P3] multi-member — PUT /api/multi-member/members/:subId', () => {
       .mockResolvedValueOnce({ rows: [{ id: 'mm-sub', first_name: 'New', last_name: 'Name', email: 'new@x.com', phone: '999' }] }); // UPDATE member_master
 
     const res = await request(app)
-      .put('/api/multi-member/members/acc-sub')
+      .put('/api/multi-member/members/00000000-0000-4000-8000-00000000dd02')
       .send({ firstName: 'New', lastName: 'Name', email: 'new@x.com', phone: '999' });
 
     expect(res.status).toBe(200);
@@ -544,7 +544,7 @@ describe('[P3] multi-member — PUT /api/multi-member/members/:subId', () => {
       .mockResolvedValueOnce({ rows: [{ id: 'mm-sub', first_name: 'A', last_name: 'B', email: 'a@x.com', phone: '1' }] });
 
     await request(app)
-      .put('/api/multi-member/members/acc-sub')
+      .put('/api/multi-member/members/00000000-0000-4000-8000-00000000dd02')
       .send({ firstName: 'A', lastName: 'B', email: 'a@x.com', phone: '1' });
 
     const accessCheckSql = db.query.mock.calls[0]?.[0] || '';
@@ -557,7 +557,7 @@ describe('[P3] multi-member — PUT /api/multi-member/members/:subId', () => {
     db.query.mockResolvedValueOnce({ rows: [] }); // no pending row found
 
     const res = await request(app)
-      .put('/api/multi-member/members/acc-active')
+      .put('/api/multi-member/members/00000000-0000-4000-8000-00000000dd03')
       .send({ firstName: 'X', lastName: 'Y', email: 'x@test.com', phone: '1' });
 
     expect(res.status).toBe(404);

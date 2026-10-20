@@ -129,10 +129,12 @@ New events require an entry before shipping. Events without entries are flagged 
 |---|---|---|
 | `hmac.failure` | warn | Single HMAC verification failure recorded |
 | `hmac.failure_spike` | warn | Failure threshold crossed (3 in 5 min) — alert sent |
-| `hmac.monitor.internal_error` | error | Redis or internal error in hmac monitor |
+| `hmac.monitor.internal_error` | error | Redis or internal error in hmac monitor. Until 2026-10-19 this fired on EVERY failure (the monitor called Redis commands on a config object, not a client) and no spike alert could ever send. |
 | `hmac.alert.no_email` | warn | Spike detected but no notification email configured |
 | `hmac.alert.sent` | info | HMAC spike alert email sent |
 | `hmac.alert.send_failed` | error | HMAC spike alert email failed to send |
+| `wix.webhook.ack_budget_exceeded` | warn | 2026-10-19 — dedup + enqueue of a Wix webhook had not finished within 1s, so Wix was answered 503 and will retry (its own timeout is 1.25s). The work keeps running; a late failure logs `wix.webhook.processing_error` with `afterAck: true`. Repeated rows mean the DB or Redis is slow. |
+| `kisi.request.timeout` | error | 2026-10-19 — a Kisi API call did not answer within 15s and was abandoned (`HARDWARE_API_ERROR`), so the job fails and BullMQ retries it instead of hanging past its 120s member lock. |
 
 ---
 
@@ -286,8 +288,8 @@ Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='rev
 | `adapter.complete_grant.entry` | info | **PERSISTED via override.** completeGrant started (cycleIndex / isRenewal). Routine breadcrumb, downgraded from warn. |
 | `adapter.complete_grant.lookup` | info / warn | **PERSISTED via override.** completeGrant looked up the member master row. Info when found; **warn** only if missing. |
 | `wix.parse.unpaid_order_dropped` | info | **PERSISTED via override.** An order that is not (yet) paid was deliberately not granted (Layer 2, so no client id). Routine, downgraded from warn. |
-| `admin.scheduler.day_pass_sweep_start` | info | **PERSISTED via override.** In-process day-pass sweep tick started (admin/server.js). Downgraded from warn. |
-| `admin.scheduler.day_pass_sweep_complete` | info | **PERSISTED via override.** In-process day-pass sweep tick finished. Downgraded from warn. |
+| `admin.scheduler.day_pass_sweep_start` | info | Suppressed via override (2026-10-19 — 96 rows a day saying nothing the `_complete` row doesn't). In-process day-pass sweep tick started (admin/server.js). Downgraded from warn. |
+| `admin.scheduler.day_pass_sweep_complete` | info | **PERSISTED via override.** In-process day-pass sweep tick finished. Downgraded from warn. The one persisted row per tick: it is the sweep's heartbeat. |
 | `admin.scheduler.day_pass_sweep_armed` | info | **PERSISTED via override.** In-process day-pass sweep scheduler armed at boot. Downgraded from warn. |
 | `kisi.user.created.full_response` | info | **NOT persisted** (`persist:false`). OB-245 diagnostic: full Kisi POST /users response. Carries the member's email, so it stays on stdout only (DR-001); downgraded from warn, which had been writing it to diagnostic_log. |
 | `retry.notify.suppressed_repeat` | info | **NOT persisted.** A dead-lettered failure matched an existing error_queue row for the same member and problem (still open, or resolved in the last 24h and re-opened), so it only counted up and **no email was sent**. Context: `{ tenantId, errorCode, eventType }`. |
@@ -618,7 +620,7 @@ link id lives in `member_access_sources.role_assignment_id` with `source_type='d
 | `revoke.payment_failed.no_hardware_user` | warn | payment.failed for a day-pass-only member — status flip only, no suspend call |
 | `queue.grant.recovered.no_hardware_user` | warn | payment.recovered for a day-pass-only member — no enableAccess call |
 | `reconciliation.day_pass_plan_skipped` | warn | Pass 1 skipped a day-pass plan — reconcile never backfills a time-boxed link |
-| `day_pass_sweep.start` / `day_pass_sweep.complete` | info | 15-minute sweep lifecycle (expired count, orphan count) |
+| `day_pass_sweep.start` / `day_pass_sweep.complete` | info | 15-minute sweep lifecycle (expired count, orphan count). Both suppressed (`.complete` since 2026-10-19); `admin.scheduler.day_pass_sweep_complete` is the persisted heartbeat. |
 | `day_pass_sweep.revoke_queued` | info | Expired pass → synthetic `plan.cancelled` revoke job (`day-pass-sweep.expired`) |
 | `day_pass_sweep.enqueue_failed` | error | Could not enqueue the revoke job |
 | `day_pass_sweep.orphan_link_deleted` | info | Expired, marker-owned link with no DB row deleted |
