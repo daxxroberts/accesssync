@@ -17,6 +17,7 @@ const wixConnector = require('./adapters/wix/wix-connector');
 const wixAppMarket = require('./core/wix-app-market');
 const memberSyncApi = require('./core/member-sync-api');
 const db = require('./db');
+const { pingRedis } = require('./core/redis-utils');
 const { startWorker } = require('./core/queue-worker');
 const { log } = require('./core/logger');
 const { traceContextMiddleware } = require('./admin/middleware/trace-context');
@@ -35,14 +36,28 @@ app.use(traceContextMiddleware);
 
 // --- Routes ---
 
-// Health Check for Railway
-// Checks DB connectivity — Railway stops routing traffic on non-200
+// Health checks. Two endpoints on purpose (SAGE, 2026-10-19):
+//
+//   /health       Railway's deploy check (railway.toml healthcheckPath). Fails (503) only when
+//                 the DB is unreachable, exactly as before. Redis is reported but never fails it,
+//                 so a fix can still be deployed during a Redis outage.
+//   /health/full  For the outside uptime checker. Fails (503) when the DB OR Redis (the job
+//                 queue) is unreachable: without either, Wix webhooks are answered 5xx and pile
+//                 up as Wix retries, so someone should be told.
+async function healthStatus() {
+  const [dbOk, redisOk] = await Promise.all([db.healthCheck(), pingRedis()]);
+  return { dbOk, redisOk, body: { db: dbOk ? 'connected' : 'unreachable', redis: redisOk ? 'connected' : 'unreachable' } };
+}
+
 app.get('/health', async (req, res) => {
-  const dbOk = await db.healthCheck();
-  if (!dbOk) {
-    return res.status(503).json({ status: 'error', db: 'unreachable' });
-  }
-  res.status(200).json({ status: 'ok', db: 'connected' });
+  const { dbOk, body } = await healthStatus();
+  res.status(dbOk ? 200 : 503).json({ status: dbOk ? 'ok' : 'error', ...body });
+});
+
+app.get('/health/full', async (req, res) => {
+  const { dbOk, redisOk, body } = await healthStatus();
+  const ok = dbOk && redisOk;
+  res.status(ok ? 200 : 503).json({ status: ok ? 'ok' : 'error', ...body });
 });
 
 // Wix Connector: Webhook Entry (Layer 1)
@@ -107,3 +122,5 @@ process.on('SIGTERM', () => {
         process.exit(1);
     }, 15000).unref();
 });
+
+module.exports = { app, serverInstance }; // for tests (test/p3-data-integrity/core-health-redis-ping.test.js)

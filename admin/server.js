@@ -201,6 +201,12 @@ const { CONNECTORS } = require('../core/connector-branding');
 // hiccup or a missing clientId.
 app.get('/member-hub', allowMemberFrame, async (req, res) => {
   const { hubBranding } = require('../core/member-hub-branding');
+  const { isUuid } = require('../core/member-sync-api');
+  // clients.id is a uuid: a malformed one used to reach the query (22P02 error row) and still
+  // render a hub whose every API call then failed. Say what is wrong instead.
+  if (req.query.clientId && !isUuid(req.query.clientId)) {
+    return res.status(400).send('clientId must be a UUID');
+  }
   let branding = hubBranding(undefined);
   if (req.query.clientId) {
     try {

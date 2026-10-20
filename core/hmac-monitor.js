@@ -22,7 +22,7 @@
 
 'use strict';
 
-const { getRedisConnection } = require('./redis-utils');
+const { getRedisClient } = require('./redis-utils');
 const { log } = require('./logger');
 const { sendOperatorEmail } = require('./operator-mailer');
 const { renderHmacAlert } = require('./operator-email-templates');
@@ -40,7 +40,7 @@ async function recordFailure(clientHint = 'unknown') {
 
   let redis;
   try {
-    redis = getRedisConnection();
+    redis = getRedisClient();
     const safeHint = String(clientHint).replace(/[^a-zA-Z0-9_-]/g, '_');
     const listKey = `hmac:failures:${safeHint}`;
     const cooldownKey = `${ALERT_COOLDOWN_KEY}:${safeHint}`;

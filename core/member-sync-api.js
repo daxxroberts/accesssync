@@ -38,7 +38,9 @@ const KEY_CACHE_TTL_MS = 60 * 60 * 1000;
 // clients.id is a uuid. A malformed clientId used to reach the query and fail with 22P02
 // (2026-10-12: "41377ole-U477-..." — 9 error rows for one bad caller); reject it up front.
 // platformMemberId is NOT checked: sub-member ids carry a '###as…' suffix (DR-029).
+// Exported as isUuid: the admin-side member routes (/member-hub, multi-member.js) share it.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v) => UUID_RE.test(String(v));
 
 // Cache gym branding (logo/colors) per clientId, same pattern as the Wix JWK
 // cache above — branding is effectively static for a polling session, and
@@ -99,7 +101,7 @@ class MemberSyncApi {
       if (!platformMemberId || !clientId) {
         return res.status(400).json({ error: 'platformMemberId and clientId are required' });
       }
-      if (!UUID_RE.test(String(clientId))) {
+      if (!isUuid(clientId)) {
         return res.status(400).json({ error: 'clientId must be a UUID' });
       }
 
@@ -453,3 +455,4 @@ class MemberSyncApi {
 }
 
 module.exports = new MemberSyncApi();
+module.exports.isUuid = isUuid;

@@ -5,7 +5,7 @@
  * Responsibilities:
  * - HTTP handler for incoming Wix webhooks
  * - HMAC-SHA256 signature verification (DR-009)
- * - Immediate 200 OK acknowledgement
+ * - 200 OK only once the event is safely stored + queued (5xx otherwise, so Wix retries)
  * - Calls wix-adapter.parseEvent() (Layer 2) for payload normalization
  * - Passes standard event to webhook-processor for deduplication and queuing
  *
@@ -23,6 +23,13 @@ const { decryptApiKey } = require('../../core/crypto-utils'); // OB-238
 const db = require('../../db'); // OB-238
 const { log } = require('../../core/logger');
 const { deriveTraceId } = require('../../core/trace-context');
+
+// Wix counts a webhook as failed (and retries it, up to 12 times over ~a day) when no 200
+// arrives within 1250 ms. Dedup + enqueue normally take well under that; if they haven't
+// finished by this budget we answer 503 so Wix retries instead of timing out on us. The work
+// keeps running: if it lands, the retry is seen as a duplicate; if it fails, the processed
+// mark is removed (webhook-processor _enqueueOrUnmark) and the retry goes through.
+const ACK_BUDGET_MS = 1000;
 
 class WixConnector {
   constructor() {
@@ -72,8 +79,9 @@ class WixConnector {
         return res.status(401).send('Unauthorized');
       }
 
-      // 2. Acknowledge Immediately — Wix requires fast 200 ACK
-      res.status(200).send('OK');
+      // 2. No acknowledgement yet. The 200 goes out only after step 4 has stored and queued
+      //    the event: acknowledging first meant a Redis or DB failure lost the purchase for
+      //    good, because Wix never retries a delivery it saw succeed (BOT review 2026-10-19).
 
       // 3. Parse event (Layer 2)
       // eventId: Wix REST webhooks send the event UUID in data.metadata.id (confirmed from live payloads).
@@ -167,8 +175,13 @@ class WixConnector {
         headerKeys:        Object.keys(req.headers || {}).filter(k => k.startsWith('x-')),
       };
 
-      // 4. Pass to Webhook Processor (deduplication + queuing)
-      await webhookProcessor.processIncoming(eventId, standardEvent, rawBody, tenantDiagnostic);
+      // 4. Pass to Webhook Processor (deduplication + queuing), then acknowledge.
+      //    A throw lands in the catch below → 500 → Wix retries.
+      const work = webhookProcessor.processIncoming(eventId, standardEvent, rawBody, tenantDiagnostic);
+      if (!(await this._finishesWithinAckBudget(work, { traceId, eventId }))) {
+        return res.status(503).send('Busy, retry');
+      }
+      res.status(200).send('OK');
 
     } catch (error) {
       log.error('wix.webhook.processing_error', { traceId: traceId || null, stage: 'ingress', result: 'failed' }, error);
@@ -176,6 +189,28 @@ class WixConnector {
         res.status(500).send('Internal Server Error');
       }
     }
+  }
+
+  /**
+   * Waits for `work` up to ACK_BUDGET_MS. Resolves true when it finished in time, false when
+   * the budget ran out first; rejects with work's own error when it failed in time. A failure
+   * AFTER the budget is logged here, since the request has already been answered.
+   */
+  async _finishesWithinAckBudget(work, { traceId, eventId }) {
+    let timer;
+    const budget = new Promise((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), ACK_BUDGET_MS);
+      if (timer.unref) timer.unref();
+    });
+    const outcome = await Promise.race([work.then(() => 'done'), budget])
+      .finally(() => clearTimeout(timer));
+    if (outcome === 'done') return true;
+
+    log.warn('wix.webhook.ack_budget_exceeded', { traceId, eventId, budgetMs: ACK_BUDGET_MS, stage: 'ingress', result: 'deferred' });
+    work.catch((err) => {
+      log.error('wix.webhook.processing_error', { traceId, eventId, stage: 'ingress', result: 'failed', afterAck: true }, err);
+    });
+    return false;
   }
 
   /**
