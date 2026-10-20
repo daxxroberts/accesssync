@@ -104,7 +104,8 @@ const operatorCookie = (cid) => `operatorToken=${signOperatorToken(cid, null)}`;
 const expiredOperatorCookie = (cid) =>
   `operatorToken=${jwt.sign({ role: 'operator', clientId: cid, instanceId: null }, SECRET, { expiresIn: -60 })}`;
 const tokenFromUrl = (url) => decodeURIComponent(new URL(url).searchParams.get('invite'));
-const bootOf = (html) => JSON.parse(html.match(/const BOOT = (\{.*?\});\n/s)[1].replace(/\\u003c/g, '<').replace(/\\u003e/g, '>').replace(/\\u0026/g, '&'));
+// \r?\n: on a Windows checkout (core.autocrlf) the template, and so the page, has CRLF line endings.
+const bootOf = (html) => JSON.parse(html.match(/const BOOT = (\{.*?\});\r?\n/s)[1].replace(/\\u003c/g, '<').replace(/\\u003e/g, '>').replace(/\\u0026/g, '&'));
 
 let app;
 beforeAll(() => {
