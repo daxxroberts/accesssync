@@ -544,7 +544,7 @@ describe('[P1] finalizeRevoke — bails out when other plans keep the member act
 // Test 7 — releaseLock: UPDATE member_access.status='failed'
 // ════════════════════════════════════════════════════════════════════════════
 describe('[P1] releaseLock — UPDATEs member_access.status (not member_access_state)', () => {
-  it("translates legacy 'failed' to 'inactive' on member_access (S-11 enum collapse)", async () => {
+  it("recomputes legacy 'failed' from the source rows instead of forcing 'inactive' (2026-10-19 H2)", async () => {
     db.query.mockResolvedValue({ rows: [] });
 
     await adapter.releaseLock(MEMBER_ACCESS_ID, TENANT_ID, 'failed');
@@ -552,9 +552,11 @@ describe('[P1] releaseLock — UPDATEs member_access.status (not member_access_s
     const updateCall = db.query.mock.calls[0];
     expect(updateCall[0]).toContain('UPDATE member_access');
     expect(updateCall[0]).not.toContain('member_access_state');
-    // S-11/DR-046: 'failed' is no longer a valid access status. Translates to 'inactive'.
-    // Per-plan failure lives on member_access_sources.status='failed'.
-    expect(updateCall[1]).toEqual(['inactive', MEMBER_ACCESS_ID]);
+    // S-11/DR-046: 'failed' is no longer a valid access status. The access row is the
+    // source rollup — an active source keeps the member 'active' (real-DB proof in
+    // real-db-error-path-state.test.js). Per-plan failure lives on member_access_sources.
+    expect(updateCall[0]).toMatch(/WHEN EXISTS \(\s*SELECT 1 FROM member_access_sources mas/);
+    expect(updateCall[1]).toEqual([MEMBER_ACCESS_ID]);
   });
 });
 

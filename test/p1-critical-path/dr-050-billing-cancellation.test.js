@@ -56,8 +56,8 @@ function mockRevokeSequence({ billingRows, remainingCount = '0' }) {
     .mockResolvedValueOnce({ rows: [{ hardware_api_key: null }] })                                    // _getClientApiKey
     .mockResolvedValueOnce({ rows: [{ role_assignment_id: RA_ID, hardware_group_id: GROUP_ID, mapping_id: MAPPING_ID }] }) // raWithGroups
     .mockResolvedValueOnce({ rows: billingRows })                                                     // DR-050 billing_id lookup
-    .mockResolvedValueOnce({ rowCount: 1 })                                                            // DELETE source row
     .mockResolvedValueOnce({ rows: [{ cnt: remainingCount }] })                                        // COUNT remaining
+    .mockResolvedValueOnce({ rowCount: 1 })                                                            // DELETE source row (after Kisi)
     .mockResolvedValueOnce({ rowCount: 1 });                                                           // member_access_log INSERT
   if (billingRows.length > 0) {
     db.query.mockResolvedValueOnce({ rows: [{ id: BILLING_ID }] });                                    // DR-050 UPDATE ... RETURNING id

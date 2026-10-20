@@ -282,8 +282,8 @@ describe('[P1] day pass — processRevoke plan.cancelled', () => {
       .mockResolvedValueOnce({ rows: [{ hardware_api_key: null }] })
       .mockResolvedValueOnce({ rows: [roleRow] })
       .mockResolvedValueOnce({ rows: [] })                             // billing lookup
-      .mockResolvedValueOnce({ rowCount: 1 })                          // DELETE
       .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })                 // remaining count
+      .mockResolvedValueOnce({ rowCount: 1 })                          // DELETE (after Kisi)
       .mockResolvedValueOnce({ rowCount: 1 });                         // member_access_log INSERT
 
     await grantRevoke.processRevoke(TENANT_ID, MEMBER_ID, 'kisi-user-1', ['ra-99'], 'kisi', 'plan.cancelled', cancelEvent);

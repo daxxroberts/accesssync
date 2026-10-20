@@ -746,13 +746,17 @@ class GrantRevokeLogic {
             continue;
           }
 
-          await deleteSourceRow(groupId, sourceType, planId);
-
+          // Kisi BEFORE the row DELETE, same as the day-pass branch above. The other way
+          // round, a Kisi timeout left no row: the BullMQ retry found nothing to revoke and
+          // completed while the role stayed live (2026-10-19 review H1). removeRole is
+          // 404-idempotent, so a retry that repeats it is safe. "Remaining" therefore counts
+          // the sources this cancel will NOT delete — what the DELETE below leaves behind.
           // Day-pass rows never keep a permanent group open — a bearer link is not a seat.
           const remaining = await db.query(
             `SELECT COUNT(*) AS cnt FROM member_access_sources
-             WHERE access_id = $1 AND hardware_group_id = $2 AND source_type <> 'day_pass'`,
-            [memberId, groupId]
+             WHERE access_id = $1 AND hardware_group_id = $2 AND source_type <> 'day_pass'
+               AND NOT (source_type = $3 AND COALESCE(source_plan_id, '') = COALESCE($4, ''))`,
+            [memberId, groupId, sourceType, planId]
           );
 
           const remainingCount = parseInt(remaining.rows[0].cnt, 10);
@@ -766,6 +770,8 @@ class GrantRevokeLogic {
           } else {
             await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
           }
+
+          await deleteSourceRow(groupId, sourceType, planId);
         }
 
         // Fallback: legacy member with no member_role_assignments rows

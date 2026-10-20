@@ -30,7 +30,9 @@ describe("OB-244 follow-up: revoke resolve query includes 'removing' status", ()
     // The DR-044 sub-member soft-delete flow REQUIRES finding rows already in
     // 'removing' state, because the handler sets that status BEFORE queueing
     // the synthetic revoke job. Omitting it makes the revoke silently no-op.
-    expect(adapterSrc).toMatch(/AND ma\.status IN \('active', 'in_flight', 'removing'\)/);
+    // (2026-10-19: the status list is now OR'd with a source-row check, hence the optional paren.
+    // The behaviour is pinned against a real database in real-db-error-path-state.test.js.)
+    expect(adapterSrc).toMatch(/AND \(?ma\.status IN \('active', 'in_flight', 'removing'\)/);
   });
 
   test("the older 2-state version (without 'removing') is NOT present", () => {

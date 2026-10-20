@@ -127,10 +127,10 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
       .mockResolvedValueOnce({ rows: [{ role_assignment_id: RA_ID, hardware_group_id: GROUP_ID, mapping_id: MAPPING_ID }] })
       // DR-050: billing_id lookup (scoped to this plan) — no billing rows in this fixture
       .mockResolvedValueOnce({ rows: [] })
-      // DELETE (access_id = $1)
-      .mockResolvedValueOnce({ rowCount: 1 })
-      // COUNT remaining (access_id = $1) → 0
+      // COUNT remaining after this plan's rows go (access_id = $1) → 0
       .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })
+      // DELETE (access_id = $1) — after Kisi, so a Kisi failure leaves a row to retry from
+      .mockResolvedValueOnce({ rowCount: 1 })
       // member_access_log INSERT
       .mockResolvedValueOnce({ rowCount: 1 })
       // DR-044 finalize UPDATE → no sub-member match
@@ -153,17 +153,21 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
     expect(selectCall[0]).toMatch(/access_id\s*=\s*\$1/);
     expect(selectCall[0]).not.toMatch(/member_role_assignments/);
 
+    // Verify COUNT uses access_id
+    const countCall = db.query.mock.calls[3];
+    expect(countCall[0]).toMatch(/COUNT\(\*\)/);
+    expect(countCall[0]).toMatch(/access_id\s*=\s*\$1/);
+    expect(countCall[1][0]).toBe(MEMBER_ID);
+
     // Verify DELETE uses access_id
-    const deleteCall = db.query.mock.calls[3];
+    const deleteCall = db.query.mock.calls[4];
     expect(deleteCall[0]).toMatch(/DELETE FROM member_access_sources/);
     expect(deleteCall[0]).toMatch(/access_id\s*=\s*\$1/);
     expect(deleteCall[1][0]).toBe(MEMBER_ID);
 
-    // Verify COUNT uses access_id
-    const countCall = db.query.mock.calls[4];
-    expect(countCall[0]).toMatch(/COUNT\(\*\)/);
-    expect(countCall[0]).toMatch(/access_id\s*=\s*\$1/);
-    expect(countCall[1][0]).toBe(MEMBER_ID);
+    // H1 (2026-10-19): Kisi is called before the row is deleted.
+    expect(hardwareAdapter.removeRole.mock.invocationCallOrder[0])
+      .toBeLessThan(db.query.mock.invocationCallOrder[4]);
   });
 
   // INCIDENT 2026-07-02 shape: a holder with 5 plans sharing one hardware_group_id
@@ -176,8 +180,8 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
       .mockResolvedValueOnce({ rows: [{ hardware_api_key: null }] })
       .mockResolvedValueOnce({ rows: [{ role_assignment_id: RA_ID, hardware_group_id: GROUP_ID, mapping_id: MAPPING_ID }] })
       .mockResolvedValueOnce({ rows: [] })                // DR-050: billing_id lookup — none in this fixture
-      .mockResolvedValueOnce({ rowCount: 1 })             // DELETE — removes the 1 cancelled plan's source row
       .mockResolvedValueOnce({ rows: [{ cnt: '4' }] })    // COUNT → 4 other plans still active on this group
+      .mockResolvedValueOnce({ rowCount: 1 })             // DELETE — removes the 1 cancelled plan's source row
       .mockResolvedValueOnce({ rowCount: 1 })             // member_access_log INSERT
       .mockResolvedValueOnce({ rowCount: 0 })             // DR-044 finalize → no sub-member
       .mockResolvedValueOnce({ rows: [{ plan_holder_id: null }] });

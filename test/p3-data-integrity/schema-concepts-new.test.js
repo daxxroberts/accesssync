@@ -150,10 +150,10 @@ describe('[P3] Revoke guard: hardware removeRole fires when no remaining sources
       ]})
       // DR-050: billing_id lookup — no billing rows in this fixture
       .mockResolvedValueOnce({ rows: [] })
-      // DELETE member_access_sources
-      .mockResolvedValueOnce({ rowCount: 1 })
       // SELECT COUNT(*) remaining → 0 → removeRole must fire
       .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })
+      // DELETE member_access_sources (after Kisi — 2026-10-19 H1)
+      .mockResolvedValueOnce({ rowCount: 1 })
       // Sub-member finalize → not a sub-member
       .mockResolvedValueOnce({ rowCount: 0 })
       // member_access_log INSERT (revoked)
@@ -192,9 +192,9 @@ describe('[P3] Revoke guard: hardware removeRole is suppressed when other billin
       ]})
       // DR-050: billing_id lookup — no billing rows in this fixture
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rowCount: 1 })
       // Count = 2 → another active source still present → removeRole skipped
       .mockResolvedValueOnce({ rows: [{ cnt: '2' }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
       .mockResolvedValueOnce({ rowCount: 0 })
       .mockResolvedValue({ rows: [] });
 

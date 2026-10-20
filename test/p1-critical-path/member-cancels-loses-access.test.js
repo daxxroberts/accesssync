@@ -85,14 +85,14 @@ describe('[P1] Member cancels plan → all door access revoked', () => {
       ]})
       // DR-050: billing_id lookup (scoped to this plan) — no billing rows in this fixture
       .mockResolvedValueOnce({ rows: [] })
-      // DELETE member_access_sources (group 1)
-      .mockResolvedValueOnce({ rowCount: 1 })
       // SELECT COUNT(*) remaining (group 1) → 0 → removeRole fires
       .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })
-      // DELETE member_access_sources (group 2)
+      // DELETE member_access_sources (group 1) — after Kisi (2026-10-19 H1)
       .mockResolvedValueOnce({ rowCount: 1 })
       // SELECT COUNT(*) remaining (group 2) → 0 → removeRole fires
       .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })
+      // DELETE member_access_sources (group 2)
+      .mockResolvedValueOnce({ rowCount: 1 })
       // Sub-member finalize UPDATE → rowCount 0 (not a sub-member)
       .mockResolvedValueOnce({ rowCount: 0 })
       // member_access_log INSERT (revoked)
@@ -121,8 +121,8 @@ describe('[P1] Member cancels plan → all door access revoked', () => {
       ]})
       // DR-050: billing_id lookup — no billing rows in this fixture
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rowCount: 1 })
       .mockResolvedValueOnce({ rows: [{ cnt: '0' }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
       .mockResolvedValueOnce({ rowCount: 0 })
       .mockResolvedValue({ rows: [] });
 

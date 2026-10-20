@@ -107,6 +107,12 @@ class StandardAdapter {
         // REVOKE path — revoke applies to ALL active access rows for this member.
         // A plan.cancelled event does not include a plan_mapping_id, so we look up
         // by member identity only and revoke every active access row.
+        //
+        // "Has something to act on" is read from the source rows, not only from the
+        // access-row label: a paused member rolls up to 'inactive' (their sources are
+        // 'failed' with the role still on them), and the old status-only filter made
+        // their resume — and a cancel during the pause — find nobody and skip with no
+        // alert (2026-10-19 review H3). 'deleted' is DR-044 terminal and never matches.
         const accessResult = await dbClient.query(
           `SELECT ma.id, ma.hardware_user_id, ma.hardware_platform, ma.status
            FROM member_access ma
@@ -114,7 +120,13 @@ class StandardAdapter {
            WHERE mm.client_id = $1
              AND mm.source_platform = $2
              AND mm.platform_member_id = $3
-             AND ma.status IN ('active', 'in_flight', 'removing')`,
+             AND ma.status <> 'deleted'
+             AND (ma.status IN ('active', 'in_flight', 'removing')
+                  OR EXISTS (
+                    SELECT 1 FROM member_access_sources mas
+                    WHERE mas.access_id = ma.id
+                      AND (mas.status = 'active'
+                           OR (mas.status = 'failed' AND mas.role_assignment_id IS NOT NULL))))`,
           [tenantId, event.sourcePlatform || 'wix', event.platformMemberId]
         );
 
@@ -1525,13 +1537,14 @@ class StandardAdapter {
 
   /**
    * Releases the in_flight lock on error.
-   * Sets member_access.status to a valid post-S-11 value: 'inactive' or 'pending_identity'.
+   * Sets member_access.status to a valid post-S-11 value: the source rollup
+   * ('active' / 'inactive'), or 'pending_identity'.
    * Increments errors_count in client_activity_summary (always, since this is the error path).
    *
    * S-11/DR-046: member_access.status enum collapsed to 4 values
    * (active/inactive/in_flight/pending_identity). Per-plan parking states moved to source rows.
    *
-   *   - 'failed' (legacy)         → translated to 'inactive' on the access row.
+   *   - 'failed' (legacy)         → access row recomputed from its source rows (rollupAccessStatus).
    *                                 Per-plan failure recorded on the source row by callers.
    *   - 'pending_identity'        → preserved (access-row-level state per spec).
    *   - 'pending_hardware' (legacy) / 'pending_start' (legacy) → callers MUST use the new
@@ -1566,17 +1579,23 @@ class StandardAdapter {
       case 'failed':
       default:
         // 'failed' is no longer a valid access-row status post-S-11.
-        // Failure is recorded on the source row; access row reflects rollup ('inactive' if
-        // no source is active).
-        resolvedStatus = 'inactive';
+        // Failure is recorded on the source row; the access row is the source rollup —
+        // computed, not assumed. This used to hard-set 'inactive': one Kisi timeout on
+        // any job made an active, paying member look inactive, and every later cancel,
+        // pause or resume (which look for active rows) skipped them with no alert
+        // (2026-10-19 review H2). A member with an active source stays 'active'.
+        resolvedStatus = null;
         break;
     }
 
-    await db.query(
-      `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
-      [resolvedStatus, memberId]
-    ).catch(err =>
-      log.error('adapter.lock_release_failed', { memberId, resolvedStatus }, err)
+    const release = resolvedStatus === null
+      ? this.rollupAccessStatus(memberId)
+      : db.query(
+          `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
+          [resolvedStatus, memberId]
+        );
+    await release.catch(err =>
+      log.error('adapter.lock_release_failed', { memberId, resolvedStatus: resolvedStatus || 'rollup' }, err)
     );
 
     this._incrementActivity(tenantId, 'errors_count').catch(err =>
