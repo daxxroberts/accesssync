@@ -44,6 +44,7 @@ New events require an entry before shipping. Events without entries are flagged 
 | `grant.group_not_found` | warn | Hardware group 404 — group flagged, member gets partial access. Since Phase 1 (2026-09-10) only after `getUserById` confirms the member's Kisi user still exists (see `grant.user_gone` / `grant.not_found_ambiguous`). |
 | `grant.user_gone` | warn | Phase 1 (2026-09-10, I-6) — `assignRole` 404'd and `getUserById` returned null: the member's **Kisi user** is gone, not the door group. The group is NOT flagged (`plan_mapping_groups.health_status` untouched, no `group_not_found` alert). Fix round (F3): a **partial failure** of that one mapping, recorded as `HARDWARE_USER_GONE` (statusCode 404); no further `assignRole` is made on the same door-system account (each would 404 the same way — those mappings are recorded as `user_gone` without a call), but the loop continues, so a later mapping satisfied by the OB-47 reuse path is still collected. The job returns whatever was collected (HEAD's partial-success rule, `grant.partial_failure`) and throws `HARDWARE_USER_GONE` only when **nothing** was collected (statusCode 404 → dead-lettered, no retries). Context: `{ clientId, memberId, hardwareUserId, platformMemberId, mappingId, hardwareGroupId, collectedSoFar, stage, result }`. |
 | `grant.not_found_ambiguous` | warn | Phase 1 (2026-09-10, I-6) — `assignRole` 404'd and the follow-up `getUserById` threw (`reason: 'user_lookup_failed'`, `lookupErrorCode`) or returned neither null nor an object (`reason: 'user_lookup_unexpected_result'`). Fail-safe: the group is NOT flagged — a door is never hidden from every member on an ambiguous 404. Fix round (F3): a **partial failure** of that one mapping (the original 404 is recorded); the loop continues and the other groups are still attempted, as at HEAD. The job throws the original 404 only when nothing at all was collected. Context adds `collectedSoFar`. |
+| `grant.assignee_missing_user_present` | warn | 2026-10-16 — `assignRole` failed with Kisi 422 `{"errors":{"assignee":["must exist"]}}` (Kisi's answer for a deleted user, not 404 — trace 8c92ad90) but `getUserById` found the user. Contradictory, so that mapping is recorded as a partial failure and the group is NOT flagged — a 422 never means the group is gone. A 422 assignee answer with the user confirmed gone goes the `grant.user_gone` route (`HARDWARE_USER_GONE`, statusCode 422). Context matches `grant.user_gone`. |
 | `grant.role.conflict_unresolved` | warn | Phase 1 fix round (2026-09-10, F4 / P-4) — `assignRole` threw `KISI_ROLE_CONFLICT_UNRESOLVED` (Kisi answered 409 "already assigned", but the adapter's recovery read found no matching user + group + `group_basic` assignment — see `kisi.role.conflict_unresolvable`). A **partial failure** of that one mapping: the group's health is NOT touched (the door is fine) and `getUserById` is not called; the loop continues. If every mapping fails, the job throws the first recorded failure — HEAD's all-failed path (statusCode 409 → 4xx → dead-lettered, not retried), no new status transition. Any other error, including a raw 409 without this code, still throws immediately. Context: `{ clientId, memberId, hardwareUserId, platformMemberId, mappingId, hardwareGroupId, collectedSoFar, stage, result }`. |
 | `grant.partial_failure` | warn | Some groups succeeded, some failed — partial access granted. Since the Phase 1 fix round (2026-09-10) context adds `failureReasons` (one per failed group, ∈ `group_not_found`, `user_gone`, `not_found_ambiguous`, `role_conflict_unresolved`). |
 | `grant.log.skipped_duplicate` | info | All role assignments reused — no member_access_log INSERT (Wix multi-fire dedup) |
@@ -68,6 +69,8 @@ New events require an entry before shipping. Events without entries are flagged 
 | `queue.job.failed` | error | Job failed — includes lastStep and error details |
 | `queue.job.missing_trace_id` | error | Job payload has no traceId — rejected before processing (enforcement gate) |
 | `queue.grant.plan_unknown` | warn | No active plan mappings found for this planId |
+| `queue.grant.user_gone_recreating` | warn | 2026-10-16 — `processGrant` threw `HARDWARE_USER_GONE` (the cached `member_access.hardware_user_id` points at a deleted Kisi user). `_processGrantRecoveringUser` runs `resolveIdentity(force)` once — find-or-create, OB-80 purge on an id change — then `processGrant` once more. Hard cap: two `processGrant` calls per job; same id back → original error rethrown; null → parked `pending_identity`. Context: `{ clientId, memberId, eventId, platformMemberId, staleHardwareUserId, stage, result }`. |
+| `queue.grant.user_recreated` | warn | 2026-10-16 — the recreate above succeeded: a new Kisi user was found or created and the second `processGrant` assigned the doors. Warn on purpose (persists, and a recreated door-system user is worth an operator's eye). Context adds `newHardwareUserId`, `assignments`. |
 | `queue.grant.no_api_key` | warn | No hardware API key configured for this client/location |
 | `queue.grant.pending_start` | info | Grant parked as pending_start — plan has future start date |
 | `queue.revoke.skip.no_identity` | info | Revoke skipped — member has no identity record |
@@ -95,6 +98,7 @@ New events require an entry before shipping. Events without entries are flagged 
 | `adapter.identity_found` | info | Hardware findUserByEmail returned an existing user |
 | `adapter.identity_creating` | info | No existing hardware user — createUser call about to start |
 | `adapter.identity_replaced` | warn | Resolved hardware_user_id differs from cached value — stale rows purged |
+| `adapter.identity_dropped_after_finalize` | warn | 2026-10-16 — a grant reopened a `member_access` row whose status was `deleted` (DR-044 finalize deleted that Kisi user), so `resolveAndLock` dropped the dead `hardware_user_id` and `resolveIdentity` will find or create a live user. This line is the DR-044 lineage record of the dropped id. Context: `{ memberId, memberMasterId, tenantId, platformMemberId, droppedHardwareUserId, stage, result }`. |
 | `adapter.identity.gate2_recovery_triggered` | warn | INVALID_HARDWARE_REQUEST: email missing — Gate 2 recovery ladder starting |
 | `adapter.identity.gate2_recovered` | info | Email recovered successfully via Gate 2 |
 | `adapter.identity.gate2_skipped` | warn | Gate 2 skipped — missing tenantId or platformMemberId |
@@ -125,10 +129,12 @@ New events require an entry before shipping. Events without entries are flagged 
 |---|---|---|
 | `hmac.failure` | warn | Single HMAC verification failure recorded |
 | `hmac.failure_spike` | warn | Failure threshold crossed (3 in 5 min) — alert sent |
-| `hmac.monitor.internal_error` | error | Redis or internal error in hmac monitor |
+| `hmac.monitor.internal_error` | error | Redis or internal error in hmac monitor. Until 2026-10-19 this fired on EVERY failure (the monitor called Redis commands on a config object, not a client) and no spike alert could ever send. |
 | `hmac.alert.no_email` | warn | Spike detected but no notification email configured |
 | `hmac.alert.sent` | info | HMAC spike alert email sent |
 | `hmac.alert.send_failed` | error | HMAC spike alert email failed to send |
+| `wix.webhook.ack_budget_exceeded` | warn | 2026-10-19 — dedup + enqueue of a Wix webhook had not finished within 1s, so Wix was answered 503 and will retry (its own timeout is 1.25s). The work keeps running; a late failure logs `wix.webhook.processing_error` with `afterAck: true`. Repeated rows mean the DB or Redis is slow. |
+| `kisi.request.timeout` | error | 2026-10-19 — a Kisi API call did not answer within 15s and was abandoned (`HARDWARE_API_ERROR`), so the job fails and BullMQ retries it instead of hanging past its 120s member lock. |
 
 ---
 
@@ -282,8 +288,8 @@ Required context fields: `clientId`, `memberId`, `platformMemberId`, `stage='rev
 | `adapter.complete_grant.entry` | info | **PERSISTED via override.** completeGrant started (cycleIndex / isRenewal). Routine breadcrumb, downgraded from warn. |
 | `adapter.complete_grant.lookup` | info / warn | **PERSISTED via override.** completeGrant looked up the member master row. Info when found; **warn** only if missing. |
 | `wix.parse.unpaid_order_dropped` | info | **PERSISTED via override.** An order that is not (yet) paid was deliberately not granted (Layer 2, so no client id). Routine, downgraded from warn. |
-| `admin.scheduler.day_pass_sweep_start` | info | **PERSISTED via override.** In-process day-pass sweep tick started (admin/server.js). Downgraded from warn. |
-| `admin.scheduler.day_pass_sweep_complete` | info | **PERSISTED via override.** In-process day-pass sweep tick finished. Downgraded from warn. |
+| `admin.scheduler.day_pass_sweep_start` | info | Suppressed via override (2026-10-19 — 96 rows a day saying nothing the `_complete` row doesn't). In-process day-pass sweep tick started (admin/server.js). Downgraded from warn. |
+| `admin.scheduler.day_pass_sweep_complete` | info | **PERSISTED via override.** In-process day-pass sweep tick finished. Downgraded from warn. The one persisted row per tick: it is the sweep's heartbeat. |
 | `admin.scheduler.day_pass_sweep_armed` | info | **PERSISTED via override.** In-process day-pass sweep scheduler armed at boot. Downgraded from warn. |
 | `kisi.user.created.full_response` | info | **NOT persisted** (`persist:false`). OB-245 diagnostic: full Kisi POST /users response. Carries the member's email, so it stays on stdout only (DR-001); downgraded from warn, which had been writing it to diagnostic_log. |
 | `retry.notify.suppressed_repeat` | info | **NOT persisted.** A dead-lettered failure matched an existing error_queue row for the same member and problem (still open, or resolved in the last 24h and re-opened), so it only counted up and **no email was sent**. Context: `{ tenantId, errorCode, eventType }`. |
@@ -614,7 +620,7 @@ link id lives in `member_access_sources.role_assignment_id` with `source_type='d
 | `revoke.payment_failed.no_hardware_user` | warn | payment.failed for a day-pass-only member — status flip only, no suspend call |
 | `queue.grant.recovered.no_hardware_user` | warn | payment.recovered for a day-pass-only member — no enableAccess call |
 | `reconciliation.day_pass_plan_skipped` | warn | Pass 1 skipped a day-pass plan — reconcile never backfills a time-boxed link |
-| `day_pass_sweep.start` / `day_pass_sweep.complete` | info | 15-minute sweep lifecycle (expired count, orphan count) |
+| `day_pass_sweep.start` / `day_pass_sweep.complete` | info | 15-minute sweep lifecycle (expired count, orphan count). Both suppressed (`.complete` since 2026-10-19); `admin.scheduler.day_pass_sweep_complete` is the persisted heartbeat. |
 | `day_pass_sweep.revoke_queued` | info | Expired pass → synthetic `plan.cancelled` revoke job (`day-pass-sweep.expired`) |
 | `day_pass_sweep.enqueue_failed` | error | Could not enqueue the revoke job |
 | `day_pass_sweep.orphan_link_deleted` | info | Expired, marker-owned link with no DB row deleted |

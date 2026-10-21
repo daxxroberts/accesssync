@@ -26,6 +26,18 @@ const { eventQueue } = require('../../core/webhook-processor');
 const { log } = require('../../core/logger');
 const { mintTraceId } = require('../../core/trace-context');
 const standardAdapter = require('../../adapters/standard-adapter');
+const { isUuid } = require('../../core/member-sync-api');
+
+/**
+ * These ids are uuid columns: a malformed one used to reach Postgres and come back as a 22P02
+ * error row (and a 500). Answer 400 instead. Returns true when it has sent the 400.
+ */
+function rejectNonUuid(res, ids) {
+  const bad = Object.keys(ids).filter(name => !isUuid(ids[name]));
+  if (!bad.length) return false;
+  res.status(400).json({ error: `${bad.join(', ')} must be a UUID` });
+  return true;
+}
 
 /**
  * S-11/DR-046 slot accounting, shared by add-member and holder-claim-slot.
@@ -116,6 +128,7 @@ router.get('/member/:memberId/widget-data', async (req, res) => {
   const clientId = req.query.clientId;
 
   if (!clientId) return res.status(400).json({ error: 'clientId is required' });
+  if (rejectNonUuid(res, { clientId })) return;
 
   // OB-159: Member Hub polls this endpoint every 4s — force fresh every time.
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
@@ -306,6 +319,7 @@ router.post('/api/multi-member/members', async (req, res) => {
   if (!holderId || !clientId || !firstName || !lastName || !email || !phone || !planMappingId) {
     return res.status(400).json({ error: 'All fields required: holderId, clientId, firstName, lastName, email, phone, planMappingId' });
   }
+  if (rejectNonUuid(res, { holderId, clientId, planMappingId })) return;
 
   try {
     // Validate holder exists (sub_master_id IS NULL = holder row)
@@ -419,6 +433,7 @@ router.put('/api/multi-member/members/:subId', async (req, res) => {
   if (!firstName || !lastName || !email || !phone) {
     return res.status(400).json({ error: 'All fields required: firstName, lastName, email, phone' });
   }
+  if (rejectNonUuid(res, { subId })) return;
 
   try {
     // Verify the sub-member is in a draft state (editable). S-11/DR-046: draft state lives
@@ -477,6 +492,7 @@ router.put('/api/multi-member/members/:subId', async (req, res) => {
 // subId = member_access.id
 router.delete('/api/multi-member/members/:subId', async (req, res) => {
   const { subId } = req.params;
+  if (rejectNonUuid(res, { subId })) return;
 
   try {
     // S-11/DR-046: plan_mapping_id and source_plan_id come from member_access_sources, not access.
@@ -578,6 +594,7 @@ router.post('/api/multi-member/submit', async (req, res) => {
   if (!holderId || !clientId) {
     return res.status(400).json({ error: 'holderId and clientId are required' });
   }
+  if (rejectNonUuid(res, { holderId, clientId })) return;
 
   try {
     // S-11/DR-046: per-plan draft state lives on member_access_sources (status='draft').
@@ -678,6 +695,7 @@ router.post('/api/multi-member/holder-claim-slot', async (req, res) => {
   if (!holderId || !clientId || !planMappingId) {
     return res.status(400).json({ error: 'holderId, clientId, and planMappingId are required' });
   }
+  if (rejectNonUuid(res, { holderId, clientId, planMappingId })) return;
 
   try {
     // Validate holder (sub_master_id IS NULL = holder row)
@@ -766,6 +784,7 @@ router.post('/api/multi-member/holder-release-slot', async (req, res) => {
   if (!holderId || !clientId || !planMappingId) {
     return res.status(400).json({ error: 'holderId, clientId, and planMappingId are required' });
   }
+  if (rejectNonUuid(res, { holderId, clientId, planMappingId })) return;
 
   try {
     // Validate holder
