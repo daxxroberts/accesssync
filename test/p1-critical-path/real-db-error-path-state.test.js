@@ -188,6 +188,19 @@ describe('[P1] real DB — baseline: buy, then cancel', () => {
     expect((await access()).status).toBe('active');
   });
 
+  test('buy, cancel (finalized), buy again: the re-purchase gets a live Kisi user and the door opens', async () => {
+    const first = await grantMonthly();
+    await processJob(cancel());
+    expect((await access()).status).toBe('deleted');
+
+    await processJob(purchase(MONTHLY, 'order-2'));
+
+    const again = await access();
+    expect(again.status).toBe('active');
+    expect(again.hardware_user_id).not.toBe(first.hardware_user_id); // the finalized id was dropped (#7)
+    expect(kisi.canOpen(again.hardware_user_id, FRONT)).toBe(true);
+  });
+
   test('a member marked "removing" (Member Hub sub-member removal, DR-044) is still found by the cancel', async () => {
     const a = await grantMonthly();
     await realDb.query(`UPDATE member_access SET status = 'removing' WHERE id = $1`, [a.id]);
