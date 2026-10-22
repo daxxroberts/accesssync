@@ -532,7 +532,10 @@
     }
 
     function getInfoBannerHTML() {
-      return '<strong>How it works:</strong> Each plan or service is linked to one or more ' + platformName() + ' ' + groupLabel().toLowerCase() + 's. When a member buys a plan or books a service, AccessSync grants them access to every assigned group automatically. Multi-member plans let the plan holder add extra people.';
+      var g = groupLabel().toLowerCase();
+      return '<strong>How it works:</strong> Each plan or service is linked to one or more ' + platformName() + ' ' + g + 's. When a member buys a plan or books a service, AccessSync grants them access to every assigned group automatically. Multi-member plans let the plan holder add extra people.'
+        + '<br><br><strong>Where ' + g + 's come from:</strong> You create and manage ' + g + 's in your ' + platformName() + ' dashboard, including which doors each one opens. AccessSync only reads them and adds or removes members. It never creates, renames, or deletes a ' + g + '. Renaming one in ' + platformName() + ' is safe. '
+        + '<strong>Deleting a ' + g + ' in ' + platformName() + ', or removing its doors, cuts access for everyone in it right away</strong>, whatever their plan says. AccessSync will warn you here, but access only comes back once the plan is mapped to a ' + g + ' that still exists.';
     }
 
     function getToggleSublabel(plan) {
@@ -724,7 +727,8 @@
           + '<span>&#9888;</span> '
           + staleIds.length + ' group' + (staleIds.length > 1 ? 's' : '')
           + ' no longer exist' + (staleIds.length === 1 ? 's' : '')
-          + ' in ' + platformName() + countText + ' &mdash; re-map this plan'
+          + ' in ' + platformName() + countText + ' &mdash; re-map this plan.'
+          + ' This was deleted in ' + platformName() + ', not in AccessSync. Members in it lost access when it was deleted.'
           + '</div>';
       }
 
