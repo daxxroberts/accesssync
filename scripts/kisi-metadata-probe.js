@@ -11,13 +11,18 @@
  * Usage (from repo root, with the HOG Kisi API key — never commit it):
  *   KISI_API_KEY=<key> node scripts/kisi-metadata-probe.js <userId|email>            # read only
  *   KISI_API_KEY=<key> node scripts/kisi-metadata-probe.js <userId|email> --write    # PATCH metadata, then re-read
- *   KISI_API_KEY=<key> node scripts/kisi-metadata-probe.js <userId|email> --revert   # remove the accesssync key again
+ *   KISI_API_KEY=<key> node scripts/kisi-metadata-probe.js <userId|email> --revert   # remove the accesssync_* keys again
  *
- * The write merges `{ accesssync: { probe: true, client_id: 'probe', written_at } }` into
- * whatever metadata already exists; nothing else on the user is sent.
+ * The write merges three flat keys into whatever metadata already exists; nothing else on
+ * the user is sent. Flat because Kisi's OpenAPI spec (users schema) constrains metadata to:
+ * values of type string/null/integer/float/boolean only (no nested objects), keys <= 50
+ * chars, values <= 500 chars, at most 50 keys. Keys written:
+ *   accesssync_managed    = true
+ *   accesssync_client_id  = 'probe'
+ *   accesssync_written_at = <ISO timestamp>
  *
  * Read the result as:
- *   200 and the re-read shows metadata.accesssync  → REST accepts metadata. Viable marker home.
+ *   200 and the re-read shows the accesssync_* keys → REST accepts metadata. Viable marker home.
  *   200 but the re-read shows no metadata change  → silently ignored (SCIM-only). Not viable.
  *   422 / 400 naming metadata                      → rejected. Not viable.
  */
@@ -70,13 +75,19 @@ async function resolveUser() {
     return;
   }
 
+  const PROBE_KEYS = ['accesssync_managed', 'accesssync_client_id', 'accesssync_written_at'];
   const existing = (before.metadata && typeof before.metadata === 'object') ? before.metadata : {};
   let next;
   if (mode === 'write') {
-    next = { ...existing, accesssync: { probe: true, client_id: 'probe', written_at: new Date().toISOString() } };
+    next = {
+      ...existing,
+      accesssync_managed: true,
+      accesssync_client_id: 'probe',
+      accesssync_written_at: new Date().toISOString(),
+    };
   } else {
     next = { ...existing };
-    delete next.accesssync;
+    for (const k of PROBE_KEYS) delete next[k];
   }
 
   console.log(`\n=== PATCH /users/${before.id} (${mode}) ===`);
@@ -100,16 +111,17 @@ async function resolveUser() {
   const after = await kisiConnector.makeRequest(`/users/${before.id}`, { method: 'GET' }, apiKey);
   show('AFTER', after);
 
-  const persisted = after.metadata && typeof after.metadata === 'object' && 'accesssync' in after.metadata;
+  const persisted = after.metadata && typeof after.metadata === 'object'
+    && PROBE_KEYS.some(k => k in after.metadata);
   if (mode === 'write') {
     console.log(persisted
-      ? '\nVERDICT: metadata.accesssync persisted on re-read. REST accepts metadata. Viable marker home.'
+      ? '\nVERDICT: accesssync_* metadata keys persisted on re-read. REST accepts metadata. Viable marker home.'
       : '\nVERDICT: PATCH returned 2xx but metadata did not change on re-read. Silently ignored (likely SCIM-only). Not viable.');
     console.log('Clean up with: --revert');
   } else {
     console.log(persisted
-      ? '\nRevert did NOT remove metadata.accesssync. Check the user in the Kisi dashboard.'
-      : '\nReverted. metadata.accesssync is gone.');
+      ? '\nRevert did NOT remove the accesssync_* keys. Check the user in the Kisi dashboard.'
+      : '\nReverted. The accesssync_* keys are gone.');
   }
 })().catch(err => {
   console.error('\nPROBE ERROR:', err.statusCode || '', err.code || '', err.message);
