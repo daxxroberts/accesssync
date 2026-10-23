@@ -630,6 +630,17 @@ class KisiAdapter {
   }
 
   /**
+   * The org- or place-wide roles one user holds (owner, administrator, place manager…):
+   * the same per-user lookup + findElevatedAssignments the delete guard's Layer C uses.
+   * Reconcile Pass 3 asks this before calling a missing group role a missing door — such
+   * a user opens every door without one. Throws when the lookup cannot be read; the
+   * caller decides which way to fail.
+   */
+  async findElevatedAssignmentsForUser(apiKey, userId) {
+    return findElevatedAssignments(await this.getRoleAssignmentsForUser(apiKey, userId));
+  }
+
+  /**
    * Completely remove user from Kisi org (member.deleted flow).
    *
    * **Three-layer delete guard (defense in depth):**

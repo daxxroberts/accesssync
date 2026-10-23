@@ -1131,6 +1131,7 @@ class NightlyReconciliation {
     let pass3DisappearedFirstSighting = 0;
     let pass3DisappearedConfirmed = 0;
     let pass3RoleDrifted = 0;
+    let pass3RoleDriftCovered = 0;
     let pass3UserRecovered = 0;
     let pass3RepairPending = 0;
 
@@ -1161,6 +1162,12 @@ class NightlyReconciliation {
           .filter(a => a.userId && a.groupId)
           .map(a => `${a.userId}:${a.groupId}`)
       );
+
+      // Owners / administrators open every door through an org-wide role, which the
+      // group-pair set above cannot see. Asked only for a user whose group role looks
+      // missing, once per sweep (see _elevatedRoleCoverage).
+      const elevatedRolesFor = this._elevatedRoleCoverage(hardwarePlatform, hardwareApiKey, client.id);
+      const coveredLogged = new Set();
 
       // holder_platform_member_id: a sub-member's holder (member_master via
       // sub_master_id) — subs are judged PAYING by their holder's plans.
@@ -1278,6 +1285,13 @@ class NightlyReconciliation {
             if (!accessSyncGroupIds.has(String(src.hardware_group_id))) continue;
             const pairKey = `${row.hardware_user_id}:${src.hardware_group_id}`;
             if (!kisiAssignmentPairs.has(pairKey)) {
+              // An owner / administrator is not missing a door: a note, never a finding.
+              const elevatedRoles = await elevatedRolesFor(row.hardware_user_id);
+              if (elevatedRoles) {
+                pass3RoleDriftCovered++;
+                this._noteDriftCovered(client.id, row, elevatedRoles, coveredLogged);
+                continue;
+              }
               const tid = mintTraceId();
               const syntheticEvent = {
                 eventType:        'plan.cancelled',
@@ -1315,6 +1329,8 @@ class NightlyReconciliation {
       disappearedFirstSighting:  pass3DisappearedFirstSighting,
       disappearedConfirmed:      pass3DisappearedConfirmed,
       roleDrifted:               pass3RoleDrifted,
+      // Group role missing, but the user is an owner / administrator: not a finding.
+      roleDriftCoveredByElevatedRole: pass3RoleDriftCovered,
       userRecovered:             pass3UserRecovered,
       // Of the confirmed / drifted findings, how many belong to a PAYING member
       // (repair_pending, not a removal proposal).
@@ -3420,6 +3436,59 @@ class NightlyReconciliation {
       );
       return !!(r && r.rows && r.rows.length);
     } catch { return false; }
+  }
+
+  /**
+   * Pass 3 role drift, owner / administrator check (2026-10-23).
+   *
+   * Drift means "this member's (Kisi user, door group) assignment is missing". A Kisi
+   * owner, administrator or place manager opens every door through an org- or place-wide
+   * role instead, so for them a missing group role is not a missing door: Chad (owner),
+   * a family member (administrator) and Daxx's own account (administrator) were raised
+   * as repair_pending every sweep. Reuses the delete guard's detection
+   * (hardwareAdapter.findElevatedAssignmentsForUser → findElevatedAssignments).
+   *
+   * Returns a lookup `(hardwareUserId) → Promise<roles[] | null>`: the user's elevated
+   * roles, or null when they hold none OR the lookup failed. A failed lookup keeps the
+   * finding: a door gap is never hidden on an answer we could not read. One Kisi call
+   * per user per sweep, and only for users whose group role looks missing.
+   */
+  _elevatedRoleCoverage(hardwarePlatform, apiKey, clientId) {
+    const byUser = new Map();
+    return (hardwareUserId) => {
+      if (!hardwareUserId) return Promise.resolve(null);
+      const key = String(hardwareUserId);
+      if (!byUser.has(key)) {
+        // Promise.resolve().then: a lookup that cannot even be called (a platform adapter
+        // without it) fails the same safe way as one that errors, instead of the sweep.
+        byUser.set(key, Promise.resolve()
+          .then(() => hardwareAdapter.findElevatedAssignmentsForUser(hardwarePlatform, apiKey, key))
+          .then(roles => (Array.isArray(roles) && roles.length > 0 ? roles : null))
+          .catch((err) => {
+            log.warn('reconciliation.elevated_role_check_failed', {
+              clientId, hardwareUserId: key,
+              statusCode: err.statusCode || null, code: err.code || null,
+              traceId: this._sweepTraceId,
+            }, err);
+            return null;
+          }));
+      }
+      return byUser.get(key);
+    };
+  }
+
+  /** The persisted note for a drift skipped by _elevatedRoleCoverage — once per access row per sweep. */
+  _noteDriftCovered(clientId, row, elevatedRoles, logged) {
+    if (logged.has(row.access_id)) return;
+    logged.add(row.access_id);
+    log.info('reconciliation.role_drift_covered_by_elevated_role', {
+      clientId,
+      accessId:         row.access_id,
+      platformMemberId: row.platform_member_id,
+      hardwareUserId:   row.hardware_user_id,
+      elevatedRoles:    elevatedRoles.map(r => r.role_id || r.scope || r.applies_to_type || 'unknown'),
+      sweepTraceId:     this._sweepTraceId,
+    });
   }
 
   _sleep(ms) {

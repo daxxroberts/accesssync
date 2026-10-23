@@ -69,6 +69,7 @@ const _requiredFieldsByPlatform = {
     deleteUser:      ['userId'],
     getUserById:     ['userId'],
     getRoleAssignmentsForUser: ['userId'],
+    findElevatedAssignmentsForUser: ['userId'],
     // Day pass (OB-98 / OB-251): a group link is the credential — no userId.
     createGroupLink: ['groupId', 'clientId', 'validUntil'],
     deleteGroupLink: ['groupLinkId'],
@@ -194,6 +195,17 @@ class HardwareAdapter {
   async getRoleAssignmentsForUser(hardwarePlatform, apiKey, userId) {
     this._validate(hardwarePlatform, 'getRoleAssignmentsForUser', { userId });
     return this._getAdapter(hardwarePlatform).getRoleAssignmentsForUser(apiKey, userId);
+  }
+
+  /**
+   * The org- or place-wide roles one hardware user holds (Kisi: owner / administrator /
+   * place manager — anything findElevatedAssignments flags). Reconcile Pass 3 uses it to
+   * tell "missing door" from "opens every door without a group role". Throws when the
+   * lookup cannot be read.
+   */
+  async findElevatedAssignmentsForUser(hardwarePlatform, apiKey, userId) {
+    this._validate(hardwarePlatform, 'findElevatedAssignmentsForUser', { userId });
+    return this._getAdapter(hardwarePlatform).findElevatedAssignmentsForUser(apiKey, userId);
   }
 
   async getLocks(hardwarePlatform, apiKey) {
