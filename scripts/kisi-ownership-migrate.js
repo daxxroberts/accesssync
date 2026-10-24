@@ -64,7 +64,8 @@ function classifyUsers(users, clientId, dbKnownIds = new Set()) {
     out.total++;
     const id = String(u.id);
     const meta  = kisiAdapter.parseOwnershipMetadata(u.metadata);
-    const notes = kisiAdapter.parseAccessSyncMarker(u.notes);
+    // First line only: an operator may have typed more under AccessSync's marker line.
+    const notes = typeof u.notes === 'string' ? kisiAdapter.parseAccessSyncMarker(u.notes.split(/\r?\n/)[0]) : null;
 
     if (meta && notes && meta.clientId !== notes.clientId) {
       if (meta.clientId === clientId || notes.clientId === clientId) {

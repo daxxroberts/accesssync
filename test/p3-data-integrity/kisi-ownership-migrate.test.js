@@ -58,6 +58,11 @@ describe('[P3] kisi-ownership-migrate classifyUsers', () => {
     expect(c.createdAtDiffers).toEqual([{ id: '8', metadata: '2026-05-13T00:00:00Z', notes: '2026-05-14T00:00:00Z' }]);
   });
 
+  test('a marker line with operator text under it still counts as ours (backfilled, then left as "mixed" by clear-notes)', () => {
+    const r = classifyUsers([{ id: 10, notes: notes(ME) + '\nVIP — comps on Fridays' }], ME);
+    expect(idsOf(r.notesOnly)).toEqual(['10']);
+  });
+
   test('ready for phase 2 only when nothing is notes-only or conflicting', () => {
     const done = classifyUsers([
       { id: 1, metadata: meta(ME), notes: notes(ME) },
