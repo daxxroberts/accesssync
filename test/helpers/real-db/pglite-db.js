@@ -10,6 +10,7 @@
  * Usage (in a test file):
  *   jest.mock('../../db', () => require('../helpers/real-db/pglite-db'));
  *   const realDb = require('../helpers/real-db/pglite-db');
+ *   beforeAll(() => realDb.reset(), 60000);   // first call boots the engine — give it room
  *   beforeEach(() => realDb.reset());
  *   afterAll(() => realDb.close());
  *

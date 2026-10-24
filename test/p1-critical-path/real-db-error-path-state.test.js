@@ -78,6 +78,12 @@ afterAll(async () => {
   await realDb.close();
 });
 
+// The first engine call spawns the worker and boots PostgreSQL (WebAssembly) plus the
+// production schema. On a busy CI box that alone can pass Jest's 5 s hook limit, which
+// failed the FIRST scenario's beforeEach intermittently. Boot once here with room to
+// spare; every beforeEach reset after this is fast. No assertion changes.
+beforeAll(() => realDb.reset(), 60000);
+
 beforeEach(async () => {
   logLines = [];
   kisi.reset();
