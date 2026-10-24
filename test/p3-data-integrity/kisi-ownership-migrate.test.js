@@ -12,7 +12,7 @@ jest.mock('../../db', () => ({ query: jest.fn(), pool: { end: jest.fn() } }));
 jest.mock('../../core/crypto-utils', () => ({ decryptApiKey: jest.fn() }));
 
 const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
-const { classifyUsers } = require('../../scripts/kisi-ownership-migrate');
+const { classifyUsers, parseIdList } = require('../../scripts/kisi-ownership-migrate');
 
 const ME = 'client-hog';
 const OTHER = 'client-other';
@@ -71,5 +71,14 @@ describe('[P3] kisi-ownership-migrate classifyUsers', () => {
     ], ME);
     expect(done.notesOnly).toHaveLength(0);
     expect(done.conflict).toHaveLength(0);
+  });
+});
+
+describe('[P3] kisi-ownership-migrate no-database mode', () => {
+  test('--db-known-file accepts one id per line, commas, or a JSON array', () => {
+    expect([...parseIdList('101\n102\r\n\n103')]).toEqual(['101', '102', '103']);
+    expect([...parseIdList('101, 102')]).toEqual(['101', '102']);
+    expect([...parseIdList('[101, "102"]')]).toEqual(['101', '102']);
+    expect(parseIdList('').size).toBe(0);
   });
 });
