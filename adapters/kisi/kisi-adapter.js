@@ -192,6 +192,40 @@ function _isMetadataRejection(err) {
 }
 
 /**
+ * Day-pass group links (OB-98) have no `notes` and no `metadata`, so their DR-045
+ * Layer B marker lives in the link's `name`. Since 2026-10-24 the marker goes at the
+ * END and the buyer's name goes first — Kisi's dashboard and unlock log show the start
+ * of the name, so "Jane Doe · Day pass · 2-Day Pass [AS|managed|…|…]" reads as who
+ * the pass belongs to. Links created before then carry the marker at the START;
+ * parseLinkMarker accepts both forms.
+ */
+const KISI_LINK_NAME_MAX = 255;
+const LINK_MARKER_SUFFIX_REGEX = /\[AS\|managed\|([^|\]]+)\|([^\]]+)\]\s*$/;
+
+function buildLinkName(clientId, { holderName, label } = {}) {
+  const marker = `[AS|managed|${clientId}|${new Date().toISOString()}]`;
+  // The buyer types their own name at checkout: strip the marker's delimiters so no
+  // name can impersonate a marker (another client's, or a fake "legacy" prefix).
+  const human = [holderName, label || 'Day pass']
+    .map(x => (typeof x === 'string' ? x.replace(/[\[\]|]/g, '').replace(/\s+/g, ' ').trim() : ''))
+    .filter(Boolean)
+    .join(' · ');
+  // Truncate the human part, never the marker: a cut marker would leave AccessSync
+  // unable to recognise (and later delete) its own link.
+  const room = KISI_LINK_NAME_MAX - marker.length - 1;
+  const shown = human.length > room ? human.slice(0, Math.max(0, room - 1)).trimEnd() + '…' : human;
+  return `${shown} ${marker}`;
+}
+
+function parseLinkMarker(name) {
+  if (!name || typeof name !== 'string') return null;
+  // The trailing marker is always the one AccessSync wrote last, so it is read first.
+  const m = name.match(LINK_MARKER_SUFFIX_REGEX);
+  if (m) return { clientId: m[1], createdAt: m[2], reason: name.slice(0, m.index).trim() };
+  return parseAccessSyncMarker(name);
+}
+
+/**
  * The display name to give a Kisi user, or null when we have no real one.
  * Collapses whitespace, caps at 255, and never returns the email itself (Kisi
  * already falls back to the email when the name is absent).
@@ -223,7 +257,7 @@ function _normalizeGroupLink(data) {
     else { qrImageMime = 'image/png'; qrImageBase64 = rawImg; }
   }
   const linkUrl = d.url || d.link || d.link_url || d.share_url || null;
-  const marker = parseAccessSyncMarker(d.name);
+  const marker = parseLinkMarker(d.name);
   return {
     id:            d.id,
     name:          d.name || null,
@@ -1110,7 +1144,8 @@ class KisiAdapter {
    * Day pass (OB-98 / OB-251): create a Kisi digital credential — a group-scoped
    * access link + QR code — via POST /group_links. No Kisi user is created; the
    * link itself is the credential, so the DR-045 Layer B ownership marker goes in
-   * the link's `name` (group links have no `notes`). The `secret` and QR image come
+   * the link's `name` (group links have no `notes` or `metadata`) — after the buyer's
+   * name and the pass label, see buildLinkName. The `secret` and QR image come
    * back ONLY so the caller can email them — never logged, never persisted
    * (core/log-redaction.js covers the field names).
    *
@@ -1118,8 +1153,12 @@ class KisiAdapter {
    * live (GD-02 successor): _normalizeGroupLink reads defensively and the response
    * KEYS (never values) are logged once so the first HOG test reveals the real shape.
    */
-  async createGroupLink(apiKey, { groupId, clientId, email, validFrom, validUntil, label }) {
-    const name = buildAccessSyncMarker(clientId, label || 'Day pass').slice(0, 255);
+  async createGroupLink(apiKey, { groupId, clientId, email, validFrom, validUntil, label, holderName }) {
+    // holderName: the buyer's name from Wix checkout, so the link in Kisi says whose
+    // pass it is. Never logged (DR-001). `phone` is deliberately not sent even though
+    // Kisi accepts it on group links: like `email`, Kisi would message the buyer itself
+    // (SMS, US/CA/PR numbers only) alongside AccessSync's own email.
+    const name = buildLinkName(clientId, { holderName: normalizeKisiName(holderName, email), label });
     const body = {
       group_link: {
         name,
@@ -1171,7 +1210,8 @@ class KisiAdapter {
 
   /**
    * Delete a day-pass group link. Mirrors deleteUser's Layer B guard: GET first,
-   * refuse unless the `[AS|managed|<clientId>|…]` marker in `name` names the
+   * refuse unless the `[AS|managed|<clientId>|…]` marker in `name` (start or end,
+   * see parseLinkMarker) names the
    * requesting tenant — an operator's hand-made links are never touched. 404 on
    * either call is idempotent success.
    */
@@ -1188,7 +1228,7 @@ class KisiAdapter {
       throw err;
     }
 
-    const marker = parseAccessSyncMarker(link && link.name);
+    const marker = parseLinkMarker(link && link.name);
     if (!marker) {
       const err = new Error(`Kisi group link ${groupLinkId} has no AccessSync ownership marker — refusing to delete`);
       err.code = 'UNOWNED_GROUP_LINK';
@@ -1254,6 +1294,8 @@ adapter.buildOwnershipMetadata = buildOwnershipMetadata;
 adapter.parseOwnershipMetadata = parseOwnershipMetadata;
 adapter.mergeOwnershipMetadata = mergeOwnershipMetadata;
 adapter.readUserOwnership = readUserOwnership;
+adapter.buildLinkName = buildLinkName;
+adapter.parseLinkMarker = parseLinkMarker;
 adapter.OWNERSHIP_METADATA_KEYS = AS_META;
 adapter.normalizeKisiName = normalizeKisiName;
 adapter.findElevatedAssignments = findElevatedAssignments;

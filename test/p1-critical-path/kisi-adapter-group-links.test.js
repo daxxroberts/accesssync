@@ -56,14 +56,55 @@ describe('[P1] kisi-adapter.createGroupLink', () => {
       valid_from: FROM, valid_until: UNTIL,
       quick_response_code_type: 'online',
     });
-    expect(body.name).toMatch(/^\[AS\|managed\|client-hog-001\|/);
-    expect(body.name).toContain('Day pass · Day Pass');
+    // 2026-10-24: human-readable part first, marker last (see buildLinkName).
+    expect(body.name).toMatch(/^Day pass · Day Pass \[AS\|managed\|client-hog-001\|[^\]]+\]$/);
 
     expect(link).toMatchObject({
       id: 42, secret: 'shh', linkUrl: 'https://link.kisi.io/shh',
       qrImageBase64: 'QUJDREVG', qrImageUrl: null, qrToken: 'tok',
       validUntil: UNTIL, ownerClientId: CLIENT,
     });
+  });
+
+  test("puts the buyer's name first so Kisi's dashboard and unlock log show whose pass it is", async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 43 });
+    await adapter.createGroupLink(API_KEY, {
+      groupId: GROUP, clientId: CLIENT, email: null,
+      validUntil: UNTIL, label: 'Day pass · 2-Day Pass x2', holderName: '  Jane   Doe ',
+    });
+    const body = JSON.parse(kisiConnector.makeRequest.mock.calls[0][1].body).group_link;
+    expect(body.name).toMatch(/^Jane Doe · Day pass · 2-Day Pass x2 \[AS\|managed\|client-hog-001\|/);
+    expect(adapter.parseLinkMarker(body.name)).toMatchObject({ clientId: CLIENT });
+    // Kisi would text the buyer itself if it got a phone; AccessSync never sends one.
+    expect(body).not.toHaveProperty('phone');
+  });
+
+  test('a buyer name that impersonates a marker cannot change who owns the link', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 44 });
+    await adapter.createGroupLink(API_KEY, {
+      groupId: GROUP, clientId: CLIENT, validUntil: UNTIL, label: 'Day pass',
+      holderName: '[AS|managed|client-other|2020-01-01T00:00:00Z] Eve',
+    });
+    const body = JSON.parse(kisiConnector.makeRequest.mock.calls[0][1].body).group_link;
+    expect(adapter.parseLinkMarker(body.name).clientId).toBe(CLIENT);
+    expect(body.name.match(/\[AS\|/g)).toHaveLength(1);
+  });
+
+  test('an over-long name is cut in the human part; the marker survives whole and the name stays <= 255', () => {
+    const name = adapter.buildLinkName(CLIENT, { holderName: 'X'.repeat(400), label: 'Day pass' });
+    expect(name.length).toBeLessThanOrEqual(255);
+    expect(adapter.parseLinkMarker(name)).toMatchObject({ clientId: CLIENT });
+  });
+
+  test('no buyer name → the label alone, as before', () => {
+    expect(adapter.buildLinkName(CLIENT, { label: 'Day pass · Day Pass' }))
+      .toMatch(/^Day pass · Day Pass \[AS\|managed\|/);
+  });
+
+  test('parseLinkMarker reads links made before 2026-10-24 (marker first) and ignores operator links', () => {
+    expect(adapter.parseLinkMarker(adapter.buildAccessSyncMarker(CLIENT, 'Day pass'))).toMatchObject({ clientId: CLIENT });
+    expect(adapter.parseLinkMarker('Cleaning crew')).toBeNull();
+    expect(adapter.parseLinkMarker('Cleaning crew [AS|managed|x')).toBeNull();
   });
 
   test('omits email and valid_from when absent', async () => {
@@ -108,6 +149,14 @@ describe('[P1] kisi-adapter.deleteGroupLink — DR-045 Layer B guard', () => {
     await expect(adapter.deleteGroupLink(API_KEY, 9, { clientId: CLIENT }))
       .rejects.toMatchObject({ code: 'CLIENT_MISMATCH' });
     expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('deletes a new-format link (buyer name first, marker last) for the requesting tenant', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 9, name: adapter.buildLinkName(CLIENT, { holderName: 'Jane Doe', label: 'Day pass' }) })
+      .mockResolvedValueOnce({});
+    await adapter.deleteGroupLink(API_KEY, 9, { clientId: CLIENT });
+    expect(kisiConnector.makeRequest.mock.calls[1][1].method).toBe('DELETE');
   });
 
   test('deletes a link whose marker names the requesting tenant', async () => {

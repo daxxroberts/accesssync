@@ -72,6 +72,29 @@ beforeEach(() => {
 
 describe('[P1] day pass — processDayPassGrant', () => {
 
+  test("hands the buyer's checkout name to the link, else the identity name, never an email", async () => {
+    hardwareAdapter.createGroupLink.mockResolvedValue({ id: LINK_ID });
+
+    await grantRevoke.processDayPassGrant(
+      TENANT_ID, MEMBER_ID, [dayPassMapping], { ...dayPassEvent, name: 'Jane Doe' },
+      { email: 'buyer@example.com', holderName: 'J. D. (members api)' }
+    );
+    expect(hardwareAdapter.createGroupLink.mock.calls[0][2].holderName).toBe('Jane Doe');
+
+    await grantRevoke.processDayPassGrant(
+      TENANT_ID, MEMBER_ID, [dayPassMapping], { ...dayPassEvent, name: null },
+      { email: 'buyer@example.com', holderName: 'Jane Doe' }
+    );
+    expect(hardwareAdapter.createGroupLink.mock.calls[1][2].holderName).toBe('Jane Doe');
+
+    // The identity lookup falls back to the email when it has no name: not a name.
+    await grantRevoke.processDayPassGrant(
+      TENANT_ID, MEMBER_ID, [dayPassMapping], { ...dayPassEvent, name: null },
+      { email: 'buyer@example.com', holderName: 'buyer@example.com' }
+    );
+    expect(hardwareAdapter.createGroupLink.mock.calls[2][2].holderName).toBeNull();
+  });
+
   test('creates one group link per mapping and never calls assignRole', async () => {
     hardwareAdapter.createGroupLink.mockResolvedValue({
       id: LINK_ID, linkUrl: 'https://link.example/abc', qrImageBase64: 'QUJD', qrImageUrl: null, secret: 's3cr3t',

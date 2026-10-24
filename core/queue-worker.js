@@ -288,7 +288,7 @@ async function _runDayPassGrant({ tenantId, memberId, mappings, standardEvent, e
   try {
     result = await grantRevokeLogic.processDayPassGrant(
       tenantId, memberId, claimed, standardEvent,
-      { email: identity.email, sourceKey, units }
+      { email: identity.email, sourceKey, units, holderName: identity.name || null }
     );
   } catch (err) {
     await standardAdapter.releaseDayPassClaims(memberId, tenantId, claimed, sourceKey).catch(() => {});

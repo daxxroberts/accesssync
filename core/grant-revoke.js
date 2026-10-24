@@ -513,12 +513,13 @@ class GrantRevokeLogic {
    * exactly the set this job owns. Same partial-failure rule as processGrant: return
    * what was created; throw only if nothing was (the caller releases failed claims).
    *
-   * @param {Object} opts  { email, sourceKey, units }
+   * @param {Object} opts  { email, sourceKey, units, holderName }
    *   sourceKey — the claim key this pass was claimed under (product#order#1). It is
    *               what the source row is stored under, so each paid order is its own
    *               row with its own expiry; sourcePlanId stays the real product id for
    *               billing. Absent → the product id (one pass per product, legacy).
    *   units     — quantity bought; stretches the window (hours x units), one code.
+   *   holderName — fallback buyer name (identity lookup) when the event carries none.
    * @returns {{ assignments: Array, links: Array }}
    *   assignments → standardAdapter.completeGrant (roleAssignmentId = group link id,
    *                 sourceType 'day_pass', planEndDate = valid_until via RI-03)
@@ -535,6 +536,13 @@ class GrantRevokeLogic {
     const sourceKey = opts.sourceKey || wixEvent.planId || null;
     const label = `Day pass · ${wixEvent.planName || opts.planName || wixEvent.planId || 'plan'}` +
       (units > 1 ? ` x${units}` : '');
+    // Whose pass it is, shown first in the link's Kisi name: the name typed at Wix
+    // checkout (store orders always carry it), else the name the identity lookup found.
+    // An email is never used as a name.
+    const emailNorm = String(opts.email || '').trim().toLowerCase();
+    const holderName = [wixEvent.name, opts.holderName]
+      .map(n => (typeof n === 'string' ? n.trim() : ''))
+      .find(n => n && n.toLowerCase() !== emailNorm && !n.includes('@')) || null;
 
     for (const mapping of mappings) {
       if (!mapping.hardwareGroupId) continue;
@@ -555,6 +563,7 @@ class GrantRevokeLogic {
           validFrom:  wixEvent.startDate || null,
           validUntil: endDate,
           label,
+          holderName,
         });
         assignments.push({
           accessId:           memberId,
