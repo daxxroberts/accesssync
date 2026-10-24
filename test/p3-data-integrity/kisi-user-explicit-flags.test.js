@@ -75,11 +75,11 @@ describe('[P3] DR-043 kisi-adapter.createUser — send_emails and confirm flags'
     expect(result).toBe(KISI_USER_ID);
   });
 
-  it('writes an AccessSync ownership marker in the notes field', async () => {
-    await kisiAdapter.createUser(API_KEY, EMAIL, NAME, { userPattern: 'invited', clientId: CLIENT_ID });
-    const [, reqOpts] = kisiConnector.makeRequest.mock.calls[0];
-    const body = JSON.parse(reqOpts.body);
-    expect(body.user.notes).toMatch(/^\[AS\|managed\|test-client-p3\|[\d\-T:.Z]+\] /);
+  it('writes the AccessSync ownership marker in metadata, and nothing in notes (DR-045 phase 2)', async () => {
+    await kisiAdapter.createUser(API_KEY, EMAIL, NAME, { clientId: CLIENT_ID });
+    const body = JSON.parse(kisiConnector.makeRequest.mock.calls[0][1].body);
+    expect(kisiAdapter.parseOwnershipMetadata(body.user.metadata)).toMatchObject({ clientId: CLIENT_ID });
+    expect(body.user).not.toHaveProperty('notes');
   });
 
   it('refuses to create without clientId (ownership marker would be missing)', async () => {
@@ -121,9 +121,9 @@ describe('[P3] kisi-adapter.createUser — member name reaches Kisi', () => {
 });
 
 describe('[P3] kisi-adapter.setUserName — rename only AccessSync-created users', () => {
-  const MANAGED = { id: 999, notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync` };
+  const MANAGED = { id: 999, metadata: kisiAdapter.buildOwnershipMetadata(CLIENT_ID) };
 
-  it('PATCHes name only — notes and access untouched', async () => {
+  it('PATCHes name only — metadata, notes and access untouched', async () => {
     kisiConnector.makeRequest.mockResolvedValueOnce(MANAGED).mockResolvedValueOnce({});
     await kisiAdapter.setUserName(API_KEY, 999, 'Daxx Roberts', { clientId: CLIENT_ID });
 
@@ -141,7 +141,7 @@ describe('[P3] kisi-adapter.setUserName — rename only AccessSync-created users
   });
 
   it('refuses a user marked for a different client', async () => {
-    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 999, notes: '[AS|managed|other|2026-05-13T00:00:00Z] x' });
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 999, metadata: kisiAdapter.buildOwnershipMetadata('other') });
     await expect(kisiAdapter.setUserName(API_KEY, 999, 'X Y', { clientId: CLIENT_ID }))
       .rejects.toMatchObject({ code: 'CLIENT_MISMATCH' });
     expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
@@ -150,8 +150,8 @@ describe('[P3] kisi-adapter.setUserName — rename only AccessSync-created users
 
 describe('[P3] kisi-adapter.deleteUser — two-layer ownership guard', () => {
 
-  it('refuses to DELETE when notes lack the AccessSync marker', async () => {
-    // GET returns user with empty notes (e.g. manually created Kisi user)
+  it('refuses to DELETE when the user carries no AccessSync marker', async () => {
+    // GET returns a user with no marker (e.g. manually created Kisi user)
     kisiConnector.makeRequest.mockResolvedValueOnce({ id: 999, notes: '' });
 
     await expect(
@@ -166,7 +166,7 @@ describe('[P3] kisi-adapter.deleteUser — two-layer ownership guard', () => {
   it('refuses to DELETE cross-tenant when marker clientId mismatches', async () => {
     kisiConnector.makeRequest.mockResolvedValueOnce({
       id: 999,
-      notes: '[AS|managed|other-tenant|2026-05-13T00:00:00Z] Created by AccessSync',
+      metadata: kisiAdapter.buildOwnershipMetadata('other-tenant'),
     });
 
     await expect(
@@ -183,7 +183,7 @@ describe('[P3] kisi-adapter.deleteUser — two-layer ownership guard', () => {
     // GET /users/:id → user with marker
     kisiConnector.makeRequest.mockResolvedValueOnce({
       id: 999,
-      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+      metadata: kisiAdapter.buildOwnershipMetadata(CLIENT_ID),
     });
     // GET /role_assignments → only group_basic, no elevated roles
     kisiConnector.makeRequest.mockResolvedValueOnce([
@@ -214,7 +214,7 @@ describe('[P3] kisi-adapter.deleteUser — two-layer ownership guard', () => {
   it('skips clientId mismatch check when options.clientId is not supplied', async () => {
     kisiConnector.makeRequest.mockResolvedValueOnce({
       id: 999,
-      notes: '[AS|managed|some-tenant|2026-05-13T00:00:00Z] Created by AccessSync',
+      metadata: kisiAdapter.buildOwnershipMetadata('some-tenant'),
     });
     kisiConnector.makeRequest.mockResolvedValueOnce([
       { role_id: 'group_basic', scope: 'group' },
@@ -234,7 +234,7 @@ describe('[P3] kisi-adapter.deleteUser — Layer C elevated-role guard', () => {
   it('refuses to DELETE when user holds an organization-scoped role (admin)', async () => {
     kisiConnector.makeRequest.mockResolvedValueOnce({
       id: 999,
-      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+      metadata: kisiAdapter.buildOwnershipMetadata(CLIENT_ID),
     });
     kisiConnector.makeRequest.mockResolvedValueOnce([
       { role_id: 'group_basic', scope: 'group', applies_to: { name: 'Front Door' } },
@@ -260,7 +260,7 @@ describe('[P3] kisi-adapter.deleteUser — Layer C elevated-role guard', () => {
   it('refuses to DELETE when user holds a place-scoped role (place_manager)', async () => {
     kisiConnector.makeRequest.mockResolvedValueOnce({
       id: 999,
-      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+      metadata: kisiAdapter.buildOwnershipMetadata(CLIENT_ID),
     });
     kisiConnector.makeRequest.mockResolvedValueOnce([
       { role_id: 'place_manager', scope: 'place', applies_to: { name: 'HOG Roland' } },
@@ -280,7 +280,7 @@ describe('[P3] kisi-adapter.deleteUser — Layer C elevated-role guard', () => {
   it('refuses to DELETE when user holds the org owner role', async () => {
     kisiConnector.makeRequest.mockResolvedValueOnce({
       id: 999,
-      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+      metadata: kisiAdapter.buildOwnershipMetadata(CLIENT_ID),
     });
     kisiConnector.makeRequest.mockResolvedValueOnce([
       { role_id: 'owner', scope: 'organization', applies_to: { name: 'House of Gains' } },
@@ -296,7 +296,7 @@ describe('[P3] kisi-adapter.deleteUser — Layer C elevated-role guard', () => {
   it('refuses to DELETE on an unknown role_id (defensive — Kisi may add roles)', async () => {
     kisiConnector.makeRequest.mockResolvedValueOnce({
       id: 999,
-      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+      metadata: kisiAdapter.buildOwnershipMetadata(CLIENT_ID),
     });
     // Hypothetical future Kisi role we don't know about
     kisiConnector.makeRequest.mockResolvedValueOnce([
@@ -311,7 +311,7 @@ describe('[P3] kisi-adapter.deleteUser — Layer C elevated-role guard', () => {
   it('falls back to applies_to_type when scope field is absent (defensive)', async () => {
     kisiConnector.makeRequest.mockResolvedValueOnce({
       id: 999,
-      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+      metadata: kisiAdapter.buildOwnershipMetadata(CLIENT_ID),
     });
     // Some Kisi responses may not include scope field — use applies_to_type as fallback
     kisiConnector.makeRequest.mockResolvedValueOnce([
@@ -326,7 +326,7 @@ describe('[P3] kisi-adapter.deleteUser — Layer C elevated-role guard', () => {
   it('proceeds to DELETE when user has zero role assignments (no elevated roles to find)', async () => {
     kisiConnector.makeRequest.mockResolvedValueOnce({
       id: 999,
-      notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+      metadata: kisiAdapter.buildOwnershipMetadata(CLIENT_ID),
     });
     kisiConnector.makeRequest.mockResolvedValueOnce([]);
     kisiConnector.makeRequest.mockResolvedValueOnce({});

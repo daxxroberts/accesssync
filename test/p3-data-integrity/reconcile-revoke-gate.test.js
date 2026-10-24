@@ -110,7 +110,6 @@ function member(key, overrides = {}) {
     inKisiUsers: true,             // present in Kisi's user list (Pass 3)
     hasRole:  true,                // holds its group_basic role on GROUP_ID
     disappearedObservedAt: null,   // OB-249 two-strike marker
-    kisiOwnership: null,           // listAllUsers { ownerClientId, ownershipSource } (DR-045 metadata transition)
     ...overrides,
   };
 }
@@ -181,7 +180,7 @@ function installWorld(world = {}) {
     hardwareAdapter.listAllUsers.mockRejectedValue(Object.assign(new Error('Kisi 503'), { statusCode: 503 }));
   } else {
     hardwareAdapter.listAllUsers.mockResolvedValue(
-      members.filter(m => m.inKisiUsers).map(m => ({ id: m.hwUser, email: null, name: null, ...(m.kisiOwnership || {}) }))
+      members.filter(m => m.inKisiUsers).map(m => ({ id: m.hwUser, email: null, name: null }))
     );
   }
 
@@ -746,47 +745,6 @@ describe('[P3] Phase 3b — holder-lapse removals armed, every other source stil
 // ════════════════════════════════════════════════════════════════════════════
 // Grants — PAYING plans only, union of the two reads
 // ════════════════════════════════════════════════════════════════════════════
-
-describe('[P3] DR-045 metadata transition — Pass 3 counts, never acts', () => {
-
-  test('members whose marker is still only in notes (or conflicts) are counted; the sweep proposes and queues exactly what it would without the count', async () => {
-    const viaMetadata = { ownerClientId: CLIENT_ID, ownershipSource: 'metadata' };
-    const viaNotes    = { ownerClientId: CLIENT_ID, ownershipSource: 'notes' };
-    const conflicted  = { ownerClientId: null, ownershipSource: 'conflict' };
-    const otherClient = { ownerClientId: 'client-other', ownershipSource: 'metadata' };
-    installWorld({
-      members: [
-        member('a', { kisiOwnership: viaMetadata }),
-        member('b', { kisiOwnership: viaNotes }),     // counted: needs backfill
-        member('c', { kisiOwnership: conflicted }),   // counted: needs a human look
-        member('d', { kisiOwnership: otherClient }),  // not ours to migrate
-        member('f'),                                  // no marker: a pre-existing Kisi account, never stamped
-        member('e', { inKisiUsers: false }),          // not in Kisi: not counted (first-sighting path)
-      ],
-      read1: reads(paying(['a', 'b', 'c', 'd', 'e', 'f'])),
-    });
-
-    const result = await runSync();
-
-    const [done] = infoCalls('reconciliation.pass_3_complete');
-    expect(done[1]).toEqual(expect.objectContaining({ ownershipMarkerNotInMetadata: 2 }));
-    // Count only: nothing about the marker becomes a revoke, a proposal, or a repair.
-    expect(revokeCalls()).toHaveLength(0);
-    expect(result.proposalsRecorded).toBe(0);
-    expect(done[1]).toEqual(expect.objectContaining({ roleDrifted: 0, disappearedConfirmed: 0 }));
-  });
-
-  test('all members carrying the metadata marker → count reads 0 (backfill complete)', async () => {
-    const viaMetadata = { ownerClientId: CLIENT_ID, ownershipSource: 'metadata' };
-    installWorld({
-      members: [member('a', { kisiOwnership: viaMetadata }), member('b', { kisiOwnership: viaMetadata })],
-      read1:   reads(paying(['a', 'b'])),
-    });
-    await runSync();
-    const [done] = infoCalls('reconciliation.pass_3_complete');
-    expect(done[1].ownershipMarkerNotInMetadata).toBe(0);
-  });
-});
 
 describe('[P3] Phase 1 — grants flow, but only for PAYING plans', () => {
 

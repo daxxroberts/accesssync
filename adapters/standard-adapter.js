@@ -1290,7 +1290,7 @@ class StandardAdapter {
    *
    * Three-layer DR-045 guard still applies (delegated to hardwareAdapter.deleteUser):
    *   Layer A — caller (grant-revoke) verifies source_tag='accesssync'
-   *   Layer B — Kisi notes marker parsed; refuses UNOWNED_USER / CLIENT_MISMATCH
+   *   Layer B — Kisi metadata ownership marker; refuses UNOWNED_USER / CLIENT_MISMATCH
    *   Layer C — refuses ELEVATED_ROLE_ATTACHED (admin/manager/owner roles)
    *
    * On guard refusal we DO NOT throw — we log + surface to config_alert_log
@@ -1456,7 +1456,7 @@ class StandardAdapter {
         // DR-045 guard refusals — surface to operator, leave PII intact, no throw
         if (err.code === 'UNOWNED_USER') {
           log.warn('adapter.finalize_revoke.refused_unowned', {
-            memberId, tenantId, hardwareUserId, kisiNotes: err.kisiNotes || null,
+            memberId, tenantId, hardwareUserId,
           });
           await this._alertOperatorFinalizeRefused(tenantId, memberId, hardwareUserId, 'unowned_user', err.message);
           return { finalized: false, reason: 'kisi_refused_unowned' };

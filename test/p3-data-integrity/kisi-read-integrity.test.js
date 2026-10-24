@@ -643,7 +643,7 @@ describe('[P3] F7 deleteUser Layer C — an unreadable role lookup aborts the de
   const CLIENT_ID = 'client-f7';
   const ownedUser = () => ({
     id: USER_ID,
-    notes: `[AS|managed|${CLIENT_ID}|2026-05-13T00:00:00Z] Created by AccessSync`,
+    metadata: kisiAdapter.buildOwnershipMetadata(CLIENT_ID),
   });
 
   function methods() {
@@ -748,7 +748,7 @@ describe('[P1] F7 cross-layer — finalizeRevoke Guard D fails closed on a non-a
   it('control: a clean [] still lets the existing finalize proceed (behaviour unchanged)', async () => {
     kisiConnector.makeRequest
       .mockResolvedValueOnce([])   // Guard D: no other assignments
-      .mockResolvedValueOnce({ id: HARDWARE_USER_ID, notes: `[AS|managed|${TENANT_ID}|2026-05-13T00:00:00Z] x` })
+      .mockResolvedValueOnce({ id: HARDWARE_USER_ID, metadata: kisiAdapter.buildOwnershipMetadata(TENANT_ID) })
       .mockResolvedValueOnce([])   // Layer C
       .mockResolvedValueOnce({});  // DELETE
 

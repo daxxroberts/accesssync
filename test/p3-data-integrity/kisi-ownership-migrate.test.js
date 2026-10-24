@@ -10,9 +10,11 @@
 
 jest.mock('../../db', () => ({ query: jest.fn(), pool: { end: jest.fn() } }));
 jest.mock('../../core/crypto-utils', () => ({ decryptApiKey: jest.fn() }));
+jest.mock('../../adapters/kisi/kisi-connector', () => ({ makeRequest: jest.fn() }));
 
+const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
-const { classifyUsers } = require('../../scripts/kisi-ownership-migrate');
+const { classifyUsers, notesClearDecision, clearNotes } = require('../../scripts/kisi-ownership-migrate');
 
 const ME = 'client-hog';
 const OTHER = 'client-other';
@@ -58,6 +60,11 @@ describe('[P3] kisi-ownership-migrate classifyUsers', () => {
     expect(c.createdAtDiffers).toEqual([{ id: '8', metadata: '2026-05-13T00:00:00Z', notes: '2026-05-14T00:00:00Z' }]);
   });
 
+  test('a marker line with operator text under it still counts as ours (backfilled, then left as "mixed" by clear-notes)', () => {
+    const r = classifyUsers([{ id: 10, notes: notes(ME) + '\nVIP — comps on Fridays' }], ME);
+    expect(idsOf(r.notesOnly)).toEqual(['10']);
+  });
+
   test('ready for phase 2 only when nothing is notes-only or conflicting', () => {
     const done = classifyUsers([
       { id: 1, metadata: meta(ME), notes: notes(ME) },
@@ -66,5 +73,46 @@ describe('[P3] kisi-ownership-migrate classifyUsers', () => {
     ], ME);
     expect(done.notesOnly).toHaveLength(0);
     expect(done.conflict).toHaveLength(0);
+  });
+});
+
+describe('[P3] kisi-ownership-migrate clear-notes', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('clears only an exact AccessSync line for this client, and only when metadata names this client', () => {
+    expect(notesClearDecision({ metadata: meta(ME), notes: notes(ME) }, ME)).toBe('clear');
+    expect(notesClearDecision({ notes: notes(ME) }, ME)).toBe('needs_backfill');
+    expect(notesClearDecision({ metadata: meta(OTHER), notes: notes(ME) }, ME)).toBe('needs_backfill');
+    expect(notesClearDecision({ metadata: meta(ME), notes: notes(ME) + '\nVIP — comps on Fridays' }, ME)).toBe('mixed');
+    expect(notesClearDecision({ metadata: meta(ME), notes: notes(OTHER) }, ME)).toBe('foreign');
+    expect(notesClearDecision({ metadata: meta(ME), notes: 'Front desk staff' }, ME)).toBe('operator_text');
+    expect(notesClearDecision({ metadata: meta(ME), notes: '   ' }, ME)).toBe('empty');
+    expect(notesClearDecision({ metadata: meta(ME) }, ME)).toBe('empty');
+  });
+
+  test('re-checks on a fresh read, PATCHes notes:null only, and confirms metadata survived', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 3, metadata: meta(ME), notes: notes(ME) })   // fresh GET
+      .mockResolvedValueOnce(undefined)                                         // PATCH
+      .mockResolvedValueOnce({ id: 3, metadata: meta(ME), notes: null });       // re-GET
+    await expect(clearNotes('key', '3', ME)).resolves.toBe('cleared');
+    const [endpoint, opts] = kisiConnector.makeRequest.mock.calls[1];
+    expect(endpoint).toBe('/users/3');
+    expect(opts.method).toBe('PATCH');
+    expect(JSON.parse(opts.body)).toEqual({ user: { notes: null } });
+  });
+
+  test('an operator edit between list and clear is respected: no PATCH', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 3, metadata: meta(ME), notes: notes(ME) + '\nkeep this' });
+    await expect(clearNotes('key', '3', ME)).resolves.toMatch(/^skipped \(mixed/);
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('a re-read that lost the metadata marker is a failure, not a success', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 3, metadata: meta(ME), notes: notes(ME) })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ id: 3, metadata: {}, notes: null });
+    await expect(clearNotes('key', '3', ME)).rejects.toThrow(/metadata marker missing/);
   });
 });

@@ -13,20 +13,21 @@ const kisiConnector = require('./kisi-connector');
 const { log } = require('../../core/logger');
 
 /**
- * AccessSync ownership marker stored in Kisi user `notes` field.
+ * AccessSync ownership marker — text form: `[AS|managed|<clientId>|<createdAt-ISO>] <reason>`.
  *
- * Format: `[AS|managed|<clientId>|<createdAt-ISO>] <free-text reason>`
+ * Why a marker exists at all: Kisi `deleteUser` is destructive and irreversible. Relying
+ * on `member_master.source_tag = 'accesssync'` as the only guard means a DB wipe would
+ * cascade into a mass Kisi-user wipe. Stamping ownership on the Kisi record itself makes
+ * the guard survive any DB disaster (DR-045 Layer B).
  *
- * Why this exists: Kisi `deleteUser` is destructive and irreversible. Relying on
- * `member_master.source_tag = 'accesssync'` as the only guard means a DB wipe would
- * cascade into a mass Kisi-user wipe. Stamping ownership on the Kisi user itself —
- * inside its own `notes` field — makes the guard survive any DB disaster.
- *
- * Verified 2026-05-13 against live HOG Kisi org: POST /users accepts `notes` in the
- * body and the value persists exactly on GET /users/:id (status 200, no munging).
- *
- * Maintenance contract: anything that PATCHes `notes` on a managed user MUST preserve
- * the `[AS|managed|...]` prefix. See `_preserveMarker()`.
+ * Where it lives:
+ *   - Kisi USERS: in `metadata` (see AS_META below). Until 2026-10 it was this text in
+ *     the user's `notes`; DR-045 phase 2 retired that. Runtime code never reads or writes
+ *     a user's notes any more (test/p3-data-integrity/dr045-no-user-notes.test.js), so an
+ *     operator's own notes are left alone. Only scripts/kisi-ownership-migrate.js still
+ *     parses notes, to clear the old text.
+ *   - Kisi GROUP LINKS (day passes): this text form, in the link's `name` — links have
+ *     no notes or metadata. See buildLinkName / parseLinkMarker.
  */
 const AS_MARKER_PREFIX = '[AS|managed|';
 const AS_MARKER_REGEX = /^\[AS\|managed\|([^|]+)\|([^\]]+)\] ?(.*)$/;
@@ -38,12 +39,13 @@ function buildAccessSyncMarker(clientId, reason) {
 }
 
 /**
- * Parse a Kisi user's `notes` field. Returns null if the marker is absent or malformed.
- * Returns `{ clientId, createdAt, reason }` on a valid marker.
+ * Parse the text marker at the START of a string (a pre-2026-10-24 group link name, or
+ * the legacy user notes the migration script clears). Returns null if absent or
+ * malformed, else `{ clientId, createdAt, reason }`.
  */
-function parseAccessSyncMarker(notes) {
-  if (!notes || typeof notes !== 'string') return null;
-  const match = notes.match(AS_MARKER_REGEX);
+function parseAccessSyncMarker(text) {
+  if (!text || typeof text !== 'string') return null;
+  const match = text.match(AS_MARKER_REGEX);
   if (!match) return null;
   return { clientId: match[1], createdAt: match[2], reason: match[3] || '' };
 }
@@ -59,11 +61,9 @@ function parseAccessSyncMarker(notes) {
  * is four flat keys, and every write MERGES into whatever metadata the user already
  * carries (another integration, e.g. Kisi's SCIM sync, may own other keys).
  *
- * Transition (phase 1): both markers are written on create, and readUserOwnership()
- * accepts either — metadata first, the legacy notes marker second. If both are
- * present and name different clients the user is treated as not ours to touch.
- * Phase 2 drops the notes fallback once scripts/kisi-ownership-migrate.js has
- * backfilled metadata onto every existing AccessSync user.
+ * Phase 2 (this code): metadata is the only ownership record for a user. The phase 1
+ * transition (notes written too, notes read as a fallback) ended once
+ * scripts/kisi-ownership-migrate.js had backfilled metadata onto every AccessSync user.
  */
 const AS_META = Object.freeze({
   MANAGED:    'accesssync_managed',
@@ -118,49 +118,23 @@ function mergeOwnershipMetadata(existing, clientId, createdAt) {
 }
 
 /**
- * Who owns this Kisi user, per DR-045 Layer B.
- *
- * Returns one of:
- *   { clientId, createdAt, source: 'metadata' }   metadata marker present
- *   { clientId, createdAt, source: 'notes' }      only the legacy notes marker (phase 1)
- *   { conflict: true, metadataClientId, notesClientId }  both present, different clients
- *   null                                          no marker at all
+ * Who owns this Kisi user, per DR-045 Layer B: `{ clientId, createdAt, source: 'metadata' }`
+ * from the metadata marker, or null when there is none.
  */
 function readUserOwnership(user) {
   if (!user || typeof user !== 'object') return null;
-  const meta  = parseOwnershipMetadata(user.metadata);
-  const legacy = parseAccessSyncMarker(user.notes);
-  if (meta && legacy && meta.clientId !== legacy.clientId) {
-    return { conflict: true, metadataClientId: meta.clientId, notesClientId: legacy.clientId };
-  }
-  if (meta)   return { clientId: meta.clientId, createdAt: meta.createdAt, source: 'metadata' };
-  if (legacy) return { clientId: legacy.clientId, createdAt: legacy.createdAt, source: 'notes' };
-  return null;
+  const meta = parseOwnershipMetadata(user.metadata);
+  return meta ? { clientId: meta.clientId, createdAt: meta.createdAt, source: 'metadata' } : null;
 }
 
 /**
  * The guard decision shared by deleteUser and setUserName. Returns the ownership on
- * success; otherwise throws with the same error codes the guards always used, so
- * callers (standard-adapter finalizeRevoke maps exactly UNOWNED_USER /
- * CLIENT_MISMATCH / ELEVATED_ROLE_ATTACHED to a clean refusal — anything else is
- * retried) need no change. A metadata-vs-notes conflict is a CLIENT_MISMATCH with
- * `markerConflict: true`: two records name two different tenants, so this one may
- * not act on the user.
+ * success; otherwise throws with the error codes the guards always used, so callers
+ * (standard-adapter finalizeRevoke maps exactly UNOWNED_USER / CLIENT_MISMATCH /
+ * ELEVATED_ROLE_ATTACHED to a clean refusal — anything else is retried) need no change.
  */
 function _requireOwnership(user, userId, clientId, verb) {
   const ownership = readUserOwnership(user);
-  if (ownership && ownership.conflict) {
-    const err = new Error(
-      `Kisi user ${userId} has conflicting AccessSync markers (metadata ${ownership.metadataClientId}, ` +
-      `notes ${ownership.notesClientId}) — refusing to ${verb}`
-    );
-    err.code = 'CLIENT_MISMATCH';
-    err.markerConflict = true;
-    err.userId = userId;
-    err.ownerClientId = ownership.metadataClientId;
-    err.requestingClientId = clientId || null;
-    throw err;
-  }
   if (!ownership) {
     const err = new Error(`Kisi user ${userId} has no AccessSync ownership marker — refusing to ${verb}`);
     err.code = 'UNOWNED_USER';
@@ -181,15 +155,6 @@ function _requireOwnership(user, userId, clientId, verb) {
   return ownership;
 }
 
-/** True when a Kisi 4xx on POST /users is about the metadata field (spec unverified live). */
-function _isMetadataRejection(err) {
-  if (!err || (err.statusCode !== 400 && err.statusCode !== 422)) return false;
-  let body = err.body;
-  if (body && typeof body !== 'string') {
-    try { body = JSON.stringify(body); } catch (_) { body = ''; }
-  }
-  return typeof body === 'string' && /metadata/i.test(body);
-}
 
 /**
  * Day-pass group links (OB-98) have no `notes` and no `metadata`, so their DR-045
@@ -541,39 +506,23 @@ class KisiAdapter {
       throw new Error('[KisiAdapter] createUser requires options.clientId for ownership marker');
     }
 
-    const notes = buildAccessSyncMarker(clientId, 'Created by AccessSync');
-    const metadata = buildOwnershipMetadata(clientId, (parseAccessSyncMarker(notes) || {}).createdAt);
+    const metadata = buildOwnershipMetadata(clientId);
 
-    // Kisi POST /users accepts: email, send_emails, confirm, notes (verified 2026-05-13), plus
-    // name (the Name column in the Kisi dashboard; one field, no first/last split) and
-    // metadata (Kisi OpenAPI users schema). The ownership marker is written twice during
-    // the DR-045 metadata transition: metadata (the record guards read first) and the
-    // legacy [AS|managed|clientId|createdAt] notes line. Without a name Kisi shows the
-    // email in the Name column, so send one whenever we have a real one (never the email).
+    // Kisi POST /users: email, send_emails, confirm, name (the Name column in the Kisi
+    // dashboard; one field, no first/last split) and metadata, which carries the DR-045
+    // ownership marker deleteUser checks before destroying the user. No notes: the
+    // user's notes belong to the operator. A rejected metadata field is NOT retried
+    // without it — a user created without the marker could never be cleaned up, so the
+    // grant fails visibly instead. Without a name Kisi shows the email in the Name
+    // column, so send one whenever we have a real one (never the email itself).
     const kisiName = normalizeKisiName(name, email);
-    const baseUser = { ...(kisiName ? { name: kisiName } : {}), email, send_emails: sendEmails, confirm: true, notes };
-    let data;
-    let ownershipMetadata = true;
-    try {
-      data = await kisiConnector.makeRequest('/users', {
-        method: 'POST',
-        body: JSON.stringify({ user: { ...baseUser, metadata } })
-      }, apiKey);
-    } catch (err) {
-      // metadata on POST /users is documented but not yet seen live. If Kisi rejects
-      // that field, create the user exactly as before (notes marker only) rather than
-      // fail the member's grant; the migration script backfills metadata later.
-      if (!_isMetadataRejection(err)) throw err;
-      log.warn('kisi.user.create_metadata_rejected', {
-        clientId, statusCode: err.statusCode, stage: 'identity', result: 'retry',
-      });
-      ownershipMetadata = false;
-      data = await kisiConnector.makeRequest('/users', {
-        method: 'POST',
-        body: JSON.stringify({ user: baseUser })
-      }, apiKey);
-    }
-    log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id, clientId, ownershipMetadata });
+    const data = await kisiConnector.makeRequest('/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        user: { ...(kisiName ? { name: kisiName } : {}), email, send_emails: sendEmails, confirm: true, metadata }
+      })
+    }, apiKey);
+    log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id, clientId });
     // OB-245 (diagnostic): capture the full Kisi /users POST response so we can
     // (a) confirm whether send_emails actually triggered an invitation, and
     // (b) decide what shape a branded Resend welcome would need. Downgraded to info
@@ -696,29 +645,19 @@ class KisiAdapter {
   /**
    * Suspend access without deleting role (payment.failed flow).
    *
-   * Re-stamps the `[AS|managed|clientId|...]` marker so the deleteUser guard survives
-   * the suspend cycle. The createdAt in the marker resets to "now" on each suspend —
-   * the marker's job is ownership-proof, not provenance audit (member_access_log holds
-   * provenance). One call, no preceding GET.
-   *
-   * If clientId is not supplied (legacy call sites), we fall back to the bare context
-   * message and emit a warning — the user loses delete-guard protection until the next
-   * grant re-stamps it.
+   * PATCHes `access_enabled: false` only. The ownership marker lives in metadata and is
+   * untouched; the user's notes are the operator's and are never written (DR-045 phase 2
+   * — before it, every suspend overwrote notes with the marker plus this reason).
+   * `contextMessage` and `options` are kept for caller compatibility; the reason is
+   * recorded in AccessSync's own logs, not on the Kisi user. One call, no preceding GET.
    */
   async suspendAccess(apiKey, userId, contextMessage = 'Access suspended', options = {}) {
-    log.info('kisi.user.suspending', { userId });
-    const clientId = options.clientId;
-    const notes = clientId
-      ? buildAccessSyncMarker(clientId, contextMessage)
-      : contextMessage;
-    if (!clientId) {
-      log.warn('kisi.user.suspend_without_marker', { userId, reason: 'clientId not supplied' });
-    }
+    log.info('kisi.user.suspending', { userId, reason: contextMessage, clientId: options.clientId || null });
     try {
       await kisiConnector.makeRequest(`/users/${userId}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          user: { access_enabled: false, notes }
+          user: { access_enabled: false }
         })
       }, apiKey);
       log.info('kisi.user.suspended', { userId });
@@ -729,19 +668,12 @@ class KisiAdapter {
   }
 
   /**
-   * Re-enable access (payment.recovered flow).
-   *
-   * Re-stamps the marker when clientId is supplied so the access cycle leaves a tagged
-   * user behind. We only patch `access_enabled` plus `notes` — same single PATCH call as
-   * before. If clientId is missing we skip touching notes entirely (avoids clobbering
-   * an existing marker with no context).
+   * Re-enable access (payment.recovered flow). PATCHes `access_enabled: true` only —
+   * metadata (the ownership marker) and the operator's notes are untouched.
    */
   async enableAccess(apiKey, userId, options = {}) {
-    log.info('kisi.user.enabling', { userId });
-    const clientId = options.clientId;
-    const body = clientId
-      ? { user: { access_enabled: true, notes: buildAccessSyncMarker(clientId, 'Access restored') } }
-      : { user: { access_enabled: true } };
+    log.info('kisi.user.enabling', { userId, clientId: options.clientId || null });
+    const body = { user: { access_enabled: true } };
     try {
       await kisiConnector.makeRequest(`/users/${userId}`, {
         method: 'PATCH',
@@ -756,8 +688,8 @@ class KisiAdapter {
 
   /**
    * Set the display name on a Kisi user AccessSync created. PATCHes `name` only —
-   * notes (the ownership marker), access_enabled and role assignments are untouched.
-   * Refuses unless the user's notes marker names this client, so a gym's own Kisi
+   * metadata (the ownership marker), access_enabled and role assignments are untouched.
+   * Refuses unless the user's metadata marker names this client, so a gym's own Kisi
    * users are never renamed. Used by scripts/backfill-kisi-names.js.
    */
   async setUserName(apiKey, userId, name, options = {}) {
@@ -778,7 +710,6 @@ class KisiAdapter {
     } catch (guardErr) {
       const err = new Error('Kisi user is not AccessSync-managed for this client — refusing rename');
       err.code = guardErr.code === 'UNOWNED_USER' ? 'NOT_ACCESSSYNC_MANAGED' : 'CLIENT_MISMATCH';
-      if (guardErr.markerConflict) err.markerConflict = true;
       err.userId = userId;
       throw err;
     }
@@ -845,10 +776,8 @@ class KisiAdapter {
    *
    *   Layer A (DB):    caller in core/grant-revoke.js verifies member_master.source_tag = 'accesssync'.
    *   Layer B (Kisi):  GET /users/:id → read the AccessSync marker from `metadata`
-   *                    (accesssync_client_id), falling back to the legacy
-   *                    `[AS|managed|<clientId>|...]` line in `notes` during the transition.
-   *                    Refuse if no marker (UNOWNED_USER), clientId mismatches, or the two
-   *                    markers name different clients (CLIENT_MISMATCH, markerConflict).
+   *                    (accesssync_client_id). Refuse if absent (UNOWNED_USER) or it names
+   *                    another client (CLIENT_MISMATCH).
    *   Layer C (Kisi):  GET /role_assignments?user_id=:id → refuse if ANY assignment has
    *                    scope ∈ {organization, place} OR role_id outside the AccessSync allowed
    *                    set (`group_basic` only). Catches the case where the marker says we own
@@ -886,18 +815,16 @@ class KisiAdapter {
       throw err;
     }
 
-    // Layer B — ownership marker (metadata first, legacy notes second; see readUserOwnership)
+    // Layer B — ownership marker in metadata (see readUserOwnership)
     let marker;
     try {
       marker = _requireOwnership(user, userId, options.clientId, 'delete');
     } catch (err) {
       if (err.code === 'UNOWNED_USER') {
-        err.kisiNotes = user.notes || null;
-        log.warn('kisi.user.delete_refused_unowned', { userId, kisiNotes: user.notes || null });
+        log.warn('kisi.user.delete_refused_unowned', { userId });
       } else {
         log.warn('kisi.user.delete_refused_cross_tenant', {
           userId, ownerClientId: err.ownerClientId, requestingClientId: err.requestingClientId,
-          markerConflict: !!err.markerConflict,
         });
       }
       throw err;
@@ -964,14 +891,12 @@ class KisiAdapter {
         apiKey
       );
       for (const u of users) {
-        // ownerClientId / ownershipSource: reconcile Pass 3 counts AccessSync users whose
-        // marker is not yet in metadata (the DR-045 transition's progress check). It
-        // never acts on it.
+        // ownerClientId / ownershipSource: who the metadata marker names (null when none).
+        // Informational for reconcile Pass 3; it never acts on them.
         const ownership = readUserOwnership(u);
-        const owned = ownership && !ownership.conflict;
         allUsers.push({ id: u.id, email: u.email || null, name: u.name || null,
-          ownerClientId:   owned ? ownership.clientId : null,
-          ownershipSource: ownership ? (ownership.conflict ? 'conflict' : ownership.source) : null,
+          ownerClientId:   ownership ? ownership.clientId : null,
+          ownershipSource: ownership ? ownership.source : null,
         });
       }
       log.info('kisi.list_users.fetched', { totalUsers: allUsers.length });
@@ -985,8 +910,8 @@ class KisiAdapter {
   /**
    * Every Kisi user in the org, as Kisi returns them (same paging + I-4 integrity
    * guard as listAllUsers). Migration tooling only — scripts/kisi-ownership-migrate.js
-   * needs the raw `metadata` and legacy `notes` to compare and backfill them. Runtime
-   * code uses listAllUsers, which never hands raw user records to the core.
+   * reads the raw records to verify metadata and clear the retired notes marker.
+   * Runtime code uses listAllUsers, which never hands raw user records to the core.
    */
   async listAllUsersRaw(apiKey) {
     if (!apiKey) throw new Error('[KisiAdapter] listAllUsersRaw requires an apiKey');

@@ -166,8 +166,8 @@ class HardwareAdapter {
   /**
    * deleteUser carries an `options.clientId` payload that the Kisi adapter uses to
    * verify the AccessSync ownership marker stamped onto the user at create time
-   * (metadata `accesssync_client_id`; the legacy notes line during the DR-045
-   * transition). See adapters/kisi/kisi-adapter.js deleteUser for the full guard.
+   * (metadata `accesssync_client_id`, DR-045 Layer B). See
+   * adapters/kisi/kisi-adapter.js deleteUser for the full guard.
    */
   async deleteUser(hardwarePlatform, apiKey, userId, options = {}) {
     this._validate(hardwarePlatform, 'deleteUser', { userId });

@@ -15,19 +15,30 @@
  *                      kept, another client's marker is never overwritten.
  *   verify             Again. "READY FOR PHASE 2" means no user is left with a
  *                      notes-only or conflicting marker.
+ *   — merge + deploy phase 2 (runtime stops reading and writing notes) —
+ *   clear-notes        Dry run: lists the users whose notes clear-notes would empty.
+ *   clear-notes --apply
+ *                      Sets notes to null on every user whose metadata marker names
+ *                      this client AND whose notes are exactly one AccessSync marker
+ *                      line for this client. Re-reads to confirm notes are empty and
+ *                      the metadata marker is still there. Notes holding anything
+ *                      else (operator text, a second line) are reported, never edited.
  *
  * What this never does:
  *   - Stamp a user that has no marker at all. Some AccessSync members are linked to a
  *     Kisi account that existed before AccessSync (an owner, an admin, staff who also
  *     bought a plan). They were never marked, so AccessSync may not delete them; giving
  *     them a marker now would change that. They are reported, never touched.
- *   - Touch notes, names, access, or role assignments.
+ *   - Touch names, access, or role assignments. Notes are only touched by
+ *     clear-notes --apply, under the rule above.
  *
  * Usage (from repo root; needs DATABASE_URL + API_KEY_ENCRYPTION_KEY, like
  * scripts/backfill-kisi-names.js):
  *   node scripts/kisi-ownership-migrate.js verify
  *   node scripts/kisi-ownership-migrate.js backfill
  *   node scripts/kisi-ownership-migrate.js backfill --apply
+ *   node scripts/kisi-ownership-migrate.js clear-notes
+ *   node scripts/kisi-ownership-migrate.js clear-notes --apply
  *   ... --client <client uuid>     limit to one client
  *   ... --list                     print Kisi user ids for every category, not just the actionable ones
  *
@@ -38,6 +49,7 @@
 const db = require('../db');
 const { decryptApiKey } = require('../core/crypto-utils');
 const kisiAdapter = require('../adapters/kisi/kisi-adapter');
+const kisiConnector = require('../adapters/kisi/kisi-connector');
 
 function arg(flag) {
   const i = process.argv.indexOf(flag);
@@ -64,7 +76,8 @@ function classifyUsers(users, clientId, dbKnownIds = new Set()) {
     out.total++;
     const id = String(u.id);
     const meta  = kisiAdapter.parseOwnershipMetadata(u.metadata);
-    const notes = kisiAdapter.parseAccessSyncMarker(u.notes);
+    // First line only: an operator may have typed more under AccessSync's marker line.
+    const notes = typeof u.notes === 'string' ? kisiAdapter.parseAccessSyncMarker(u.notes.split(/\r?\n/)[0]) : null;
 
     if (meta && notes && meta.clientId !== notes.clientId) {
       if (meta.clientId === clientId || notes.clientId === clientId) {
@@ -96,6 +109,46 @@ function classifyUsers(users, clientId, dbKnownIds = new Set()) {
   return out;
 }
 
+/**
+ * What clear-notes may do with one user's notes. Pure; exported for tests.
+ *   'clear'          notes are exactly one marker line for this client and metadata names it too
+ *   'needs_backfill' notes marker for this client, but metadata does not name it — backfill first
+ *   'mixed'          the marker plus other text — left for a human
+ *   'foreign'        another client's marker
+ *   'operator_text'  notes with no AccessSync marker
+ *   'empty'          nothing in notes
+ */
+function notesClearDecision(user, clientId) {
+  const notes = user && user.notes;
+  if (!notes || (typeof notes === 'string' && !notes.trim())) return 'empty';
+  if (typeof notes !== 'string') return 'operator_text';
+  // The marker is always the first line AccessSync wrote; anything after it is someone else's.
+  const marker = kisiAdapter.parseAccessSyncMarker(notes.split(/\r?\n/)[0]);
+  if (!marker) return 'operator_text';
+  if (marker.clientId !== clientId) return 'foreign';
+  if (/[\r\n]/.test(notes.trim())) return 'mixed';
+  const meta = kisiAdapter.parseOwnershipMetadata(user.metadata);
+  if (!meta || meta.clientId !== clientId) return 'needs_backfill';
+  return 'clear';
+}
+
+/** clear-notes --apply for one user: re-check on a fresh read, PATCH notes: null, confirm. */
+async function clearNotes(apiKey, userId, clientId) {
+  const fresh = await kisiAdapter.getUserById(apiKey, userId);
+  if (!fresh) return 'gone';
+  const decision = notesClearDecision(fresh, clientId);
+  if (decision !== 'clear') return `skipped (${decision} on re-read)`;
+  await kisiConnector.makeRequest(`/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ user: { notes: null } }),
+  }, apiKey);
+  const after = await kisiAdapter.getUserById(apiKey, userId);
+  const meta = after ? kisiAdapter.parseOwnershipMetadata(after.metadata) : null;
+  if (!after || (after.notes && String(after.notes).trim())) throw new Error('notes still present on re-read');
+  if (!meta || meta.clientId !== clientId) throw new Error('metadata marker missing on re-read');
+  return 'cleared';
+}
+
 function ids(list, max = 50) {
   const shown = list.slice(0, max).map(x => x.id).join(', ');
   return list.length > max ? `${shown}, … (+${list.length - max} more)` : shown;
@@ -122,6 +175,7 @@ function printReport(name, clientId, c, dbMissingFromKisi) {
     console.log(`  no-marker ids linked to members: ${ids(c.noneLinked, 1e6)}`);
   }
 
+  console.log(`  AccessSync notes lines left to clear (after phase 2): ${c.agree.length}`);
   const ready = c.notesOnly.length === 0 && c.conflict.length === 0;
   console.log(`  Ready for phase 2: ${ready ? 'YES' : 'NO'}` +
     (ready ? '' : ` (${c.notesOnly.length} notes-only, ${c.conflict.length} conflicting)`));
@@ -175,6 +229,34 @@ async function runClient(row) {
     return { ready, conflicts: c.conflict.length, failed: 0 };
   }
 
+  if (MODE === 'clear-notes') {
+    console.log(`\n=== ${row.client_name} (${row.client_id}) — clear-notes ${APPLY ? 'APPLY' : 'DRY RUN'} ===`);
+    const byDecision = {};
+    for (const u of users) {
+      const d = notesClearDecision(u, row.client_id);
+      (byDecision[d] = byDecision[d] || []).push({ id: String(u.id) });
+    }
+    for (const d of ['clear', 'needs_backfill', 'mixed', 'foreign', 'operator_text', 'empty']) {
+      console.log(`  ${d.padEnd(16)} ${String((byDecision[d] || []).length).padStart(5)}`);
+    }
+    if ((byDecision.needs_backfill || []).length) console.log(`  needs_backfill ids (run backfill first): ${ids(byDecision.needs_backfill)}`);
+    if ((byDecision.mixed || []).length) console.log(`  mixed ids (marker plus other text — edit by hand in Kisi): ${ids(byDecision.mixed)}`);
+    const tally = { cleared: 0, skipped: 0, failed: 0 };
+    for (const u of byDecision.clear || []) {
+      if (!APPLY) { console.log(`  WOULD CLEAR  kisi ${u.id}`); continue; }
+      try {
+        const res = await clearNotes(apiKey, u.id, row.client_id);
+        if (res === 'cleared') tally.cleared++; else tally.skipped++;
+        console.log(`  ${res === 'cleared' ? 'CLEARED' : 'SKIPPED'}  kisi ${u.id}${res === 'cleared' ? '' : ' — ' + res}`);
+      } catch (err) {
+        tally.failed++;
+        console.log(`  FAILED   kisi ${u.id} — ${err.code || err.statusCode || ''} ${err.message}`);
+      }
+    }
+    if (APPLY) console.log(`  cleared ${tally.cleared}, skipped ${tally.skipped}, failed ${tally.failed}`);
+    return { ready: tally.failed === 0, conflicts: 0, failed: tally.failed };
+  }
+
   // backfill
   console.log(`\n=== ${row.client_name} (${row.client_id}) — backfill ${APPLY ? 'APPLY' : 'DRY RUN'} ===`);
   console.log(`  ${c.notesOnly.length} user(s) carry only the notes marker for this client.`);
@@ -199,8 +281,8 @@ async function runClient(row) {
 }
 
 async function main() {
-  if (MODE !== 'verify' && MODE !== 'backfill') {
-    console.error('Usage: node scripts/kisi-ownership-migrate.js <verify|backfill> [--apply] [--client <uuid>] [--list]');
+  if (!['verify', 'backfill', 'clear-notes'].includes(MODE)) {
+    console.error('Usage: node scripts/kisi-ownership-migrate.js <verify|backfill|clear-notes> [--apply] [--client <uuid>] [--list]');
     process.exit(64);
   }
   if (MODE === 'verify' && APPLY) {
@@ -240,4 +322,4 @@ if (require.main === module) {
     .catch(err => { console.error('FATAL', err); process.exit(1); });
 }
 
-module.exports = { classifyUsers };
+module.exports = { classifyUsers, notesClearDecision, clearNotes };
