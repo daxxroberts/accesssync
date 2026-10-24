@@ -201,14 +201,16 @@ describe('[P3] I-4 getManagedRoleAssignments — throws instead of returning []'
 
 describe('[P3] I-4 listAllUsers — pagination integrity', () => {
 
-  it('returns the unchanged { id, email, name } shape across pages', async () => {
+  it('returns { id, email, name, ownerClientId, ownershipSource } across pages', async () => {
     kisiConnector.makeRequest
       .mockResolvedValueOnce(userPage(1))
       .mockResolvedValueOnce([{ id: 999, email: null }]);
     const out = await kisiAdapter.listAllUsers(API_KEY);
     expect(out).toHaveLength(101);
-    expect(out[0]).toEqual({ id: 1, email: 'u1@example.test', name: 'User 1' });
-    expect(out[100]).toEqual({ id: 999, email: null, name: null });
+    // { id, email, name } plus the DR-045 transition's ownership fields (2026-10-24);
+    // these fixtures carry no marker, so both read null.
+    expect(out[0]).toEqual({ id: 1, email: 'u1@example.test', name: 'User 1', ownerClientId: null, ownershipSource: null });
+    expect(out[100]).toEqual({ id: 999, email: null, name: null, ownerClientId: null, ownershipSource: null });
     expect(kisiConnector.makeRequest.mock.calls[0][0]).toBe('/users?limit=100&offset=0');
     expect(kisiConnector.makeRequest.mock.calls[1][0]).toBe('/users?limit=100&offset=100');
   });

@@ -5,7 +5,7 @@
  * shows the email in the Name column.
  *
  * Renames in place (PATCH /users/:id { name }) via kisiAdapter.setUserName, which
- * refuses any user whose notes marker doesn't name this client. Never deletes,
+ * refuses any user whose AccessSync ownership marker doesn't name this client. Never deletes,
  * re-creates, or touches role assignments — door access is unaffected.
  *
  * A user is only changed when its current Kisi name is blank or equals its email,
@@ -98,9 +98,9 @@ const norm = (s) => (s || '').trim().toLowerCase();
     }
     if (!user) { skip('Kisi user no longer exists'); continue; }
 
-    const marker = kisiAdapter.parseAccessSyncMarker(user.notes);
+    const marker = kisiAdapter.readUserOwnership(user);
     if (!marker) { skip('not created by AccessSync'); continue; }
-    if (marker.clientId !== r.client_id) { skip('marked for a different client'); continue; }
+    if (marker.conflict || marker.clientId !== r.client_id) { skip('marked for a different client'); continue; }
 
     const current = (user.name || '').trim();
     if (current === newName) { skip(`already "${current}"`); continue; }

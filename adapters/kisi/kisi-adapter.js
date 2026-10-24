@@ -49,6 +49,149 @@ function parseAccessSyncMarker(notes) {
 }
 
 /**
+ * DR-045 Layer B, metadata form (Builder direction 2026-10-24; proposal
+ * handoff/KISI_METADATA_MARKER_PROPOSAL_2026-10-23.md).
+ *
+ * The ownership record moves from the free-text `notes` field to the Kisi user's
+ * `metadata` object, which an operator is far less likely to edit by hand. Kisi's
+ * users schema limits metadata to flat values (string / null / integer / float /
+ * boolean), keys <= 50 chars, values <= 500 chars, at most 50 keys — so the marker
+ * is four flat keys, and every write MERGES into whatever metadata the user already
+ * carries (another integration, e.g. Kisi's SCIM sync, may own other keys).
+ *
+ * Transition (phase 1): both markers are written on create, and readUserOwnership()
+ * accepts either — metadata first, the legacy notes marker second. If both are
+ * present and name different clients the user is treated as not ours to touch.
+ * Phase 2 drops the notes fallback once scripts/kisi-ownership-migrate.js has
+ * backfilled metadata onto every existing AccessSync user.
+ */
+const AS_META = Object.freeze({
+  MANAGED:    'accesssync_managed',
+  CLIENT_ID:  'accesssync_client_id',
+  CREATED_AT: 'accesssync_created_at',
+  VERSION:    'accesssync_marker_v',
+});
+const AS_META_VERSION = 1;
+const KISI_METADATA_MAX_KEYS = 50;
+
+function buildOwnershipMetadata(clientId, createdAt) {
+  return {
+    [AS_META.MANAGED]:    true,
+    [AS_META.CLIENT_ID]:  String(clientId),
+    [AS_META.CREATED_AT]: createdAt || new Date().toISOString(),
+    [AS_META.VERSION]:    AS_META_VERSION,
+  };
+}
+
+/**
+ * Read the AccessSync marker out of a Kisi user's `metadata`. Returns
+ * `{ clientId, createdAt }`, or null when the marker is absent or malformed.
+ * `accesssync_managed` is accepted as the boolean true or the string 'true'
+ * (in case Kisi ever echoes booleans back as strings).
+ */
+function parseOwnershipMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const managed = metadata[AS_META.MANAGED];
+  if (managed !== true && managed !== 'true') return null;
+  const clientId = metadata[AS_META.CLIENT_ID];
+  if (typeof clientId !== 'string' || !clientId.trim()) return null;
+  const createdAt = typeof metadata[AS_META.CREATED_AT] === 'string' ? metadata[AS_META.CREATED_AT] : null;
+  return { clientId, createdAt };
+}
+
+/**
+ * Merge the AccessSync marker into a user's existing metadata without dropping
+ * anything another integration put there. Throws `KISI_METADATA_FULL` if the merge
+ * would exceed Kisi's 50-key limit, so the caller can report instead of guessing.
+ */
+function mergeOwnershipMetadata(existing, clientId, createdAt) {
+  const base = (existing && typeof existing === 'object' && !Array.isArray(existing)) ? existing : {};
+  const merged = { ...base, ...buildOwnershipMetadata(clientId, createdAt) };
+  if (Object.keys(merged).length > KISI_METADATA_MAX_KEYS) {
+    const err = new Error(
+      `Kisi user metadata would hold ${Object.keys(merged).length} keys; Kisi allows ${KISI_METADATA_MAX_KEYS}`
+    );
+    err.code = 'KISI_METADATA_FULL';
+    throw err;
+  }
+  return merged;
+}
+
+/**
+ * Who owns this Kisi user, per DR-045 Layer B.
+ *
+ * Returns one of:
+ *   { clientId, createdAt, source: 'metadata' }   metadata marker present
+ *   { clientId, createdAt, source: 'notes' }      only the legacy notes marker (phase 1)
+ *   { conflict: true, metadataClientId, notesClientId }  both present, different clients
+ *   null                                          no marker at all
+ */
+function readUserOwnership(user) {
+  if (!user || typeof user !== 'object') return null;
+  const meta  = parseOwnershipMetadata(user.metadata);
+  const legacy = parseAccessSyncMarker(user.notes);
+  if (meta && legacy && meta.clientId !== legacy.clientId) {
+    return { conflict: true, metadataClientId: meta.clientId, notesClientId: legacy.clientId };
+  }
+  if (meta)   return { clientId: meta.clientId, createdAt: meta.createdAt, source: 'metadata' };
+  if (legacy) return { clientId: legacy.clientId, createdAt: legacy.createdAt, source: 'notes' };
+  return null;
+}
+
+/**
+ * The guard decision shared by deleteUser and setUserName. Returns the ownership on
+ * success; otherwise throws with the same error codes the guards always used, so
+ * callers (standard-adapter finalizeRevoke maps exactly UNOWNED_USER /
+ * CLIENT_MISMATCH / ELEVATED_ROLE_ATTACHED to a clean refusal — anything else is
+ * retried) need no change. A metadata-vs-notes conflict is a CLIENT_MISMATCH with
+ * `markerConflict: true`: two records name two different tenants, so this one may
+ * not act on the user.
+ */
+function _requireOwnership(user, userId, clientId, verb) {
+  const ownership = readUserOwnership(user);
+  if (ownership && ownership.conflict) {
+    const err = new Error(
+      `Kisi user ${userId} has conflicting AccessSync markers (metadata ${ownership.metadataClientId}, ` +
+      `notes ${ownership.notesClientId}) — refusing to ${verb}`
+    );
+    err.code = 'CLIENT_MISMATCH';
+    err.markerConflict = true;
+    err.userId = userId;
+    err.ownerClientId = ownership.metadataClientId;
+    err.requestingClientId = clientId || null;
+    throw err;
+  }
+  if (!ownership) {
+    const err = new Error(`Kisi user ${userId} has no AccessSync ownership marker — refusing to ${verb}`);
+    err.code = 'UNOWNED_USER';
+    err.userId = userId;
+    throw err;
+  }
+  if (clientId && ownership.clientId !== clientId) {
+    const err = new Error(
+      `Kisi user ${userId} is owned by clientId ${ownership.clientId}, ` +
+      `not requesting clientId ${clientId} — refusing to ${verb}`
+    );
+    err.code = 'CLIENT_MISMATCH';
+    err.userId = userId;
+    err.ownerClientId = ownership.clientId;
+    err.requestingClientId = clientId;
+    throw err;
+  }
+  return ownership;
+}
+
+/** True when a Kisi 4xx on POST /users is about the metadata field (spec unverified live). */
+function _isMetadataRejection(err) {
+  if (!err || (err.statusCode !== 400 && err.statusCode !== 422)) return false;
+  let body = err.body;
+  if (body && typeof body !== 'string') {
+    try { body = JSON.stringify(body); } catch (_) { body = ''; }
+  }
+  return typeof body === 'string' && /metadata/i.test(body);
+}
+
+/**
  * The display name to give a Kisi user, or null when we have no real one.
  * Collapses whitespace, caps at 255, and never returns the email itself (Kisi
  * already falls back to the email when the name is absent).
@@ -365,19 +508,38 @@ class KisiAdapter {
     }
 
     const notes = buildAccessSyncMarker(clientId, 'Created by AccessSync');
+    const metadata = buildOwnershipMetadata(clientId, (parseAccessSyncMarker(notes) || {}).createdAt);
 
     // Kisi POST /users accepts: email, send_emails, confirm, notes (verified 2026-05-13), plus
-    // name (the Name column in the Kisi dashboard; one field, no first/last split). notes carries the [AS|managed|clientId|createdAt] marker that deleteUser checks
-    // before destroying the user. Without a name Kisi shows the email in the Name
-    // column, so send one whenever we have a real one (never the email itself).
+    // name (the Name column in the Kisi dashboard; one field, no first/last split) and
+    // metadata (Kisi OpenAPI users schema). The ownership marker is written twice during
+    // the DR-045 metadata transition: metadata (the record guards read first) and the
+    // legacy [AS|managed|clientId|createdAt] notes line. Without a name Kisi shows the
+    // email in the Name column, so send one whenever we have a real one (never the email).
     const kisiName = normalizeKisiName(name, email);
-    const data = await kisiConnector.makeRequest('/users', {
-      method: 'POST',
-      body: JSON.stringify({
-        user: { ...(kisiName ? { name: kisiName } : {}), email, send_emails: sendEmails, confirm: true, notes }
-      })
-    }, apiKey);
-    log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id, clientId });
+    const baseUser = { ...(kisiName ? { name: kisiName } : {}), email, send_emails: sendEmails, confirm: true, notes };
+    let data;
+    let ownershipMetadata = true;
+    try {
+      data = await kisiConnector.makeRequest('/users', {
+        method: 'POST',
+        body: JSON.stringify({ user: { ...baseUser, metadata } })
+      }, apiKey);
+    } catch (err) {
+      // metadata on POST /users is documented but not yet seen live. If Kisi rejects
+      // that field, create the user exactly as before (notes marker only) rather than
+      // fail the member's grant; the migration script backfills metadata later.
+      if (!_isMetadataRejection(err)) throw err;
+      log.warn('kisi.user.create_metadata_rejected', {
+        clientId, statusCode: err.statusCode, stage: 'identity', result: 'retry',
+      });
+      ownershipMetadata = false;
+      data = await kisiConnector.makeRequest('/users', {
+        method: 'POST',
+        body: JSON.stringify({ user: baseUser })
+      }, apiKey);
+    }
+    log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id, clientId, ownershipMetadata });
     // OB-245 (diagnostic): capture the full Kisi /users POST response so we can
     // (a) confirm whether send_emails actually triggered an invitation, and
     // (b) decide what shape a branded Resend welcome would need. Downgraded to info
@@ -577,10 +739,12 @@ class KisiAdapter {
       err.userId = userId;
       throw err;
     }
-    const marker = parseAccessSyncMarker(user.notes);
-    if (!marker || marker.clientId !== clientId) {
+    try {
+      _requireOwnership(user, userId, clientId, 'rename');
+    } catch (guardErr) {
       const err = new Error('Kisi user is not AccessSync-managed for this client — refusing rename');
-      err.code = marker ? 'CLIENT_MISMATCH' : 'NOT_ACCESSSYNC_MANAGED';
+      err.code = guardErr.code === 'UNOWNED_USER' ? 'NOT_ACCESSSYNC_MANAGED' : 'CLIENT_MISMATCH';
+      if (guardErr.markerConflict) err.markerConflict = true;
       err.userId = userId;
       throw err;
     }
@@ -646,8 +810,11 @@ class KisiAdapter {
    * **Three-layer delete guard (defense in depth):**
    *
    *   Layer A (DB):    caller in core/grant-revoke.js verifies member_master.source_tag = 'accesssync'.
-   *   Layer B (Kisi):  GET /users/:id → parse `[AS|managed|<clientId>|...]` marker from `notes`.
-   *                    Refuse if marker absent (UNOWNED_USER) or clientId mismatches (CLIENT_MISMATCH).
+   *   Layer B (Kisi):  GET /users/:id → read the AccessSync marker from `metadata`
+   *                    (accesssync_client_id), falling back to the legacy
+   *                    `[AS|managed|<clientId>|...]` line in `notes` during the transition.
+   *                    Refuse if no marker (UNOWNED_USER), clientId mismatches, or the two
+   *                    markers name different clients (CLIENT_MISMATCH, markerConflict).
    *   Layer C (Kisi):  GET /role_assignments?user_id=:id → refuse if ANY assignment has
    *                    scope ∈ {organization, place} OR role_id outside the AccessSync allowed
    *                    set (`group_basic` only). Catches the case where the marker says we own
@@ -685,28 +852,20 @@ class KisiAdapter {
       throw err;
     }
 
-    // Layer B — ownership marker
-    const marker = parseAccessSyncMarker(user.notes);
-    if (!marker) {
-      const err = new Error(`Kisi user ${userId} has no AccessSync ownership marker — refusing to delete`);
-      err.code = 'UNOWNED_USER';
-      err.userId = userId;
-      err.kisiNotes = user.notes || null;
-      log.warn('kisi.user.delete_refused_unowned', { userId, kisiNotes: user.notes || null });
-      throw err;
-    }
-    if (options.clientId && marker.clientId !== options.clientId) {
-      const err = new Error(
-        `Kisi user ${userId} is owned by clientId ${marker.clientId}, ` +
-        `not requesting clientId ${options.clientId} — refusing to delete`
-      );
-      err.code = 'CLIENT_MISMATCH';
-      err.userId = userId;
-      err.ownerClientId = marker.clientId;
-      err.requestingClientId = options.clientId;
-      log.warn('kisi.user.delete_refused_cross_tenant', {
-        userId, ownerClientId: marker.clientId, requestingClientId: options.clientId,
-      });
+    // Layer B — ownership marker (metadata first, legacy notes second; see readUserOwnership)
+    let marker;
+    try {
+      marker = _requireOwnership(user, userId, options.clientId, 'delete');
+    } catch (err) {
+      if (err.code === 'UNOWNED_USER') {
+        err.kisiNotes = user.notes || null;
+        log.warn('kisi.user.delete_refused_unowned', { userId, kisiNotes: user.notes || null });
+      } else {
+        log.warn('kisi.user.delete_refused_cross_tenant', {
+          userId, ownerClientId: err.ownerClientId, requestingClientId: err.requestingClientId,
+          markerConflict: !!err.markerConflict,
+        });
+      }
       throw err;
     }
 
@@ -732,7 +891,7 @@ class KisiAdapter {
       throw err;
     }
 
-    log.info('kisi.user.deleting', { userId, ownerClientId: marker.clientId });
+    log.info('kisi.user.deleting', { userId, ownerClientId: marker.clientId, ownershipSource: marker.source });
     try {
       await kisiConnector.makeRequest(`/users/${userId}`, { method: 'DELETE' }, apiKey);
       log.info('kisi.user.deleted', { userId, ownerClientId: marker.clientId });
@@ -771,7 +930,15 @@ class KisiAdapter {
         apiKey
       );
       for (const u of users) {
-        allUsers.push({ id: u.id, email: u.email || null, name: u.name || null });
+        // ownerClientId / ownershipSource: reconcile Pass 3 counts AccessSync users whose
+        // marker is not yet in metadata (the DR-045 transition's progress check). It
+        // never acts on it.
+        const ownership = readUserOwnership(u);
+        const owned = ownership && !ownership.conflict;
+        allUsers.push({ id: u.id, email: u.email || null, name: u.name || null,
+          ownerClientId:   owned ? ownership.clientId : null,
+          ownershipSource: ownership ? (ownership.conflict ? 'conflict' : ownership.source) : null,
+        });
       }
       log.info('kisi.list_users.fetched', { totalUsers: allUsers.length });
       return allUsers;
@@ -779,6 +946,71 @@ class KisiAdapter {
       log.error('kisi.list_users_failed', { statusCode: err.statusCode || null, code: err.code || null }, err);
       throw err;
     }
+  }
+
+  /**
+   * Every Kisi user in the org, as Kisi returns them (same paging + I-4 integrity
+   * guard as listAllUsers). Migration tooling only — scripts/kisi-ownership-migrate.js
+   * needs the raw `metadata` and legacy `notes` to compare and backfill them. Runtime
+   * code uses listAllUsers, which never hands raw user records to the core.
+   */
+  async listAllUsersRaw(apiKey) {
+    if (!apiKey) throw new Error('[KisiAdapter] listAllUsersRaw requires an apiKey');
+    return _fetchAllKisiPages(
+      '/users',
+      (limit, offset) => `/users?limit=${limit}&offset=${offset}`,
+      apiKey
+    );
+  }
+
+  /**
+   * Write the DR-045 metadata marker onto one existing Kisi user (migration backfill).
+   *
+   * Read → merge → PATCH → re-read. Merges into the user's current metadata so keys
+   * another integration owns survive. Refuses (never overwrites) when the user's
+   * metadata already names a DIFFERENT client. Returns
+   *   { status: 'written',  ownership }  marker written and confirmed on re-read
+   *   { status: 'already',  ownership }  metadata already names this client — no call made
+   * Throws on: user gone (NOT_FOUND), another client's marker (CLIENT_MISMATCH),
+   * a full metadata object (KISI_METADATA_FULL), a re-read that does not show the
+   * marker (KISI_METADATA_NOT_PERSISTED), or any HTTP error.
+   */
+  async stampOwnershipMetadata(apiKey, userId, clientId, options = {}) {
+    if (!clientId) throw new Error('[KisiAdapter] stampOwnershipMetadata requires clientId');
+    const user = await this.getUserById(apiKey, userId);
+    if (!user) {
+      const err = new Error(`Kisi user ${userId} not found`);
+      err.code = 'NOT_FOUND';
+      err.userId = userId;
+      throw err;
+    }
+    const existing = parseOwnershipMetadata(user.metadata);
+    if (existing && existing.clientId === clientId) {
+      return { status: 'already', ownership: existing };
+    }
+    if (existing && existing.clientId !== clientId) {
+      const err = new Error(`Kisi user ${userId} metadata names client ${existing.clientId}, not ${clientId}`);
+      err.code = 'CLIENT_MISMATCH';
+      err.userId = userId;
+      err.ownerClientId = existing.clientId;
+      err.requestingClientId = clientId;
+      throw err;
+    }
+    const merged = mergeOwnershipMetadata(user.metadata, clientId, options.createdAt || null);
+    await kisiConnector.makeRequest(`/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ user: { metadata: merged } }),
+    }, apiKey);
+    const after = await this.getUserById(apiKey, userId);
+    const confirmed = after ? parseOwnershipMetadata(after.metadata) : null;
+    if (!confirmed || confirmed.clientId !== clientId) {
+      const err = new Error(`Kisi user ${userId} metadata marker did not persist`);
+      err.code = 'KISI_METADATA_NOT_PERSISTED';
+      err.userId = userId;
+      throw err;
+    }
+    log.info('kisi.user.ownership_metadata_stamped', { userId, clientId });
+    return { status: 'written', ownership: confirmed };
   }
 
   /**
@@ -1018,6 +1250,11 @@ class KisiAdapter {
 const adapter = new KisiAdapter();
 adapter.buildAccessSyncMarker = buildAccessSyncMarker;
 adapter.parseAccessSyncMarker = parseAccessSyncMarker;
+adapter.buildOwnershipMetadata = buildOwnershipMetadata;
+adapter.parseOwnershipMetadata = parseOwnershipMetadata;
+adapter.mergeOwnershipMetadata = mergeOwnershipMetadata;
+adapter.readUserOwnership = readUserOwnership;
+adapter.OWNERSHIP_METADATA_KEYS = AS_META;
 adapter.normalizeKisiName = normalizeKisiName;
 adapter.findElevatedAssignments = findElevatedAssignments;
 adapter._normalizeGroupLink = _normalizeGroupLink;

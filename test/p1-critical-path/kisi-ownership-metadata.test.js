@@ -1,0 +1,274 @@
+/**
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │  PRIORITY 1 — CRITICAL PATH                                             │
+ * │  Scenario: DR-045 Layer B moves to Kisi user metadata (phase 1)         │
+ * │                                                                         │
+ * │  Business consequence: the ownership marker is what stops AccessSync    │
+ * │  from deleting a gym's own Kisi users (staff, the owner, hand-added     │
+ * │  members). If a new user is created without it, or a guard reads it    │
+ * │  wrong, either a member's Kisi account is never cleaned up or — worse — │
+ * │  someone who is not ours is deleted.                                    │
+ * │                                                                         │
+ * │  What this tests: createUser writes flat metadata (Kisi limits) plus    │
+ * │  the legacy notes marker, and still creates the user if Kisi rejects    │
+ * │  metadata; deleteUser / setUserName accept metadata or notes and refuse │
+ * │  on no marker, another client, or a metadata-vs-notes conflict, with    │
+ * │  the error codes finalizeRevoke already maps to a clean refusal;        │
+ * │  Layer C still refuses elevated users; stampOwnershipMetadata merges,   │
+ * │  never overwrites another client, and confirms on re-read;              │
+ * │  listAllUsers reports owner + marker source for reconcile's count.      │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ */
+
+const kisiConnector = require('../../adapters/kisi/kisi-connector');
+const kisiAdapter   = require('../../adapters/kisi/kisi-adapter');
+
+jest.mock('../../adapters/kisi/kisi-connector', () => ({
+  makeRequest: jest.fn(),
+}));
+
+const API_KEY   = 'test-kisi-key-p1';
+const CLIENT_ID = 'client-hog-p1';
+const OTHER     = 'client-other-p1';
+const K = kisiAdapter.OWNERSHIP_METADATA_KEYS;
+
+const meta = (clientId, extra = {}) => ({
+  [K.MANAGED]: true, [K.CLIENT_ID]: clientId, [K.CREATED_AT]: '2026-10-24T00:00:00.000Z', [K.VERSION]: 1, ...extra,
+});
+const notesFor = (clientId) => `[AS|managed|${clientId}|2026-05-13T00:00:00Z] Created by AccessSync`;
+const call = (i) => kisiConnector.makeRequest.mock.calls[i];
+const bodyOf = (i) => JSON.parse(call(i)[1].body);
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
+describe('[P1] createUser writes the metadata marker', () => {
+  test('sends four flat metadata keys naming the client, alongside the legacy notes marker', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 501 });
+    await kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID });
+
+    const { user } = bodyOf(0);
+    expect(user.metadata).toEqual({
+      [K.MANAGED]: true,
+      [K.CLIENT_ID]: CLIENT_ID,
+      [K.CREATED_AT]: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      [K.VERSION]: 1,
+    });
+    expect(user.notes).toMatch(new RegExp(`^\\[AS\\|managed\\|${CLIENT_ID}\\|`));
+    // One timestamp for both records, so verify can compare them.
+    expect(kisiAdapter.parseAccessSyncMarker(user.notes).createdAt).toBe(user.metadata[K.CREATED_AT]);
+  });
+
+  test('stays inside Kisi metadata limits: flat primitives, keys <= 50 chars, values <= 500, <= 50 keys', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 502 });
+    await kisiAdapter.createUser(API_KEY, 'a@b.com', null, { clientId: CLIENT_ID });
+    const { metadata } = bodyOf(0).user;
+    const entries = Object.entries(metadata);
+    expect(entries.length).toBeLessThanOrEqual(50);
+    for (const [k, v] of entries) {
+      expect(k.length).toBeLessThanOrEqual(50);
+      expect(['string', 'number', 'boolean'].includes(typeof v) || v === null).toBe(true);
+      if (typeof v === 'string') expect(v.length).toBeLessThanOrEqual(500);
+    }
+  });
+
+  test('if Kisi rejects the metadata field, the user is still created (notes marker only)', async () => {
+    const rejected = Object.assign(new Error('Kisi 422'), {
+      statusCode: 422, body: { errors: { metadata: ['is not permitted'] } },
+    });
+    kisiConnector.makeRequest
+      .mockRejectedValueOnce(rejected)
+      .mockResolvedValueOnce({ id: 503 });
+
+    const id = await kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID });
+
+    expect(id).toBe(503);
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(2);
+    expect(bodyOf(0).user.metadata).toBeDefined();
+    expect(bodyOf(1).user.metadata).toBeUndefined();
+    expect(bodyOf(1).user.notes).toMatch(/^\[AS\|managed\|/);
+  });
+
+  test('a 422 about something else is thrown, never retried', async () => {
+    const taken = Object.assign(new Error('Kisi 422'), {
+      statusCode: 422, body: { errors: { email: ['has already been taken'] } },
+    });
+    kisiConnector.makeRequest.mockRejectedValueOnce(taken);
+    await expect(
+      kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID })
+    ).rejects.toBe(taken);
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('[P1] deleteUser Layer B reads metadata first, notes second', () => {
+  const noRoles = [{ role_id: 'group_basic', scope: 'group' }];
+
+  test('metadata-only marker for this client → DELETE fires', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID), notes: null })
+      .mockResolvedValueOnce(noRoles)
+      .mockResolvedValueOnce({});
+    await kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID });
+    expect(call(2)[1].method).toBe('DELETE');
+  });
+
+  test('legacy notes-only marker still passes during the transition', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 9, notes: notesFor(CLIENT_ID) })
+      .mockResolvedValueOnce(noRoles)
+      .mockResolvedValueOnce({});
+    await kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID });
+    expect(call(2)[1].method).toBe('DELETE');
+  });
+
+  test('metadata naming another client → CLIENT_MISMATCH, no DELETE', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(OTHER) });
+    await expect(kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID }))
+      .rejects.toMatchObject({ code: 'CLIENT_MISMATCH', ownerClientId: OTHER });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('metadata and notes naming different clients → CLIENT_MISMATCH (markerConflict), no DELETE', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID), notes: notesFor(OTHER) });
+    await expect(kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID }))
+      .rejects.toMatchObject({ code: 'CLIENT_MISMATCH', markerConflict: true });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('a conflict refuses even when the caller passes no clientId', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID), notes: notesFor(OTHER) });
+    await expect(kisiAdapter.deleteUser(API_KEY, 9, {}))
+      .rejects.toMatchObject({ code: 'CLIENT_MISMATCH', markerConflict: true });
+  });
+
+  test('accesssync_managed not true → no marker → UNOWNED_USER', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID, { [K.MANAGED]: false }) });
+    await expect(kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID }))
+      .rejects.toMatchObject({ code: 'UNOWNED_USER' });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('Layer C still refuses an elevated user that carries our metadata marker', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID) })
+      .mockResolvedValueOnce([{ role_id: 'administrator', scope: 'organization' }]);
+    await expect(kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID }))
+      .rejects.toMatchObject({ code: 'ELEVATED_ROLE_ATTACHED' });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('[P1] setUserName ownership check', () => {
+  test('metadata-only owner → PATCHes name only', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID) })
+      .mockResolvedValueOnce({});
+    await kisiAdapter.setUserName(API_KEY, 9, 'Ann Bee', { clientId: CLIENT_ID });
+    expect(bodyOf(1)).toEqual({ user: { name: 'Ann Bee' } });
+  });
+
+  test('conflicting markers → refuses with CLIENT_MISMATCH, no PATCH', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(OTHER), notes: notesFor(CLIENT_ID) });
+    await expect(kisiAdapter.setUserName(API_KEY, 9, 'Ann Bee', { clientId: CLIENT_ID }))
+      .rejects.toMatchObject({ code: 'CLIENT_MISMATCH', markerConflict: true });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('no marker → NOT_ACCESSSYNC_MANAGED, as before', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: {}, notes: '' });
+    await expect(kisiAdapter.setUserName(API_KEY, 9, 'Ann Bee', { clientId: CLIENT_ID }))
+      .rejects.toMatchObject({ code: 'NOT_ACCESSSYNC_MANAGED' });
+  });
+});
+
+describe('[P1] ownership helpers', () => {
+  test('readUserOwnership: metadata wins, notes falls back, conflict and none are explicit', () => {
+    expect(kisiAdapter.readUserOwnership({ metadata: meta(CLIENT_ID) }))
+      .toMatchObject({ clientId: CLIENT_ID, source: 'metadata' });
+    expect(kisiAdapter.readUserOwnership({ notes: notesFor(CLIENT_ID) }))
+      .toMatchObject({ clientId: CLIENT_ID, source: 'notes' });
+    expect(kisiAdapter.readUserOwnership({ metadata: meta(CLIENT_ID), notes: notesFor(CLIENT_ID) }))
+      .toMatchObject({ clientId: CLIENT_ID, source: 'metadata' });
+    expect(kisiAdapter.readUserOwnership({ metadata: meta(CLIENT_ID), notes: notesFor(OTHER) }))
+      .toEqual({ conflict: true, metadataClientId: CLIENT_ID, notesClientId: OTHER });
+    expect(kisiAdapter.readUserOwnership({ metadata: {}, notes: 'VIP — comp access' })).toBeNull();
+  });
+
+  test('parseOwnershipMetadata accepts "true" as a string, rejects a blank client id and non-objects', () => {
+    expect(kisiAdapter.parseOwnershipMetadata(meta(CLIENT_ID, { [K.MANAGED]: 'true' }))).toMatchObject({ clientId: CLIENT_ID });
+    expect(kisiAdapter.parseOwnershipMetadata(meta('  '))).toBeNull();
+    expect(kisiAdapter.parseOwnershipMetadata([])).toBeNull();
+    expect(kisiAdapter.parseOwnershipMetadata(null)).toBeNull();
+  });
+
+  test('mergeOwnershipMetadata keeps foreign keys and refuses to exceed 50 keys', () => {
+    const merged = kisiAdapter.mergeOwnershipMetadata({ city: 'Austin' }, CLIENT_ID, '2026-01-01T00:00:00.000Z');
+    expect(merged).toMatchObject({ city: 'Austin', [K.CLIENT_ID]: CLIENT_ID, [K.CREATED_AT]: '2026-01-01T00:00:00.000Z' });
+
+    const crowded = Object.fromEntries(Array.from({ length: 47 }, (_, i) => [`k${i}`, i]));
+    expect(() => kisiAdapter.mergeOwnershipMetadata(crowded, CLIENT_ID)).toThrow(
+      expect.objectContaining({ code: 'KISI_METADATA_FULL' })
+    );
+  });
+});
+
+describe('[P1] stampOwnershipMetadata (backfill write)', () => {
+  test('merges into existing metadata, PATCHes metadata only, confirms on re-read', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 9, metadata: { city: 'Austin' }, notes: notesFor(CLIENT_ID) }) // GET
+      .mockResolvedValueOnce(undefined)                                                          // PATCH (204)
+      .mockResolvedValueOnce({ id: 9, metadata: { city: 'Austin', ...meta(CLIENT_ID) } });       // re-GET
+
+    const res = await kisiAdapter.stampOwnershipMetadata(API_KEY, 9, CLIENT_ID, { createdAt: '2026-05-13T00:00:00Z' });
+
+    expect(res.status).toBe('written');
+    expect(call(1)[0]).toBe('/users/9');
+    expect(call(1)[1].method).toBe('PATCH');
+    const sent = bodyOf(1);
+    expect(Object.keys(sent.user)).toEqual(['metadata']);
+    expect(sent.user.metadata).toMatchObject({ city: 'Austin', [K.CLIENT_ID]: CLIENT_ID, [K.CREATED_AT]: '2026-05-13T00:00:00Z' });
+  });
+
+  test('already marked for this client → no PATCH', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID) });
+    const res = await kisiAdapter.stampOwnershipMetadata(API_KEY, 9, CLIENT_ID);
+    expect(res.status).toBe('already');
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('metadata names another client → CLIENT_MISMATCH, never overwritten', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(OTHER) });
+    await expect(kisiAdapter.stampOwnershipMetadata(API_KEY, 9, CLIENT_ID))
+      .rejects.toMatchObject({ code: 'CLIENT_MISMATCH' });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('a re-read without the marker → KISI_METADATA_NOT_PERSISTED', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 9, metadata: {} })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ id: 9, metadata: {} });
+    await expect(kisiAdapter.stampOwnershipMetadata(API_KEY, 9, CLIENT_ID))
+      .rejects.toMatchObject({ code: 'KISI_METADATA_NOT_PERSISTED' });
+  });
+});
+
+describe('[P1] listAllUsers reports owner and marker source (reconcile progress count)', () => {
+  test('metadata, notes, conflict and unowned users are labelled', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce([
+      { id: 1, email: 'a@x', name: 'A', metadata: meta(CLIENT_ID) },
+      { id: 2, email: 'b@x', name: 'B', notes: notesFor(CLIENT_ID) },
+      { id: 3, email: 'c@x', name: 'C', metadata: meta(CLIENT_ID), notes: notesFor(OTHER) },
+      { id: 4, email: 'd@x', name: 'D' },
+    ]);
+    const users = await kisiAdapter.listAllUsers(API_KEY);
+    expect(users).toEqual([
+      { id: 1, email: 'a@x', name: 'A', ownerClientId: CLIENT_ID, ownershipSource: 'metadata' },
+      { id: 2, email: 'b@x', name: 'B', ownerClientId: CLIENT_ID, ownershipSource: 'notes' },
+      { id: 3, email: 'c@x', name: 'C', ownerClientId: null, ownershipSource: 'conflict' },
+      { id: 4, email: 'd@x', name: 'D', ownerClientId: null, ownershipSource: null },
+    ]);
+  });
+});

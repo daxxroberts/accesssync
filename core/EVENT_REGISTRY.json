@@ -124,6 +124,7 @@
     "kisi.user.created":                  { "persist": true },
     "kisi.user.deleted":                  { "persist": true },
     "kisi.user.renamed":                  { "persist": true },
+    "kisi.user.ownership_metadata_stamped": { "persist": true },
     "kisi.user.delete_skipped_already_gone": { "persist": true },
 
     "queue.job.start":                    { "persist": false },

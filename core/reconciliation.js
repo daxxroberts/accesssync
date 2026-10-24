@@ -1134,6 +1134,7 @@ class NightlyReconciliation {
     let pass3RoleDriftCovered = 0;
     let pass3UserRecovered = 0;
     let pass3RepairPending = 0;
+    let pass3MarkerNotInMetadata = 0;
 
     if (hardwarePlatform === 'kisi') {
       try {
@@ -1187,6 +1188,21 @@ class NightlyReconciliation {
            AND mm.source_tag = 'accesssync'`,
         [client.id]
       );
+
+      // DR-045 metadata transition — progress check only, never a finding. Counts this
+      // client's active members whose Kisi user carries an ownership marker that is not
+      // (yet) in metadata: the legacy notes marker alone, or notes and metadata naming
+      // different clients. A user with no marker at all is a pre-existing Kisi account
+      // AccessSync linked to, not one it created — not part of the backfill, not counted.
+      // Backfill is done when this reads 0.
+      const kisiUserById = new Map(pass3KisiUsers.map(u => [String(u.id), u]));
+      const markerCounted = new Set();
+      for (const row of activeAccessRows.rows) {
+        const ku = kisiUserById.get(row.hardware_user_id);
+        if (!ku || markerCounted.has(row.hardware_user_id)) continue;
+        markerCounted.add(row.hardware_user_id);
+        if (ku.ownershipSource === 'notes' || ku.ownershipSource === 'conflict') pass3MarkerNotInMetadata++;
+      }
 
       // Paying for this plan → the door is missing: repair_pending, never a
       // removal. Otherwise → a removal proposal (held — Phase 1). Kisi-sourced
@@ -1335,6 +1351,9 @@ class NightlyReconciliation {
       // Of the confirmed / drifted findings, how many belong to a PAYING member
       // (repair_pending, not a removal proposal).
       repairPending:             pass3RepairPending,
+      // DR-045 metadata transition: present Kisi users of active members whose
+      // ownership marker is only in notes (or conflicts). Informational; 0 = backfill complete.
+      ownershipMarkerNotInMetadata: pass3MarkerNotInMetadata,
       traceId:                   this._sweepTraceId,
     });
 
