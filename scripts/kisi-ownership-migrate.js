@@ -42,14 +42,25 @@
  *   ... --client <client uuid>     limit to one client
  *   ... --list                     print Kisi user ids for every category, not just the actionable ones
  *
+ * No-database mode (a Claude cloud session, which can reach Kisi but not Postgres):
+ *   KISI_API_KEY=<that client's plain Kisi key> \
+ *   node scripts/kisi-ownership-migrate.js verify --client <client uuid> [--db-known-file ids.txt]
+ * One client per run. --db-known-file lists the Kisi user ids linked to that client's
+ * members (one per line, or a JSON array), exported separately; without it the
+ * "linked to an AccessSync member" count is not shown. Nothing else changes.
+ *
  * Exit code: 0 = every client ready for phase 2 (or backfill finished with no
  * failures), 1 = work remains or a write failed, 2 = conflicting markers found.
  */
 
-const db = require('../db');
-const { decryptApiKey } = require('../core/crypto-utils');
+const fs = require('fs');
 const kisiAdapter = require('../adapters/kisi/kisi-adapter');
 const kisiConnector = require('../adapters/kisi/kisi-connector');
+
+// db.js refuses to load without DATABASE_URL, so the database and key decryption are
+// only required when the script actually uses them (not in KISI_API_KEY mode).
+let _db = null;
+const getDb = () => (_db = _db || require('../db'));
 
 function arg(flag) {
   const i = process.argv.indexOf(flag);
@@ -60,6 +71,16 @@ const MODE     = process.argv[2];
 const APPLY    = process.argv.includes('--apply');
 const CLIENT   = arg('--client');
 const LIST_ALL = process.argv.includes('--list');
+const DB_KNOWN_FILE = arg('--db-known-file');
+const DIRECT_KEY = process.env.KISI_API_KEY || null;
+
+/** Parse a --db-known-file: one Kisi user id per line, or a JSON array. Exported for tests. */
+function parseIdList(text) {
+  const t = String(text || '').trim();
+  if (!t) return new Set();
+  if (t.startsWith('[')) return new Set(JSON.parse(t).map(x => String(x).trim()).filter(Boolean));
+  return new Set(t.split(/[\r\n,]+/).map(x => x.trim()).filter(Boolean));
+}
 
 /**
  * Sort one client's Kisi users into the categories the migration cares about.
@@ -154,7 +175,7 @@ function ids(list, max = 50) {
   return list.length > max ? `${shown}, … (+${list.length - max} more)` : shown;
 }
 
-function printReport(name, clientId, c, dbMissingFromKisi) {
+function printReport(name, clientId, c, dbMissingFromKisi, linksChecked = true) {
   const row = (label, list, note = '') => console.log(`  ${label.padEnd(54)} ${String(list.length).padStart(5)}${note}`);
   console.log(`\n=== ${name} (${clientId}) ===`);
   console.log(`  Kisi users in the org: ${c.total}`);
@@ -163,7 +184,9 @@ function printReport(name, clientId, c, dbMissingFromKisi) {
   row('AccessSync, notes only — needs backfill', c.notesOnly);
   row('CONFLICT — metadata and notes name different clients', c.conflict);
   row("another client's marker", c.foreign);
-  row('no marker', c.none, `   (${c.noneLinked.length} linked to an AccessSync member: pre-existing accounts, left alone)`);
+  row('no marker', c.none, linksChecked
+    ? `   (${c.noneLinked.length} linked to an AccessSync member: pre-existing accounts, left alone)`
+    : '   (member links not checked: no database in this run; never backfilled either way)');
   if (c.createdAtDiffers.length) row('agree on client, timestamps differ (informational)', c.createdAtDiffers);
   console.log(`  AccessSync members whose Kisi user is gone from Kisi: ${dbMissingFromKisi}`);
 
@@ -183,7 +206,11 @@ function printReport(name, clientId, c, dbMissingFromKisi) {
 }
 
 async function loadClients() {
-  const { rows } = await db.query(
+  if (DIRECT_KEY) {
+    if (!CLIENT) throw new Error('KISI_API_KEY mode needs --client <client uuid> (whose marker to look for)');
+    return [{ client_id: CLIENT, client_name: 'client from --client', directKey: DIRECT_KEY }];
+  }
+  const { rows } = await getDb().query(
     `SELECT c.id AS client_id, c.name AS client_name, cs.hardware_api_key
        FROM clients c
        JOIN LATERAL (
@@ -200,7 +227,9 @@ async function loadClients() {
 }
 
 async function loadDbKnownIds(clientId) {
-  const { rows } = await db.query(
+  if (DB_KNOWN_FILE) return parseIdList(fs.readFileSync(DB_KNOWN_FILE, 'utf8'));
+  if (DIRECT_KEY) return null;   // not known in no-database mode
+  const { rows } = await getDb().query(
     `SELECT DISTINCT ma.hardware_user_id::text AS id
        FROM member_access ma
       WHERE ma.client_id = $1 AND ma.hardware_user_id IS NOT NULL`,
@@ -210,9 +239,9 @@ async function loadDbKnownIds(clientId) {
 }
 
 async function runClient(row) {
-  let apiKey;
+  let apiKey = row.directKey || null;
   try {
-    apiKey = decryptApiKey(row.hardware_api_key);
+    if (!apiKey) apiKey = require('../core/crypto-utils').decryptApiKey(row.hardware_api_key);
   } catch (err) {
     console.log(`\n=== ${row.client_name} (${row.client_id}) ===\n  SKIPPED — could not decrypt the Kisi key: ${err.message}`);
     return { ready: false, conflicts: 0, failed: 0 };
@@ -221,11 +250,11 @@ async function runClient(row) {
   const users = await kisiAdapter.listAllUsersRaw(apiKey);
   const dbKnown = await loadDbKnownIds(row.client_id);
   const kisiIds = new Set(users.map(u => String(u.id)));
-  const dbMissingFromKisi = [...dbKnown].filter(id => !kisiIds.has(id)).length;
-  const c = classifyUsers(users, row.client_id, dbKnown);
+  const dbMissingFromKisi = dbKnown ? [...dbKnown].filter(id => !kisiIds.has(id)).length : 'not checked (no database)';
+  const c = classifyUsers(users, row.client_id, dbKnown || new Set());
 
   if (MODE === 'verify') {
-    const ready = printReport(row.client_name, row.client_id, c, dbMissingFromKisi);
+    const ready = printReport(row.client_name, row.client_id, c, dbMissingFromKisi, !!dbKnown);
     return { ready, conflicts: c.conflict.length, failed: 0 };
   }
 
@@ -289,6 +318,10 @@ async function main() {
     console.error('verify is read-only; --apply does nothing there');
     process.exit(64);
   }
+  if (DIRECT_KEY && !CLIENT) {
+    console.error('KISI_API_KEY mode needs --client <client uuid> (whose marker to look for)');
+    process.exit(64);
+  }
   const clients = await loadClients();
   if (clients.length === 0) {
     console.log(CLIENT ? `No active Kisi client ${CLIENT}` : 'No active Kisi clients');
@@ -318,8 +351,8 @@ async function main() {
 
 if (require.main === module) {
   main()
-    .then(code => db.pool.end().then(() => process.exit(code), () => process.exit(code)))
+    .then(code => (_db ? _db.pool.end() : Promise.resolve()).then(() => process.exit(code), () => process.exit(code)))
     .catch(err => { console.error('FATAL', err); process.exit(1); });
 }
 
-module.exports = { classifyUsers, notesClearDecision, clearNotes };
+module.exports = { classifyUsers, notesClearDecision, clearNotes, parseIdList };

@@ -14,7 +14,7 @@ jest.mock('../../adapters/kisi/kisi-connector', () => ({ makeRequest: jest.fn() 
 
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const kisiAdapter = require('../../adapters/kisi/kisi-adapter');
-const { classifyUsers, notesClearDecision, clearNotes } = require('../../scripts/kisi-ownership-migrate');
+const { classifyUsers, notesClearDecision, clearNotes, parseIdList } = require('../../scripts/kisi-ownership-migrate');
 
 const ME = 'client-hog';
 const OTHER = 'client-other';
@@ -114,5 +114,14 @@ describe('[P3] kisi-ownership-migrate clear-notes', () => {
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce({ id: 3, metadata: {}, notes: null });
     await expect(clearNotes('key', '3', ME)).rejects.toThrow(/metadata marker missing/);
+  });
+});
+
+describe('[P3] kisi-ownership-migrate no-database mode', () => {
+  test('--db-known-file accepts one id per line, commas, or a JSON array', () => {
+    expect([...parseIdList('101\n102\r\n\n103')]).toEqual(['101', '102', '103']);
+    expect([...parseIdList('101, 102')]).toEqual(['101', '102']);
+    expect([...parseIdList('[101, "102"]')]).toEqual(['101', '102']);
+    expect(parseIdList('').size).toBe(0);
   });
 });
