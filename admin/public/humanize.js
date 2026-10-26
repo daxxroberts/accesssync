@@ -205,7 +205,7 @@
       return 'Kept ' + who + "'s Kisi account instead of deleting it — it still has door access that AccessSync didn't add" + at +
         '. That access was left alone.';
     if (e === 'adapter.finalize_revoke.assignment_check_failed' || e === 'ADAPTER_FINALIZE_REVOKE_ASSIGNMENT_CHECK_FAILED')
-      return 'Kept ' + who + "'s Kisi account instead of deleting it — AccessSync couldn't check what other door access it has, so it didn't delete on a guess. Nothing else was removed.";
+      return "Didn't delete " + who + "'s Kisi account yet — AccessSync couldn't check what other door access it has, so it won't delete on a guess. It tries again, and if that keeps failing it shows on the Errors page.";
     if (e === 'adapter.not_paying.record_failed' || e === 'ADAPTER_NOT_PAYING_RECORD_FAILED')
       return "Couldn't note that a member wasn't paying in Wix during a sync — nothing was removed. The next sync notes it again.";
     if (e === 'adapter.not_paying.clear_failed' || e === 'ADAPTER_NOT_PAYING_CLEAR_FAILED')

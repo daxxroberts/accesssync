@@ -12,6 +12,7 @@ const KNOWN = [
   'HARDWARE_RESOURCE_NOT_FOUND', 'HARDWARE_VALIDATION_ERROR', 'HARDWARE_API_ERROR',
   'KISI_ROLE_CONFLICT_UNRESOLVED', 'HARDWARE_USER_GONE', 'INVALID_HARDWARE_REQUEST',
   'WIX_KEY_INVALID', 'WIX_KEY_MISSING', 'WIX_KEY_PERMISSIONS', 'PLAN_NOT_MAPPED', 'SUBSCRIPTION_LAPSED',
+  'UNOWNED_USER', 'CLIENT_MISMATCH', 'ELEVATED_ROLE_ATTACHED',
 ];
 const steps = (g) => g.steps.join(' ');
 
@@ -180,6 +181,31 @@ describe('review follow-ups', () => {
     expect(g.retry).toBe('none');
     expect(g.steps.join(' ')).not.toMatch(/press Retry/i);
     expect(g.steps.length).toBeGreaterThan(0);
+  });
+
+  describe('DR-045 delete-guard refusals (2026-10-26 audit: these fell through to "something went wrong, press Retry")', () => {
+    test.each(['UNOWNED_USER', 'CLIENT_MISMATCH', 'ELEVATED_ROLE_ATTACHED'])(
+      '%s is recognised: AccessSync support owns it and Retry is never offered (Kisi refuses the same way every time)', (code) => {
+        for (const event_type of ['member.deleted', 'plan.cancelled', 'payment.failed']) {
+          const g = guidanceFor({ error_code: code, event_type });
+          expect(g.owner).toBe(OWNER.ACCESSSYNC);
+          expect(g.retry).toBe(RETRY.NONE);
+          expect(g.headline).not.toMatch(/does not recognise/);
+          expect(steps(g)).not.toMatch(/press Retry/i);
+        }
+      });
+
+    test('a pre-existing or staff Kisi account may be closed by the gym; another client\'s marker may not', () => {
+      for (const code of ['UNOWNED_USER', 'ELEVATED_ROLE_ATTACHED']) {
+        const row = { error_code: code, event_type: 'member.deleted' };
+        expect(guidanceFor(row).gymMayDismiss).toBe(true);
+        expect(steps(guidanceFor(row))).toMatch(/mark this resolved/);
+        expect(dismissRefusal(row, 'operator')).toBeNull();
+      }
+      const mismatch = { error_code: 'CLIENT_MISMATCH', event_type: 'plan.cancelled' };
+      expect(guidanceFor(mismatch).gymMayDismiss).toBe(false);
+      expect(dismissRefusal(mismatch, 'operator')).not.toBeNull();
+    });
   });
 
   test('a self-clearing error open for 24h+ is AccessSync\'s on EVERY screen, not just the panel', () => {

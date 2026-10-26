@@ -723,16 +723,15 @@ describe('[P1] F7 cross-layer — finalizeRevoke Guard D fails closed on a non-a
     db.getClient.mockResolvedValue({ query: jest.fn().mockResolvedValue({ rows: [] }), release: jest.fn() });
   });
 
-  it.each(NON_ARRAY_2XX_BODIES)('Guard D lookup returns %s → assignment_check_failed; no Kisi DELETE, no purge', async (_label, body) => {
+  it.each(NON_ARRAY_2XX_BODIES)('Guard D lookup returns %s → throws (job retries); no Kisi DELETE, no purge', async (_label, body) => {
     kisiConnector.makeRequest
       .mockResolvedValueOnce(body)   // Guard D: GET /role_assignments?user_id=
       .mockResolvedValue({});        // anything after (a delete path) — must not be reached
 
-    const result = await standardAdapter.finalizeRevoke(
+    await expect(standardAdapter.finalizeRevoke(
       MEMBER_ACCESS_ID, TENANT_ID, 'kisi', API_KEY, HARDWARE_USER_ID
-    );
+    )).rejects.toMatchObject({ code: 'KISI_PAGE_INTEGRITY' });
 
-    expect(result).toEqual({ finalized: false, reason: 'assignment_check_failed' });
     expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
     expect(kisiConnector.makeRequest.mock.calls[0][0])
       .toBe(`/role_assignments?user_id=${HARDWARE_USER_ID}&limit=100`);

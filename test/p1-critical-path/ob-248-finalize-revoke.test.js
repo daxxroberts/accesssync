@@ -126,9 +126,15 @@ describe('OB-248: standardAdapter.finalizeRevoke + queue-worker wiring', () => {
   });
 
   describe('queue-worker integration', () => {
-    test('finalizeRevoke is called only when targetStatus is inactive', () => {
-      expect(workerSrc).toMatch(/if \(targetStatus === 'inactive'\)/);
+    test('finalizeRevoke is called only on a full revoke (inactive) or member.deleted (deleted)', () => {
+      expect(workerSrc).toMatch(/if \(targetStatus === 'inactive' \|\| targetStatus === 'deleted'\)/);
       expect(workerSrc).toMatch(/standardAdapter\.finalizeRevoke/);
+    });
+
+    test('a finalize that threw parks the member at removing, so the retry can find them', () => {
+      const finalizeFailedIdx = workerSrc.search(/queue\.revoke\.finalize_failed/);
+      expect(workerSrc.slice(finalizeFailedIdx - 200, finalizeFailedIdx)).toMatch(/finalizePending = true/);
+      expect(workerSrc).toMatch(/releaseLock\(lockMemberId, tenantId, finalizePending \? 'removing' : 'failed'\)/);
     });
 
     test('finalizeRevoke runs AFTER completeRevoke (ordering invariant)', () => {

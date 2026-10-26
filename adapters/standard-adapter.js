@@ -1304,8 +1304,9 @@ class StandardAdapter {
    *             → reason 'shared_hardware_user', alert finalize_refused_shared_user.
    *   Guard D — the Kisi user still holds ≥1 role assignment after our revoke
    *             → reason 'user_has_other_assignments', alert
-   *             finalize_refused_other_assignments. Lookup failure → reason
-   *             'assignment_check_failed' (fail closed).
+   *             finalize_refused_other_assignments. Lookup failure → logs
+   *             assignment_check_failed and THROWS (fail closed, and retried —
+   *             the one guard outcome that is not a refusal).
    *
    * On Kisi 404 (user already gone — operator manually deleted, or earlier
    * sweep already cleaned up) we treat as idempotent success and proceed
@@ -1354,8 +1355,9 @@ class StandardAdapter {
     }
 
     if (source_tag !== 'accesssync') {
-      // Defense-in-depth Layer A — this is also enforced upstream in grant-revoke,
-      // but finalize is a separate destructive step, so re-check here.
+      // Layer A — AccessSync deletes only Kisi users it created (OB-125). Since the
+      // 2026-10-26 fix this is the only check for member.deleted too: processRevoke
+      // removes the doors and leaves the user delete to this method.
       log.warn('adapter.finalize_revoke.refused_foreign_source_tag', {
         memberId, tenantId, sourceTag: source_tag,
       });
@@ -1412,7 +1414,12 @@ class StandardAdapter {
       // revoke removed ours: door access AccessSync did not add (or did not
       // just remove). Deleting the user would silently strip it. Any
       // assignment at all → refuse. The lookup failing (throw, or a non-array
-      // answer) → refuse too: fail closed, never delete on an unknown.
+      // answer) → fail closed, never delete on an unknown — and throw, so the
+      // job retries. It used to return { finalized:false } and the job
+      // completed: the Kisi user and PII stayed with no alert and nothing left
+      // to try again (2026-10-26 audit). Thrown, queue-worker parks the member
+      // 'removing' and BullMQ retries; a lookup that keeps failing
+      // dead-letters to the Errors page and the operator email.
       let otherAssignments;
       try {
         otherAssignments = await hardwareAdapter.getRoleAssignmentsForUser(
@@ -1427,7 +1434,7 @@ class StandardAdapter {
           statusCode: lookupErr.statusCode || null,
           errorMessage: lookupErr.message || null,
         });
-        return { finalized: false, reason: 'assignment_check_failed' };
+        throw lookupErr;
       }
       if (otherAssignments.length > 0) {
         log.warn('adapter.finalize_revoke.refused_other_assignments', {
@@ -1572,6 +1579,8 @@ class StandardAdapter {
    *   - 'failed' (legacy)         → access row recomputed from its source rows (rollupAccessStatus).
    *                                 Per-plan failure recorded on the source row by callers.
    *   - 'pending_identity'        → preserved (access-row-level state per spec).
+   *   - 'removing'                → preserved: a revoke whose finalizeRevoke threw stays
+   *                                 findable for its retry (queue-worker Step 4).
    *   - 'pending_hardware' (legacy) / 'pending_start' (legacy) → callers MUST use the new
    *                                 parkPendingHardware / parkPendingStart methods which write
    *                                 source rows. If passed here, we translate to 'inactive'
@@ -1581,7 +1590,7 @@ class StandardAdapter {
    *
    * @param {string} memberId   member_access.id
    * @param {string} tenantId
-   * @param {string} lockStatus  one of: 'failed' (default) | 'pending_identity'
+   * @param {string} lockStatus  one of: 'failed' (default) | 'pending_identity' | 'removing'
    * @param {Object} [_options]  legacy { planId } — ignored after S-11 (use parkPending* instead)
    */
   async releaseLock(memberId, tenantId, lockStatus = 'failed', _options = {}) {
@@ -1589,6 +1598,13 @@ class StandardAdapter {
     switch (lockStatus) {
       case 'pending_identity':
         resolvedStatus = 'pending_identity';
+        break;
+      case 'removing':
+        // queue-worker: the revoke committed but finalizeRevoke threw. The doors are gone
+        // and the sources cleared, so the rollup would say 'inactive' — which the revoke
+        // retry's lookup cannot see. 'removing' (DR-044: removal under way) it can, and
+        // the reconcile sweep's rollup leaves it alone.
+        resolvedStatus = 'removing';
         break;
       case 'pending_hardware':
       case 'pending_start':

@@ -77,6 +77,19 @@ const BY_CODE = {
   HARDWARE_USER_GONE: accessSyncOwned(
     'This member\'s door account no longer exists in Kisi (it may have been deleted there).',
     GONE_STEPS, { gymMayDismiss: true }),
+  // DR-045 delete guard (adapters/kisi/kisi-adapter.js): Kisi answers the same way every time, so Retry cannot help.
+  // A member removal no longer fails on these (finalizeRevoke takes the doors away first and leaves the account with a
+  // config alert), so a row here is an older one, or a day-pass door link on another client's marker.
+  UNOWNED_USER: accessSyncOwned(
+    'AccessSync did not create this person\'s Kisi account, so it will not delete it.',
+    [SUPPORT_LINE, 'If they should no longer get in, check their door access in Kisi. If the account is meant to stay, you can mark this resolved.'],
+    { gymMayDismiss: true }),
+  ELEVATED_ROLE_ATTACHED: accessSyncOwned(
+    'This person\'s Kisi account has admin, manager or owner rights, so AccessSync will not delete it.',
+    [SUPPORT_LINE, 'If they are staff, nothing needs to change and you can mark this resolved. If not, review their roles in Kisi.'],
+    { gymMayDismiss: true }),
+  CLIENT_MISMATCH: accessSyncOwned(
+    'This Kisi record is marked as belonging to a different AccessSync account, so AccessSync will not change or delete it.'),
   // Written by core/source-retry-probe.js when its automatic retries ran out; not a queue job, so Retry cannot replay it.
   SOURCE_RETRY_EXHAUSTED: accessSyncOwned(
     'AccessSync tried several times to finish this door assignment and could not. Pressing Retry would not change that.'),
