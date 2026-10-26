@@ -16,7 +16,7 @@ const router = require('express').Router();
 const db     = require('../../db');
 const { encryptApiKey, decryptApiKey } = require('../../core/crypto-utils');
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
-const { suspendLocationMembers } = require('../../core/location-lapse');
+const { suspendLocationMembers, reactivateLocationMembers } = require('../../core/location-lapse');
 const { logAdminAction } = require('../middleware/audit');
 const { log } = require('../../core/logger');
 const { ensureWebhookSecret } = require('../../core/webhook-secret');
@@ -97,6 +97,13 @@ async function activateLocationMembersAdmin(clientId, locationId) {
       }
     }
     log.info('admin.activate_location_done', { locationId });
+  } catch (err) {
+    log.error('admin.activate_location_error', { locationId }, err);
+  }
+  // The loop above only reaches members still 'active'; the ones the lapse suspended
+  // are turned back on here — the same function the operator portal's activate uses.
+  try {
+    await reactivateLocationMembers(locationId, clientId);
   } catch (err) {
     log.error('admin.activate_location_error', { locationId }, err);
   }

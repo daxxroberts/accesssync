@@ -105,6 +105,7 @@
     if (e === 'revoked')                          return 'Removed access for ' + who + door + '.';
     if (e === 'deleted')                          return "Deleted " + who + "'s hardware user.";
     if (e === 'location_suspended')               return 'Suspended ' + who + ' (location subscription lapsed).';
+    if (e === 'location_reactivated')             return 'Restored access for ' + who + ' (location subscription reactivated).';
     if (e === 'reactivated')                      return 'Restored access for ' + who + door + '.';
 
     // Diagnostic events
@@ -280,6 +281,11 @@
     if (e === 'revoke_holder_lapse_pending')
       return memberStart + at + " is on a shared plan whose main member no longer shows as paying in Wix. Automatic removal is paused while AccessSync's safety checks roll out, " +
         'so nothing was removed and they can still get in.';
+    // core/location-lapse.js reactivateLocationMembers — same meaning as describeConfigAlert.
+    if (e === 'location_reactivate_failed')
+      return (c.member ? c.member + ' is' : 'Members paused while the location was off are') + ' still locked out' + at +
+        ": the location is back on, but AccessSync couldn't turn their door access back on in Kisi. " +
+        'Turn their access back on in Kisi to let them in right away.';
     // Fix round (2026-09-10, F2): a declined, pending or unrecognized Wix payment is
     // not a cancellation — the sweep never proposes it for removal. One alert per
     // membership (a family is one alert, naming the main member).
@@ -685,6 +691,12 @@
       return 'Operator triggered an ad-hoc sync run' + at + '.';
     if (e === 'operator.location.reactivated' || e === 'OPERATOR_LOCATION_REACTIVATED')
       return 'Operator reactivated a location' + at + ' — mapping fan-out complete.';
+    if (e === 'location.reactivate_complete' || e === 'LOCATION_REACTIVATE_COMPLETE') {
+      var lr = ev.payload || {};
+      return 'Location reactivated' + at + ' — turned door access back on for ' + (lr.restored || 0) +
+        ' member(s) the lapse paused' + (lr.held ? '; ' + lr.held + ' left off (Wix payment failed meanwhile)' : '') +
+        (lr.errors ? '; ' + lr.errors + ' could not be turned back on' : '') + '.';
+    }
     if (e === 'operator.location.apikey_set' || e === 'OPERATOR_LOCATION_APIKEY_SET')
       return 'Operator saved a per-location hardware API key from the portal.';
     if (e === 'operator.retry.pending_hardware' || e === 'OPERATOR_RETRY_PENDING_HARDWARE')

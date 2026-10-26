@@ -534,6 +534,31 @@ Operator-portal (per-client operator scope) mutation events. All persisted-by-ov
 | `operator.member.welcome_email_resent` | info | Operator manually resent the access_ready email to one member (Members page kebab menu) |
 | `operator.member.resend_welcome_email_failed` | error | Manual welcome-email resend threw (DB error, template error) — distinct from a Resend delivery failure, which `sendMemberEmail` already logs as `email.member.failed` |
 
+## Location Lapse / Reactivation Events (core/location-lapse.js)
+
+A lapse (`suspendLocationMembers`) suspends each member's Kisi user and flips their source rows at that
+location to `failed` with `failure_reason = 'location_lapse'`. Reactivation (`reactivateLocationMembers`,
+called by both activate endpoints — operator portal and owner hub) turns exactly those members back on via
+`hardwareAdapter.enableAccess` (the payment.recovered call) and restores the marked rows.
+
+| Event | Level | Description |
+|---|---|---|
+| `location.already_cancelled` | info | Lapse skipped: the location is already cancelled |
+| `location.no_active_members` | info | Lapse found no members with active access at the location |
+| `location.no_hardware_user` | warn | Lapse or reactivation: the member has no Kisi user (day-pass only) — source rows flipped/restored, no Kisi call |
+| `location.suspend_member_failed` | error | Lapse: one member's Kisi suspend or source-row flip threw; the others proceed |
+| `location.lapse_complete` | info | Lapse finished: `{ location, suspended, skipped, errors }` |
+| `location.reactivate_complete` | info | **PERSISTED via EVENT_REGISTRY.json override.** Reactivation finished: `{ clientId, locationId, location, restored, skipped, held, errors }`. `restored` = members turned back on; `held` = left off because a Wix payment failed after the lapse (payment.recovered restores them); `errors` = members still locked out (each alerted) |
+| `location.reactivate_member_held` | warn | A lapse-paused member was left off: `disabled` (payment.failed) was logged after their lapse. Context: `{ memberId, reason }` |
+| `location.reactivate_member_busy` | warn | A lapse-paused member was left off because their access row is `in_flight` / `pending_identity` / `recovery_pending` — alerted as `location_reactivate_failed` |
+| `location.reactivate_member_failed` | error | Kisi `enableAccess` or the source-row restore threw for one member; rows stay marked so a later activate retries; alerted as `location_reactivate_failed` |
+| `location.reactivate_failed` | error | Reactivation could not start (location / connector / API key missing); alerted as `location_reactivate_failed` with `location_id=… reason=no_hardware_context` |
+| `location.reactivate_alert_failed` | warn | The `location_reactivate_failed` alert INSERT itself failed (best-effort) |
+
+`config_alert_log` alert type `location_reactivate_failed` — one unresolved row per `hardware_ref`
+(`member_id=<access id> kisi_user_id=<id> location_id=<id>`, or `location_id=<id> reason=…` for a run that could
+not start). Copy: `core/operator-email-templates.js` `describeConfigAlert` and `admin/public/humanize.js`.
+
 ---
 
 ## Activity Events (admin mutation actions)
