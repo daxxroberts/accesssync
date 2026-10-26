@@ -60,7 +60,10 @@ const ALLOWLIST = {
     'core/source-retry-probe.js':  3, // OB-240: retry status transitions
     'admin/routes/clients.js':     1, // onboarding source-row INSERT (OB-203 hardened)
     'admin/routes/multi-member.js':1, // DR-032 submit: draft → pending_hardware
-    'admin/routes/operator.js':    7, // plan-mapping remap INSERT/DELETE flows (OB-203 hardened)
+    // plan-mapping sync + remap INSERT/DELETE flows (OB-203 hardened). 7 → 5 on 2026-10-26:
+    // the removeGroupId pre-delete went, and the two sync revoke DELETEs became one
+    // (revokeMappingSource — Kisi first, then the row).
+    'admin/routes/operator.js':    5,
   },
 };
 

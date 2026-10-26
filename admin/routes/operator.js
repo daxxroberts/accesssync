@@ -111,6 +111,61 @@ async function resolveApiKey(clientId, locationId) {
 }
 
 /**
+ * Takes one door away from one member because a plan mapping stopped granting it (the door
+ * was taken off the plan, or the plan was switched off). Kisi FIRST, then the source row —
+ * the order core/grant-revoke.js uses for a cancelled plan (2026-10-19 review H1). The other
+ * way round, a Kisi failure left no row behind: the database said the member had lost the
+ * door, Kisi still opened it, and nothing could find them again.
+ *
+ *   - C-4: Kisi is skipped when a source on another mapping still grants the same group; only
+ *     this mapping's row goes. Day-pass rows never hold a group open (a bearer link is not a seat).
+ *   - A row with no role assignment never reached Kisi — there is nothing to remove, the row goes.
+ *   - Kisi fails → the row STAYS (it is still true: they can get in) and the gym gets a
+ *     door_removal_failed alert naming the member. removeRole is 404-idempotent, so a later
+ *     attempt that repeats it is safe.
+ *
+ * `row` is a plan source row ({ source_id, member_id, hardware_group_id, role_assignment_id }).
+ * Callers never pass day-pass rows: theirs hold a Kisi group-link id, not a role assignment, and
+ * core/day-pass-sweep.js ends them. Never throws.
+ */
+async function revokeMappingSource(clientId, mappingId, hardwarePlatform, apiKey, row, reason) {
+  const { source_id: sourceId, member_id: memberId, hardware_group_id: hardwareGroupId, role_assignment_id: raId } = row;
+  let kisiDone = false;
+  try {
+    const otherGrants = await db.query(
+      `SELECT COUNT(*) AS cnt FROM member_access_sources
+       WHERE access_id = $1 AND hardware_group_id = $2
+         AND mapping_id IS DISTINCT FROM $3 AND source_type <> 'day_pass'`,
+      [memberId, hardwareGroupId, mappingId]
+    );
+    if (parseInt(otherGrants.rows[0].cnt, 10) > 0) {
+      log.info('operator.sync.revoke_skipped', { memberId, hardwareGroupId, reason: 'other_mapping_grants' });
+    } else if (raId) {
+      await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
+      log.info('operator.sync.revoked', { memberId, hardwareGroupId, reason });
+    }
+    kisiDone = true;
+    await db.query('DELETE FROM member_access_sources WHERE id = $1 AND client_id = $2', [sourceId, clientId]);
+  } catch (err) {
+    log.error('operator.sync.revoke_failed', { clientId, mappingId, memberId, hardwareGroupId, reason, kisiDone }, err);
+    if (kisiDone) return; // the door is gone; only the bookkeeping row is left over
+    // One open alert per member. hardware_ref "member_id=<access id>" is what
+    // core/alert-context.js reads to name the member and their location.
+    const _actor = getActor() || {};
+    await db.query(
+      `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, plan_mapping_id, trace_id, actor_type, actor_id)
+       SELECT $1::uuid, 'door_removal_failed', $2::varchar, $3::uuid, $4::varchar, $5::varchar, $6::varchar
+       WHERE NOT EXISTS (
+         SELECT 1 FROM config_alert_log
+         WHERE client_id = $1::uuid AND alert_type = 'door_removal_failed'
+           AND hardware_ref = $2::varchar AND resolved_at IS NULL
+       )`,
+      [clientId, `member_id=${memberId}`, mappingId, getTraceId() || null, _actor.type || null, _actor.id || null]
+    ).catch(alertErr => log.error('operator.sync.revoke_alert_failed', { clientId, memberId }, alertErr));
+  }
+}
+
+/**
  * Syncs all currently active members on a plan mapping to the new group configuration.
  * Called after every PATCH to plan_mapping_groups. Handles all 9 sync scenarios:
  *
@@ -141,34 +196,20 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
     }
 
     // ── Status deactivation: revoke all active members from all groups ──
-    // C-4 safety: only call Kisi removeRole if no OTHER mapping grants the same group
+    // Kisi first, row second, alert on failure, C-4 — see revokeMappingSource.
+    // Day-pass rows are left to core/day-pass-sweep.js (their id is a group link).
     if (newStatus === 'inactive' && oldStatus === 'active') {
-      const members = await db.query(
-        `SELECT ma.id AS member_id, ma.hardware_user_id,
+      const rows = await db.query(
+        `SELECT mas.id AS source_id, mas.access_id AS member_id,
                 mas.role_assignment_id, mas.hardware_group_id
          FROM member_access_sources mas
          JOIN member_access ma ON ma.id = mas.access_id
-         WHERE mas.mapping_id = $1 AND ma.hardware_user_id IS NOT NULL`,
-        [mappingId]
+         WHERE mas.mapping_id = $1 AND mas.client_id = $2 AND ma.hardware_user_id IS NOT NULL
+           AND mas.source_type <> 'day_pass'`,
+        [mappingId, clientId]
       );
-      for (const m of members.rows) {
-        try {
-          await db.query('DELETE FROM member_access_sources WHERE access_id = $1 AND mapping_id = $2 AND hardware_group_id = $3', [m.member_id, mappingId, m.hardware_group_id]);
-
-          const otherGrants = await db.query(
-            `SELECT COUNT(*) AS cnt FROM member_access_sources
-             WHERE access_id = $1 AND hardware_group_id = $2 AND mapping_id != $3`,
-            [m.member_id, m.hardware_group_id, mappingId]
-          );
-          if (parseInt(otherGrants.rows[0].cnt, 10) > 0) {
-            log.info('operator.sync.revoke_skipped', { memberId: m.member_id, hardwareGroupId: m.hardware_group_id, reason: 'other_mapping_grants' });
-          } else {
-            await hardwareAdapter.removeRole(hardware_platform, apiKey, m.role_assignment_id);
-            log.info('operator.sync.revoked', { memberId: m.member_id, hardwareGroupId: m.hardware_group_id, reason: 'mapping_deactivated' });
-          }
-        } catch (err) {
-          log.warn('operator.sync.revoke_failed', { memberId: m.member_id }, err);
-        }
+      for (const row of rows.rows) {
+        await revokeMappingSource(clientId, mappingId, hardware_platform, apiKey, row, 'mapping_deactivated');
       }
       return;
     }
@@ -218,13 +259,20 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
 
     if (!added.length && !removed.length) return;
 
-    const activeMembers = await db.query(
-      `SELECT ma.id AS member_id, ma.hardware_user_id, mas.role_assignment_id, mas.hardware_group_id
-       FROM member_access_sources mas
-       JOIN member_access ma ON ma.id = mas.access_id
-       WHERE mas.mapping_id = $1 AND ma.hardware_user_id IS NOT NULL`,
-      [mappingId]
-    );
+    // This mapping's plan rows on a removed group — including members Kisi never saw
+    // (no role assignment: their row just goes). Day-pass rows are left to
+    // core/day-pass-sweep.js: their id is a group link, and the pass runs to its end.
+    const removedRows = removed.length
+      ? await db.query(
+        `SELECT mas.id AS source_id, mas.access_id AS member_id,
+                mas.role_assignment_id, mas.hardware_group_id
+         FROM member_access_sources mas
+         WHERE mas.mapping_id = $1 AND mas.client_id = $2
+           AND mas.hardware_group_id = ANY($3::text[])
+           AND mas.source_type <> 'day_pass'`,
+        [mappingId, clientId, removed]
+      )
+      : { rows: [] };
 
     // S-11/DR-046: members "on this plan" = members with active source rows under this mapping.
     const activeMembersForGrant = await db.query(
@@ -264,28 +312,9 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
       }
     }
 
-    // Revoke removed groups — but only call Kisi removeRole if no OTHER mapping
-    // still grants the same group to this member (C-4 multi-source safety)
-    for (const m of activeMembers.rows) {
-      if (!removed.includes(m.hardware_group_id)) continue;
-      try {
-        await db.query('DELETE FROM member_access_sources WHERE access_id = $1 AND mapping_id = $2 AND hardware_group_id = $3', [m.member_id, mappingId, m.hardware_group_id]);
-
-        // Check if ANY other mapping still grants this member the same group
-        const otherGrants = await db.query(
-          `SELECT COUNT(*) AS cnt FROM member_access_sources
-           WHERE access_id = $1 AND hardware_group_id = $2 AND mapping_id != $3`,
-          [m.member_id, m.hardware_group_id, mappingId]
-        );
-        if (parseInt(otherGrants.rows[0].cnt, 10) > 0) {
-          log.info('operator.sync.revoke_skipped', { memberId: m.member_id, hardwareGroupId: m.hardware_group_id, reason: 'other_mapping_grants' });
-        } else {
-          await hardwareAdapter.removeRole(hardware_platform, apiKey, m.role_assignment_id);
-          log.info('operator.sync.revoked', { memberId: m.member_id, hardwareGroupId: m.hardware_group_id, reason: 'group_removed' });
-        }
-      } catch (err) {
-        log.warn('operator.sync.revoke_failed', { memberId: m.member_id, hardwareGroupId: m.hardware_group_id }, err);
-      }
+    // Revoke removed groups — Kisi first, row second, alert on failure, C-4 (revokeMappingSource)
+    for (const row of removedRows.rows) {
+      await revokeMappingSource(clientId, mappingId, hardware_platform, apiKey, row, 'group_removed');
     }
 
   } catch (err) {
@@ -2265,11 +2294,10 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     }
 
     if (removeGroupId) {
-      // Clean up source rows for the removed group before deleting junction row
-      await db.query(
-        'DELETE FROM member_access_sources WHERE hardware_group_id = $1 AND mapping_id = $2',
-        [removeGroupId, mappingId]
-      );
+      // The members' source rows are NOT touched here: syncMappingMembers finds them by
+      // (mapping, removed group), takes the door away in Kisi, and only then drops each
+      // row. Dropping them here first (as this route once did) left the sync nobody to
+      // revoke — members kept the door while the database said they didn't.
       await db.query(
         `DELETE FROM plan_mapping_groups WHERE mapping_id = $1 AND hardware_group_id = $2`,
         [mappingId, removeGroupId]
