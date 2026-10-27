@@ -46,6 +46,8 @@
     "operator.sync.revoked":              { "persist": true },
     "operator.sync.granted":              { "persist": true },
     "operator.location.reactivated":      { "persist": true },
+    "location.reactivate_complete":       { "persist": true },
+    "location.reactivate_nothing_to_restore": { "persist": false },
     "operator.retry.pending_hardware":    { "persist": true },
     "operator.setup.bypass_accepted":     { "persist": true },
     "admin.client.invite_issued":         { "persist": true },

@@ -481,6 +481,21 @@ function describeConfigAlert(row) {
         + 'Check the payment in Wix — if it doesn’t go through and they shouldn’t get in, you can remove their access in '
         + hardware + '.';
 
+    // core/location-lapse.js reactivateLocationMembers: a member the lapse paused could not be
+    // turned back on (hardware_ref "member_id=… kisi_user_id=… location_id=…"), or the whole
+    // run could not start ("location_id=… reason=…", no member). They are locked out now.
+    case 'location_reactivate_failed':
+      return (person ? person + ' is' : 'Members paused while the location was off are') + ' still locked out' + at
+        + ': the location is back on, but AccessSync couldn’t turn their door access back on in ' + hardware + '. '
+        + 'Reply to this email and we’ll retry it — or, to let them in right away, turn their access back on in '
+        + hardware + '.';
+    // Same, but AccessSync never tried: another change to the member was in progress (same hardware_ref).
+    case 'location_reactivate_skipped':
+      return (person ? person + ' is' : 'A member paused while the location was off is') + ' still locked out' + at
+        + ': when the location was turned back on, another change to their access was in progress, so AccessSync '
+        + 'skipped them rather than collide with it. It won’t retry on its own — reply to this email and we’ll turn '
+        + 'them back on, or turn their access back on in ' + hardware + ' to let them in right away.';
+
     // A sync couldn't read the door system, so it stopped before changing
     // anything (reconciliation aborts the client's sync). hardware_ref carries
     // "status=… code=…" — never shown.

@@ -44,7 +44,7 @@ const UNSYNCED_SOURCE_STATUSES = `('pending_hardware', 'pending_start', 'failed'
 // Held-removal alerts: the gym decides (remove in Kisi, or leave them in). Mirrors core/reconciliation.js
 // GYM_DECIDES_ALERTS — a dismissal of one keeps it quiet for 30 days.
 const GYM_DECIDES_ALERT_TYPES = new Set(['sweep_removal_pending', 'revoke_holder_lapse_pending', 'revoke_held_payment_state']);
-const { suspendLocationMembers } = require('../../core/location-lapse');
+const { suspendLocationMembers, reactivateLocationMembers } = require('../../core/location-lapse');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
 const { getTraceId, getActor, runWith, mintTraceId, setClientId } = require('../../core/trace-context');
@@ -326,7 +326,9 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
 /**
  * GAP 3 — Re-provision all previously active members when a location is reactivated.
  * Iterates every active plan mapping at the location and calls syncMappingMembers()
- * treating each as an inactive→active status transition.
+ * treating each as an inactive→active status transition. That only reaches members
+ * who are still 'active' — the members the lapse suspended are turned back on by
+ * reactivateLocationMembers (core/location-lapse.js), shared with the owner hub.
  * Fire-and-forget — errors logged per mapping, never thrown.
  */
 async function activateLocationMembers(clientId, locationId) {
@@ -344,6 +346,11 @@ async function activateLocationMembers(clientId, locationId) {
       await syncMappingMembers(clientId, m.id, [], groupIds, 'active', 'inactive');
     }
     log.info('operator.location.reactivated', { clientId, locationId, mappingCount: mappings.rows.length });
+  } catch (err) {
+    log.error('operator.location.reactivation_failed', { clientId, locationId }, err);
+  }
+  try {
+    await reactivateLocationMembers(locationId, clientId);
   } catch (err) {
     log.error('operator.location.reactivation_failed', { clientId, locationId }, err);
   }
