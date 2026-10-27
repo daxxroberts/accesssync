@@ -181,6 +181,20 @@
       return "Deleted " + who + "'s Kisi user.";
     if (e === 'kisi.user.delete_skipped_already_gone' || e === 'KISI_USER_DELETE_SKIPPED_ALREADY_GONE')
       return who + "'s Kisi user was already gone — nothing to delete.";
+    // DR-045 step 1 (2026-10-26): persisted so the ownership-label evidence can be counted.
+    // Suspend / re-enable change door access only — the Kisi account, its door groups and
+    // its notes are left as they are.
+    if (e === 'kisi.user.suspending' || e === 'KISI_USER_SUSPENDING')
+      return 'Turning off ' + who + "'s door access in Kisi.";
+    if (e === 'kisi.user.suspended' || e === 'KISI_USER_SUSPENDED')
+      return 'Turned off ' + who + "'s door access in Kisi. Their door groups are kept, so it can be turned back on.";
+    if (e === 'kisi.user.enabling' || e === 'KISI_USER_ENABLING')
+      return 'Turning ' + who + "'s door access back on in Kisi.";
+    if (e === 'kisi.user.enabled' || e === 'KISI_USER_ENABLED')
+      return '✓ Turned ' + who + "'s door access back on in Kisi.";
+    if (e === 'kisi.user.create_metadata_missing' || e === 'KISI_USER_CREATE_METADATA_MISSING')
+      return who + "'s door access works, but the AccessSync label didn't save on their new Kisi account. " +
+        'To fix it, run node scripts/kisi-ownership-migrate.js verify.';
 
     // Phase 1 "stop the bleeding" (2026-09-10) — guards and hardened reads outside
     // the sweep. The grant.* entries MUST stay above the 'grant.' prefix fallback
@@ -259,6 +273,10 @@
       return "Kisi didn't respond during a sync" + at + ' — AccessSync stopped and changed nothing. Nobody lost access; the next sync tries again.';
     if (e === 'hardware_api_unavailable')
       return "The door system didn't respond during a sync" + at + ' — AccessSync stopped and changed nothing. Nobody lost access; the next sync tries again.';
+    // DR-045 step 1 — adapters/kisi/kisi-adapter.js createUser. Same meaning as describeConfigAlert.
+    if (e === 'kisi_create_metadata_missing')
+      return "A new member's door access works" + at + ", but the AccessSync label didn't save on their new Kisi account. " +
+        'Nobody lost access. To fix it, run node scripts/kisi-ownership-migrate.js verify.';
     if (e === 'revoke_batch_mass_revoke')
       return 'A sync was about to remove door access for an unusually large number of members' + at +
         ' at once, so AccessSync stopped and removed no one. Nobody lost access. Check that your plans and memberships in Wix look right.';
@@ -443,6 +461,12 @@
       return 'Reconcile Wix-truth sync finished across all clients.';
     if (e === 'reconciliation.client_sync_complete' || e === 'RECONCILIATION_CLIENT_SYNC_COMPLETE')
       return 'Reconcile finished for client' + at + '.';
+    if (e === 'reconciliation.pass_3_complete' || e === 'RECONCILIATION_PASS_3_COMPLETE') {
+      var p3 = ev.payload || {};
+      if (p3.outage)
+        return "Reconcile couldn't read the Kisi account list" + at + ', so it skipped the account check and changed nothing.';
+      return 'Reconcile checked ' + (p3.totalKisiUsersFetched || 0) + ' Kisi accounts against AccessSync' + at + '.';
+    }
     if (e === 'reconciliation.client_sync_failed' || e === 'RECONCILIATION_CLIENT_SYNC_FAILED')
       return 'Reconcile failed for client' + at + ' — see error detail.';
     if (e === 'reconciliation.run_open_failed' || e === 'RECONCILIATION_RUN_OPEN_FAILED')

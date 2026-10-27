@@ -44,6 +44,7 @@
 
 const fs = require('fs');
 const kisiAdapter = require('../adapters/kisi/kisi-adapter');
+const { flush: flushLogs } = require('../core/logger');
 
 // db.js refuses to load without DATABASE_URL, so the database and key decryption are
 // only required when the script actually uses them (not in KISI_API_KEY mode).
@@ -268,10 +269,22 @@ async function main() {
   return allReady && failed === 0 ? 0 : 1;
 }
 
+/**
+ * End the run: wait for the logger's pending diagnostic_log writes, then close the pool,
+ * then exit. The logger's inserts are fire-and-forget, so without the wait pool.end()
+ * can beat the last one (the 2026-10-26 backfill lost its final
+ * ownership_metadata_stamped row). Exported for tests.
+ */
+async function finish(code, db = _db, exit = process.exit) {
+  try { await flushLogs(); } catch (_) { /* never blocks the exit */ }
+  try { if (db) await db.pool.end(); } catch (_) { /* exit anyway */ }
+  exit(code);
+}
+
 if (require.main === module) {
   main()
-    .then(code => (_db ? _db.pool.end() : Promise.resolve()).then(() => process.exit(code), () => process.exit(code)))
+    .then(code => finish(code))
     .catch(err => { console.error('FATAL', err); process.exit(1); });
 }
 
-module.exports = { classifyUsers, parseIdList };
+module.exports = { classifyUsers, parseIdList, finish };

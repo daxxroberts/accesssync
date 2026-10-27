@@ -17,15 +17,21 @@
  * │  Layer C still refuses elevated users; stampOwnershipMetadata merges,   │
  * │  never overwrites another client, and confirms on re-read;              │
  * │  listAllUsers reports owner + marker source for reconcile's count.      │
+ * │  DR-045 step 1 (SAGE 2026-10-26): suspend / enable PATCH access only    │
+ * │  (no notes); createUser checks the echoed label and heals it on the     │
+ * │  spot, and if that fails warns + alerts but still returns the user.     │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
 const kisiConnector = require('../../adapters/kisi/kisi-connector');
 const kisiAdapter   = require('../../adapters/kisi/kisi-adapter');
+const db            = require('../../db');
+const { log }       = require('../../core/logger');
 
 jest.mock('../../adapters/kisi/kisi-connector', () => ({
   makeRequest: jest.fn(),
 }));
+jest.mock('../../db', () => ({ query: jest.fn() }));
 
 const API_KEY   = 'test-kisi-key-p1';
 const CLIENT_ID = 'client-hog-p1';
@@ -38,14 +44,22 @@ const meta = (clientId, extra = {}) => ({
 const notesFor = (clientId) => `[AS|managed|${clientId}|2026-05-13T00:00:00Z] Created by AccessSync`;
 const call = (i) => kisiConnector.makeRequest.mock.calls[i];
 const bodyOf = (i) => JSON.parse(call(i)[1].body);
+// Kisi's POST /users response echoes the user it made, metadata included (verified live 2026-10-26).
+const echoCreate = (id) => (_path, opts) => Promise.resolve({ id, metadata: JSON.parse(opts.body).user.metadata });
+const alertInserts = () => db.query.mock.calls.filter(([sql]) => /INSERT INTO config_alert_log/.test(sql));
+const warnSpy = jest.spyOn(log, 'warn');
+const warned = (event) => warnSpy.mock.calls.filter(([e]) => e === event);
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Reset, not just clear: a reply a test queued but didn't use must not leak into the next one.
+  kisiConnector.makeRequest.mockReset();
+  db.query.mockResolvedValue({ rows: [] });
 });
 
 describe('[P1] createUser writes the metadata marker', () => {
   test('sends four flat metadata keys naming the client, alongside the legacy notes marker', async () => {
-    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 501 });
+    kisiConnector.makeRequest.mockImplementationOnce(echoCreate(501));
     await kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID });
 
     const { user } = bodyOf(0);
@@ -61,7 +75,7 @@ describe('[P1] createUser writes the metadata marker', () => {
   });
 
   test('stays inside Kisi metadata limits: flat primitives, keys <= 50 chars, values <= 500, <= 50 keys', async () => {
-    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 502 });
+    kisiConnector.makeRequest.mockImplementationOnce(echoCreate(502));
     await kisiAdapter.createUser(API_KEY, 'a@b.com', null, { clientId: CLIENT_ID });
     const { metadata } = bodyOf(0).user;
     const entries = Object.entries(metadata);
@@ -73,21 +87,27 @@ describe('[P1] createUser writes the metadata marker', () => {
     }
   });
 
-  test('if Kisi rejects the metadata field, the user is still created (notes marker only)', async () => {
+  test('if Kisi rejects the metadata field, the user is still created (notes marker only), then labelled', async () => {
     const rejected = Object.assign(new Error('Kisi 422'), {
       statusCode: 422, body: { errors: { metadata: ['is not permitted'] } },
     });
     kisiConnector.makeRequest
       .mockRejectedValueOnce(rejected)
-      .mockResolvedValueOnce({ id: 503 });
+      .mockResolvedValueOnce({ id: 503 })                                   // POST without metadata
+      .mockResolvedValueOnce({ id: 503, metadata: {} })                     // stamp: GET
+      .mockResolvedValueOnce({})                                            // stamp: PATCH
+      .mockResolvedValueOnce({ id: 503, metadata: meta(CLIENT_ID) });       // stamp: re-read
 
     const id = await kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID });
 
     expect(id).toBe(503);
-    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(2);
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(5);
     expect(bodyOf(0).user.metadata).toBeDefined();
     expect(bodyOf(1).user.metadata).toBeUndefined();
     expect(bodyOf(1).user.notes).toMatch(/^\[AS\|managed\|/);
+    expect(call(3)[0]).toBe('/users/503');
+    expect(bodyOf(3).user.metadata[K.CLIENT_ID]).toBe(CLIENT_ID);
+    expect(alertInserts()).toHaveLength(0);
   });
 
   test('a 422 about something else is thrown, never retried', async () => {
@@ -99,6 +119,101 @@ describe('[P1] createUser writes the metadata marker', () => {
       kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID })
     ).rejects.toBe(taken);
     expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('[P1] DR-045 step 1: createUser checks the label and heals it on the spot (access first)', () => {
+  test('echoed marker for this client → done: no extra Kisi call, no warn, no alert', async () => {
+    kisiConnector.makeRequest.mockImplementationOnce(echoCreate(601));
+
+    await expect(kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID })).resolves.toBe(601);
+
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+    expect(warned('kisi.user.create_metadata_missing')).toHaveLength(0);
+    expect(alertInserts()).toHaveLength(0);
+  });
+
+  test('marker missing from the echo → stamped right away with the create timestamp; no alert', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 602 })                                   // POST echo without metadata
+      .mockResolvedValueOnce({ id: 602, metadata: { city: 'Austin' } })     // stamp: GET
+      .mockResolvedValueOnce({})                                            // stamp: PATCH
+      .mockResolvedValueOnce({ id: 602, metadata: meta(CLIENT_ID, { city: 'Austin' }) }); // re-read
+
+    await expect(kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID })).resolves.toBe(602);
+
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(4);
+    expect(call(2)[0]).toBe('/users/602');
+    expect(call(2)[1].method).toBe('PATCH');
+    // Metadata only, merged, same createdAt the POST sent — never notes or access.
+    expect(bodyOf(2)).toEqual({
+      user: { metadata: { city: 'Austin', ...bodyOf(0).user.metadata } },
+    });
+    expect(warned('kisi.user.create_metadata_missing')).toHaveLength(0);
+    expect(alertInserts()).toHaveLength(0);
+  });
+
+  test('stamp fails → persisted warn + operator alert, and the grant still gets the user id', async () => {
+    const down = Object.assign(new Error('Kisi 503'), { statusCode: 503 });
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 603 })                                   // POST echo without metadata
+      .mockRejectedValueOnce(down);                                         // stamp: GET fails
+
+    await expect(kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID })).resolves.toBe(603);
+
+    const [[, ctx]] = warned('kisi.user.create_metadata_missing');
+    expect(ctx).toMatchObject({ kisiUserId: 603, clientId: CLIENT_ID, statusCode: 503 });
+    const alerts = alertInserts();
+    expect(alerts).toHaveLength(1);
+    const [, params] = alerts[0];
+    expect(params[0]).toBe(CLIENT_ID);
+    expect(params[1]).toBe('kisi_create_metadata_missing');
+    expect(params[2]).toBe('kisi_user_id=603 code=503');
+  });
+
+  test('echo names another client → stamp refuses to overwrite it (no PATCH), warn + alert, id returned', async () => {
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 604, metadata: meta(OTHER) })            // POST echo: someone else's label
+      .mockResolvedValueOnce({ id: 604, metadata: meta(OTHER) });           // stamp: GET
+
+    await expect(kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID })).resolves.toBe(604);
+
+    expect(kisiConnector.makeRequest.mock.calls.map(([, o]) => o.method)).toEqual(['POST', 'GET']);
+    expect(warned('kisi.user.create_metadata_missing')[0][1]).toMatchObject({ code: 'CLIENT_MISMATCH' });
+    expect(alertInserts()).toHaveLength(1);
+  });
+
+  test('the alert INSERT failing too still never fails the grant', async () => {
+    db.query.mockRejectedValue(new Error('db down'));
+    kisiConnector.makeRequest
+      .mockResolvedValueOnce({ id: 605 })
+      .mockRejectedValueOnce(Object.assign(new Error('Kisi 500'), { statusCode: 500 }));
+
+    await expect(kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID })).resolves.toBe(605);
+    expect(alertInserts()).toHaveLength(1);
+  });
+});
+
+describe('[P1] DR-045 step 1: suspend / enable never write notes', () => {
+  test('suspendAccess PATCHes access_enabled:false only', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({});
+    await kisiAdapter.suspendAccess(API_KEY, 9, 'Payment failed', { clientId: CLIENT_ID });
+    expect(bodyOf(0)).toEqual({ user: { access_enabled: false } });
+  });
+
+  test('enableAccess PATCHes access_enabled:true only', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({});
+    await kisiAdapter.enableAccess(API_KEY, 9, { clientId: CLIENT_ID });
+    expect(bodyOf(0)).toEqual({ user: { access_enabled: true } });
+  });
+
+  test('without a clientId: the same body, and no marker warning (there is no marker to lose)', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+    await kisiAdapter.suspendAccess(API_KEY, 9, 'Location lapsed');
+    await kisiAdapter.enableAccess(API_KEY, 9);
+    expect(bodyOf(0)).toEqual({ user: { access_enabled: false } });
+    expect(bodyOf(1)).toEqual({ user: { access_enabled: true } });
+    expect(warned('kisi.user.suspend_without_marker')).toHaveLength(0);
   });
 });
 
@@ -121,6 +236,23 @@ describe('[P1] deleteUser Layer B reads metadata first, notes second', () => {
       .mockResolvedValueOnce({});
     await kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID });
     expect(call(2)[1].method).toBe('DELETE');
+  });
+
+  test('the persisted kisi.user.deleted event says which record the guard trusted (DR-045 step 1)', async () => {
+    const infoSpy = jest.spyOn(log, 'info');
+    for (const [user, source] of [
+      [{ id: 9, metadata: meta(CLIENT_ID) }, 'metadata'],
+      [{ id: 9, notes: notesFor(CLIENT_ID) }, 'notes'],
+    ]) {
+      kisiConnector.makeRequest
+        .mockResolvedValueOnce(user)
+        .mockResolvedValueOnce(noRoles)
+        .mockResolvedValueOnce({});
+      await kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID });
+      const deleted = infoSpy.mock.calls.filter(([e]) => e === 'kisi.user.deleted').pop();
+      expect(deleted[1]).toMatchObject({ userId: 9, ownerClientId: CLIENT_ID, ownershipSource: source });
+    }
+    infoSpy.mockRestore();
   });
 
   test('metadata naming another client → CLIENT_MISMATCH, no DELETE', async () => {
