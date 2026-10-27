@@ -209,7 +209,8 @@ Layer 5: Hardware Standard Adapter  adapters/hardware-adapter.js
 Layer 6: Kisi Adapter Layer       adapters/kisi/kisi-adapter.js
   Kisi business methods. DR-045 three-layer delete guard:
     Layer B (notes marker stamp/parse), Layer C (elevated-role refusal).
-  createUser hard-requires options.clientId. suspendAccess/enableAccess re-stamp marker.
+  createUser hard-requires options.clientId, and stamps the metadata marker on the spot if Kisi's
+  echo lacks it (never fails the grant). suspendAccess/enableAccess PATCH access_enabled only.
 
 Layer 7: Kisi Connector           adapters/kisi/kisi-connector.js
   Kisi HTTP client, rate limiting (5 req/sec via core/rate-limiter.js), auth headers.
