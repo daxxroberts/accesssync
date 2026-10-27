@@ -289,7 +289,7 @@
         "If the payment doesn't go through and they shouldn't get in, you can remove their access in Kisi.";
     // Same meaning as describeConfigAlert's door_removal_failed (admin/routes/operator.js revokeMappingSource).
     if (e === 'door_removal_failed')
-      return memberStart + at + " can still open a door that was taken off their plan — Kisi didn't respond when AccessSync tried to remove it. " +
+      return memberStart + at + " can still open a door that was taken off their plan — AccessSync couldn't remove it in Kisi. " +
         'Remove that door from ' + (c.member ? 'their' : "the member's") + ' account in Kisi.';
     if (e === 'lockdown_detected')               return 'A door is currently in lockdown' + at + '.';
     if (e === 'api_key_invalid_after_rotation')   return 'Hardware API key was rotated but new key is invalid' + at + '.';

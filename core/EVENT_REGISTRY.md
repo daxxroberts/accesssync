@@ -517,6 +517,8 @@ Operator-portal (per-client operator scope) mutation events. All persisted-by-ov
 | `operator.sync.granted` | info | Per-mapping reconcile granted a hardware role for a member (mapping_activated or group_added context) |
 | `operator.sync.revoked` | info | Per-mapping reconcile revoked a hardware role for a member (mapping_deactivated or group_removed context) |
 | `operator.sync.revoke_skipped` | info | Revoke skipped because other-mapping grants still hold access for the same group |
+| `operator.sync.revoke_failed` | error | `revokeMappingSource` (door taken off a plan, or plan switched off) threw. `kisiDone:false` — Kisi `removeRole` (or the C-4 check before it) failed: the source row stays and a `config_alert_log` `door_removal_failed` row is raised, one unresolved per `hardware_ref` `member_id=<access id> group_id=<hardware group id>` (per member and door), `plan_mapping_id` set; copy in `describeConfigAlert` and `admin/public/humanize.js`. `kisiDone:true` — the door is gone, only the row delete failed. Context: `{ clientId, mappingId, memberId, hardwareGroupId, reason, kisiDone }` |
+| `operator.sync.revoke_alert_failed` | error | The `door_removal_failed` alert INSERT itself failed (best-effort) |
 | `operator.sync.manual_run` | info | Operator triggered an ad-hoc per-client sync run |
 | `operator.location.reactivated` | info | Operator reactivated a location and mapping fan-out completed |
 | `operator.location.apikey_set` | info | Operator saved a per-location hardware API key from the operator portal |

@@ -149,8 +149,8 @@ async function revokeMappingSource(clientId, mappingId, hardwarePlatform, apiKey
   } catch (err) {
     log.error('operator.sync.revoke_failed', { clientId, mappingId, memberId, hardwareGroupId, reason, kisiDone }, err);
     if (kisiDone) return; // the door is gone; only the bookkeeping row is left over
-    // One open alert per member. hardware_ref "member_id=<access id>" is what
-    // core/alert-context.js reads to name the member and their location.
+    // One open alert per member and door. core/alert-context.js reads the
+    // "member_id=<access id>" part to name the member and their location.
     const _actor = getActor() || {};
     await db.query(
       `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, plan_mapping_id, trace_id, actor_type, actor_id)
@@ -160,7 +160,8 @@ async function revokeMappingSource(clientId, mappingId, hardwarePlatform, apiKey
          WHERE client_id = $1::uuid AND alert_type = 'door_removal_failed'
            AND hardware_ref = $2::varchar AND resolved_at IS NULL
        )`,
-      [clientId, `member_id=${memberId}`, mappingId, getTraceId() || null, _actor.type || null, _actor.id || null]
+      [clientId, `member_id=${memberId} group_id=${hardwareGroupId}`.slice(0, 255), mappingId,
+        getTraceId() || null, _actor.type || null, _actor.id || null]
     ).catch(alertErr => log.error('operator.sync.revoke_alert_failed', { clientId, memberId }, alertErr));
   }
 }

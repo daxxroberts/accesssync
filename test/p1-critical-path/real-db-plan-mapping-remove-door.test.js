@@ -268,7 +268,7 @@ describe('[P1] real DB — Kisi fails while a door is being taken off a plan', (
     expect(kisi.canOpen(done.userId, STUDIO)).toBe(false);
 
     expect(await alerts()).toEqual([
-      { alert_type: 'door_removal_failed', hardware_ref: `member_id=${failed.accessId}`, plan_mapping_id: mapping },
+      { alert_type: 'door_removal_failed', hardware_ref: `member_id=${failed.accessId} group_id=${STUDIO}`, plan_mapping_id: mapping },
     ]);
     expect(logLines.some(l => (l.event || l.message) === 'operator.sync.revoke_failed' && l.level === 'error')).toBe(true);
   });
@@ -287,10 +287,33 @@ describe('[P1] real DB — Kisi fails while a door is being taken off a plan', (
     expect(res.body.alerts).toHaveLength(1);
     expect(res.body.alerts[0].message).toBe(
       'Dana Example at House of Gains - Roland can still open a door that was taken off their plan — '
-      + 'Kisi didn’t respond when AccessSync tried to remove it. Remove that door from their account in Kisi.');
+      + 'AccessSync couldn’t remove it in Kisi. Remove that door from their account in Kisi.');
   });
 
-  test('a second failure for the same member does not stack a second open alert', async () => {
+  const failures = () => logLines.filter(l => (l.event || l.message) === 'operator.sync.revoke_failed').length;
+
+  test('the same member and door failing again does not stack a second open alert', async () => {
+    const mapping = await addMapping('plan-monthly', [FRONT, STUDIO]);
+    const dana = await addMember('Dana');
+    await grant(dana, mapping, 'plan-monthly', FRONT);
+    const firstRa = await grant(dana, mapping, 'plan-monthly', STUDIO);
+    kisi.failNext('removeRole');
+    kisi.failNext('removeRole');
+
+    await removeDoor(mapping, STUDIO);
+    await waitFor(alertCount(1), 'the first alert');
+    // The gym puts the door back (Dana is re-granted it), then takes it off again — Kisi fails again.
+    await request(app).patch(`/operator/${clientId}/plan-mappings/${mapping}`).send({ addGroupId: STUDIO });
+    await waitFor(async () => (await sourceRows(mapping)).some(r => r.hardware_group_id === STUDIO && r.role_assignment_id !== firstRa),
+      'the door to be re-granted');
+    await removeDoor(mapping, STUDIO);
+    await waitFor(() => failures() >= 2, 'the second failure');
+
+    expect(await alerts()).toHaveLength(1);
+    expect((await sourceRows(mapping)).map(r => r.hardware_group_id)).toEqual([FRONT, STUDIO]); // studio row kept
+  });
+
+  test('two doors failing for the same member raise one alert each', async () => {
     const mapping = await addMapping('plan-monthly', [FRONT, STUDIO]);
     const dana = await addMember('Dana');
     await grant(dana, mapping, 'plan-monthly', FRONT);
@@ -301,10 +324,12 @@ describe('[P1] real DB — Kisi fails while a door is being taken off a plan', (
     await removeDoor(mapping, STUDIO);
     await waitFor(alertCount(1), 'the first alert');
     await removeDoor(mapping, FRONT);
-    await waitFor(() => logLines.filter(l => (l.event || l.message) === 'operator.sync.revoke_failed').length >= 2,
-      'the second failure');
+    await waitFor(alertCount(2), 'the second alert');
 
-    expect(await alerts()).toHaveLength(1);
+    expect((await alerts()).map(a => a.hardware_ref)).toEqual([
+      `member_id=${dana.accessId} group_id=${STUDIO}`,
+      `member_id=${dana.accessId} group_id=${FRONT}`,
+    ]);
     expect(await sourceRows(mapping)).toHaveLength(2); // both rows kept — both doors still open
   });
 });
