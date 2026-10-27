@@ -873,31 +873,30 @@ class GrantRevokeLogic {
       }
 
       case 'member.deleted': {
-        // OB-125: source_tag guard — AccessSync deletes only Kisi users it created.
-        // For foreign users (source_tag != 'accesssync'), skip deleteUser. The Kisi
-        // user identity may be shared with admin/staff roles or other-system grants
-        // we don't own; deleting it would orphan that access. We still process the
-        // AccessSync-side cleanup (member_access_log, config_alert_log) so the
-        // operator audit reflects the member.deleted event reaching us.
-        if (hardwareUserId) {
-          const tagResult = await db.query(
-            `SELECT mm.source_tag
-             FROM member_master mm
-             JOIN member_access ma ON ma.member_master_id = mm.id
-             WHERE ma.id = $1`,
-            [memberId]
-          );
-          const sourceTag = tagResult.rows[0]?.source_tag;
-          if (sourceTag === 'accesssync') {
-            await hardwareAdapter.deleteUser(hardwarePlatform, apiKey, hardwareUserId, { clientId: tenantId });
+        // The person is gone from Wix: take away every door AccessSync gave them — each
+        // source row's role assignment, or its day-pass group link. Kisi first, then
+        // completeRevoke('deleted') clears the rows; both calls are 404-idempotent, so a
+        // retry after a Kisi timeout repeats them safely.
+        //
+        // The Kisi user is NOT deleted here. queue-worker runs finalizeRevoke for 'deleted'
+        // as it does for a cancellation: Layer A (source_tag — OB-125, AccessSync deletes
+        // only users it created), guards D/E, and the DR-045 refusals (config_alert_log row,
+        // no retry), then the PII purge. This used to call deleteUser directly with no
+        // removeRole first: a guard refusal carried no statusCode, so the job retried,
+        // dead-lettered with generic copy and rolled the member back to 'active' with the
+        // door still open; on success the finalize was skipped and the PII kept (2026-10-26
+        // audit).
+        const granted = await db.query(
+          `SELECT DISTINCT role_assignment_id, source_type
+           FROM member_access_sources
+           WHERE access_id = $1 AND role_assignment_id IS NOT NULL`,
+          [memberId]
+        );
+        for (const { role_assignment_id: raId, source_type: rowSourceType } of granted.rows) {
+          if (rowSourceType === 'day_pass') {
+            await hardwareAdapter.deleteGroupLink(hardwarePlatform, apiKey, raId, { clientId: tenantId });
           } else {
-            log.warn('kisi.user.delete_skipped_foreign', {
-              clientId: tenantId, memberId,
-              platformMemberId: wixEvent.platformMemberId,
-              hardwareUserId, sourceTag: sourceTag || '(null)',
-              stage: 'revoke', result: 'skipped',
-              reason: 'source_tag_not_accesssync',
-            });
+            await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
           }
         }
         {

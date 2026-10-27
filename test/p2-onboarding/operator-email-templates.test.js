@@ -324,6 +324,38 @@ describe('[P2] describeConfigAlert — removal-safety alerts (Phase 1)', () => {
     expect(s).toContain('nothing was removed');
   });
 
+  // DR-045 delete-guard refusals: finalizeRevoke writes finalize_revoke_refused_<reason>. They used to fall
+  // through to the generic sentence that prints the raw code (SAGE review 2026-10-26).
+  describe('DR-045 delete-guard refusals (finalize_revoke_refused_*)', () => {
+    const TYPES = [
+      'finalize_revoke_refused_unowned_user',
+      'finalize_revoke_refused_client_mismatch',
+      'finalize_revoke_refused_elevated_role',
+    ];
+
+    test.each(TYPES)('%s: a plain sentence — the door part is done, the account was kept; no raw code, no hardware_ref', (alertType) => {
+      const s = T.describeConfigAlert({
+        alert_type: alertType, locationName: 'House of Gains', memberName: 'Drew Roberts', doorName: 'member_id=1 kisi_user_id=98765',
+      });
+      expect(s).not.toContain(alertType);
+      expect(s).not.toMatch(/=|98765|\bnull\b|undefined/);
+      expect(s).toContain('AccessSync removed Drew Roberts’s door access at House of Gains but didn’t delete their Kisi account');
+      expect(s.trim()).toMatch(/\.$/);
+      expect(T.describeConfigAlert({ alert_type: alertType })).not.toMatch(/\bnull\b|undefined|  /);
+    });
+
+    test('unowned: says what the guard knows (no ownership label), not "AccessSync did not create it"', () => {
+      const s = T.describeConfigAlert({ alert_type: 'finalize_revoke_refused_unowned_user', memberName: 'Drew Roberts' });
+      expect(s).toMatch(/no AccessSync ownership label/);
+      expect(s).not.toMatch(/did ?n[o’']t create|created by/i);
+    });
+
+    test('elevated role: staff need no change; cross-client: AccessSync looks into it', () => {
+      expect(T.describeConfigAlert({ alert_type: 'finalize_revoke_refused_elevated_role' })).toMatch(/admin, manager or owner rights/);
+      expect(T.describeConfigAlert({ alert_type: 'finalize_revoke_refused_client_mismatch' })).toMatch(/different AccessSync account/);
+    });
+  });
+
   test('sweep_repair_pending: paying member missing in Kisi; restored once repair is on; re-add meanwhile', () => {
     const s = T.describeConfigAlert({ alert_type: 'sweep_repair_pending', locationName: 'House of Gains' });
     expect(s).toMatch(/paying member/);

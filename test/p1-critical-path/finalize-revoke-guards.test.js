@@ -15,7 +15,8 @@
  * │  Both refuse with a NON-THROWING { finalized:false } and leave the      │
  * │  member exactly as found: no deleteUser, no member_access /             │
  * │  member_master write, no transaction opened. Guard D fails closed       │
- * │  when the lookup errors.                                                │
+ * │  when the lookup errors — and throws, so the revoke job retries         │
+ * │  (it used to return quietly: Kisi user + PII kept, no alert).           │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -198,7 +199,7 @@ describe('[P1] finalizeRevoke Guard D — Kisi user still holds role assignments
     expect(warnEvents()).toContain('adapter.finalize_revoke.refused_other_assignments');
   });
 
-  test('lookup throws (Kisi 5xx) → fail closed: assignment_check_failed, no throw, member untouched', async () => {
+  test('lookup throws (Kisi 5xx) → fail closed, rethrown so the job retries (statusCode kept), member untouched', async () => {
     db.query
       .mockResolvedValueOnce(accessRow())
       .mockResolvedValueOnce({ rows: [] });
@@ -206,10 +207,12 @@ describe('[P1] finalizeRevoke Guard D — Kisi user still holds role assignments
     kisiErr.statusCode = 503;
     hardwareAdapter.getRoleAssignmentsForUser.mockRejectedValueOnce(kisiErr);
 
-    const result = await adapter.finalizeRevoke(MEMBER_ACCESS_ID, TENANT_ID, 'kisi', API_KEY, HARDWARE_USER_ID);
+    await expect(
+      adapter.finalizeRevoke(MEMBER_ACCESS_ID, TENANT_ID, 'kisi', API_KEY, HARDWARE_USER_ID)
+    ).rejects.toBe(kisiErr);
 
-    expect(result).toEqual({ finalized: false, reason: 'assignment_check_failed' });
     expectMemberUntouched();
+    expect(alertInsertCalls()).toHaveLength(0); // not a refusal: the retry, or the dead-letter, is the signal
     expect(warnEvents()).toContain('adapter.finalize_revoke.assignment_check_failed');
   });
 
@@ -217,15 +220,15 @@ describe('[P1] finalizeRevoke Guard D — Kisi user still holds role assignments
     ['null', null],
     ['undefined', undefined],
     ['an object', { data: [] }],
-  ])('lookup returns %s (not an array) → fail closed: assignment_check_failed', async (_label, value) => {
+  ])('lookup returns %s (not an array) → fail closed and throws', async (_label, value) => {
     db.query
       .mockResolvedValueOnce(accessRow())
       .mockResolvedValueOnce({ rows: [] });
     hardwareAdapter.getRoleAssignmentsForUser.mockResolvedValueOnce(value);
 
-    const result = await adapter.finalizeRevoke(MEMBER_ACCESS_ID, TENANT_ID, 'kisi', API_KEY, HARDWARE_USER_ID);
-
-    expect(result).toEqual({ finalized: false, reason: 'assignment_check_failed' });
+    await expect(
+      adapter.finalizeRevoke(MEMBER_ACCESS_ID, TENANT_ID, 'kisi', API_KEY, HARDWARE_USER_ID)
+    ).rejects.toThrow(/expected array/);
     expectMemberUntouched();
   });
 
@@ -237,9 +240,9 @@ describe('[P1] finalizeRevoke Guard D — Kisi user still holds role assignments
         .mockResolvedValueOnce(accessRow())
         .mockResolvedValueOnce({ rows: [] });
 
-      const result = await adapter.finalizeRevoke(MEMBER_ACCESS_ID, TENANT_ID, 'kisi', API_KEY, HARDWARE_USER_ID);
-
-      expect(result).toEqual({ finalized: false, reason: 'assignment_check_failed' });
+      await expect(
+        adapter.finalizeRevoke(MEMBER_ACCESS_ID, TENANT_ID, 'kisi', API_KEY, HARDWARE_USER_ID)
+      ).rejects.toThrow();
       expectMemberUntouched();
     } finally {
       hardwareAdapter.getRoleAssignmentsForUser = saved;
