@@ -479,12 +479,6 @@ function describeConfigAlert(row) {
         + ' during a sync — it stopped and changed nothing. Nobody lost access. '
         + 'This usually clears up on its own; AccessSync tries again on the next sync.';
 
-    // DR-045 step 1 — createUser couldn't put AccessSync's ownership label on a Kisi
-    // account it had just made. hardware_ref is "kisi_user_id=… code=…" — never shown.
-    case 'kisi_create_metadata_missing':
-      return 'A new member’s door access works' + at + ', but the AccessSync label didn’t save on their new Kisi account. '
-        + 'Nobody lost access. To fix it, run node scripts/kisi-ownership-migrate.js verify.';
-
     case 'group_not_found':
     case 'missing_group':
       return door + at + ' is no longer in ' + platform + '.' + memberNote;
@@ -496,6 +490,11 @@ function describeConfigAlert(row) {
       return 'A door' + at + ' was in lockdown, so AccessSync skipped it instead of forcing a change.';
     case 'untraceable_hardware_access':
       return 'Someone has door access' + at + ' that AccessSync didn’t set up. It was left alone — worth a look if that’s unexpected.';
+    // DR-045 step 1 — createUser couldn't put AccessSync's ownership label on a Kisi
+    // account it had just made. hardware_ref is "kisi_user_id=… code=…" — never shown.
+    case 'kisi_create_metadata_missing':
+      return 'A new member’s door access works' + at + ', but the AccessSync label didn’t save on their new Kisi account. '
+        + 'Nobody lost access. To fix it, run node scripts/kisi-ownership-migrate.js verify.';
     case 'member_deleted_review':
       return 'A member was deleted' + at + ' and is worth a quick review.';
     case 'notification_delivery_failed':
