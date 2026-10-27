@@ -52,6 +52,8 @@ const warned = (event) => warnSpy.mock.calls.filter(([e]) => e === event);
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Reset, not just clear: a reply a test queued but didn't use must not leak into the next one.
+  kisiConnector.makeRequest.mockReset();
   db.query.mockResolvedValue({ rows: [] });
 });
 
