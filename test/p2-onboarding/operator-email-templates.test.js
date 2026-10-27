@@ -29,6 +29,7 @@ const ALL_ALERT_TYPES = [
   'kisi_api_unavailable', 'hardware_api_unavailable',
   'untraceable_hardware_access', 'member_deleted_review',
   'notification_delivery_failed', 'system', 'unknown',
+  'door_removal_failed',
 ];
 
 /** The whole point of the redesign — nothing machine-shaped in operator-facing copy. */

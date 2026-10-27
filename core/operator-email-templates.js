@@ -493,6 +493,14 @@ function describeConfigAlert(row) {
         + ' during a sync — it stopped and changed nothing. Nobody lost access. '
         + 'This usually clears up on its own; AccessSync tries again on the next sync.';
 
+    // A door was taken off a plan (or the plan switched off) in Plan Mapping, and removing it
+    // from this member failed (a Kisi error of any kind, or a database error before the call).
+    // hardware_ref is "member_id=<id> group_id=<id>" — never shown.
+    case 'door_removal_failed':
+      return whoStart + at + ' can still open a door that was taken off their plan — '
+        + 'AccessSync couldn’t remove it in ' + hardware + '. '
+        + 'Remove that door from ' + (person ? 'their' : 'the member’s') + ' account in ' + hardware + '.';
+
     case 'group_not_found':
     case 'missing_group':
       return door + at + ' is no longer in ' + platform + '.' + memberNote;
