@@ -50,6 +50,7 @@ jest.mock('bullmq', () => {
 const realDb           = require('../helpers/real-db/pglite-db');
 const kisi             = require('../helpers/real-db/fake-kisi');
 const retryEngine      = require('../../core/retry-engine');
+const standardAdapter  = require('../../adapters/standard-adapter');
 const { processJob, startWorker } = require('../../core/queue-worker');
 const { mintTraceId }  = require('../../core/trace-context');
 const bullmq           = require('bullmq');
@@ -57,7 +58,9 @@ const bullmq           = require('bullmq');
 const MEMBER   = 'wix-member-dana';
 const EMAIL    = 'dana@example.com';
 const MONTHLY  = 'plan-monthly';
+const YOGA     = 'plan-yoga';
 const FRONT    = 'grp-front-door';
+const STUDIO   = 'grp-yoga-studio';
 
 let tenantId;
 let logLines = [];
@@ -224,10 +227,43 @@ describe('[P1] real DB — F1: a cancellation\'s finalize fails once, then the r
     startWorker();
     await bullmq.__handlers.failed({ ...j, attemptsMade: 3 }, run.errors[2]);
     expect(retryEngine.handleFailure).toHaveBeenCalledTimes(1);
+    // Its own words on the Errors page / email (error_queue.user_message): the door part is done —
+    // not the generic "door access didn't get turned off". Code and status kept for guidance.
+    const deadLettered = retryEngine.handleFailure.mock.calls[0][1];
+    expect(deadLettered.userMessage).toMatch(/^The door access was removed; only the cleanup after it didn't finish/);
+    expect(deadLettered.statusCode).toBe(503);
 
     // Kisi is back: the next run for this member (the cancel replayed) is found and finishes.
     await processJob(cancel());
     await expectFinalized(a);
+  });
+
+  test('a partial cancel (another plan still pays) whose finalize throws before its own status check stays "active" — never hidden as "removing"', async () => {
+    // SAGE review 2026-10-26: finalize can throw before it reads the member's status (API-key
+    // lookup, its status SELECT). Parking 'removing' then hid a paying member from the Members
+    // list (operator.js excludes 'removing') and from the sweep's rollup.
+    await realDb.query(
+      `INSERT INTO plan_mappings (client_id, source_plan_id, hardware_group_id, plan_name, door_name, status, access_type)
+       VALUES ($1, $2, $3, 'Yoga', 'Yoga studio', 'active', 'group')`, [tenantId, YOGA, STUDIO]);
+    const a = await grantMonthly();
+    await processJob(job('grant', { eventType: 'plan.purchased', planId: YOGA, wixOrderId: 'order-2' }));
+    expect(kisi.canOpen(a.hardware_user_id, STUDIO)).toBe(true);
+
+    const finalizeSpy = jest.spyOn(standardAdapter, 'finalizeRevoke')
+      .mockRejectedValue(new Error('connection terminated unexpectedly'));
+    try {
+      const run = await runWithRetries(cancel());   // three DB failures in a row
+      expect(run.exhausted).toBe(true);
+    } finally {
+      finalizeSpy.mockRestore();
+    }
+
+    const now = await access();
+    expect(now.status).toBe('active');                              // still listed, still in the sweep
+    expect(kisi.canOpen(a.hardware_user_id, FRONT)).toBe(false);    // the cancelled plan's door is shut
+    expect(kisi.canOpen(a.hardware_user_id, STUDIO)).toBe(true);    // the paying plan's door still opens
+    expect(kisiUserExists(a.hardware_user_id)).toBe(true);
+    expect(now.email).toBe(EMAIL);
   });
 
   test('a Member Hub sub-member removal (already "removing") whose finalize hiccups is finished by the retry too', async () => {

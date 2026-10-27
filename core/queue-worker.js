@@ -1085,6 +1085,13 @@ async function _processJobBody(job, traceId) {
           // user and the PII with no alert (2026-10-26 audit). The error path below parks
           // the member at 'removing' instead (DR-044: removal under way), which the lookup
           // matches: the revoke re-runs with nothing left to remove and finalize runs again.
+          //
+          // Its own words if it dead-letters (error_queue.user_message → Errors page and
+          // operator email): the door part is done, and the generic "access didn't get
+          // turned off" would be wrong. Code and HTTP status are kept for guidance + dedupe.
+          finalizeErr.userMessage = 'The door access was removed; only the cleanup after it didn\'t finish '
+            + '(deleting their Kisi account and clearing their stored details).'
+            + (finalizeErr.userMessage ? ' ' + finalizeErr.userMessage : '');
           finalizePending = true;
           logger.error('queue.revoke.finalize_failed', {
             clientId, memberId, eventId,

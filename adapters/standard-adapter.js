@@ -1579,8 +1579,9 @@ class StandardAdapter {
    *   - 'failed' (legacy)         → access row recomputed from its source rows (rollupAccessStatus).
    *                                 Per-plan failure recorded on the source row by callers.
    *   - 'pending_identity'        → preserved (access-row-level state per spec).
-   *   - 'removing'                → preserved: a revoke whose finalizeRevoke threw stays
-   *                                 findable for its retry (queue-worker Step 4).
+   *   - 'removing'                → the rollup with 'removing' in place of 'inactive': a revoke
+   *                                 whose finalizeRevoke threw stays findable for its retry
+   *                                 (queue-worker Step 4); an active source still means 'active'.
    *   - 'pending_hardware' (legacy) / 'pending_start' (legacy) → callers MUST use the new
    *                                 parkPendingHardware / parkPendingStart methods which write
    *                                 source rows. If passed here, we translate to 'inactive'
@@ -1600,10 +1601,12 @@ class StandardAdapter {
         resolvedStatus = 'pending_identity';
         break;
       case 'removing':
-        // queue-worker: the revoke committed but finalizeRevoke threw. The doors are gone
-        // and the sources cleared, so the rollup would say 'inactive' — which the revoke
-        // retry's lookup cannot see. 'removing' (DR-044: removal under way) it can, and
-        // the reconcile sweep's rollup leaves it alone.
+        // queue-worker: the revoke committed but finalizeRevoke threw. The rollup would
+        // say 'inactive' — which the revoke retry's lookup cannot see. 'removing' (DR-044:
+        // removal under way) it can, and the reconcile sweep's rollup leaves it alone.
+        // Still the rollup, though: finalize can throw before its own status check (the
+        // API-key lookup, its status SELECT), and a partial cancel — another plan still
+        // paying — must stay 'active', not be hidden as 'removing' (SAGE review 2026-10-26).
         resolvedStatus = 'removing';
         break;
       case 'pending_hardware':
@@ -1629,12 +1632,29 @@ class StandardAdapter {
         break;
     }
 
-    const release = resolvedStatus === null
-      ? this.rollupAccessStatus(memberId)
-      : db.query(
-          `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
-          [resolvedStatus, memberId]
-        );
+    let release;
+    if (resolvedStatus === null) {
+      release = this.rollupAccessStatus(memberId);
+    } else if (resolvedStatus === 'removing') {
+      release = db.query(
+        `UPDATE member_access
+         SET status = CASE
+                        WHEN EXISTS (
+                          SELECT 1 FROM member_access_sources mas
+                          WHERE mas.access_id = $1 AND mas.status = 'active'
+                        ) THEN 'active'
+                        ELSE 'removing'
+                      END,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [memberId]
+      );
+    } else {
+      release = db.query(
+        `UPDATE member_access SET status = $1, updated_at = NOW() WHERE id = $2`,
+        [resolvedStatus, memberId]
+      );
+    }
     await release.catch(err =>
       log.error('adapter.lock_release_failed', { memberId, resolvedStatus: resolvedStatus || 'rollup' }, err)
     );

@@ -81,12 +81,12 @@ const BY_CODE = {
   // A member removal no longer fails on these (finalizeRevoke takes the doors away first and leaves the account with a
   // config alert), so a row here is an older one, or a day-pass door link on another client's marker.
   UNOWNED_USER: accessSyncOwned(
-    'AccessSync did not create this person\'s Kisi account, so it will not delete it.',
-    [SUPPORT_LINE, 'If they should no longer get in, check their door access in Kisi. If the account is meant to stay, you can mark this resolved.'],
+    'This person\'s Kisi account has no AccessSync ownership label, so AccessSync will not delete it.',
+    [SUPPORT_LINE, 'If you know the account is meant to stay in Kisi, you can mark this resolved.'],
     { gymMayDismiss: true }),
   ELEVATED_ROLE_ATTACHED: accessSyncOwned(
     'This person\'s Kisi account has admin, manager or owner rights, so AccessSync will not delete it.',
-    [SUPPORT_LINE, 'If they are staff, nothing needs to change and you can mark this resolved. If not, review their roles in Kisi.'],
+    [SUPPORT_LINE, 'If they are staff, the account is meant to stay and you can mark this resolved.'],
     { gymMayDismiss: true }),
   CLIENT_MISMATCH: accessSyncOwned(
     'This Kisi record is marked as belonging to a different AccessSync account, so AccessSync will not change or delete it.'),

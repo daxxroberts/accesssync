@@ -271,6 +271,15 @@
     if (e === 'finalize_refused_shared_user')
       return "AccessSync didn't delete " + (c.member ? c.member + "'s" : "a member's") + ' Kisi account because another member' + at +
         ' uses the same Kisi account — nothing was removed. Check in Kisi that each person has their own account.';
+    if (e === 'finalize_revoke_refused_unowned_user')
+      return 'AccessSync removed ' + (c.member ? c.member + "'s" : "a member's") + ' door access' + at +
+        " but didn't delete their Kisi account — it has no AccessSync ownership label. If the account should go, delete it in Kisi.";
+    if (e === 'finalize_revoke_refused_client_mismatch')
+      return 'AccessSync removed ' + (c.member ? c.member + "'s" : "a member's") + ' door access' + at +
+        " but didn't delete their Kisi account — it's labeled as belonging to a different AccessSync account. AccessSync support will look into it.";
+    if (e === 'finalize_revoke_refused_elevated_role')
+      return 'AccessSync removed ' + (c.member ? c.member + "'s" : "a member's") + ' door access' + at +
+        " but didn't delete their Kisi account — it has admin, manager or owner rights. If they're staff, nothing needs to change; if not, review their roles in Kisi.";
     if (e === 'sweep_repair_pending')
       return (c.member ? c.member + ' is a paying member, but their door access' : "A paying member's door access") +
         at + ' is missing in Kisi. AccessSync will restore it once automatic repair is switched on; until then you can re-add it in Kisi.';
