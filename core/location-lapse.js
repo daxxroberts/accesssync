@@ -162,33 +162,25 @@ async function _setLocationStatus(locationId, status) {
  *     flipped their rows): left off — Wix is the truth on declines, and
  *     payment.recovered restores them. Counted in `held`.
  *   - access row in a state this path must not overwrite (in_flight = a queue job
- *     holds the person; pending_identity / recovery_pending): left off and alerted.
+ *     holds the person; pending_identity / recovery_pending): skipped, never touched,
+ *     and alerted as location_reactivate_skipped.
  *   - Kisi user: hardwareAdapter.enableAccess (the payment.recovered call), then the
  *     source rows are restored. No Kisi user (day-pass only): rows restored only.
  *   - Any failure: rows stay marked, so re-running the activate picks the member up
  *     again; the operator gets a location_reactivate_failed alert.
+ *   A member restored on a later run has their open alerts resolved, so the digest
+ *   stops saying they are locked out.
  *
- * Throws only when it cannot run at all (location/connector/API key missing) —
- * after alerting, since every caller is fire-and-forget.
+ * No lapse-marked members (every new location is auto-activated on create) → returns
+ * at once: no connector lookup, no alert. Throws only when there are members to turn
+ * back on and it cannot run at all (location/connector/API key missing) — after
+ * alerting, since every caller is fire-and-forget.
  *
  * @param {string} locationId  UUID of the location
  * @param {string} clientId    UUID of the client
  * @returns {Promise<{ restored: number, skipped: number, held: number, errors: string[] }>}
  */
 async function reactivateLocationMembers(locationId, clientId) {
-  let ctx;
-  let apiKey;
-  try {
-    ctx = await _resolveLocationContext(clientId, locationId);
-    apiKey = ctx.enc_key ? decryptApiKey(ctx.enc_key) : null; // DR-028
-    if (!apiKey) throw new Error(`[LocationLapse] No API key available for client ${clientId}`);
-  } catch (err) {
-    log.error('location.reactivate_failed', { clientId, locationId }, err);
-    await _alertReactivateFailed(clientId, `location_id=${locationId} reason=no_hardware_context`);
-    throw err;
-  }
-  const { platform, location_name } = ctx;
-
   // When the lapse happened, per member: its 'location_suspended' log row (written right
   // after the flip); the lapse-marked rows' updated_at only if that log write was lost.
   const membersResult = await db.query(
@@ -222,6 +214,25 @@ async function reactivateLocationMembers(locationId, clientId) {
        AND ma.status NOT IN ('deleted', 'removing')`,
     [locationId, clientId, standardAdapter.LOCATION_LAPSE_REASON]
   );
+  if (!membersResult.rows.length) {
+    log.info('location.reactivate_nothing_to_restore', { clientId, locationId });
+    return { restored: 0, skipped: 0, held: 0, errors: [] };
+  }
+
+  const runRef = `location_id=${locationId} reason=no_hardware_context`;
+  let ctx;
+  let apiKey;
+  try {
+    ctx = await _resolveLocationContext(clientId, locationId);
+    apiKey = ctx.enc_key ? decryptApiKey(ctx.enc_key) : null; // DR-028
+    if (!apiKey) throw new Error(`[LocationLapse] No API key available for client ${clientId}`);
+  } catch (err) {
+    log.error('location.reactivate_failed', { clientId, locationId }, err);
+    await _alertReactivate(clientId, 'location_reactivate_failed', runRef);
+    throw err;
+  }
+  await _resolveReactivateAlerts(clientId, runRef);
+  const { platform, location_name } = ctx;
 
   const errors = [];
   let restored = 0;
@@ -244,7 +255,7 @@ async function reactivateLocationMembers(locationId, clientId) {
         clientId, locationId, memberId: row.member_id, accessStatus: row.access_status,
       });
       errors.push(`${row.platform_member_id}: member is ${row.access_status}`);
-      await _alertReactivateFailed(clientId, ref);
+      await _alertReactivate(clientId, 'location_reactivate_skipped', ref);
       continue;
     }
 
@@ -264,12 +275,13 @@ async function reactivateLocationMembers(locationId, clientId) {
         eventType: 'location_reactivated',
         credentialType: 'location_lapse',
       });
+      await _resolveReactivateAlerts(clientId, ref);
 
       restored++;
     } catch (err) {
       log.error('location.reactivate_member_failed', { clientId, locationId, memberId: row.member_id }, err);
       errors.push(`${row.platform_member_id}: ${err.message}`);
-      await _alertReactivateFailed(clientId, ref);
+      await _alertReactivate(clientId, 'location_reactivate_failed', ref);
     }
   }
 
@@ -302,25 +314,40 @@ async function _resolveLocationContext(clientId, locationId) {
   return { ...row, platform: row.hardware_platform || 'kisi' };
 }
 
+const REACTIVATE_ALERT_TYPES = ['location_reactivate_failed', 'location_reactivate_skipped'];
+
 /**
- * One unresolved alert per (client, ref): re-running the activate after a failure
+ * One unresolved alert per (client, type, ref): re-running the activate after a failure
  * does not stack duplicates. Copy: core/operator-email-templates.js describeConfigAlert.
  * Never throws — the reactivation loop must reach every member.
  */
-async function _alertReactivateFailed(clientId, hardwareRef) {
+async function _alertReactivate(clientId, alertType, hardwareRef) {
   try {
     const actor = getActor() || {};
     await db.query(
       `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
-       SELECT $1::uuid, 'location_reactivate_failed', $2::varchar, $3::varchar, $4::varchar, $5::varchar
+       SELECT $1::uuid, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::varchar
        WHERE NOT EXISTS (
          SELECT 1 FROM config_alert_log
           WHERE client_id = $1::uuid
-            AND alert_type = 'location_reactivate_failed'
-            AND hardware_ref = $2::varchar
+            AND alert_type = $2::varchar
+            AND hardware_ref = $3::varchar
             AND resolved_at IS NULL
        )`,
-      [clientId, String(hardwareRef).slice(0, 255), getTraceId() || null, actor.type || 'system', actor.id || 'location-lapse']
+      [clientId, alertType, String(hardwareRef).slice(0, 255), getTraceId() || null, actor.type || 'system', actor.id || 'location-lapse']
+    );
+  } catch (err) {
+    log.warn('location.reactivate_alert_failed', { clientId }, err);
+  }
+}
+
+/** The condition behind these alerts is gone (member back in / run could start). Never throws. */
+async function _resolveReactivateAlerts(clientId, hardwareRef) {
+  try {
+    await db.query(
+      `UPDATE config_alert_log SET resolved_at = NOW()
+        WHERE client_id = $1 AND alert_type = ANY($2::varchar[]) AND hardware_ref = $3 AND resolved_at IS NULL`,
+      [clientId, REACTIVATE_ALERT_TYPES, String(hardwareRef).slice(0, 255)]
     );
   } catch (err) {
     log.warn('location.reactivate_alert_failed', { clientId }, err);

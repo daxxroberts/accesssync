@@ -549,15 +549,18 @@ called by both activate endpoints — operator portal and owner hub) turns exact
 | `location.suspend_member_failed` | error | Lapse: one member's Kisi suspend or source-row flip threw; the others proceed |
 | `location.lapse_complete` | info | Lapse finished: `{ location, suspended, skipped, errors }` |
 | `location.reactivate_complete` | info | **PERSISTED via EVENT_REGISTRY.json override.** Reactivation finished: `{ clientId, locationId, location, restored, skipped, held, errors }`. `restored` = members turned back on; `held` = left off because a Wix payment failed after the lapse (payment.recovered restores them); `errors` = members still locked out (each alerted) |
+| `location.reactivate_nothing_to_restore` | info | Reactivation found no lapse-marked members (e.g. a new location's auto-activate) and returned before any connector lookup — no alert. Breadcrumb, `persist: false` |
 | `location.reactivate_member_held` | warn | A lapse-paused member was left off: `disabled` (payment.failed) was logged after their lapse. Context: `{ memberId, reason }` |
-| `location.reactivate_member_busy` | warn | A lapse-paused member was left off because their access row is `in_flight` / `pending_identity` / `recovery_pending` — alerted as `location_reactivate_failed` |
+| `location.reactivate_member_busy` | warn | A lapse-paused member was left off because their access row is `in_flight` / `pending_identity` / `recovery_pending` — alerted as `location_reactivate_skipped` (never touched) |
 | `location.reactivate_member_failed` | error | Kisi `enableAccess` or the source-row restore threw for one member; rows stay marked so a later activate retries; alerted as `location_reactivate_failed` |
 | `location.reactivate_failed` | error | Reactivation could not start (location / connector / API key missing); alerted as `location_reactivate_failed` with `location_id=… reason=no_hardware_context` |
-| `location.reactivate_alert_failed` | warn | The `location_reactivate_failed` alert INSERT itself failed (best-effort) |
+| `location.reactivate_alert_failed` | warn | Writing or resolving a `location_reactivate_*` alert itself failed (best-effort) |
 
 `config_alert_log` alert type `location_reactivate_failed` — one unresolved row per `hardware_ref`
 (`member_id=<access id> kisi_user_id=<id> location_id=<id>`, or `location_id=<id> reason=…` for a run that could
-not start). Copy: `core/operator-email-templates.js` `describeConfigAlert` and `admin/public/humanize.js`.
+not start). `location_reactivate_skipped` — same ref, for a member left alone because another change was in
+progress. Both are resolved (`resolved_at`) when a later run turns that member back on (or, for the run-level
+ref, when a run can start). Copy: `core/operator-email-templates.js` `describeConfigAlert` and `admin/public/humanize.js`.
 
 ---
 

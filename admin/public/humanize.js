@@ -286,6 +286,10 @@
       return (c.member ? c.member + ' is' : 'Members paused while the location was off are') + ' still locked out' + at +
         ": the location is back on, but AccessSync couldn't turn their door access back on in Kisi. " +
         'Turn their access back on in Kisi to let them in right away.';
+    if (e === 'location_reactivate_skipped')
+      return (c.member ? c.member + ' is' : 'A member paused while the location was off is') + ' still locked out' + at +
+        ': another change to their access was in progress when the location was turned back on, so AccessSync skipped them. ' +
+        "It won't retry on its own — turn their access back on in Kisi to let them in.";
     // Fix round (2026-09-10, F2): a declined, pending or unrecognized Wix payment is
     // not a cancellation — the sweep never proposes it for removal. One alert per
     // membership (a family is one alert, naming the main member).

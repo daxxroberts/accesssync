@@ -179,12 +179,21 @@ async function alerts() {
   return r.rows;
 }
 
+/** What the nightly digest would still report: unresolved rows only. */
+async function openAlerts() {
+  const r = await realDb.query(
+    `SELECT alert_type, hardware_ref FROM config_alert_log WHERE client_id = $1 AND resolved_at IS NULL ORDER BY created_at`,
+    [tenantId]);
+  return r.rows;
+}
+
 const logged = (event) => logLines.find(l => l.event === event || l.message === event);
 
 /** The activate routes answer first and re-enable members after (fire-and-forget). */
 async function settled() {
   for (let i = 0; i < 200; i++) {
-    if (logged('location.reactivate_complete') || logged('location.reactivate_failed')) return;
+    if (logged('location.reactivate_complete') || logged('location.reactivate_failed')
+        || logged('location.reactivate_nothing_to_restore')) return;
     await new Promise(r => setTimeout(r, 10));
   }
   throw new Error('reactivation never finished');
@@ -374,10 +383,13 @@ describe('[P1] real DB — a failed re-enable is never silent', () => {
     expect(retry).toMatchObject({ restored: 1, errors: [] });
     expect(kisi.canOpen(a.hardware_user_id, FRONT)).toBe(true);
     expect((await access('dana')).status).toBe('active');
+    // Back in → the alert is resolved, so the nightly digest stops saying they're locked out.
+    expect(await alerts()).toHaveLength(1);
+    expect(await openAlerts()).toEqual([]);
   });
 
-  test('no API key: the whole run alerts instead of failing quietly', async () => {
-    await join('dana');
+  test('no API key: the whole run alerts instead of failing quietly; fixing the key and re-running resolves it', async () => {
+    const a = await join('dana');
     await request(app).post(`/operator/${tenantId}/locations/${locationId}/suspend`);
     await realDb.query(`UPDATE connector_subscriptions SET hardware_api_key = NULL WHERE client_id = $1`, [tenantId]);
 
@@ -386,9 +398,14 @@ describe('[P1] real DB — a failed re-enable is never silent', () => {
     expect(await alerts()).toEqual([
       { alert_type: 'location_reactivate_failed', hardware_ref: `location_id=${locationId} reason=no_hardware_context` },
     ]);
+
+    await realDb.query(`UPDATE connector_subscriptions SET hardware_api_key = 'test-kisi-key' WHERE client_id = $1`, [tenantId]);
+    expect(await reactivateLocationMembers(locationId, tenantId)).toMatchObject({ restored: 1 });
+    expect(kisi.canOpen(a.hardware_user_id, FRONT)).toBe(true);
+    expect(await openAlerts()).toEqual([]);
   });
 
-  test('a member mid-job (in_flight) is left alone and alerted, not overwritten', async () => {
+  test('a member mid-job (in_flight) is skipped, never touched, alerted as skipped; a later run resolves it', async () => {
     const a = await join('dana');
     await request(app).post(`/operator/${tenantId}/locations/${locationId}/suspend`);
     await realDb.query(`UPDATE member_access SET status = 'in_flight' WHERE id = $1`, [a.id]);
@@ -398,15 +415,49 @@ describe('[P1] real DB — a failed re-enable is never silent', () => {
     expect(result.errors).toHaveLength(1);
     expect((await access('dana')).status).toBe('in_flight');
     expect(kisi.adapter.enableAccess).not.toHaveBeenCalled();
-    expect((await alerts()).map(r => r.alert_type)).toEqual(['location_reactivate_failed']);
+    expect(await openAlerts()).toEqual([{
+      alert_type: 'location_reactivate_skipped',
+      hardware_ref: `member_id=${a.id} kisi_user_id=${a.hardware_user_id} location_id=${locationId}`,
+    }]);
+
+    await realDb.query(`UPDATE member_access SET status = 'inactive' WHERE id = $1`, [a.id]); // the job finished
+    expect(await reactivateLocationMembers(locationId, tenantId)).toMatchObject({ restored: 1 });
+    expect(kisi.canOpen(a.hardware_user_id, FRONT)).toBe(true);
+    expect(await openAlerts()).toEqual([]);
   });
 
-  test('the alert reads as a plain sentence naming the member and the place', () => {
+  test('activating a location no lapse touched (a new location\'s auto-activate) raises no alert, even with no connector', async () => {
+    await join('dana'); // a member elsewhere — not lapse-marked
+    const fresh = await addLocation('Brand New');
+    await realDb.query(`DELETE FROM connector_subscriptions WHERE client_id = $1`, [tenantId]);
+
+    // What locations.ejs calls right after creating a location.
+    const res = await request(app).post(`/admin/clients/${tenantId}/locations/${fresh}/activate`);
+    expect(res.status).toBe(200);
+    await settled();
+
+    expect(logged('location.reactivate_nothing_to_restore')).toMatchObject({ locationId: fresh });
+    expect(logged('location.reactivate_failed')).toBeUndefined();
+    expect(await alerts()).toEqual([]);
+    expect(await reactivateLocationMembers(fresh, tenantId)).toEqual({ restored: 0, skipped: 0, held: 0, errors: [] });
+    expect(kisi.adapter.enableAccess).not.toHaveBeenCalled();
+  });
+
+  test('the alerts read as plain sentences naming the member and the place', () => {
     const s = describeConfigAlert({
       alert_type: 'location_reactivate_failed', memberName: 'Dana Example', locationName: 'Main St', platform: 'Kisi',
     });
     expect(s).toMatch(/^Dana Example is still locked out at Main St/);
     expect(s).toMatch(/turn their access back on in Kisi/);
     expect(s).not.toMatch(/location_reactivate_failed|member_id=/);
+
+    // Skipped: it must not claim AccessSync tried and failed.
+    const skipped = describeConfigAlert({
+      alert_type: 'location_reactivate_skipped', memberName: 'Dana Example', locationName: 'Main St', platform: 'Kisi',
+    });
+    expect(skipped).toMatch(/^Dana Example is still locked out at Main St/);
+    expect(skipped).toMatch(/another change to their access was in progress/);
+    expect(skipped).toMatch(/won’t retry on its own/);
+    expect(skipped).not.toMatch(/couldn’t turn/);
   });
 });
