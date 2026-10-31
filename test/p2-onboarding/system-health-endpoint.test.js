@@ -117,11 +117,17 @@ describe('[P2] GET /admin/system-health — the owner hub contract', () => {
       expect((await get()).body.problems[0]).toMatchObject({ kind: 'errors_you', owner: 'you' });
     });
 
-    test('members stuck in an in-between state for 24h+ count as "can\'t get in" (bug 5)', async () => {
+    test('members stuck in an in-between state for 24h+ are a red "you" row linking to the Members Pending filter (bug 5)', async () => {
       const oldest = H(240);
       mockWorld({ stuck: [{ client_id: 'c1', stuck: 2, oldest }] });
       const res = await get();
-      expect(res.body.problems[0]).toMatchObject({ kind: 'errors_you', count: 2, text: "2 members can't get in: AccessSync must fix", since: oldest });
+      expect(res.body.verdict).toBe('red');
+      expect(res.body.problems).toEqual([expect.objectContaining({
+        kind: 'stuck_you', owner: 'you', severity: 'red', count: 2, since: oldest,
+        text: '2 members stuck partway through setup for over a day: AccessSync must fix',
+        // NOT /errors — that page lists failed jobs only, so the owner landed on an empty page (2026-10-31).
+        link: '/members?clientId=c1&filter=pending',
+      })]);
       expect(res.body.clients[0].stuck_members).toBe(2);
     });
 
@@ -134,9 +140,23 @@ describe('[P2] GET /admin/system-health — the owner hub contract', () => {
       expect(db.query.mock.calls[5][1]).toEqual([24]);
     });
 
-    test('errors and stuck members are summed into one row', async () => {
+    test('the stuck query leaves out a sub-member draft that is only waiting on its plan holder', async () => {
+      mockWorld();
+      await get();
+      const sql = String(db.query.mock.calls[5][0]);
+      expect(sql).toMatch(/ma\.sub_master_id IS NOT NULL/);
+      expect(sql).toMatch(/d\.status = 'draft'/);
+      expect(sql).toMatch(/o\.status <> 'draft'/);
+    });
+
+    test('errors and stuck members are separate rows, each linking to the page that lists them', async () => {
       mockWorld({ errors: [openErr()], stuck: [{ client_id: 'c1', stuck: 1, oldest: H(30) }] });
-      expect((await get()).body.problems[0]).toMatchObject({ count: 2, text: "2 members can't get in: AccessSync must fix" });
+      const rows = (await get()).body.problems;
+      expect(rows).toHaveLength(2);
+      expect(rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'errors_you', count: 1, text: "1 member can't get in: AccessSync must fix", link: '/errors?clientId=c1' }),
+        expect.objectContaining({ kind: 'stuck_you', count: 1, link: '/members?clientId=c1&filter=pending' }),
+      ]));
     });
   });
 

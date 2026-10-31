@@ -13,6 +13,14 @@
 <head>
   <%- include('../partials/head', { title: 'Admin Hub: Error Queue' }) %>
   <style>
+    /* Alerts tied to no gym (config_alert_log, client_id NULL) — same look as a gym's Errors page box. */
+    .sync-alerts { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--amber, #F5A623); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); }
+    .sync-alerts h2 { font-size: 14px; font-weight: 700; color: var(--text); margin: 0 0 4px 0; }
+    .sync-alerts-intro { font-size: 12px; color: var(--text2); line-height: 1.5; margin: 0 0 10px 0; }
+    .sync-alert { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
+    .sync-alert-text { flex: 1 1 240px; min-width: 0; font-size: 13px; color: var(--text); line-height: 1.55; overflow-wrap: anywhere; }
+    .sync-alert-when { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .sync-alert button { flex: 0 0 auto; min-height: 40px; }
     .page { padding: 18px 16px 60px; display: flex; flex-direction: column; gap: 14px; max-width: 1100px; margin: 0 auto; }
 
     .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -92,6 +100,10 @@
         <option value="all">All</option>
       </select>
     </div>
+
+    <!-- Alerts tied to no gym: Wix updates AccessSync couldn't route. The owner digest links here; before
+         2026-10-31 nothing listed them and nothing could clear them, so the digest repeated them forever. -->
+    <div id="no-gym-alerts" class="sync-alerts" hidden></div>
 
     <!-- Error list -->
     <div id="admin-error-list">
@@ -361,10 +373,56 @@
       return Math.floor(s / 86400) + 'd ago';
     }
 
+    // ── Alerts tied to no gym ─────────────────────────────────────
+    function loadNoGymAlerts() {
+      apiFetch('/admin/errors/alerts')
+        .then(function(r) { return r.ok ? r.json() : { alerts: [] }; })
+        .then(function(d) { renderNoGymAlerts(d.alerts || []); })
+        .catch(function(e) { console.error('[admin-errors] alerts load failed:', e); });
+    }
+
+    function renderNoGymAlerts(alerts) {
+      var box = document.getElementById('no-gym-alerts');
+      if (!box) return;
+      if (!alerts.length) { box.hidden = true; box.innerHTML = ''; return; }
+      box.innerHTML = '<h2>Not tied to a gym (' + alerts.length + ')</h2>' +
+        '<p class="sync-alerts-intro">Updates from Wix that AccessSync couldn\u2019t match to a gym. Nobody\u2019s door access changed. ' +
+        'Read each one, then mark it handled so it stops appearing in your daily summary.</p>' +
+        alerts.map(function(a) {
+          var first = a.created_at ? new Date(a.created_at) : null;
+          return '<div class="sync-alert">' +
+            '<div class="sync-alert-text">' + esc(a.message || a.alert_type) +
+              '<span class="sync-alert-when">First raised ' + esc(timeAgo(first)) + '</span></div>' +
+            '<button type="button" class="sync-btn secondary" data-no-gym-alert-id="' + esc(a.id) + '">Mark handled</button>' +
+          '</div>';
+        }).join('');
+      box.hidden = false;
+    }
+
+    document.addEventListener('click', function(ev) {
+      var btn = ev.target.closest && ev.target.closest('[data-no-gym-alert-id]');
+      if (!btn) return;
+      var id = btn.getAttribute('data-no-gym-alert-id');
+      btn.disabled = true; btn.textContent = '\u2026';
+      apiFetch('/admin/errors/alerts/' + encodeURIComponent(id) + '/dismiss', { method: 'POST' })
+        .then(readJsonResponse)
+        .then(function(res) {
+          if (!res.ok) {
+            showToast('error', esc((res.body && res.body.error) || ('Could not mark handled (HTTP ' + res.status + ')')));
+            btn.disabled = false; btn.textContent = 'Mark handled';
+            return;
+          }
+          showToast('success', 'Marked handled.');
+          loadNoGymAlerts();
+        })
+        .catch(function() { showToast('error', 'Could not mark handled'); btn.disabled = false; btn.textContent = 'Mark handled'; });
+    });
+
     // ── Init ──────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
       loadClients();
       loadAdminErrors();
+      loadNoGymAlerts();
     });
   </script>
 </body>

@@ -36,7 +36,7 @@ const draft = (client_id, over = {}) => ({
   plan_name: 'Family', created_at: '2026-10-05T18:49:31Z', ...over,
 });
 
-function world({ alerts = [], jobs = [], drafts = [], draftsFail = false, gyms = [], sentRecently = false } = {}) {
+function world({ alerts = [], jobs = [], drafts = [], draftsFail = false, gyms = [], sentRecently = false, ownerSentRecently = false } = {}) {
   db.query.mockImplementation((sql, params) => {
     const s = String(sql);
     if (s.includes('FROM config_alert_log cal')) return Promise.resolve({ rows: alerts });
@@ -44,6 +44,7 @@ function world({ alerts = [], jobs = [], drafts = [], draftsFail = false, gyms =
     if (s.includes("mas.status = 'draft'")) return draftsFail ? Promise.reject(new Error('boom')) : Promise.resolve({ rows: drafts });
     if (s.includes('FROM clients WHERE id = ANY')) return Promise.resolve({ rows: gyms.filter(g => params[0].includes(g.id)) });
     if (s.includes('EMAIL_GYM_DAILY_SENT')) return Promise.resolve({ rows: sentRecently ? [{ '?column?': 1 }] : [] });
+    if (s.includes('EMAIL_OWNER_DIGEST_SENT')) return Promise.resolve({ rows: ownerSentRecently ? [{ '?column?': 1 }] : [] });
     return Promise.resolve({ rows: [] });
   });
 }
@@ -106,6 +107,30 @@ describe('[P3] _generateAndSendDigest — one daily per gym, to the gym', () => 
     expect(log.info).toHaveBeenCalledWith('reconciliation.digest_gym_skipped', expect.objectContaining({ clientId: 'c1', reason: 'sent_in_last_24h' }));
   });
 
+  // 2026-10-31: the owner's copy had no once-a-day rule, so one alert tied to no gym was emailed after
+  // every sweep — four times a day since 2026-10-27.
+  test('the owner\'s copy is once per 24h too: sent → logged; already sent in 23h → skipped', async () => {
+    world({ alerts: [alert(null, { alert_type: 'malformed_payload', member_name: null, location_name: null, client_name: null })] });
+    await reconciliation._generateAndSendDigest();
+    expect(sendOperatorEmail).toHaveBeenCalledTimes(1);
+    expect(log.info).toHaveBeenCalledWith('email.owner_digest.sent', expect.objectContaining({ clientId: null, toEmail: 'daxx@accesssync.io' }));
+
+    jest.clearAllMocks();
+    sendOperatorEmail.mockResolvedValue({ sent: true });
+    world({ alerts: [alert(null, { alert_type: 'malformed_payload' })], ownerSentRecently: true });
+    await reconciliation._generateAndSendDigest();
+    expect(sendOperatorEmail).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith('reconciliation.digest_owner_skipped', expect.objectContaining({ clientId: null, reason: 'sent_in_last_24h' }));
+  });
+
+  test('the owner\'s once-a-day check is keyed by the group (no gym = NULL), not shared with the gyms\' check', async () => {
+    world({ jobs: [job(null)] });
+    await reconciliation._generateAndSendDigest();
+    const check = db.query.mock.calls.find(c => String(c[0]).includes('EMAIL_OWNER_DIGEST_SENT'));
+    expect(String(check[0])).toMatch(/client_id IS NOT DISTINCT FROM \$1/);
+    expect(check[1]).toEqual([null]);
+  });
+
   test('nothing open → no email at all', async () => {
     world();
     await reconciliation._generateAndSendDigest();
@@ -164,6 +189,14 @@ describe('[P3] _generateAndSendDigest — people waiting on the member (stuck dr
     await reconciliation._generateAndSendDigest();
     const sql = db.query.mock.calls.map(c => String(c[0])).find(s => s.includes("mas.status = 'draft'"));
     expect(sql).toMatch(/created_at < NOW\(\) - INTERVAL '24 hours'/);
+  });
+
+  test('a draft is listed daily for its first three days, then once a week (2026-10-31)', async () => {
+    world({ gyms: [hog] });
+    await reconciliation._generateAndSendDigest();
+    const sql = db.query.mock.calls.map(c => String(c[0])).find(s => s.includes("mas.status = 'draft'"));
+    expect(sql).toMatch(/mas\.created_at > NOW\(\) - INTERVAL '4 days'/);
+    expect(sql).toMatch(/MOD\(FLOOR\(EXTRACT\(EPOCH FROM \(NOW\(\) - mas\.created_at\)\) \/ 86400\)::int, 7\) = 0/);
   });
 
   test('a failing drafts query never costs the gym the rest of its daily', async () => {

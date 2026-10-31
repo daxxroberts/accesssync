@@ -7,6 +7,8 @@
  * POST /admin/errors/:id/dismiss  Mark resolved with note
  * POST /admin/errors/:id/retry    Re-enqueue to BullMQ
  * POST /admin/errors/bulk-retry   Re-enqueue multiple by ID array
+ * GET  /admin/errors/alerts       Open alerts tied to no gym (Wix updates AccessSync couldn't route)
+ * POST /admin/errors/alerts/:alertId/dismiss  Mark one of those handled
  */
 
 const router  = require('express').Router();
@@ -17,6 +19,8 @@ const { getRedisConnection } = require('../../core/redis-utils');
 const { mintTraceId } = require('../../core/trace-context');
 const { jobNameForEventType } = require('../../core/event-routing');
 const { guidanceFor, retryRefusal } = require('../../core/error-guidance');
+const { describeConfigAlert } = require('../../core/operator-email-templates');
+const { recordActivity } = require('../middleware/activity');
 
 const eventQueue = new Queue('accesssync-events', { connection: getRedisConnection() });
 
@@ -165,6 +169,58 @@ router.get('/', async (req, res) => {
 });
 
 // ── GET /admin/errors/:id ──────────────────────────────────────
+// ── Alerts tied to no gym ──────────────────────────────────────
+// A gym's own alerts are listed and marked handled on that gym's Errors page (operator routes). An
+// alert with no gym — a Wix update AccessSync couldn't tell the gym of — appeared on no page, and the
+// gym dismiss route can't match a null client, so it was re-sent in the owner's digest forever
+// (found 2026-10-31: one malformed_payload row, four emails a day since 2026-10-27). Both routes are
+// registered BEFORE '/:id' so "alerts" is never read as an error id.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+router.get('/alerts', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, alert_type, created_at, last_seen_at
+         FROM config_alert_log
+        WHERE client_id IS NULL AND resolved_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 100`
+    );
+    // The same sentence the owner digest email uses, so the screen and the email never disagree.
+    const alerts = result.rows.map(a => ({
+      id: a.id,
+      alert_type: a.alert_type,
+      created_at: a.created_at,
+      last_seen_at: a.last_seen_at,
+      message: describeConfigAlert({ alert_type: a.alert_type }),
+    }));
+    res.json({ alerts });
+  } catch (err) {
+    log.error('admin.alerts.list_failed', {}, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/alerts/:alertId/dismiss', async (req, res) => {
+  const { alertId } = req.params;
+  if (!UUID_RE.test(String(alertId || ''))) return res.status(404).json({ error: 'Alert not found' });
+  try {
+    const result = await db.query(
+      `UPDATE config_alert_log
+          SET resolved_at = NOW()
+        WHERE id = $1 AND client_id IS NULL AND resolved_at IS NULL
+        RETURNING id, resolved_at`,
+      [alertId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Alert not found' });
+    recordActivity(req, 'alert.dismissed', { clientId: null, alertId });
+    res.json(result.rows[0]);
+  } catch (err) {
+    log.error('admin.alert.dismiss_failed', { alertId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     // Same JOIN as the list endpoint, plus full member identity

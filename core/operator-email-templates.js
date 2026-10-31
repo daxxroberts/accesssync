@@ -494,6 +494,27 @@ function describeConfigAlert(row) {
       return 'A member was deleted' + at + ' and is worth a quick review.';
     case 'notification_delivery_failed':
       return 'AccessSync tried to email you about something and the email didn’t go through.';
+
+    // Wix updates AccessSync could not route (core/webhook-processor.js). Usually tied to no gym,
+    // because AccessSync couldn't tell which gym the update came from. In every case the update was
+    // skipped and nobody's door access changed. Until 2026-10-31 these fell through to the generic
+    // sentence and the owner saw "AccessSync logged an issue (malformed_payload)."
+    case 'malformed_payload':
+      return 'Wix sent AccessSync an update' + forLoc + ' that it couldn’t match to a member, so it was skipped. '
+        + 'Nobody’s door access changed. No action needed unless it keeps happening — mark it handled.';
+    case 'events_js_outdated':
+      return 'A Wix site sent AccessSync an update without saying which gym it’s for, because the AccessSync code on '
+        + 'that site is out of date. The update was skipped. Nobody’s door access changed. '
+        + 'Reinstall the latest AccessSync code (events.js) on that Wix site.';
+    case 'unknown_site_id':
+      return 'AccessSync got an update from a Wix site it doesn’t recognize, so it was skipped. '
+        + 'Nobody’s door access changed. If a gym recently moved or rebuilt its Wix site, its site needs reconnecting in AccessSync.';
+    case 'unknown_client_id':
+      return 'AccessSync got an update addressed to a gym it doesn’t have, so it was skipped. '
+        + 'Nobody’s door access changed. Check that the AccessSync code on that gym’s Wix site has the right gym ID.';
+    case 'tenant_mismatch':
+      return 'AccessSync got an update' + forLoc + ' whose gym and Wix site didn’t match, so it was rejected to keep '
+        + 'gyms’ members apart. Nobody’s door access changed. Check that the gym’s Wix site and its AccessSync code point at the same gym.';
     case 'system':
       return 'AccessSync logged an internal issue' + at + '.';
     case 'unknown':
@@ -617,7 +638,8 @@ function renderNightlyDigest({ configAlerts, failedJobs, stuckDrafts, clientId }
   const hasDismissable = alerts.length + jobs.length > 0;
   const closingLines = [];
   if (hasDismissable) closingLines.push('Once you’ve handled something, dismiss it in your dashboard and it’ll stop showing up here.');
-  if (drafts.length) closingLines.push('People waiting on the member drop off this list as soon as the member taps “Grant access”.');
+  if (drafts.length) closingLines.push('People waiting on the member drop off this list as soon as the member taps “Grant access”. '
+    + 'After their first three days here, they’re listed once a week.');
 
   const bodyHtml =
     '<p style="margin:0 0 4px 0;">' + escapeHtml(summary) + '</p>' +

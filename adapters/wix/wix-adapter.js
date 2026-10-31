@@ -199,6 +199,12 @@ class WixAdapter {
       d?.booking?.contactId       ||  // Velo events.js: wixBookings events
       d?.member?._id              ||  // Velo events.js: wixMembers events (member deleted)
       entity?.member?._id         ||  // REST webhook: member deleted
+      // Velo wixMembers_onMemberDeleted sends only { metadata: { id, entityId, eventTime, … } }:
+      // the deleted member's id is metadata.entityId (metadata.id is the event's own id). Seen
+      // live 2026-10-27 — the member id was found nowhere else, so the deletion was dropped as a
+      // "malformed payload". Read ONLY for member.deleted: on order and booking events
+      // metadata.entityId names the order or booking, never a member.
+      (normalizedEventType === 'member.deleted' ? (d?.metadata?.entityId || d?.entityId || null) : null) ||
       entity?.contactId           ||  // REST webhook: booking contactId
       d?.memberId                 ||  // direct field (some event shapes)
       d?.data?.order?.buyer?.memberId || // double-wrapped edge case

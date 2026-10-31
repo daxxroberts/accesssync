@@ -25,6 +25,8 @@
     "email.owner_daily.sent":                { "persist": true },
     "email.gym_daily.sent":                  { "persist": true },
     "reconciliation.digest_gym_skipped":     { "persist": false },
+    "email.owner_digest.sent":               { "persist": true },
+    "reconciliation.digest_owner_skipped":   { "persist": false },
     "reconciliation.stale_reset":         { "persist": true },
     "queue.grant.complete":               { "persist": true },
     "kisi.role.recovery_succeeded":       { "persist": true },

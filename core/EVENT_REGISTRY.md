@@ -460,6 +460,8 @@ unaffected.
 | `email.owner_daily.guard_failed` | warn | The sent-today lookup failed; the daily may be sent twice on a restart. |
 | `email.gym_daily.sent` | info | A gym's daily (member-level detail, to the gym's notification email) was sent. Persisted: this row is the once-a-day-per-gym guard. |
 | `reconciliation.digest_gym_skipped` | info | The gym's daily was already sent in the last 23h; breadcrumb. |
+| `email.owner_digest.sent` | info | The owner's copy of the digest (rows tied to no gym, or a gym with no notification email) was sent. Persisted: this row is its once-a-day guard (added 2026-10-31; before, it went out after every sweep). |
+| `reconciliation.digest_owner_skipped` | info | The owner's digest copy was already sent in the last 23h; breadcrumb. |
 | `health.owner_copy_failed` | warn | The owner's copy of a Kisi key alert could not be sent (the gym's copy was). |
 | `webhook.enqueue_failed` | error | The job queue refused a webhook's job (Redis down). The processed mark is removed so Wix's retry goes through (bug 2). |
 | `webhook.unmark_failed` | error | Could not remove the processed mark after a failed enqueue; the event will be treated as a duplicate on retry. |

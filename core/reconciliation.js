@@ -3325,6 +3325,11 @@ class NightlyReconciliation {
        JOIN member_master h   ON h.id = ma.sub_master_id
        LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
        WHERE mas.status = 'draft' AND mas.created_at < NOW() - INTERVAL '24 hours'
+         -- Daily for the first three days, then once a week (day 7, 14, 21, …). Before 2026-10-31 a
+         -- holder who never finished was in the gym's email every day: one draft from 2026-10-05
+         -- appeared 25 days running. FLOOR, not ::int (which rounds), so day boundaries are exact.
+         AND (mas.created_at > NOW() - INTERVAL '4 days'
+              OR MOD(FLOOR(EXTRACT(EPOCH FROM (NOW() - mas.created_at)) / 86400)::int, 7) = 0)
        ORDER BY ma.client_id, h.id, mas.created_at`
     ).catch((err) => {
       // A broken drafts query must never cost the gym the rest of its daily.
@@ -3399,6 +3404,13 @@ class NightlyReconciliation {
         sweepLogger.info('reconciliation.digest_gym_skipped', { traceId: sweepTraceId, clientId, reason: 'sent_in_last_24h', stage: 'cron', result: 'skipped' });
         continue;
       }
+      // The owner's copy (rows tied to no gym, or a gym with no notification email) gets the same
+      // once-a-day rule. Until 2026-10-31 it had none, so one stuck no-gym alert was emailed after
+      // every sweep: four times a day.
+      if (!toGym && await this._ownerDigestSentRecently(clientId)) {
+        sweepLogger.info('reconciliation.digest_owner_skipped', { traceId: sweepTraceId, clientId, reason: 'sent_in_last_24h', stage: 'cron', result: 'skipped' });
+        continue;
+      }
       const { sent, reason } = await sendOperatorEmail({
         toEmail,
         render: renderNightlyDigest,
@@ -3440,7 +3452,25 @@ class NightlyReconciliation {
       }
       sweepLogger.info('reconciliation.digest_sent', { traceId: sweepTraceId, toEmail, clientId, stage: 'cron', result: 'success' });
       if (toGym) log.info('email.gym_daily.sent', { clientId, toEmail, alerts: g.alerts.length, jobs: g.jobs.length, stuckDrafts: g.drafts.size });
+      else log.info('email.owner_digest.sent', { clientId, toEmail, alerts: g.alerts.length, jobs: g.jobs.length, stuckDrafts: g.drafts.size });
     }
+  }
+
+  /**
+   * Did the owner already get this digest in the last 23 hours? Keyed like the gym's: by the
+   * group's client (null = rows tied to no gym), via the persisted email.owner_digest.sent row.
+   */
+  async _ownerDigestSentRecently(clientId) {
+    try {
+      const r = await db.query(
+        `SELECT 1 FROM diagnostic_log
+          WHERE client_id IS NOT DISTINCT FROM $1 AND error_code = 'EMAIL_OWNER_DIGEST_SENT'
+            AND created_at > NOW() - INTERVAL '23 hours'
+          LIMIT 1`,
+        [clientId || null]
+      );
+      return !!(r && r.rows && r.rows.length);
+    } catch { return false; }
   }
 
   /** Did this gym get its daily in the last 23 hours? (the logger persists email.gym_daily.sent) */

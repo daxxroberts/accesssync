@@ -26,8 +26,14 @@
  *   key           Kisi rejected the door key (gym), or the key has not been checked (you)
  *   sync          the last sync aborted, or no SUCCESSFUL sync in RECONCILE_RED_H (you); never synced with history
  *   webhooks      purchases stopped arriving after previous activity (you)
- *   errors_you    members who cannot get in and AccessSync must fix it: error_queue owner accesssync + members
- *                 stuck in an in-between state for STUCK_H
+ *   errors_you    members who cannot get in and AccessSync must fix it: error_queue rows owned by AccessSync.
+ *                 Links to the gym's Errors page, which lists exactly these rows.
+ *   stuck_you     members stuck in an in-between state for STUCK_H (identity never resolved, a door grant
+ *                 failed or never finished). Links to the Members page's Pending filter, which lists them —
+ *                 the Errors page does not (until 2026-10-31 these were summed into errors_you and linked
+ *                 to /errors, so the owner clicked through to an empty page). A sub-member draft that is
+ *                 only waiting on its plan holder to tap "Grant access" is NOT stuck: the gym daily
+ *                 handles it under "Waiting on the member".
  *   errors_gym    members who cannot get in and the gym must fix it (waiting on the gym; escalates after
  *                 GYM_IGNORED_H)
  *   config_gap    an established gym lost its key or location (gym)
@@ -140,6 +146,10 @@ async function computeOwnerHealth() {
          FROM member_access ma
         WHERE ma.status IN ('pending_identity', 'recovery_pending', 'in_flight')
           AND ma.updated_at < NOW() - make_interval(hours => $1)
+          -- A sub-member whose only sources are drafts is waiting on the plan holder, not stuck.
+          AND NOT (ma.sub_master_id IS NOT NULL
+                   AND EXISTS (SELECT 1 FROM member_access_sources d WHERE d.access_id = ma.id AND d.status = 'draft')
+                   AND NOT EXISTS (SELECT 1 FROM member_access_sources o WHERE o.access_id = ma.id AND o.status <> 'draft'))
         GROUP BY ma.client_id
        UNION ALL
        SELECT mas.client_id, COUNT(*) AS n, MIN(COALESCE(mas.updated_at, mas.created_at)) AS since
@@ -289,12 +299,14 @@ async function computeOwnerHealth() {
         if (webhooksR.ok && webhookAge != null && webhookAge >= WEBHOOK_SILENT_H) {
           push('webhooks', 'you', 'amber', `No purchases from Wix for ${hoursText(webhookAge)} (was active before)`, { since: lastWebhook, link: `/logs?clientId=${encodeURIComponent(c.id)}` });
         }
-        // Members who cannot get in
+        // Members who cannot get in — one row per page that lists them, so the count in the email
+        // always matches what the link opens.
+        if (errorsR.ok && errors.you > 0) {
+          push('errors_you', 'you', 'red', `${plural(errors.you, 'member')} can't get in: AccessSync must fix`, { since: errors.oldest_you, link: `/errors?clientId=${encodeURIComponent(c.id)}`, count: errors.you });
+        }
         const stuckN = stuck ? stuck.stuck : 0;
-        const youN = errors.you + stuckN;
-        if (errorsR.ok && stuckR.ok && youN > 0) {
-          const oldest = [errors.oldest_you, stuck && stuck.oldest].filter(Boolean).sort()[0] || null;
-          push('errors_you', 'you', 'red', `${plural(youN, 'member')} can't get in: AccessSync must fix`, { since: oldest, link: `/errors?clientId=${encodeURIComponent(c.id)}`, count: youN });
+        if (stuckR.ok && stuckN > 0) {
+          push('stuck_you', 'you', 'red', `${plural(stuckN, 'member')} stuck partway through setup for over a day: AccessSync must fix`, { since: stuck.oldest, link: `/members?clientId=${encodeURIComponent(c.id)}&filter=pending`, count: stuckN });
         }
         if (errorsR.ok && errors.gym > 0) {
           const ignoredH = ageHours(errors.oldest_gym);

@@ -190,6 +190,35 @@ describe('[P3] Wix REST webhook format (data.entity) resolves correctly', () => 
     expect(result.platformMemberId).toBe(WIX_MEMBER_ID);
   });
 
+  // 2026-10-27: Velo's wixMembers_onMemberDeleted sends ONLY metadata. The member id was
+  // looked for everywhere but there, so a real deletion was dropped as "malformed_payload".
+  it('resolves memberId from the Velo member-deleted shape (metadata.entityId only)', () => {
+    const veloDeleted = {
+      data: {
+        metadata: {
+          id: 'evt-velo-del-1',
+          entityId: WIX_MEMBER_ID,
+          eventTime: '2026-10-27T13:12:07.000Z',
+          triggeredByAnonymizeRequest: false,
+        },
+      },
+    };
+    const result = wixAdapter.parseEvent('wixMembers.memberDeleted', 'site-001', veloDeleted);
+    expect(result.eventType).toBe('member.deleted');
+    expect(result.platformMemberId).toBe(WIX_MEMBER_ID);
+  });
+
+  it('never reads metadata.entityId as a member on an order event (there it is the order id)', () => {
+    const orderWithOnlyMetadata = {
+      data: {
+        metadata: { id: 'evt-1', entityId: 'order-123', eventTime: '2026-10-27T13:12:07.000Z' },
+        entity: { planId: CONNECT_PLAN_ID, status: 'ACTIVE', lastPaymentStatus: 'PAID' },
+      },
+    };
+    const result = wixAdapter.parseEvent('wixPricingPlans.orderPurchased', 'site-001', orderWithOnlyMetadata);
+    expect(result.platformMemberId).not.toBe('order-123');
+  });
+
 });
 
 // ─── Auto-renew hotfix (2026-09-10) ──────────────────────────────────────────
