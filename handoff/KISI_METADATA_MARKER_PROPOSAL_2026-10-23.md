@@ -1,6 +1,6 @@
 # Kisi ownership marker: move from `notes` to user `metadata` (DR-045 Layer B amendment)
 
-**Date:** 2026-10-23, updated 2026-10-24 | **Status:** Builder-directed 2026-10-24. Phase 1 shipped to main. Phase 2 is on branch `dr045-metadata-phase2`, unmerged: it merges after the HOG backfill verifies clean **and** SAGE ratifies the DR-045 amendment (Tier 3 under RULE-19). KEEPER: vault DR-045 + both CLAUDE.md files need the Layer B wording updated when phase 2 merges.
+**Date:** 2026-10-23, updated 2026-10-31 | **Status:** Builder-directed 2026-10-24. Phase 1 shipped to main. **HOG backfill done 2026-10-26** (see below). Phase 2 is on branch `dr045-metadata-phase2`, unmerged: with the backfill done, it now waits only on SAGE ratifying the DR-045 amendment (Tier 3 under RULE-19). KEEPER: repo CLAUDE.md updated 2026-10-31 for the backfill; vault DR-045 + vault CLAUDE.md still need it, and both need the notes wording removed when phase 2 merges.
 
 ## Why
 
@@ -62,7 +62,14 @@ Then wait for one nightly sweep and confirm `ownershipMarkerNotInMetadata: 0` on
 
 Anything listed as CONFLICT needs a human look before phase 2: one Kisi user carries two markers naming two different clients.
 
-## Phase 2 — branch `dr045-metadata-phase2`, merge only after step 4 is clean
+## HOG backfill — done 2026-10-26
+
+- Builder ran the runbook from a desktop session and confirmed the metadata is in place and working.
+- `diagnostic_log` holds 143 `kisi.user.ownership_metadata_stamped` rows for HOG, one per Kisi user, written 2026-10-26 01:14–01:20 UTC. There are no `KISI_METADATA_NOT_PERSISTED` or `CLIENT_MISMATCH` rows.
+- Users created since phase 1 (2026-10-24) get the metadata marker when `createUser` runs, so they need no backfill.
+- The notes line is still on every user and is still written. It comes off only after phase 2 merges, via `clear-notes` below.
+
+## Phase 2 — branch `dr045-metadata-phase2`, merge after SAGE ratifies (backfill done)
 
 - Guards read metadata only. The notes fallback and the conflict case are gone.
 - `createUser`, `suspendAccess`, `enableAccess` stop writing notes. Suspend / re-enable patch `access_enabled` only, so an operator's notes are never erased again.
