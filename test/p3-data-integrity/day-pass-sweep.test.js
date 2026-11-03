@@ -142,10 +142,15 @@ describe('[P3] day pass — static guards', () => {
     expect(mainBranch).toBeLessThan(mainIdent);
   });
 
-  test('plan-mapping remap query excludes day_pass rows (never DELETE /role_assignments/<groupLinkId>)', () => {
+  test('plan-mapping door removal (sync, remap, switch-off) excludes day_pass rows (never DELETE /role_assignments/<groupLinkId>)', () => {
+    // 2026-11-03: every Plan Mapping removal — sync, remap, switch-off — reads its rows from the
+    // one rowsLosingDoors query (remap's own query went), so that query is what is pinned here.
     const src = read('admin/routes/operator.js');
-    const remap = src.slice(src.indexOf('Fetch all member source rows for this mapping in the old groups'));
-    expect(remap.slice(0, 900)).toMatch(/mas\.source_type <> 'day_pass'/);
+    const query = src.slice(src.indexOf('async function rowsLosingDoors('));
+    expect(query.slice(0, 900)).toMatch(/mas\.source_type <> 'day_pass'/);
+    const remap = src.slice(src.indexOf("router.post('/:clientId/plan-mappings/:mappingId/remap'"));
+    expect(remap.slice(0, 2500)).toMatch(/applyDoorChange\(/);
+    expect(src.slice(src.indexOf('async function applyDoorChange(')).slice(0, 1200)).toMatch(/rowsLosingDoors\(/);
   });
 
   test('log-redaction covers every bearer-credential field a group link carries', () => {

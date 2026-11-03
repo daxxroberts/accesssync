@@ -47,6 +47,7 @@
     "operator.sync.revoke_skipped":       { "persist": true },
     "operator.sync.revoked":              { "persist": true },
     "operator.sync.granted":              { "persist": true },
+    "operator.sync.restore_queued":       { "persist": true },
     "operator.location.reactivated":      { "persist": true },
     "location.reactivate_complete":       { "persist": true },
     "location.reactivate_nothing_to_restore": { "persist": false },

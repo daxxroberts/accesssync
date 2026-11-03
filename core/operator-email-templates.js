@@ -515,6 +515,17 @@ function describeConfigAlert(row) {
       return whoStart + at + ' can still open a door that was taken off their plan — '
         + 'AccessSync couldn’t remove it in ' + hardware + '. '
         + 'Remove that door from ' + (person ? 'their' : 'the member’s') + ' account in ' + hardware + '.';
+    // The other direction (admin/routes/operator.js grantMappingGroup): a door was added to the
+    // plan, the plan switched on, or a remap — and adding it for this member failed. Swap-held:
+    // the same save was taking a door away, and doing so would have left them with none.
+    case 'door_grant_failed':
+      return whoStart + at + ' is missing a door their plan now includes — '
+        + 'AccessSync couldn’t add it in ' + hardware + '. '
+        + 'Add that door to ' + (person ? 'their' : 'the member’s') + ' account in ' + hardware + '.';
+    case 'door_swap_held':
+      return whoStart + at + ' still has the door that was taken off their plan — AccessSync couldn’t add '
+        + (person ? 'their' : 'the') + ' new door in ' + hardware + ', so it left the old one on rather than lock them out. '
+        + 'Add the new door to ' + (person ? 'their' : 'the member’s') + ' account in ' + hardware + ', then remove the old one.';
 
     case 'group_not_found':
     case 'missing_group':
