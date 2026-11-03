@@ -27,7 +27,12 @@ const CLIENT_ID = 'test-client-p3';
 
 beforeEach(() => {
   jest.clearAllMocks();
-  kisiConnector.makeRequest.mockResolvedValue({ id: KISI_USER_ID });
+  // Like live Kisi (2026-10-26): the created user comes back with the metadata it was sent,
+  // so createUser's DR-045 label check makes no further call.
+  kisiConnector.makeRequest.mockImplementation((_path, opts) => Promise.resolve({
+    id: KISI_USER_ID,
+    ...(opts && opts.body ? { metadata: (JSON.parse(opts.body).user || {}).metadata } : {}),
+  }));
 });
 
 describe('[P3] DR-043 kisi-adapter.createUser — send_emails and confirm flags', () => {

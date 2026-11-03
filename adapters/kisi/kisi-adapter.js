@@ -11,6 +11,7 @@
 
 const kisiConnector = require('./kisi-connector');
 const { log } = require('../../core/logger');
+const { getTraceId, getActor } = require('../../core/trace-context');
 
 /**
  * AccessSync ownership marker stored in Kisi user `notes` field.
@@ -189,6 +190,36 @@ function _isMetadataRejection(err) {
     try { body = JSON.stringify(body); } catch (_) { body = ''; }
   }
   return typeof body === 'string' && /metadata/i.test(body);
+}
+
+// db.js refuses to load without DATABASE_URL and only the alert below needs it, so it
+// is required on first use (as core/logger.js does).
+let _db = null;
+const getDb = () => (_db = _db || require('../../db'));
+
+/**
+ * DR-045 step 1: tell the operator a new member's Kisi user has no AccessSync label.
+ * Best-effort, like the other config_alert_log writes on a member's path: a failed
+ * INSERT must never fail the grant. Copy: describeConfigAlert + humanize.js.
+ */
+async function _alertCreateMetadataMissing(clientId, kisiUserId, err) {
+  try {
+    const actor = getActor() || {};
+    await getDb().query(
+      `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, trace_id, actor_type, actor_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        clientId,
+        'kisi_create_metadata_missing',
+        `kisi_user_id=${kisiUserId} code=${(err && (err.code || err.statusCode)) || 'unknown'}`.slice(0, 255),
+        getTraceId() || null,
+        actor.type || 'system',
+        actor.id || 'kisi-adapter',
+      ]
+    );
+  } catch (_) {
+    // Best-effort
+  }
 }
 
 /**
@@ -560,9 +591,9 @@ class KisiAdapter {
         body: JSON.stringify({ user: { ...baseUser, metadata } })
       }, apiKey);
     } catch (err) {
-      // metadata on POST /users is documented but not yet seen live. If Kisi rejects
-      // that field, create the user exactly as before (notes marker only) rather than
-      // fail the member's grant; the migration script backfills metadata later.
+      // If Kisi ever rejects the metadata field, create the user exactly as before
+      // (notes marker only) rather than fail the member's grant; the label check
+      // below then tries to stamp it.
       if (!_isMetadataRejection(err)) throw err;
       log.warn('kisi.user.create_metadata_rejected', {
         clientId, statusCode: err.statusCode, stage: 'identity', result: 'retry',
@@ -573,7 +604,13 @@ class KisiAdapter {
         body: JSON.stringify({ user: baseUser })
       }, apiKey);
     }
-    log.info('kisi.user.created', { email, pattern, sendEmails, kisiUserId: data.id, clientId, ownershipMetadata });
+    // Kisi echoes metadata on POST /users (verified live 2026-10-26), so the label
+    // can be checked without another call.
+    const echoed = parseOwnershipMetadata(data.metadata);
+    const metadataEchoed = !!echoed && echoed.clientId === clientId;
+    log.info('kisi.user.created', {
+      email, pattern, sendEmails, kisiUserId: data.id, clientId, ownershipMetadata, metadataEchoed,
+    });
     // OB-245 (diagnostic): capture the full Kisi /users POST response so we can
     // (a) confirm whether send_emails actually triggered an invitation, and
     // (b) decide what shape a branded Resend welcome would need. Downgraded to info
@@ -583,7 +620,32 @@ class KisiAdapter {
     log.info('kisi.user.created.full_response', {
       email, pattern, sendEmails, clientId, kisiUserId: data.id, response: data,
     });
+    if (!metadataEchoed) await this._healCreatedUserMetadata(apiKey, data.id, clientId, metadata[AS_META.CREATED_AT]);
     return data.id;
+  }
+
+  /**
+   * DR-045 step 1 (SAGE, 2026-10-26): a user createUser just made came back without
+   * this client's metadata marker — stamp it now. The user was created by this very
+   * POST, so it is AccessSync's by construction; this is not the pre-existing-account
+   * case the migration script never stamps. stampOwnershipMetadata still refuses to
+   * overwrite another client's marker.
+   *
+   * Access first: never throws. If the stamp fails, the member's door still works; a
+   * persisted warn and an operator alert say the AccessSync label is missing.
+   */
+  async _healCreatedUserMetadata(apiKey, kisiUserId, clientId, createdAt) {
+    try {
+      await this.stampOwnershipMetadata(apiKey, kisiUserId, clientId, { createdAt });
+    } catch (err) {
+      // err rides in the context, not as log.warn's third argument: that would make
+      // diagnostic_log's error_code the stamp's code, and this event must be countable.
+      log.warn('kisi.user.create_metadata_missing', {
+        kisiUserId, clientId, code: err.code || null, statusCode: err.statusCode || null,
+        errorMessage: err.message, stage: 'identity', result: 'continue',
+      });
+      await _alertCreateMetadataMissing(clientId, kisiUserId, err);
+    }
   }
 
   /**
@@ -696,29 +758,20 @@ class KisiAdapter {
   /**
    * Suspend access without deleting role (payment.failed flow).
    *
-   * Re-stamps the `[AS|managed|clientId|...]` marker so the deleteUser guard survives
-   * the suspend cycle. The createdAt in the marker resets to "now" on each suspend —
-   * the marker's job is ownership-proof, not provenance audit (member_access_log holds
-   * provenance). One call, no preceding GET.
-   *
-   * If clientId is not supplied (legacy call sites), we fall back to the bare context
-   * message and emit a warning — the user loses delete-guard protection until the next
-   * grant re-stamps it.
+   * PATCHes `access_enabled: false` only. The ownership marker lives in metadata and is
+   * untouched; the user's notes are the operator's and are never written (DR-045 step 1,
+   * SAGE 2026-10-26 — before it, every suspend overwrote notes with the marker plus this
+   * reason, on any linked user, including accounts AccessSync never created).
+   * `contextMessage` and `options` are kept for caller compatibility; the reason is
+   * recorded in AccessSync's own logs, not on the Kisi user. One call, no preceding GET.
    */
   async suspendAccess(apiKey, userId, contextMessage = 'Access suspended', options = {}) {
-    log.info('kisi.user.suspending', { userId });
-    const clientId = options.clientId;
-    const notes = clientId
-      ? buildAccessSyncMarker(clientId, contextMessage)
-      : contextMessage;
-    if (!clientId) {
-      log.warn('kisi.user.suspend_without_marker', { userId, reason: 'clientId not supplied' });
-    }
+    log.info('kisi.user.suspending', { userId, reason: contextMessage, clientId: options.clientId || null });
     try {
       await kisiConnector.makeRequest(`/users/${userId}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          user: { access_enabled: false, notes }
+          user: { access_enabled: false }
         })
       }, apiKey);
       log.info('kisi.user.suspended', { userId });
@@ -729,19 +782,12 @@ class KisiAdapter {
   }
 
   /**
-   * Re-enable access (payment.recovered flow).
-   *
-   * Re-stamps the marker when clientId is supplied so the access cycle leaves a tagged
-   * user behind. We only patch `access_enabled` plus `notes` — same single PATCH call as
-   * before. If clientId is missing we skip touching notes entirely (avoids clobbering
-   * an existing marker with no context).
+   * Re-enable access (payment.recovered flow). PATCHes `access_enabled: true` only —
+   * metadata (the ownership marker) and the operator's notes are untouched.
    */
   async enableAccess(apiKey, userId, options = {}) {
-    log.info('kisi.user.enabling', { userId });
-    const clientId = options.clientId;
-    const body = clientId
-      ? { user: { access_enabled: true, notes: buildAccessSyncMarker(clientId, 'Access restored') } }
-      : { user: { access_enabled: true } };
+    log.info('kisi.user.enabling', { userId, clientId: options.clientId || null });
+    const body = { user: { access_enabled: true } };
     try {
       await kisiConnector.makeRequest(`/users/${userId}`, {
         method: 'PATCH',
@@ -928,7 +974,7 @@ class KisiAdapter {
     log.info('kisi.user.deleting', { userId, ownerClientId: marker.clientId, ownershipSource: marker.source });
     try {
       await kisiConnector.makeRequest(`/users/${userId}`, { method: 'DELETE' }, apiKey);
-      log.info('kisi.user.deleted', { userId, ownerClientId: marker.clientId });
+      log.info('kisi.user.deleted', { userId, ownerClientId: marker.clientId, ownershipSource: marker.source });
     } catch (err) {
       log.error('kisi.user.delete_failed', { userId, statusCode: err.statusCode }, err);
       throw err;

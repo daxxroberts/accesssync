@@ -114,6 +114,21 @@ function getDb() {
   return _db;
 }
 
+// diagnostic_log writes not yet settled. Only flush() reads this.
+const _pendingWrites = new Set();
+
+/**
+ * Wait for every diagnostic_log write queued so far to settle. Never rejects.
+ * For short-lived scripts: call it before pool.end() / process.exit(), or the last
+ * persisted lines are lost (the 2026-10-26 metadata backfill lost its final
+ * ownership_metadata_stamped row this way). Long-running servers never need it.
+ */
+async function flush() {
+  while (_pendingWrites.size > 0) {
+    await Promise.allSettled([..._pendingWrites]);
+  }
+}
+
 /**
  * Maps dot-namespaced event prefix to a service name for diagnostic_log.
  * 'wix.pricing_plans.fetch_failed' → 'wix-plans-api'
@@ -175,7 +190,15 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
   delete context.tenantId;
   delete context.clientId;
 
+  // Tracked only so flush() can wait for it; callers still never await a write.
+  let settle;
+  const write = new Promise((resolve) => { settle = resolve; });
+  _pendingWrites.add(write);
+  const untrack = () => _pendingWrites.delete(write);
+  write.then(untrack, untrack);
+
   setImmediate(() => {
+    let inFlight;
     // Catch every failure mode — including post-teardown require errors in tests
     // ("trying to import a file after the Jest environment has been torn down").
     // Never propagate to caller; never crash the worker.
@@ -218,7 +241,7 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
       const result = db.query(sql, params);
       // db.query may return a Promise (real pg) or any value (test mocks)
       if (result && typeof result.catch === 'function') {
-        result.catch((dbErr) => {
+        inFlight = result.catch((dbErr) => {
           // 23503 = the client id is a well-formed uuid that is not a client (e.g. the owner opened
           // /operator/<mistyped id>). The row is still worth keeping: write it again without the client
           // instead of losing it, and record which id was asked for.
@@ -227,7 +250,7 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
             retryParams[0] = null;
             retryParams[5] = JSON.stringify({ ...context, unknownClientId: clientId });
             const again = db.query(sql, retryParams);
-            if (again && typeof again.catch === 'function') again.catch(reportFailure);
+            if (again && typeof again.catch === 'function') return again.catch(reportFailure);
             return;
           }
           reportFailure(dbErr);
@@ -235,6 +258,8 @@ function persistToDiagnosticLog(level, event, ctx, err, traceId, actor) {
       }
     } catch (_) {
       /* swallow — log persistence is fire-and-forget by contract */
+    } finally {
+      settle(inFlight);
     }
   });
   } catch (_) {
@@ -356,4 +381,4 @@ function withTrace(traceId) {
   };
 }
 
-module.exports = { log, withTrace, KEDB };
+module.exports = { log, withTrace, KEDB, flush };
