@@ -17,6 +17,11 @@ const hardwareAdapter = require('./hardware-adapter');
 const { log } = require('../core/logger');
 const { getTraceId, setTraceContext, getActor } = require('../core/trace-context');
 
+// member_access_sources.failure_reason on a row a location lapse suspended. It is the
+// only thing that tells those rows apart from a payment.failed suspend (also 'failed'),
+// so location reactivation restores exactly what the lapse turned off.
+const LOCATION_LAPSE_REASON = 'location_lapse';
+
 class StandardAdapter {
 
   /**
@@ -1003,7 +1008,9 @@ class StandardAdapter {
    * only selects pending_hardware/pending_start) — then recomputes the
    * member_access rollup. Location scoping via plan_mappings.location_id.
    * Sources at the member's OTHER locations are untouched; the rollup keeps
-   * the member 'active' if any of those remain.
+   * the member 'active' if any of those remain. The flipped rows are stamped
+   * failure_reason = LOCATION_LAPSE_REASON so restoreMemberLocationSources
+   * can find exactly these rows when the location is reactivated.
    *
    * @param {string} memberId    member_access.id
    * @param {string} tenantId    client UUID
@@ -1015,17 +1022,56 @@ class StandardAdapter {
       await dbClient.query('BEGIN');
       await dbClient.query(
         `UPDATE member_access_sources mas
-         SET status = 'failed', updated_at = NOW()
+         SET status = 'failed', failure_reason = $4, updated_at = NOW()
          FROM plan_mappings pm
          WHERE mas.access_id = $1
            AND mas.client_id = $2
            AND mas.status = 'active'
            AND pm.id = mas.mapping_id
            AND pm.location_id = $3`,
-        [memberId, tenantId, locationId]
+        [memberId, tenantId, locationId, LOCATION_LAPSE_REASON]
       );
       await this.rollupAccessStatus(memberId, { dbClient });
       await dbClient.query('COMMIT');
+    } catch (err) {
+      await dbClient.query('ROLLBACK');
+      throw err;
+    } finally {
+      dbClient.release();
+    }
+  }
+
+  /**
+   * Location reactivation for one member — the inverse of
+   * suspendMemberLocationSources. Flips back to 'active' only the rows a lapse
+   * of this location suspended ('failed' + failure_reason LOCATION_LAPSE_REASON),
+   * clears the reason, then recomputes the member_access rollup. A payment.failed
+   * suspend or an exhausted grant (also 'failed', no lapse reason) is left alone.
+   *
+   * @param {string} memberId    member_access.id
+   * @param {string} tenantId    client UUID
+   * @param {string} locationId  reactivated location UUID
+   * @returns {Promise<number>}  source rows restored
+   */
+  async restoreMemberLocationSources(memberId, tenantId, locationId) {
+    const dbClient = await db.getClient();
+    try {
+      await dbClient.query('BEGIN');
+      const restored = await dbClient.query(
+        `UPDATE member_access_sources mas
+         SET status = 'active', failure_reason = NULL, updated_at = NOW()
+         FROM plan_mappings pm
+         WHERE mas.access_id = $1
+           AND mas.client_id = $2
+           AND mas.status = 'failed'
+           AND mas.failure_reason = $4
+           AND pm.id = mas.mapping_id
+           AND pm.location_id = $3`,
+        [memberId, tenantId, locationId, LOCATION_LAPSE_REASON]
+      );
+      await this.rollupAccessStatus(memberId, { dbClient });
+      await dbClient.query('COMMIT');
+      return restored.rowCount || 0;
     } catch (err) {
       await dbClient.query('ROLLBACK');
       throw err;
@@ -1234,9 +1280,11 @@ class StandardAdapter {
       } else if (isReactivate) {
         // S-11: payment.recovered re-enables. Flip 'failed' (suspended) sources back to 'active'.
         // Sources that were already 'cancelled' or 'revoked' stay that way.
+        // failure_reason is cleared so a restored row can't carry a stale location-lapse
+        // reason into a later payment suspend (restoreMemberLocationSources keys on it).
         await dbClient.query(
           `UPDATE member_access_sources
-           SET status = 'active', updated_at = NOW()
+           SET status = 'active', failure_reason = NULL, updated_at = NOW()
            WHERE access_id = $1 AND status = 'failed'`,
           [memberId]
         );
@@ -2126,3 +2174,4 @@ class StandardAdapter {
 }
 
 module.exports = new StandardAdapter();
+module.exports.LOCATION_LAPSE_REASON = LOCATION_LAPSE_REASON;
