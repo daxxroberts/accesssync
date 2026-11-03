@@ -188,19 +188,19 @@ describe('[P1] Payment fails → access suspended (roles preserved for recovery)
 
 // ─── Member Deleted (Hard Delete) ────────────────────────────────────────────
 
-describe('[P1] Deleted member → hardware user removed from org', () => {
+describe('[P1] Deleted member → door access removed, then the hardware user', () => {
 
-  it('deletes the user from hardware so they are completely removed from the org (source_tag=accesssync)', async () => {
+  it('removes every door AccessSync granted, and hands the user delete to finalize (targetStatus deleted)', async () => {
     const deletedEvent = { ...planCancelledEvent, eventType: 'member.deleted' };
 
-    // OB-125: deleteUser path now reads source_tag from member_identity.
-    // The default beforeEach mock chains _getClientApiKey → empty rows.
-    // For deleteUser to fire, source_tag must be 'accesssync'.
-    // Re-prime the mock chain: API key, then source_tag, then audit-log INSERTs.
+    // Re-prime the mock chain: API key, then the granted doors, then audit-log INSERTs.
     db.query.mockReset();
     db.query
       .mockResolvedValueOnce({ rows: [{ hardware_api_key: ENCRYPTED_API_KEY_DB_VALUE }] })
-      .mockResolvedValueOnce({ rows: [{ source_tag: 'accesssync' }] })
+      .mockResolvedValueOnce({ rows: [
+        { role_assignment_id: KISI_ROLE_ASSIGNMENT_ID, source_type: 'plan' },
+        { role_assignment_id: 'role-assignment-gym-floor', source_type: 'plan' },
+      ] })
       .mockResolvedValue({ rows: [] });
 
     const targetStatus = await grantRevoke.processRevoke(
@@ -213,12 +213,12 @@ describe('[P1] Deleted member → hardware user removed from org', () => {
       deletedEvent
     );
 
-    expect(hardwareAdapter.deleteUser).toHaveBeenCalledWith(
-      'kisi',
-      expect.any(String),
-      KISI_HARDWARE_USER_ID,
-      { clientId: HOG_CLIENT_ID }
-    );
+    // The doors close here, whatever finalize later decides about the Kisi user —
+    // a DR-045 refusal (not ours / admin) can no longer leave the member able to get in.
+    expect(hardwareAdapter.removeRole).toHaveBeenCalledWith('kisi', expect.any(String), KISI_ROLE_ASSIGNMENT_ID);
+    expect(hardwareAdapter.removeRole).toHaveBeenCalledWith('kisi', expect.any(String), 'role-assignment-gym-floor');
+    // queue-worker runs standardAdapter.finalizeRevoke for 'deleted': Kisi user delete + PII purge.
+    expect(hardwareAdapter.deleteUser).not.toHaveBeenCalled();
     expect(targetStatus).toBe('deleted');
   });
 

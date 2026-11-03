@@ -201,46 +201,32 @@ describe('[P1] processRevoke — plan.cancelled against new schema (access_id FK
 
 // ─── OB-125: source_tag from member_master via JOIN ─────────────────────────
 
-describe('[P1] processRevoke — OB-125 source_tag guard from member_master (new schema)', () => {
+describe('[P1] processRevoke — member.deleted reads granted doors from member_access_sources (new schema)', () => {
 
   const deletedEvent = { ...baseEvent, eventType: 'member.deleted', platformMemberId: 'wix-member-abc' };
 
-  test('calls deleteUser when source_tag = accesssync (from member_master JOIN)', async () => {
+  // OB-125's source_tag guard now lives in standardAdapter.finalizeRevoke (Layer A), which
+  // owns the Kisi user delete for member.deleted — see ob-125-source-tag-guard.test.js.
+  test('removes each granted role by access_id; never calls deleteUser itself', async () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ hardware_api_key: null }] })
-      // source_tag SELECT (new schema: JOIN member_master via member_access)
-      .mockResolvedValueOnce({ rows: [{ source_tag: 'accesssync' }] })
+      // granted doors (new schema: role_assignment_id directly on member_access_sources)
+      .mockResolvedValueOnce({ rows: [{ role_assignment_id: RA_ID, source_type: 'plan' }] })
       .mockResolvedValueOnce({ rowCount: 1 })  // member_access_log
       .mockResolvedValueOnce({ rowCount: 1 }); // config_alert_log
 
-    hardwareAdapter.deleteUser.mockResolvedValue();
-
-    await grantRevoke.processRevoke(
+    const status = await grantRevoke.processRevoke(
       TENANT_ID, MEMBER_ID, 'kisi-user-99', [], 'kisi', 'member.deleted', deletedEvent
     );
 
-    expect(hardwareAdapter.deleteUser).toHaveBeenCalledWith('kisi', null, 'kisi-user-99', { clientId: TENANT_ID });
-
-    // Verify source_tag query uses member_master JOIN, not member_identity
-    const tagCall = db.query.mock.calls[1];
-    expect(tagCall[0]).toMatch(/FROM member_master/);
-    expect(tagCall[0]).toMatch(/JOIN member_access/);
-    expect(tagCall[0]).not.toMatch(/member_identity/);
-    expect(tagCall[1]).toEqual([MEMBER_ID]);
-  });
-
-  test('skips deleteUser when source_tag != accesssync', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [{ hardware_api_key: null }] })
-      .mockResolvedValueOnce({ rows: [{ source_tag: 'manual' }] })
-      .mockResolvedValueOnce({ rowCount: 1 })
-      .mockResolvedValueOnce({ rowCount: 1 });
-
-    await grantRevoke.processRevoke(
-      TENANT_ID, MEMBER_ID, 'kisi-user-99', [], 'kisi', 'member.deleted', deletedEvent
-    );
-
+    expect(hardwareAdapter.removeRole).toHaveBeenCalledWith('kisi', null, RA_ID);
     expect(hardwareAdapter.deleteUser).not.toHaveBeenCalled();
+    expect(status).toBe('deleted');
+
+    const doorsCall = db.query.mock.calls[1];
+    expect(doorsCall[0]).toMatch(/FROM member_access_sources/);
+    expect(doorsCall[0]).not.toMatch(/member_identity|member_role_assignments/);
+    expect(doorsCall[1]).toEqual([MEMBER_ID]);
   });
 });
 

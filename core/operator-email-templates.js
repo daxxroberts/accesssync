@@ -448,6 +448,20 @@ function describeConfigAlert(row) {
       return 'AccessSync didn’t delete ' + possessive + ' ' + hardware + ' account because another member'
         + at + ' uses the same ' + hardware + ' account — nothing was removed. '
         + 'Check in ' + hardware + ' that each person has their own account.';
+    // DR-045 delete-guard refusals (finalizeRevoke). The finalize only runs once the member's
+    // AccessSync door access is gone, so these say the door part is done.
+    case 'finalize_revoke_refused_unowned_user':
+      return 'AccessSync removed ' + possessive + ' door access' + at + ' but didn’t delete their ' + hardware
+        + ' account: it has no AccessSync ownership label, so AccessSync leaves it alone. '
+        + 'If the account should go, delete it in ' + hardware + '.';
+    case 'finalize_revoke_refused_client_mismatch':
+      return 'AccessSync removed ' + possessive + ' door access' + at + ' but didn’t delete their ' + hardware
+        + ' account: it’s labeled as belonging to a different AccessSync account. '
+        + 'Reply to this email and we’ll look into it.';
+    case 'finalize_revoke_refused_elevated_role':
+      return 'AccessSync removed ' + possessive + ' door access' + at + ' but didn’t delete their ' + hardware
+        + ' account because it has admin, manager or owner rights. '
+        + 'If they’re staff, nothing needs to change. If not, review their roles in ' + hardware + '.';
     case 'sweep_repair_pending':
       return (person
         ? person + ' is a paying member, but their door access' + at + ' is missing in ' + hardware + '. '

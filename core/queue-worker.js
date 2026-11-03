@@ -538,6 +538,9 @@ async function _processJobBody(job, traceId) {
 
   let memberId = null;
   let lastStep = 'entry';
+  // Set when finalizeRevoke throws after completeRevoke committed — the error path then
+  // parks the member at 'removing' so the BullMQ retry can find them (see Step 4).
+  let finalizePending = false;
 
   try {
     if (job.name === 'grant') {
@@ -1045,12 +1048,13 @@ async function _processJobBody(job, traceId) {
       }
 
       // Step 4 (OB-248): DR-044 finalize — delete Kisi user + NULL PII + mark
-      // access 'deleted'. Only runs on full revoke (targetStatus='inactive');
-      // suspends (targetStatus='disabled') and recoveries ('active') skip.
+      // access 'deleted'. Runs on a full revoke (targetStatus='inactive') and on
+      // member.deleted ('deleted' — processRevoke removed the doors, finalize owns
+      // the user delete); suspends ('disabled') and recoveries ('active') skip.
       // DR-045 three-layer guard inside finalizeRevoke handles unowned /
       // cross-tenant / elevated-role refusals — surfaces to operator queue
       // without throwing. Other Kisi errors throw so BullMQ can retry.
-      if (targetStatus === 'inactive') {
+      if (targetStatus === 'inactive' || targetStatus === 'deleted') {
         lastStep = 'revoke.finalize';
         try {
           const finalizeApiKey = await getClientApiKey(tenantId);
@@ -1075,8 +1079,20 @@ async function _processJobBody(job, traceId) {
           }
         } catch (finalizeErr) {
           // finalizeRevoke threw — propagate so BullMQ retries the whole revoke job.
-          // completeRevoke already committed (sources cleared); the retry will see
-          // status='inactive' and finalize will resume from there. Idempotent.
+          // completeRevoke already committed (doors removed, sources cleared), so the
+          // rollup says 'inactive' — and the retry's lookup, which looks for a door to
+          // remove, found nobody: it logged no_identity and completed, leaving the Kisi
+          // user and the PII with no alert (2026-10-26 audit). The error path below parks
+          // the member at 'removing' instead (DR-044: removal under way), which the lookup
+          // matches: the revoke re-runs with nothing left to remove and finalize runs again.
+          //
+          // Its own words if it dead-letters (error_queue.user_message → Errors page and
+          // operator email): the door part is done, and the generic "access didn't get
+          // turned off" would be wrong. Code and HTTP status are kept for guidance + dedupe.
+          finalizeErr.userMessage = 'The door access was removed; only the cleanup after it didn\'t finish '
+            + '(deleting their Kisi account and clearing their stored details).'
+            + (finalizeErr.userMessage ? ' ' + finalizeErr.userMessage : '');
+          finalizePending = true;
           logger.error('queue.revoke.finalize_failed', {
             clientId, memberId, eventId,
             hardwareUserId: hardwareUserId || null,
@@ -1110,7 +1126,7 @@ async function _processJobBody(job, traceId) {
     // in the outer scope (i.e. the lock fired before resolveAndLock returned).
     const lockMemberId = memberId || error.memberId || null;
     if (lockMemberId) {
-      await standardAdapter.releaseLock(lockMemberId, tenantId, 'failed');
+      await standardAdapter.releaseLock(lockMemberId, tenantId, finalizePending ? 'removing' : 'failed');
     }
 
     // IN_FLIGHT_LOCK is a transient race — let BullMQ retry with its normal backoff, never escalate it to an
