@@ -110,6 +110,182 @@ async function resolveApiKey(clientId, locationId) {
   return null;
 }
 
+// ── Plan Mapping ↔ Kisi ───────────────────────────────────────────────────────────
+// When a plan's doors change — a door added or taken off, a remap, the plan switched off or
+// back on — every member on the plan is brought in line in Kisi (Daxx, 2026-11-03: "all those
+// users need to be updated in Kisi and need to be in sync with their plan mappings"). Each rule
+// below has ONE definition, shared by the sync, the remap route and the confirmation counts
+// (GET …/door-change-impact), so the number the gym sees before saving is what the save does.
+
+// C-4: another plan still grants this member the same door → Kisi is left alone and only this
+// plan's row goes. Day passes never hold a door open (a bearer link is not a seat). `mas` is
+// the row being taken away.
+const OTHER_PLAN_KEEPS_DOOR_SQL = `EXISTS (
+         SELECT 1 FROM member_access_sources o
+          WHERE o.access_id = mas.access_id AND o.hardware_group_id = mas.hardware_group_id
+            AND o.mapping_id IS DISTINCT FROM mas.mapping_id AND o.source_type <> 'day_pass')`;
+
+/**
+ * The rows a door change takes away: this plan's rows on the given doors — every door when
+ * `groupIds` is null (the plan switched off). Members Kisi never saw are included (no role
+ * assignment: their row just goes). Day-pass rows never: theirs hold a Kisi group-link id, not
+ * a role assignment, and core/day-pass-sweep.js ends them. Each row carries door_kept (C-4).
+ */
+async function rowsLosingDoors(clientId, mappingId, groupIds) {
+  const params = [mappingId, clientId];
+  let groupCond = '';
+  if (groupIds) { params.push(groupIds); groupCond = 'AND mas.hardware_group_id = ANY($3::text[])'; }
+  const r = await db.query(
+    `SELECT mas.id AS source_id, mas.access_id AS member_id,
+            mas.role_assignment_id, mas.hardware_group_id,
+            ${OTHER_PLAN_KEEPS_DOOR_SQL} AS door_kept
+     FROM member_access_sources mas
+     WHERE mas.mapping_id = $1 AND mas.client_id = $2 ${groupCond}
+       AND mas.source_type <> 'day_pass'`,
+    params
+  );
+  return r.rows;
+}
+
+/** Members on this plan who get its doors (S-11/DR-046): an active seat, an active row under
+ *  this mapping, and a Kisi user. */
+async function membersOnPlan(clientId, mappingId) {
+  const r = await db.query(
+    `SELECT DISTINCT ma.id AS member_id, ma.hardware_user_id
+     FROM member_access ma
+     JOIN member_access_sources mas ON mas.access_id = ma.id
+     WHERE ma.client_id = $1 AND ma.status = 'active'
+       AND mas.mapping_id = $2
+       AND mas.status = 'active'
+       AND ma.hardware_user_id IS NOT NULL`,
+    [clientId, mappingId]
+  );
+  return r.rows;
+}
+
+/**
+ * Members paying for this plan right now — read from billing, because billing decides plans:
+ * an 'active' member_billing row for the plan (OB-242 keeps one per subscription). A holder who
+ * released their own seat (DR-051 holder_seated=false) is left out. Day-pass products never:
+ * a pass is bought per order and core/day-pass-sweep.js owns its life. Used when a plan comes
+ * back (switched on, or its first door after having none): the rows the switch-off removed are
+ * gone, so this — not the rows — says who gets the doors back.
+ */
+async function payingMembersForPlan(clientId, mappingId) {
+  const r = await db.query(
+    `SELECT mm.platform_member_id, mm.source_platform, mm.email,
+            COALESCE(NULLIF(TRIM(mm.display_name), ''),
+                     NULLIF(TRIM(CONCAT_WS(' ', mm.first_name, mm.last_name)), '')) AS name,
+            pm.source_plan_id,
+            array_agg(DISTINCT mb.wix_order_id) AS order_ids
+     FROM plan_mappings pm
+     JOIN member_billing mb ON mb.client_id = pm.client_id AND mb.plan_id = pm.source_plan_id
+     JOIN member_master mm  ON mm.id = mb.member_master_id AND mm.client_id = pm.client_id
+     WHERE pm.id = $1 AND pm.client_id = $2
+       AND COALESCE(pm.access_type, 'group') <> 'day_pass'
+       AND mb.status = 'active' AND mb.holder_seated
+     GROUP BY mm.id, pm.source_plan_id`,
+    [mappingId, clientId]
+  );
+  return r.rows;
+}
+
+/** A plan is live when it is on and has at least one door. One that is not (switched off, or
+ *  every door taken off) has had its members' rows removed, so it "comes back" on a save that
+ *  makes it live again — and then restorePlanMembers, not the rows, says who gets the doors. */
+const planIsLive = (status, doorCount) => status === 'active' && doorCount > 0;
+
+/**
+ * A plan came back: queue the grant engine's synthetic plan.purchased — the same event the
+ * sweep's 3A queues for a paying member missing from Kisi — for everyone paying for it. The
+ * grant engine then gives each member the plan's doors and records the rows (access decides
+ * seats); a member it cannot provision follows its normal retry and failed-job alert. Synthetic,
+ * so no member email and no billing write. Returns the number queued.
+ */
+async function restorePlanMembers(clientId, mappingId) {
+  const paying = await payingMembersForPlan(clientId, mappingId);
+  const traceId = getTraceId() || mintTraceId();
+  for (const p of paying) {
+    const stamp = Date.now();
+    const standardEvent = {
+      eventType:        'plan.purchased',
+      sourcePlatform:   p.source_platform || 'wix',
+      platformMemberId: p.platform_member_id,
+      planId:           p.source_plan_id,
+      email:            p.email,
+      name:             p.name,
+      // the paying Wix order(s) behind this grant: the grant path reads the DR-051 seat flag per order
+      seatOrderIds:     p.order_ids && p.order_ids.length ? p.order_ids : undefined,
+      synthetic:        true,
+      syntheticSource:  'operator.plan_mapping.restore',
+      traceId,
+      eventId:          `plan-restore-${mappingId}-${p.platform_member_id}-${stamp}`,
+    };
+    const jobId = `grant-plan-restore-${clientId}-${p.platform_member_id}-${p.source_plan_id}-${stamp}`;
+    await eventQueue.add('grant', { tenantId: clientId, standardEvent }, { jobId });
+  }
+  log.info('operator.sync.restore_queued', { clientId, mappingId, queued: paying.length });
+  return paying.length;
+}
+
+/**
+ * One open alert per member and door. hardware_ref "member_id=<access id> group_id=<id>";
+ * core/alert-context.js reads the member_id part to name the member and their location.
+ * Never throws.
+ */
+async function raiseDoorAlert(clientId, alertType, memberId, hardwareGroupId, mappingId) {
+  const _actor = getActor() || {};
+  await db.query(
+    `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, plan_mapping_id, trace_id, actor_type, actor_id)
+     SELECT $1::uuid, $2::varchar, $3::varchar, $4::uuid, $5::varchar, $6::varchar, $7::varchar
+     WHERE NOT EXISTS (
+       SELECT 1 FROM config_alert_log
+       WHERE client_id = $1::uuid AND alert_type = $2::varchar
+         AND hardware_ref = $3::varchar AND resolved_at IS NULL
+     )`,
+    [clientId, alertType, `member_id=${memberId} group_id=${hardwareGroupId}`.slice(0, 255), mappingId,
+      getTraceId() || null, _actor.type || null, _actor.id || null]
+  ).catch(alertErr => log.error('operator.sync.door_alert_failed', { clientId, memberId, alertType }, alertErr));
+}
+
+/**
+ * Gives one member one door of this plan: Kisi first, then the row. Returns true when the door
+ * is on in Kisi (a failed row write after that is only logged — the member can get in). Never
+ * throws and never alerts: the caller knows whether a failure leaves the member with no door
+ * from this plan (door_swap_held) or only without the new one (door_grant_failed).
+ * ctx = { clientId, mappingId, sourcePlanId, hardwarePlatform, apiKey }.
+ */
+async function grantMappingGroup(ctx, member, hardwareGroupId, reason) {
+  const { clientId, mappingId, sourcePlanId, hardwarePlatform, apiKey } = ctx;
+  const memberId = member.member_id;
+  let roleId;
+  try {
+    roleId = await hardwareAdapter.assignRole(hardwarePlatform, apiKey, member.hardware_user_id, hardwareGroupId);
+  } catch (err) {
+    log.error('operator.sync.grant_failed', { clientId, mappingId, memberId, hardwareGroupId, reason, kisiDone: false }, err);
+    return false;
+  }
+  try {
+    // OB-203: source_plan_id is part of the canonical UNIQUE (client_id, access_id, source_type,
+    // source_plan_id, hardware_group_id) ON CONFLICT matches on. S-11/A9: client_id + 'active'.
+    await db.query(
+      `INSERT INTO member_access_sources
+         (client_id, access_id, source_type, source_plan_id, mapping_id, hardware_group_id,
+          role_assignment_id, status, provisioned_at)
+       VALUES ($1, $2, 'plan', $3, $4, $5, $6, 'active', NOW())
+       ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
+         SET role_assignment_id = EXCLUDED.role_assignment_id,
+             status = 'active',
+             updated_at = NOW()`,
+      [clientId, memberId, sourcePlanId, mappingId, hardwareGroupId, String(roleId)]
+    );
+    log.info('operator.sync.granted', { memberId, hardwareGroupId, reason });
+  } catch (err) {
+    log.error('operator.sync.grant_failed', { clientId, mappingId, memberId, hardwareGroupId, reason, kisiDone: true }, err);
+  }
+  return true;
+}
+
 /**
  * Takes one door away from one member because a plan mapping stopped granting it (the door
  * was taken off the plan, or the plan was switched off). Kisi FIRST, then the source row —
@@ -117,28 +293,27 @@ async function resolveApiKey(clientId, locationId) {
  * way round, a Kisi failure left no row behind: the database said the member had lost the
  * door, Kisi still opened it, and nothing could find them again.
  *
- *   - C-4: Kisi is skipped when a source on another mapping still grants the same group; only
- *     this mapping's row goes. Day-pass rows never hold a group open (a bearer link is not a seat).
+ *   - C-4 (OTHER_PLAN_KEEPS_DOOR_SQL, re-checked here so a row another save already took away
+ *     is skipped): Kisi is left alone when another plan grants the same door.
  *   - A row with no role assignment never reached Kisi — there is nothing to remove, the row goes.
  *   - Kisi fails → the row STAYS (it is still true: they can get in) and the gym gets a
  *     door_removal_failed alert naming the member. removeRole is 404-idempotent, so a later
  *     attempt that repeats it is safe.
  *
- * `row` is a plan source row ({ source_id, member_id, hardware_group_id, role_assignment_id }).
- * Callers never pass day-pass rows: theirs hold a Kisi group-link id, not a role assignment, and
- * core/day-pass-sweep.js ends them. Never throws.
+ * `row` comes from rowsLosingDoors (never a day-pass row). Returns true on success. Never throws.
  */
-async function revokeMappingSource(clientId, mappingId, hardwarePlatform, apiKey, row, reason) {
+async function revokeMappingSource(ctx, row, reason) {
+  const { clientId, mappingId, hardwarePlatform, apiKey } = ctx;
   const { source_id: sourceId, member_id: memberId, hardware_group_id: hardwareGroupId, role_assignment_id: raId } = row;
   let kisiDone = false;
   try {
-    const otherGrants = await db.query(
-      `SELECT COUNT(*) AS cnt FROM member_access_sources
-       WHERE access_id = $1 AND hardware_group_id = $2
-         AND mapping_id IS DISTINCT FROM $3 AND source_type <> 'day_pass'`,
-      [memberId, hardwareGroupId, mappingId]
+    const live = await db.query(
+      `SELECT ${OTHER_PLAN_KEEPS_DOOR_SQL} AS door_kept
+       FROM member_access_sources mas WHERE mas.id = $1 AND mas.client_id = $2`,
+      [sourceId, clientId]
     );
-    if (parseInt(otherGrants.rows[0].cnt, 10) > 0) {
+    if (!live.rows.length) return true; // already taken away (a save that overlapped this one)
+    if (live.rows[0].door_kept) {
       log.info('operator.sync.revoke_skipped', { memberId, hardwareGroupId, reason: 'other_mapping_grants' });
     } else if (raId) {
       await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
@@ -146,24 +321,70 @@ async function revokeMappingSource(clientId, mappingId, hardwarePlatform, apiKey
     }
     kisiDone = true;
     await db.query('DELETE FROM member_access_sources WHERE id = $1 AND client_id = $2', [sourceId, clientId]);
+    return true;
   } catch (err) {
     log.error('operator.sync.revoke_failed', { clientId, mappingId, memberId, hardwareGroupId, reason, kisiDone }, err);
-    if (kisiDone) return; // the door is gone; only the bookkeeping row is left over
-    // One open alert per member and door. core/alert-context.js reads the
-    // "member_id=<access id>" part to name the member and their location.
-    const _actor = getActor() || {};
-    await db.query(
-      `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, plan_mapping_id, trace_id, actor_type, actor_id)
-       SELECT $1::uuid, 'door_removal_failed', $2::varchar, $3::uuid, $4::varchar, $5::varchar, $6::varchar
-       WHERE NOT EXISTS (
-         SELECT 1 FROM config_alert_log
-         WHERE client_id = $1::uuid AND alert_type = 'door_removal_failed'
-           AND hardware_ref = $2::varchar AND resolved_at IS NULL
-       )`,
-      [clientId, `member_id=${memberId} group_id=${hardwareGroupId}`.slice(0, 255), mappingId,
-        getTraceId() || null, _actor.type || null, _actor.id || null]
-    ).catch(alertErr => log.error('operator.sync.revoke_alert_failed', { clientId, memberId }, alertErr));
+    if (kisiDone) return true; // the door is gone; only the bookkeeping row is left over
+    await raiseDoorAlert(clientId, 'door_removal_failed', memberId, hardwareGroupId, mappingId);
+    return false;
   }
+}
+
+/**
+ * Doors on, then doors off — never the other way round, so a Kisi failure can't strand a
+ * member. `added` / `removed` / `kept` are door (group) ids of this plan.
+ *   1. Every member on the plan gets each added door (grantMappingGroup).
+ *   2. The removed doors' rows go (revokeMappingSource: Kisi first, C-4, alert on failure) —
+ *      EXCEPT for a member whose new door failed and who would otherwise be left with no door
+ *      from this plan (nothing new landed, no row with a role on a kept door). They keep the old
+ *      door, and the gym gets door_swap_held. A failed add that strands nobody is
+ *      door_grant_failed.
+ * Used by the sync's group diff and by the remap route. Never throws.
+ * Returns { members: Set of member ids touched, failed: Map memberId → reason }.
+ */
+async function applyDoorChange(ctx, added, removed, kept, reason) {
+  const { clientId, mappingId } = ctx;
+  // Both read BEFORE any change: the rows being removed are who is "on this plan" too.
+  const gaining = added.length ? await membersOnPlan(clientId, mappingId) : [];
+  const losing  = removed.length ? await rowsLosingDoors(clientId, mappingId, removed) : [];
+  const members = new Set([...gaining.map(m => m.member_id), ...losing.map(r => r.member_id)]);
+  const failed  = new Map();
+
+  const granted = new Set();
+  const grantFailures = []; // [memberId, hardwareGroupId]
+  for (const groupId of added) {
+    for (const m of gaining) {
+      if (await grantMappingGroup(ctx, m, groupId, reason || 'group_added')) granted.add(m.member_id);
+      else grantFailures.push([m.member_id, groupId]);
+    }
+  }
+
+  const held = new Set();
+  if (grantFailures.length && losing.length) {
+    const keptHolders = new Set(kept.length ? (await db.query(
+      `SELECT DISTINCT access_id FROM member_access_sources
+       WHERE mapping_id = $1 AND client_id = $2 AND hardware_group_id = ANY($3::text[])
+         AND source_type <> 'day_pass' AND role_assignment_id IS NOT NULL`,
+      [mappingId, clientId, kept]
+    )).rows.map(r => r.access_id) : []);
+    const losingMembers = new Set(losing.map(r => r.member_id));
+    for (const [memberId] of grantFailures) {
+      if (!granted.has(memberId) && !keptHolders.has(memberId) && losingMembers.has(memberId)) held.add(memberId);
+    }
+  }
+  for (const [memberId, groupId] of grantFailures) {
+    failed.set(memberId, 'grant_failed');
+    await raiseDoorAlert(clientId, held.has(memberId) ? 'door_swap_held' : 'door_grant_failed', memberId, groupId, mappingId);
+  }
+
+  for (const row of losing) {
+    if (held.has(row.member_id)) {
+      log.warn('operator.sync.revoke_held', { clientId, mappingId, memberId: row.member_id, hardwareGroupId: row.hardware_group_id, reason: 'new_door_failed' });
+      continue;
+    }
+    if (!(await revokeMappingSource(ctx, row, reason || 'group_removed'))) failed.set(row.member_id, 'revoke_failed');
+  }
+  return { members, failed };
 }
 
 /**
@@ -172,9 +393,11 @@ async function revokeMappingSource(clientId, mappingId, hardwarePlatform, apiKey
  *
  *   Group changes  — add group: grant all active members to new group
  *                  — remove group: revoke all active members from removed group
- *                  — swap: revoke old, grant new
+ *                  — swap: grant new, then revoke old (applyDoorChange)
  *   Status changes — inactive: revoke all active members from all groups
  *                  — active: grant all members with active access_state on this plan
+ *                    (a plan the switch-off emptied is refilled by restorePlanMembers — the
+ *                    PATCH route queues it)
  *   Location change — handled via group diff (old groups revoked, new groups granted)
  *
  * Fire-and-forget — called after response is sent. Errors logged, never thrown.
@@ -195,128 +418,35 @@ async function syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds,
       log.warn('operator.sync.no_api_key', { clientId });
       return;
     }
+    const ctx = { clientId, mappingId, sourcePlanId: source_plan_id, hardwarePlatform: hardware_platform, apiKey };
 
-    // ── Status deactivation: revoke all active members from all groups ──
-    // Kisi first, row second, alert on failure, C-4 — see revokeMappingSource.
-    // Day-pass rows are left to core/day-pass-sweep.js (their id is a group link).
+    // ── Status deactivation: every door of the plan comes off (revokeMappingSource) ──
     if (newStatus === 'inactive' && oldStatus === 'active') {
-      const rows = await db.query(
-        `SELECT mas.id AS source_id, mas.access_id AS member_id,
-                mas.role_assignment_id, mas.hardware_group_id
-         FROM member_access_sources mas
-         JOIN member_access ma ON ma.id = mas.access_id
-         WHERE mas.mapping_id = $1 AND mas.client_id = $2 AND ma.hardware_user_id IS NOT NULL
-           AND mas.source_type <> 'day_pass'`,
-        [mappingId, clientId]
-      );
-      for (const row of rows.rows) {
-        await revokeMappingSource(clientId, mappingId, hardware_platform, apiKey, row, 'mapping_deactivated');
+      for (const row of await rowsLosingDoors(clientId, mappingId, null)) {
+        await revokeMappingSource(ctx, row, 'mapping_deactivated');
       }
       return;
     }
 
     // ── Status activation: grant all members with active access on this plan ──
-    // S-11/DR-046: "members on this plan" = members whose source rows reference this mapping.
     if (newStatus === 'active' && oldStatus === 'inactive') {
-      const members = await db.query(
-        `SELECT DISTINCT ma.id AS member_id, ma.hardware_user_id
-         FROM member_access ma
-         JOIN member_access_sources mas ON mas.access_id = ma.id
-         WHERE ma.client_id = $1
-           AND ma.status = 'active'
-           AND mas.mapping_id = $2
-           AND mas.status = 'active'
-           AND ma.hardware_user_id IS NOT NULL`,
-        [clientId, mappingId]
-      );
-      for (const m of members.rows) {
+      const members = await membersOnPlan(clientId, mappingId);
+      for (const m of members) {
         for (const groupId of newGroupIds) {
-          try {
-            const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, m.hardware_user_id, groupId);
-            await db.query(
-              // S-11/A9: client_id required + 'active' status on new source rows.
-              `INSERT INTO member_access_sources
-                 (client_id, access_id, source_type, source_plan_id, mapping_id,
-                  hardware_group_id, role_assignment_id, status, provisioned_at)
-               VALUES ($1, $2, 'plan', $3, $4, $5, $6, 'active', NOW())
-               ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
-                 SET role_assignment_id = EXCLUDED.role_assignment_id,
-                     status = 'active',
-                     updated_at = NOW()`,
-              [clientId, m.member_id, source_plan_id, mappingId, groupId, String(roleId)]
-            );
-            log.info('operator.sync.granted', { memberId: m.member_id, hardwareGroupId: groupId, reason: 'mapping_activated' });
-          } catch (err) {
-            log.warn('operator.sync.grant_failed', { memberId: m.member_id, hardwareGroupId: groupId }, err);
+          if (!(await grantMappingGroup(ctx, m, groupId, 'mapping_activated'))) {
+            await raiseDoorAlert(clientId, 'door_grant_failed', m.member_id, groupId, mappingId);
           }
         }
       }
       return;
     }
 
-    // ── Group diff: added groups → grant, removed groups → revoke ──
+    // ── Group diff: added groups → grant, then removed groups → revoke ──
     const added   = newGroupIds.filter(id => !oldGroupIds.includes(id));
     const removed = oldGroupIds.filter(id => !newGroupIds.includes(id));
-
     if (!added.length && !removed.length) return;
-
-    // This mapping's plan rows on a removed group — including members Kisi never saw
-    // (no role assignment: their row just goes). Day-pass rows are left to
-    // core/day-pass-sweep.js: their id is a group link, and the pass runs to its end.
-    const removedRows = removed.length
-      ? await db.query(
-        `SELECT mas.id AS source_id, mas.access_id AS member_id,
-                mas.role_assignment_id, mas.hardware_group_id
-         FROM member_access_sources mas
-         WHERE mas.mapping_id = $1 AND mas.client_id = $2
-           AND mas.hardware_group_id = ANY($3::text[])
-           AND mas.source_type <> 'day_pass'`,
-        [mappingId, clientId, removed]
-      )
-      : { rows: [] };
-
-    // S-11/DR-046: members "on this plan" = members with active source rows under this mapping.
-    const activeMembersForGrant = await db.query(
-      `SELECT DISTINCT ma.id AS member_id, ma.hardware_user_id
-       FROM member_access ma
-       JOIN member_access_sources mas ON mas.access_id = ma.id
-       WHERE ma.client_id = $1 AND ma.status = 'active'
-         AND mas.mapping_id = $2
-         AND mas.status = 'active'
-         AND ma.hardware_user_id IS NOT NULL`,
-      [clientId, mappingId]
-    );
-
-    // Grant added groups to all active members
-    for (const groupId of added) {
-      for (const m of activeMembersForGrant.rows) {
-        try {
-          const roleId = await hardwareAdapter.assignRole(hardware_platform, apiKey, m.hardware_user_id, groupId);
-          // OB-203: source_plan_id added to column list — required by canonical UNIQUE
-          // (client_id, access_id, source_type, source_plan_id, hardware_group_id) for ON CONFLICT to match correctly.
-          // S-11/A9: client_id required on every member_access_sources INSERT.
-          await db.query(
-            `INSERT INTO member_access_sources
-               (client_id, access_id, source_type, source_plan_id, mapping_id, hardware_group_id,
-                role_assignment_id, status, provisioned_at)
-             VALUES ($1, $2, 'plan', $3, $4, $5, $6, 'active', NOW())
-             ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
-               SET role_assignment_id = EXCLUDED.role_assignment_id,
-                   status = 'active',
-                   updated_at = NOW()`,
-            [clientId, m.member_id, source_plan_id, mappingId, groupId, String(roleId)]
-          );
-          log.info('operator.sync.granted', { memberId: m.member_id, hardwareGroupId: groupId, reason: 'group_added' });
-        } catch (err) {
-          log.warn('operator.sync.grant_failed', { memberId: m.member_id, hardwareGroupId: groupId }, err);
-        }
-      }
-    }
-
-    // Revoke removed groups — Kisi first, row second, alert on failure, C-4 (revokeMappingSource)
-    for (const row of removedRows.rows) {
-      await revokeMappingSource(clientId, mappingId, hardware_platform, apiKey, row, 'group_removed');
-    }
+    const kept    = oldGroupIds.filter(id => newGroupIds.includes(id));
+    await applyDoorChange(ctx, added, removed, kept, null);
 
   } catch (err) {
     log.error('operator.sync.unexpected_error', { clientId, mappingId }, err);
@@ -2275,6 +2405,15 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     const oldGroupIds = oldGroupsResult.rows.map(r => r.hardware_group_id);
     const oldStatus   = oldMappingResult.rows[0]?.status;
     if (!oldMappingResult.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+    // A plan "comes back" when this save makes it live again (planIsLive). Its switch-off
+    // removed the members' rows, so the sync alone would find nobody: restorePlanMembers queues
+    // everyone paying for it. Called after the response, like the sync.
+    const wasLive = planIsLive(oldStatus, oldGroupIds.length);
+    const restoreIfBack = (finalStatus, finalGroupIds) => {
+      if (wasLive || !planIsLive(finalStatus, finalGroupIds.length)) return;
+      restorePlanMembers(clientId, mappingId)
+        .catch(err => log.error('operator.sync.restore_failed', { clientId, mappingId }, err));
+    };
 
     // ── Wire-graph single-group add/remove (from PlanMappingPanel) ──────
     if (addGroupId) {
@@ -2295,6 +2434,7 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
       const apiKey = await resolveApiKey(clientId, locationId);
       syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, oldStatus, oldStatus)
         .catch(err => log.warn('operator.sync.add_group_failed', { clientId, mappingId }, err));
+      restoreIfBack('active', newGroupIds);
       return res.json({
         ok: true,
         warning: apiKey ? null : "Your hardware API key isn't set up yet. New members won't get access until the key is added — you can do this in System Config.",
@@ -2393,6 +2533,7 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
     // Sync active members to reflect group/status changes — fire-and-forget
     syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, newStatus, oldStatus)
       .catch(err => log.warn('operator.sync.mapping_sync_failed', { clientId, mappingId }, err));
+    restoreIfBack(mapping.status, newGroupIds);
 
     // Re-queue any members parked in pending_hardware for this plan mapping.
     // Scoped by source_plan_id so only members waiting on THIS plan are retried.
@@ -2555,8 +2696,60 @@ router.get('/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members
   }
 });
 
+// ── GET /operator/:clientId/plan-mappings/:mappingId/door-change-impact ──
+// What saving a door change would do to the plan's members in Kisi. Read-only, and built from
+// the functions the save itself runs (rowsLosingDoors, membersOnPlan, payingMembersForPlan,
+// planIsLive), so the confirmation shows what will happen. Query: remove=<id>,<id> (doors
+// coming off), add=<id>,<id> (doors going on), off=1 (plan switched off: every door comes off).
+// Returns {
+//   losing:  members whose door is removed in Kisi (at least one door, when several come off),
+//   keeping: members who keep a door being removed because another plan grants it (C-4),
+//   gaining: members who get the added door(s) — when the plan is coming back (off, or no
+//            doors, before this save) everyone paying for it: the people restorePlanMembers queues,
+//   doors:   [{ groupId, losing, keeping }] per door coming off.
+// }
+router.get('/:clientId/plan-mappings/:mappingId/door-change-impact', async (req, res) => {
+  const { clientId, mappingId } = req.params;
+  const ids = (v) => [...new Set(String(v || '').split(',').map(s => s.trim()).filter(Boolean))];
+  try {
+    const [mappingRow, groupsRow] = await Promise.all([
+      db.query('SELECT status FROM plan_mappings WHERE id = $1 AND client_id = $2', [mappingId, clientId]),
+      db.query('SELECT hardware_group_id FROM plan_mapping_groups WHERE mapping_id = $1', [mappingId]),
+    ]);
+    if (!mappingRow.rows.length) return res.status(404).json({ error: 'Mapping not found' });
+    const off    = req.query.off === '1' || req.query.off === 'true';
+    const remove = off ? groupsRow.rows.map(r => r.hardware_group_id) : ids(req.query.remove);
+    const add    = off ? [] : ids(req.query.add);
+
+    const rows = (off || remove.length) ? await rowsLosingDoors(clientId, mappingId, off ? null : remove) : [];
+    const losing  = r => r.role_assignment_id && !r.door_kept;
+    const members = list => new Set(list.map(r => r.member_id)).size;
+    const doorIds = [...new Set([...remove, ...rows.map(r => r.hardware_group_id)])];
+    const doors = doorIds.map(groupId => {
+      const onDoor = rows.filter(r => r.hardware_group_id === groupId);
+      return { groupId, losing: members(onDoor.filter(losing)), keeping: members(onDoor.filter(r => r.door_kept)) };
+    });
+
+    let gaining = 0;
+    if (add.length) {
+      gaining = planIsLive(mappingRow.rows[0].status, groupsRow.rows.length)
+        ? (await membersOnPlan(clientId, mappingId)).length
+        : (await payingMembersForPlan(clientId, mappingId)).length;
+    }
+    res.json({ losing: members(rows.filter(losing)), keeping: members(rows.filter(r => r.door_kept)), gaining, doors });
+  } catch (err) {
+    log.error('operator.mapping.door_change_impact_failed', { clientId, mappingId }, err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /operator/:clientId/plan-mappings/:mappingId/remap ─────────
-// Bulk-moves existing members from oldGroupIds to newGroupIds in Kisi + DB.
+// Moves the plan's members from oldGroupIds to newGroupIds in Kisi + DB, through the same
+// applyDoorChange the sync uses: new doors on first, then old doors off (C-4, Kisi first,
+// alert on failure). A member whose new door fails keeps the old one rather than be left
+// with none (door_swap_held). It once removed first and assigned second, with no C-4 check:
+// a failed assign stranded the member, and a door another plan shares (one Kisi role
+// assignment per user + door) was taken away. Doors in both lists are left alone.
 // Body: { oldGroupIds: string[], newGroupIds: string[] }
 // Returns: { moved: N, failed: [{ memberId, error }] }
 router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
@@ -2568,13 +2761,12 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
   }
 
   try {
-    // Verify mapping belongs to client + get location_id (and source_plan_id for OB-203)
+    // Verify mapping belongs to client + get source_plan_id (OB-203)
     const mappingRow = await db.query(
       'SELECT id, location_id, source_plan_id FROM plan_mappings WHERE id = $1 AND client_id = $2',
       [mappingId, clientId]
     );
     if (!mappingRow.rows.length) return res.status(404).json({ error: 'Mapping not found' });
-    const locationId = mappingRow.rows[0].location_id;
     const sourcePlanId = mappingRow.rows[0].source_plan_id;
 
     // Resolve hardware API key and platform
@@ -2588,83 +2780,26 @@ router.post('/:clientId/plan-mappings/:mappingId/remap', async (req, res) => {
     if (!keyRow.rows.length || !keyRow.rows[0].raw_key) {
       return res.status(400).json({ error: 'No hardware API key configured' });
     }
-    const apiKey = decryptKey(keyRow.rows[0].raw_key);
-    const platform = keyRow.rows[0].platform || 'kisi';
+    const ctx = {
+      clientId, mappingId, sourcePlanId,
+      hardwarePlatform: keyRow.rows[0].platform || 'kisi',
+      apiKey: decryptKey(keyRow.rows[0].raw_key),
+    };
 
-    // Fetch all member source rows for this mapping in the old groups.
-    // Day-pass rows (OB-98) hold a Kisi group-link id in role_assignment_id — never a
-    // role assignment — so they are excluded: removeRole on one would DELETE a foreign
-    // /role_assignments id. Expired passes are cleaned up by core/day-pass-sweep.js.
-    const membersResult = await db.query(
-      `SELECT mas.id AS mra_id, mas.access_id AS member_id, mas.role_assignment_id, mas.hardware_group_id,
-              ma.hardware_user_id
-       FROM member_access_sources mas
-       JOIN member_access ma ON ma.id = mas.access_id
-       WHERE mas.mapping_id = $1 AND mas.hardware_group_id = ANY($2::text[]) AND ma.client_id = $3
-         AND mas.source_type <> 'day_pass'`,
-      [mappingId, oldGroupIds, clientId]
+    const oldIds = oldGroupIds.map(String);
+    const newIds = newGroupIds.map(String);
+    const { members, failed } = await applyDoorChange(
+      ctx,
+      newIds.filter(id => !oldIds.includes(id)),
+      oldIds.filter(id => !newIds.includes(id)),
+      oldIds.filter(id => newIds.includes(id)),
+      'remap'
     );
 
-    let moved = 0;
-    const failed = [];
-
-    // Group rows by member so we process each member once
-    const byMember = {};
-    for (const row of membersResult.rows) {
-      if (!byMember[row.member_id]) byMember[row.member_id] = [];
-      byMember[row.member_id].push(row);
-    }
-
-    for (const [memberId, rows] of Object.entries(byMember)) {
-      try {
-        const hardwareUserId = rows[0].hardware_user_id;
-
-        // Remove each old group assignment from Kisi
-        for (const row of rows) {
-          if (row.role_assignment_id) {
-            await hardwareAdapter.removeRole(platform, apiKey, row.role_assignment_id);
-          }
-        }
-
-        // Assign each new group in Kisi
-        const newAssignments = [];
-        for (const newGroupId of newGroupIds) {
-          const roleAssignmentId = await hardwareAdapter.assignRole(platform, apiKey, hardwareUserId, newGroupId);
-          newAssignments.push({ groupId: newGroupId, roleAssignmentId });
-        }
-
-        // DB: remove old source rows, insert new source rows
-        const oldMraIds = rows.map(r => r.mra_id);
-        await db.query('DELETE FROM member_access_sources WHERE id = ANY($1::uuid[])', [oldMraIds]);
-
-        if (newAssignments.length > 0) {
-          // OB-203: source_plan_id added to column list — required by canonical UNIQUE
-          // (client_id, access_id, source_type, source_plan_id, hardware_group_id) for ON CONFLICT to match correctly.
-          // S-11/A9: client_id required + status='active' since these are post-Kisi-call.
-          const values = [];
-          const placeholders = newAssignments.map((a, i) => {
-            values.push(clientId, memberId, sourcePlanId, mappingId, a.roleAssignmentId, a.groupId);
-            return `($${i * 6 + 1}, $${i * 6 + 2}, 'plan', $${i * 6 + 3}, $${i * 6 + 4}, $${i * 6 + 5}, $${i * 6 + 6}, 'active', NOW())`;
-          });
-          await db.query(
-            `INSERT INTO member_access_sources
-               (client_id, access_id, source_type, source_plan_id, mapping_id, role_assignment_id, hardware_group_id, status, provisioned_at)
-             VALUES ${placeholders.join(', ')}
-             ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
-               SET role_assignment_id = EXCLUDED.role_assignment_id,
-                   status = 'active',
-                   updated_at = NOW()`,
-            values
-          );
-        }
-
-        moved++;
-      } catch (err) {
-        failed.push({ memberId, error: err.message });
-      }
-    }
-
-    res.json({ moved, failed });
+    res.json({
+      moved: members.size - failed.size,
+      failed: [...failed].map(([memberId, error]) => ({ memberId, error })),
+    });
   } catch (err) {
     log.error('operator.mapping.remap_failed', { clientId, mappingId }, err);
     res.status(500).json({ error: 'Internal server error' });

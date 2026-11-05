@@ -328,6 +328,12 @@
     if (e === 'door_removal_failed')
       return memberStart + at + " can still open a door that was taken off their plan — AccessSync couldn't remove it in Kisi. " +
         'Remove that door from ' + (c.member ? 'their' : "the member's") + ' account in Kisi.';
+    if (e === 'door_grant_failed')
+      return memberStart + at + " is missing a door their plan now includes — AccessSync couldn't add it in Kisi. " +
+        'Add that door to ' + (c.member ? 'their' : "the member's") + ' account in Kisi.';
+    if (e === 'door_swap_held')
+      return memberStart + at + " still has the door that was taken off their plan — AccessSync couldn't add " + (c.member ? 'their' : 'the') +
+        ' new door in Kisi, so it left the old one on rather than lock them out. Add the new door in Kisi, then remove the old one.';
     if (e === 'lockdown_detected')               return 'A door is currently in lockdown' + at + '.';
     if (e === 'api_key_invalid_after_rotation')   return 'Hardware API key was rotated but new key is invalid' + at + '.';
 

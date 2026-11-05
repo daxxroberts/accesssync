@@ -42,7 +42,8 @@
 
 {#if open}
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-  <div class="modal-overlay" on:click={cancel}>
+  <!-- .visible: rendered only while open, and pages that hide .modal-overlay until .visible (plan-mapping.ejs) need it -->
+  <div class="modal-overlay visible" on:click={cancel}>
     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
     <div class="modal" on:click|stopPropagation>
       <h3>{title}</h3>

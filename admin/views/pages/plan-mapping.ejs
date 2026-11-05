@@ -4,10 +4,10 @@
   @route /plan-mapping
   @role plan-to-door-mapping
   @data GET /operator/:clientId/locations/:locationId/mappings, GET /operator/:clientId/kisi-groups
-  @writes PATCH /operator/:clientId/plan-mappings/:mappingId, POST /operator/:clientId/plan-mappings/:mappingId/remap
-  @reads GET /operator/:clientId/plan-mappings/:mappingId/members (remap modal member count), GET /operator/:clientId/plan-mappings/:mappingId/groups/:groupId/affected-members (disconnect count), GET /operator/:clientId/plan-mappings/:mappingId/holders (active holder list for multi-member plans)
+  @writes PATCH /operator/:clientId/plan-mappings/:mappingId
+  @reads GET /operator/:clientId/plan-mappings/:mappingId/door-change-impact (Save confirmation: members losing / keeping / getting a door in Kisi), GET /operator/:clientId/plan-mappings/:mappingId/holders (active holder list for multi-member plans)
   @tab Plan Mapping
-  @features multi-group, multi-member toggle, duplicate-group warning, remap confirmation modal, stale-group detection, dead-group warning with member count, archived-plan badge, disconnect member count confirmation, collapsed plan summary rows (group count, member count, Wix price), expand/collapse per plan card
+  @features multi-group, multi-member toggle, duplicate-group warning, door-change confirmation at Save (door removed, plan left with no doors, remap) with Kisi member counts, stale-group detection, archived-plan badge, collapsed plan summary rows (group count, member count, Wix price), expand/collapse per plan card
 %>
 <!DOCTYPE html>
 <html lang="en" data-mode="light">
@@ -507,12 +507,12 @@
   <div class="modal-overlay" id="remapModal">
     <div class="modal" style="max-width:480px;">
       <div class="modal-icon warning">&#9888;</div>
-      <div class="modal-title">Move Existing Members?</div>
-      <div class="modal-text" style="margin-bottom:12px;">The following plan remaps will immediately move members in your hardware system.</div>
+      <div class="modal-title">Update members in Kisi?</div>
+      <div class="modal-text" style="margin-bottom:12px;">Saving changes these members’ door access in Kisi right away.</div>
       <ul class="remap-list" id="remapList"></ul>
       <div class="modal-actions">
         <button class="modal-btn cancel" onclick="closeRemapModal()">Cancel</button>
-        <button class="modal-btn confirm" id="remapConfirmBtn" onclick="executeRemapAndSave()">Move Members</button>
+        <button class="modal-btn confirm" id="remapConfirmBtn" onclick="runDoorChangeSave()">Save and update Kisi</button>
       </div>
     </div>
   </div>
@@ -520,6 +520,7 @@
   <div class="toast" id="toast"></div>
 
   <script src="/operator-nav.js"></script>
+  <script src="/door-change-copy.js"></script>
   <script>
     function groupLabel() { return PLATFORM_CONFIG.groupLabel; }
 
@@ -875,41 +876,14 @@
 
     function removeGroup(planId, groupId, evt) {
       evt.stopPropagation();
-      var clientId = new URLSearchParams(window.location.search).get('clientId');
       var plan = plans.find(function(p) { return p.id === planId; });
       if (!plan.groupIds) return;
-      var g = PLATFORM_GROUPS.find(function(x) { return x.id === groupId; });
-      var groupName = g ? g.name : groupId;
-      var isStale = getStaleGroupIds(plan).indexOf(groupId) >= 0;
-
-      // Fetch affected member count before confirming
-      apiFetch('/operator/' + clientId + '/plan-mappings/' + planId + '/groups/' + groupId + '/affected-members')
-        .then(function(r) { return r.json(); })
-        .then(function(d) { return d.count || 0; })
-        .catch(function() { return 0; })
-        .then(function(count) {
-          var doRemove = function() {
-            // Stage the removal locally — Save bar appears, user confirms with Save
-            plan.groupIds = plan.groupIds.filter(function(id) { return id !== groupId; });
-            markDirty();
-            render();
-          };
-
-          if (count === 0 && !isStale) {
-            doRemove();
-            return;
-          }
-
-          pendingAction = doRemove;
-
-          if (isStale) {
-            var msg = 'This group is no longer available in your access control system. Removing it will clear ' + count + ' member assignment' + (count !== 1 ? 's' : '') + '. You can remap this plan to a different group afterward.';
-            showModal('warning', 'Remove missing group?', msg, 'Remove', 'danger');
-          } else {
-            var msg = 'Disconnecting this plan from \u201c' + esc(groupName) + '\u201d will revoke access for ' + count + ' member' + (count !== 1 ? 's' : '') + ' currently using it.';
-            showModal('warning', 'Remove group?', msg, 'Remove', 'danger');
-          }
-        });
+      // Staged locally, like unticking it in the dropdown. Save shows the one confirmation, with
+      // how many members lose the door in Kisi (door-change-impact) — counted for everything
+      // being saved at once, so the number is what the save does.
+      plan.groupIds = plan.groupIds.filter(function(id) { return id !== groupId; });
+      markDirty();
+      render();
     }
 
     // Close dropdowns on outside click
@@ -1083,30 +1057,87 @@
 
     // ── Remap detection helpers ────────────────────────────────────────
 
-    function getRemaps() {
+    // ── Door-change confirmation (Save) ───────────────────────────────
+    // Before anything is sent, every plan losing a door is checked against
+    // GET …/door-change-impact — the same rules the save runs (admin/routes/operator.js) — and the
+    // gym sees how many members lose that door in Kisi, and how many still have it from another plan.
+    // One popup covers a door taken off, a plan left with no doors (switched off) and a remap
+    // (doors swapped). Saving the new doors is what moves the members (the PATCH runs the same
+    // add-first, then remove change as the remap route), so no separate remap call is made.
+
+    function getDoorChanges() {
       var original = JSON.parse(originalState);
-      return plans.filter(function(plan) {
+      return plans.map(function(plan) {
         var orig = original.find(function(o) { return o.id === plan.id; });
-        if (!orig) return false;
-        var origIds = (orig.groupIds || []).slice().sort();
-        var newIds  = (plan.groupIds || []).slice().sort();
-        // Only a remap if there were existing groups AND they changed
-        return origIds.length > 0 && JSON.stringify(origIds) !== JSON.stringify(newIds) && newIds.length > 0;
-      });
+        if (!orig) return null;
+        var origIds = (orig.groupIds || []).map(String);
+        var newIds  = (plan.groupIds || []).map(String);
+        var removed = origIds.filter(function(id) { return newIds.indexOf(id) < 0; });
+        var added   = newIds.filter(function(id) { return origIds.indexOf(id) < 0; });
+        if (!removed.length) return null; // only a save that takes a door away needs confirming
+        return { plan: plan, removed: removed, added: added, off: newIds.length === 0 };
+      }).filter(Boolean);
     }
 
     function getGroupName(groupId) {
       var g = PLATFORM_GROUPS.find(function(x) { return String(x.id) === String(groupId); });
-      return g ? g.name : groupId;
+      return g ? g.name : 'a door no longer in Kisi';
     }
 
-    // ── Remap modal ───────────────────────────────────────────────────
+    var _doorChange = null; // { save, cancel } while the popup is open
 
-    var _remapData = null; // { clientId, remaps: [{ plan, origIds, newIds, memberCount }] }
+    // Runs `save` straight away when the save takes no door away (or nobody is on those doors);
+    // otherwise shows the popup first. Confirm runs `save`; Cancel runs `cancel` and nothing is
+    // sent. Used by both Save paths below (the live-data one replaces saveChanges once loaded).
+    function confirmDoorChanges(clientId, save, cancel) {
+      var changes = getDoorChanges();
+      if (changes.length === 0) { save(); return; }
+
+      Promise.all(changes.map(function(c) {
+        var q = 'remove=' + encodeURIComponent(c.removed.join(','))
+          + (c.added.length ? '&add=' + encodeURIComponent(c.added.join(',')) : '');
+        return apiFetch('/operator/' + clientId + '/plan-mappings/' + c.plan.id + '/door-change-impact?' + q, { cache: 'no-store' })
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .catch(function() { return null; });
+      })).then(function(impacts) {
+        // Nobody on any of these plans is affected — nothing to confirm.
+        var affected = impacts.some(function(i) { return !i || i.losing > 0 || i.keeping > 0 || i.gaining > 0; });
+        if (!affected) { save(); return; }
+
+        var listEl = document.getElementById('remapList');
+        listEl.innerHTML = '';
+        changes.forEach(function(c, i) {
+          var li = document.createElement('li');
+          li.className = 'remap-item';
+          li.innerHTML =
+            '<div class="remap-item-name">' + esc(c.plan.name || c.plan.planName || c.plan.id) + '</div>' +
+            '<div class="remap-item-count">' + esc(DoorChangeCopy.describe({
+              planName: c.plan.name || c.plan.planName, off: c.off,
+              removed: c.removed.map(getGroupName), added: c.added.map(getGroupName),
+            }, impacts[i])) + '</div>';
+          listEl.appendChild(li);
+        });
+
+        _doorChange = { save: save, cancel: cancel };
+        document.getElementById('remapModal').classList.add('visible');
+      });
+    }
 
     function closeRemapModal() {
       document.getElementById('remapModal').classList.remove('visible');
-      _remapData = null;
+      var d = _doorChange;
+      _doorChange = null;
+      if (d && d.cancel) d.cancel();
+    }
+
+    function runDoorChangeSave() {
+      document.getElementById('remapModal').classList.remove('visible');
+      var d = _doorChange;
+      _doorChange = null;
+      if (d) d.save();
+    }
+
+    function resetSaveButton() {
       var btn = document.querySelector('.save-bar .save-btn.primary');
       if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
     }
@@ -1122,117 +1153,9 @@
       var saveBtn = document.querySelector('.save-bar .save-btn.primary');
       if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
 
-      var remaps = getRemaps();
-      var original = JSON.parse(originalState);
-
-      if (remaps.length === 0) {
-        // No remaps — save directly
-        executeSave(clientId, original, saveBtn, []);
-        return;
-      }
-
-      // Fetch member counts for each remapped plan, then show modal if any have members
-      var counts = {};
-      var fetches = remaps.map(function(plan) {
-        return apiFetch('/operator/' + clientId + '/plan-mappings/' + plan.id + '/members')
-          .then(function(r) { return r.json(); })
-          .then(function(data) { counts[plan.id] = data.count || 0; })
-          .catch(function() { counts[plan.id] = 0; });
-      });
-
-      Promise.all(fetches).then(function() {
-        var remapsWithMembers = remaps.filter(function(p) { return counts[p.id] > 0; });
-
-        if (remapsWithMembers.length === 0) {
-          // All remapped plans have 0 members — save without modal
-          executeSave(clientId, original, saveBtn, []);
-          return;
-        }
-
-        // Build modal content
-        var listEl = document.getElementById('remapList');
-        listEl.innerHTML = '';
-        remapsWithMembers.forEach(function(plan) {
-          var orig = original.find(function(o) { return o.id === plan.id; });
-          var origIds = orig ? (orig.groupIds || []) : [];
-          var newIds  = plan.groupIds || [];
-          var li = document.createElement('li');
-          li.className = 'remap-item';
-          var oldNames = origIds.map(getGroupName).join(', ') || '—';
-          var newNames = newIds.map(getGroupName).join(', ') || '—';
-          var n = counts[plan.id];
-          li.innerHTML =
-            '<div class="remap-item-name">' + esc(plan.name || plan.planName || plan.id) + '</div>' +
-            '<div class="remap-item-groups">' +
-              '<span>' + esc(oldNames) + '</span>' +
-              '<span class="remap-item-arrow">&#8594;</span>' +
-              '<span>' + esc(newNames) + '</span>' +
-            '</div>' +
-            '<div class="remap-item-count">' + n + ' member' + (n !== 1 ? 's' : '') + ' will be moved</div>';
-          listEl.appendChild(li);
-        });
-
-        // Store remap data for executeRemapAndSave
-        _remapData = {
-          clientId: clientId,
-          saveBtn: saveBtn,
-          original: original,
-          remapsWithMembers: remapsWithMembers.map(function(plan) {
-            var orig = original.find(function(o) { return o.id === plan.id; });
-            return {
-              plan: plan,
-              origIds: orig ? (orig.groupIds || []) : [],
-              newIds: plan.groupIds || [],
-              memberCount: counts[plan.id],
-            };
-          }),
-        };
-
-        document.getElementById('remapModal').classList.add('visible');
-      });
-    }
-
-    function executeRemapAndSave() {
-      if (!_remapData) return;
-      var d = _remapData;
-      var confirmBtn = document.getElementById('remapConfirmBtn');
-      confirmBtn.disabled = true;
-      confirmBtn.textContent = 'Moving…';
-      document.getElementById('remapModal').classList.remove('visible');
-
-      // Fire PATCH saves for all changed plans first
-      executeSave(d.clientId, d.original, d.saveBtn, d.remapsWithMembers, function() {
-        // After save, run remaps
-        var total = 0;
-        var totalFailed = 0;
-        var remapPending = d.remapsWithMembers.length;
-
-        d.remapsWithMembers.forEach(function(item) {
-          apiFetch('/operator/' + d.clientId + '/plan-mappings/' + item.plan.id + '/remap', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ oldGroupIds: item.origIds, newGroupIds: item.newIds }),
-          })
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            total += data.moved || 0;
-            totalFailed += (data.failed || []).length;
-          })
-          .catch(function() { totalFailed++; })
-          .finally(function() {
-            remapPending--;
-            if (remapPending > 0) return;
-            confirmBtn.disabled = false;
-            confirmBtn.textContent = 'Move Members';
-            _remapData = null;
-            if (totalFailed > 0) {
-              showToast('error', total + ' moved, ' + totalFailed + ' failed — check error queue');
-            } else {
-              showToast('success', total + ' member' + (total !== 1 ? 's' : '') + ' moved to new group');
-            }
-          });
-        });
-      });
+      confirmDoorChanges(clientId, function() {
+        executeSave(clientId, JSON.parse(originalState), saveBtn, []);
+      }, resetSaveButton);
     }
 
     function executeSave(clientId, original, saveBtn, remapsWithMembers, onComplete) {
@@ -1623,6 +1546,8 @@
           return;
         }
         if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+        // A save that takes doors away is confirmed first, with the Kisi member counts.
+        confirmDoorChanges(clientId, function() {
 
         var failures = [];
         var promises = changed.map(function(plan) {
@@ -1670,6 +1595,7 @@
             showToast('error', 'Save failed for ' + failures.length + ' of ' + changed.length + ': ' + failures.join('; '));
           }
         });
+        }, resetSaveButton);
       };
     })();
   </script>

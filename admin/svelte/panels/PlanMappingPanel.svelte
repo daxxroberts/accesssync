@@ -14,6 +14,7 @@
 <script>
   import { onMount, onDestroy, afterUpdate, tick } from 'svelte';
   import { showToast } from '../stores/toast.js';
+  import ConfirmModal from '../components/ConfirmModal.svelte';
 
   // ── Constants ───────────────────────────────────────────────────────
   const CLIENT_ID       = new URLSearchParams(window.location.search).get('clientId');
@@ -242,25 +243,36 @@
   function cancelDrag() { drag = null; }
 
   // ── Disconnect ───────────────────────────────────────────────────────
+  // Before the door comes off: how many members lose it in Kisi, counted by
+  // GET …/door-change-impact — the rules the save runs — in the same words the classic page
+  // uses (window.DoorChangeCopy, admin/public/door-change-copy.js). Removing a plan's last door
+  // leaves it with none: the same as switching it off.
+  let confirmOpen = false;
+  let confirmTitle = '';
+  let confirmBody = '';
+  let pendingWire = null;
+
   async function disconnectWire(wire) {
-    // M-6: Fetch affected member count before confirming
-    let memberCount = 0;
+    let impact = null;
     try {
-      const data = await apiFetch(`/operator/${CLIENT_ID}/plan-mappings/${wire.planId}/groups/${wire.groupId}/affected-members`);
-      memberCount = data.count || 0;
+      impact = await apiFetch(`/operator/${CLIENT_ID}/plan-mappings/${wire.planId}/door-change-impact?remove=${encodeURIComponent(wire.groupId)}`);
     } catch (_) {}
+    const plan = plans.find(p => p.mappingId === wire.planId);
+    const off  = !!plan && plan.groups.length <= 1;
+    const door = wire.healthStatus === 'not_found' ? 'a door no longer in Kisi' : wire.groupName;
+    const change = { planName: wire.planName, removed: [door], added: [], off };
+    confirmTitle = off ? 'Remove the last door?' : 'Remove door?';
+    confirmBody  = (window.DoorChangeCopy
+      ? window.DoorChangeCopy.describe(change, impact)
+      : `Removing ${door} from ${wire.planName} updates its members in Kisi.`) + ' Continue?';
+    pendingWire  = wire;
+    confirmOpen  = true;
+  }
 
-    // K-2: Dead group gets a different confirmation message
-    let msg;
-    if (wire.healthStatus === 'not_found') {
-      msg = `This group is no longer available in your access control system. Removing it will clear ${memberCount} member assignment(s). You can remap this plan to a different group afterward.`;
-    } else if (memberCount > 0) {
-      msg = `Disconnecting this plan from "${wire.groupName}" will revoke access for ${memberCount} member(s) currently using it.`;
-    } else {
-      msg = `Disconnect this plan from "${wire.groupName}"? No members are currently assigned.`;
-    }
-    if (!confirm(msg)) return;
-
+  async function confirmDisconnect() {
+    const wire = pendingWire;
+    pendingWire = null;
+    if (!wire) return;
     hoveredWire = null;
     try {
       const res = await fetch(`/operator/${CLIENT_ID}/plan-mappings/${wire.planId}`, {
@@ -612,6 +624,9 @@
     </div>
   {/if}
 </div>
+
+<ConfirmModal bind:open={confirmOpen} title={confirmTitle} body={confirmBody}
+  on:confirm={confirmDisconnect} on:cancel={() => { pendingWire = null; }} />
 
 <style>
   /* ── Root ──────────────────────────────────────────────────────────── */

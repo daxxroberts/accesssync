@@ -62,8 +62,10 @@ const ALLOWLIST = {
     'admin/routes/multi-member.js':1, // DR-032 submit: draft → pending_hardware
     // plan-mapping sync + remap INSERT/DELETE flows (OB-203 hardened). 7 → 5 on 2026-10-26:
     // the removeGroupId pre-delete went, and the two sync revoke DELETEs became one
-    // (revokeMappingSource — Kisi first, then the row).
-    'admin/routes/operator.js':    5,
+    // (revokeMappingSource — Kisi first, then the row). 5 → 2 on 2026-11-03: the sync's two
+    // grant INSERTs and remap's own DELETE + INSERT now go through grantMappingGroup and
+    // revokeMappingSource — one INSERT, one DELETE.
+    'admin/routes/operator.js':    2,
   },
 };
 
