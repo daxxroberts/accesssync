@@ -4,8 +4,9 @@
  * @role cron-nightly
  * @schedule nightly via Railway Cron
  * @reads member_access, member_master, error_queue, locations, clients (source_api_key, source_site_id, reconciliation_interval, last_sync_at, auto_revoke_mode), member_access_sources (incl. the not_paying_* strike clock), plan_mappings, config_alert_log (alert dedupe)
- * @writes member_access, config_alert_log, clients (last_sync_at), reconciliation_run, reconciliation_proposal
- * @calls hardware-adapter (getLocks, getManagedRoleAssignments, listAllUsers), wix-plans-api (listOrdersClassified, listConfirmedBookings, listActiveOrders), plan-mapping-resolver (resolve), revoke-policy (evaluateRemovals, normalizeMode), standard-adapter (recordNotPayingObservation, clearNotPayingObservation), event-routing (jobNameForEventType), db (getClient — per-client advisory lock), BullMQ (re-queue), resend (digest)
+ * @writes member_access, config_alert_log, clients (last_sync_at), reconciliation_run, reconciliation_proposal,
+ *         member_access_sources (Phase 3c door repair / removal, through plan-door-sync)
+ * @calls hardware-adapter (getLocks, getManagedRoleAssignments, listAllUsers, findElevatedAssignmentsForUser), plan-door-sync (grantMappingGroup, revokeMappingSource), wix-plans-api (listOrdersClassified, listConfirmedBookings, listActiveOrders), plan-mapping-resolver (resolve), revoke-policy (evaluateRemovals, normalizeMode), standard-adapter (recordNotPayingObservation, clearNotPayingObservation), event-routing (jobNameForEventType), db (getClient — per-client advisory lock), BullMQ (re-queue), resend (digest)
  * @exports instance (NightlyReconciliation) — exposes runNightlySweep, _syncClient, reconcileMember
  * @dr DR-003, DR-008, DR-018, DR-020, DR-023, DR-034, DR-037
  *
@@ -36,10 +37,12 @@ const { sendOperatorEmail } = require('./operator-mailer');
 const { renderNightlyDigest } = require('./operator-email-templates');
 const {
   REVOKE_SOURCE, DATA_SOURCE, REVOKE_MODE, REVOKE_HOLD_REASON, ANOMALY_HOLD_REASONS,
-  DEFAULT_STRIKE_POLICY, REMOVABLE_CLASSIFICATIONS, normalizeMode, evaluateRemovals,
+  DEFAULT_STRIKE_POLICY, REMOVABLE_CLASSIFICATIONS, MASS_REVOKE_MIN_POPULATION, normalizeMode, evaluateRemovals,
+  massRevokeThreshold,
 } = require('./revoke-policy');
 const { ORDER_CLASS } = require('./wix-order-classification');
 const { jobNameForEventType } = require('./event-routing');
+const { OTHER_PLAN_KEEPS_DOOR_SQL, grantMappingGroup, revokeMappingSource, resolveDoorAlerts } = require('./plan-door-sync');
 
 // ── Phase 1 ("stop the bleeding", 2026-09-10): the sweep is OBSERVATION-ONLY ──
 // Every removal path in _syncClient records what it would do and holds it.
@@ -72,6 +75,50 @@ function holderLapseRemovalArmed() {
   return process.env.RECONCILE_HOLDER_LAPSE_REMOVAL !== 'off';
 }
 
+// ── Phase 3c (2026-11-05): the sweep finishes what a save or a removal left half-done ──────
+// Daxx, 2026-11-05: members stay in sync with their plan mappings — a door added to a plan
+// reaches everyone on it, a door taken off (or the plan switched off) leaves everyone on it —
+// and "if for some reason the delete fails, the sweep catches that that person should have been
+// deleted". The Plan Mapping save and the Wix webhook do the work in real time; this is the
+// backstop for whoever they missed. Four narrow armings, each with its own kill switch (read per
+// sweep), the same Manual Sync / 6-hour sweep for all of them:
+//   · door repair    — a member on a live plan, PAYING for it, is missing one of its doors in
+//                      Kisi → given that door (plan-door-sync grantMappingGroup: the Plan Mapping
+//                      path). Grants are not removals: auto_revoke_mode does not gate it.
+//   · door removal   — a door AccessSync gave for a plan that no longer includes it (taken off
+//                      the plan, the plan switched off) is still on in Kisi → that door comes off
+//                      (revokeMappingSource: Kisi first, C-4). The account and every other door
+//                      stay. auto_revoke_mode 'on' only; more than half the members at once holds
+//                      them all (sweep_door_removal_held).
+//   · ended plan     — a 3B WIX_ABSENCE proposal whose Wix order ENDED — never ABSENT, never a
+//                      declined or pending payment — passes the same armed policy as the holder
+//                      lapse: both reads, no anomaly, mode 'on', the strike clock (3 sweeps over
+//                      48 h). processRevoke then removes that plan's doors; the Kisi account goes
+//                      only when no plan is left (finalizeRevoke, the DR-045 guard).
+//   · finish removal — a member parked 'removing' with no door left (the Kisi account delete
+//                      failed — DR-044 — and its retries ran out) gets the revoke the retry
+//                      design re-runs, which finalizes again. auto_revoke_mode 'on' only.
+// Never: a user deleted for a door change; an owner / administrator given a group role; a door
+// staff gave by hand in Kisi (no AccessSync source row) touched.
+const WIX_NOT_PAYING_SYNTHETIC_SOURCE = 'reconciliation.wix_not_paying';
+const FINISH_REMOVAL_SYNTHETIC_SOURCE = 'reconciliation.finish_removal';
+// A 'removing' row this old is no retry in flight (BullMQ's 3 attempts back off over seconds).
+const FINISH_REMOVAL_AFTER_MINUTES = 60;
+// Restarts per parked member before it is left to a person (the Errors page already shows it).
+const FINISH_REMOVAL_MAX_RESTARTS = 3;
+function doorRepairArmed()        { return process.env.RECONCILE_DOOR_REPAIR !== 'off'; }
+function doorRemovalArmed()       { return process.env.RECONCILE_DOOR_REMOVAL !== 'off'; }
+function wixAbsenceRemovalArmed() { return process.env.RECONCILE_WIX_ABSENCE_REMOVAL !== 'off'; }
+function finishRemovalArmed()     { return process.env.RECONCILE_FINISH_REMOVAL !== 'off'; }
+
+// The removals Phase 3b/3c arms out of the batch — judged a second time with observationOnly false.
+function isArmedRemoval(p) {
+  if (!p || p.classification !== ORDER_CLASS.ENDED) return false;
+  if (p.source === REVOKE_SOURCE.HOLDER_LAPSE) return holderLapseRemovalArmed();
+  if (p.source === REVOKE_SOURCE.WIX_ABSENCE) return wixAbsenceRemovalArmed();
+  return false;
+}
+
 // config_alert_log.alert_type raised when the removal policy holds a batch
 // because the data looks wrong (as opposed to an operator mode or Phase 1's
 // observation-only hold). Anything unmapped falls back to `revoke_<reason>`.
@@ -87,6 +134,7 @@ const SWEEP_ALERT = Object.freeze({
   REMOVAL_PENDING:      'sweep_removal_pending',       // 3B — no longer paying in Wix
   HOLDER_LAPSE_PENDING: 'revoke_holder_lapse_pending', // Pass 1.5 — holder no longer paying for the sub's plan
   HELD_PAYMENT_STATE:   'revoke_held_payment_state',   // 3B / Pass 1.5 — payment declined, pending or unrecognised: left alone
+  DOOR_REMOVAL_HELD:    'sweep_door_removal_held',     // 3c — leftover doors on more than half the members: none removed
 });
 
 // Held-removal alerts the GYM decides on (remove the member in Kisi, or leave them in). A dismissal of one of these
@@ -107,6 +155,8 @@ const PROPOSAL_KIND = Object.freeze({
 // reconciliation_proposal.hold_reason for held_payment_state rows. Not a
 // removal-policy reason: these (member, plan) pairs never reach the policy.
 const HELD_PAYMENT_STATE_REASON = 'payment_state_not_removable';
+// ...and for a repair_pending row whose door the sweep tried to give back and Kisi refused (Phase 3c).
+const REPAIR_FAILED_REASON = 'repair_failed';
 
 // Per-member removal alerts (sweep_removal_pending, revoke_holder_lapse_pending,
 // revoke_held_payment_state) are suppressed only when the batch is held because
@@ -202,9 +252,14 @@ function alertRef(value) {
 // to judge strictly — never through Date.parse, which reads '12' or '1/1' as a
 // date decades ago and would launder it into a valid-looking, long-ripe clock.
 // (pg returns timestamptz as a Date, so a string here is already unusual; a
-// malformed one holds the batch as invalid_strike_since.)
+// malformed one holds the batch as invalid_strike_since.) A Date made in another
+// realm (a worker thread, a vm context) fails instanceof but is still a Date — read
+// it the way revoke-policy's _sinceMs does, or its clock reads as never started.
 function toIsoOrNull(v) {
-  if (v instanceof Date) return Number.isFinite(v.getTime()) ? v.toISOString() : null;
+  if (v instanceof Date || Object.prototype.toString.call(v) === '[object Date]') {
+    const t = Date.prototype.getTime.call(v);
+    return Number.isFinite(t) ? new Date(t).toISOString() : null;
+  }
   if (typeof v === 'string' && v !== '') return v;
   return null;
 }
@@ -469,6 +524,8 @@ class NightlyReconciliation {
       sanityGateTriggered: false, sanityGateResolved: null,
       heldRevokes: 0, holdReason: null,
       observationOnly: SWEEP_OBSERVATION_ONLY, proposalsRecorded: 0,
+      // Phase 3c: doors given / taken off in Kisi this sync, and whether the removals were held.
+      doorsAdded: 0, doorsRemoved: 0, doorRemovalsHeld: false,
       ...fields,
     };
   }
@@ -484,6 +541,22 @@ class NightlyReconciliation {
    *
    * @returns {Promise<boolean>} true when a row was written
    */
+  /**
+   * Marks a sweep alert resolved because the sweep itself has answered it (a door given back, a
+   * removal queued) — the same rule core/location-lapse.js uses for its alerts. Never throws.
+   */
+  async _resolveAlerts(clientId, alertTypes, hardwareRef) {
+    try {
+      await db.query(
+        `UPDATE config_alert_log SET resolved_at = NOW()
+          WHERE client_id = $1 AND alert_type = ANY($2::varchar[]) AND hardware_ref = $3 AND resolved_at IS NULL`,
+        [clientId, alertTypes, alertRef(hardwareRef)]
+      );
+    } catch (err) {
+      log.warn('reconciliation.alert_resolve_failed', { clientId, alertTypes }, err);
+    }
+  }
+
   async _insertAlertOnce(clientId, alertType, hardwareRef) {
     const type = alertType || 'revoke_unknown';
     const _actor = getActor() || {};
@@ -1007,6 +1080,17 @@ class NightlyReconciliation {
       return this._syncResult({ runId, aborted: true, reason: 'hardware_api_unavailable' });
     }
     const kisiUserIds = [...new Set(kisiAssignments.map(a => a.userId).filter(Boolean))];
+    // (user, door) pairs Kisi holds right now. Pass 3's role-drift check and the Phase 3c door
+    // check read this same set, so neither asks Kisi again.
+    const kisiAssignmentPairs = new Set(
+      kisiAssignments
+        .filter(a => a.userId && a.groupId)
+        .map(a => `${a.userId}:${a.groupId}`)
+    );
+    // Owners / administrators open every door through an org-wide role, which the pair set above
+    // cannot see. Asked only for a user whose group role looks missing, once per sweep (see
+    // _elevatedRoleCoverage) — shared by Pass 3 and the door check.
+    const elevatedRolesFor = this._elevatedRoleCoverage(hardwarePlatform, hardwareApiKey, client.id);
 
     // Map: platform_member_id (Wix member ID) → { isSubMember }
     // Only includes users AccessSync created (source_tag = 'accesssync').
@@ -1155,19 +1239,8 @@ class NightlyReconciliation {
 
     if (!pass3OutageObserved && pass3KisiUsers !== null) {
       const kisiUserIdSet = new Set(pass3KisiUsers.map(u => String(u.id)));
-
-      // Build a set of (userId, groupId) pairs from Pass 2's already-fetched
-      // assignments so per-source role drift detection is free of new HTTP calls.
-      const kisiAssignmentPairs = new Set(
-        kisiAssignments
-          .filter(a => a.userId && a.groupId)
-          .map(a => `${a.userId}:${a.groupId}`)
-      );
-
-      // Owners / administrators open every door through an org-wide role, which the
-      // group-pair set above cannot see. Asked only for a user whose group role looks
-      // missing, once per sweep (see _elevatedRoleCoverage).
-      const elevatedRolesFor = this._elevatedRoleCoverage(hardwarePlatform, hardwareApiKey, client.id);
+      // Per-source role drift reads kisiAssignmentPairs and elevatedRolesFor (built with the
+      // Kisi read above) — no new HTTP calls.
       const coveredLogged = new Set();
 
       // holder_platform_member_id: a sub-member's holder (member_master via
@@ -1949,7 +2022,8 @@ class NightlyReconciliation {
       }
     }
 
-    // 3B. Provisioned PRIMARY members PAYING in NEITHER Wix read → one removal
+    // 3B. Provisioned PRIMARY members PAYING in NEITHER Wix read — and, since Phase 3c, a
+    //     paying member's plan whose Wix order ENDED — → one removal
     //     proposal per active source plan (OB-150: each carries planId), with
     //     dataSource from the source's source_type (plan → wix_orders,
     //     booking → wix_bookings). Phase 1: recorded and held — nothing is
@@ -1969,11 +2043,25 @@ class NightlyReconciliation {
     //       · A primary member is its own unit (P-1): unitKey = memberKey.
     const now = Date.now();
     let sourcesSkippedNonWix = 0;
+    const payingMemberOtherPlans = []; // { accessId, planId } — Phase 3c, cleared in CLEAR (c)
     if (census) {
       for (const [memberKey, entry] of census) {
         if (entry.isSub) continue;
-        if (payingPlansByMember.has(memberKey)) continue; // PAYING in either read → never a candidate
+        // PAYING for some plan in either read: only a plan of theirs whose Wix order ENDED is a
+        // candidate (Phase 3c — one plan cancelled while another still pays, and its removal
+        // never finished). Its doors go and the account stays: processRevoke keeps a door
+        // another source still grants, and finalizeRevoke runs only when nothing is left. Any
+        // other plan of a paying member is left exactly as before — no proposal, no clock.
+        const payingPlans = payingPlansByMember.get(memberKey) || null;
         for (const [planId, sourceType] of entry.sources) {
+          if (payingPlans && !payingPlans.has(planId) && classOf(memberKey, planId) !== ORDER_CLASS.ENDED) {
+            // Declined / pending / no order, on a member who pays for something else: never a
+            // removal, and its clock is cleared (CLEAR (c)) — a clock that kept running while they
+            // paid would otherwise fire the moment that plan reads ENDED.
+            payingMemberOtherPlans.push({ accessId: entry.accessId, planId });
+            continue;
+          }
+          if (payingPlans && payingPlans.has(planId)) continue;
           const dataSource = SOURCE_TYPE_DATA_SOURCE[sourceType];
           if (!dataSource) { sourcesSkippedNonWix++; continue; }
 
@@ -2007,8 +2095,9 @@ class NightlyReconciliation {
             planId,
             wixSiteId:        siteId,
             synthetic:        true,
-            // 3b: a DR-050 allow-listed source (reconciliation.wix_not_paying) when armed.
-            syntheticSource:  'reconciliation.true_source_sync',
+            // Phase 3c arms ENDED: a DR-050 allow-listed source (billing marked cancelled, as the
+            // webhook would have) and on the member-email allow-list (their access really ended).
+            syntheticSource:  WIX_NOT_PAYING_SYNTHETIC_SOURCE,
             traceId:          this._sweepTraceId || crypto.randomUUID(),
             eventId:          recoEventId,
           };
@@ -2128,14 +2217,14 @@ class NightlyReconciliation {
       : (decision.action === 'hold' ? (decision.reason || REVOKE_HOLD_REASON.INVALID_PROPOSAL) : null);
     const anomalyHold = holdReason !== null && ANOMALY_HOLD_REASONS.includes(holdReason);
 
-    // ── Phase 3b (first arming): holder-lapse removals — see the note by
-    // SWEEP_OBSERVATION_ONLY. The whole-batch decision above stays as it is; only
-    // the HOLDER_LAPSE + ENDED proposals are judged again with removal armed, and
-    // never in a sweep the whole batch held as an anomaly (the reads are suspect).
+    // ── Phase 3b / 3c armed removals — see the notes by SWEEP_OBSERVATION_ONLY and
+    // doorRepairArmed. The whole-batch decision above stays as it is; only the ENDED proposals
+    // of the armed sources (a seat whose holder's order ended — Phase 3b; a member's own order
+    // ended — Phase 3c) are judged again with removal armed, in ONE batch so the mass cap sees
+    // them together, and never in a sweep the whole batch held as an anomaly (the reads are
+    // suspect).
     const flushedProposals = new Set();
-    const armedProposals = (!anomalyHold && holderLapseRemovalArmed())
-      ? revokeProposals.filter(p => p.source === REVOKE_SOURCE.HOLDER_LAPSE && p.classification === 'ENDED')
-      : [];
+    const armedProposals = !anomalyHold ? revokeProposals.filter(isArmedRemoval) : [];
     if (armedProposals.length > 0) {
       const armedDecision = evaluateRemovals({
         proposals:       armedProposals,
@@ -2148,32 +2237,240 @@ class NightlyReconciliation {
         strikePolicy:    DEFAULT_STRIKE_POLICY,
       });
       for (const p of armedDecision.flush) {
+        const isSeat = p.source === REVOKE_SOURCE.HOLDER_LAPSE;
         try {
-          // DR-044 entry state, exactly as the Member Hub and the webhook cascade do.
-          await standardAdapter.markSubMemberRemoving(p.accessId);
+          // A seat: the DR-044 entry state, exactly as the Member Hub and the webhook cascade do.
+          if (isSeat) await standardAdapter.markSubMemberRemoving(p.accessId);
           if (await this._enqueueApprovedRevoke(client.id, p, { armed: true })) {
             revoked++;
             flushedProposals.add(p);
           }
         } catch (err) {
-          log.error('reconciliation.holder_lapse_removal_failed', {
-            clientId: client.id, subAccessId: p.accessId, platformMemberId: p.memberKey,
-            sourcePlanId: p.planId, traceId: this._sweepTraceId,
+          log.error(isSeat ? 'reconciliation.holder_lapse_removal_failed' : 'reconciliation.ended_plan_removal_failed', {
+            clientId: client.id, ...(isSeat ? { subAccessId: p.accessId } : { accessId: p.accessId }),
+            platformMemberId: p.memberKey, sourcePlanId: p.planId, traceId: this._sweepTraceId,
           }, err);
         }
       }
-      log.info('reconciliation.holder_lapse_armed', {
-        clientId:      client.id,
-        armed:         armedProposals.length,
-        queued:        flushedProposals.size,
-        action:        armedDecision.action,
-        reason:        armedDecision.reason || null,
-        detail:        armedDecision.detail || null,
-        strikePending: Array.isArray(armedDecision.strikePending) ? armedDecision.strikePending.length : 0,
+      const strikePending = new Set(Array.isArray(armedDecision.strikePending) ? armedDecision.strikePending : []);
+      for (const [source, event] of [
+        [REVOKE_SOURCE.HOLDER_LAPSE, 'reconciliation.holder_lapse_armed'],
+        [REVOKE_SOURCE.WIX_ABSENCE,  'reconciliation.ended_plan_armed'],
+      ]) {
+        const mine = armedProposals.filter(p => p.source === source);
+        if (mine.length === 0) continue;
+        log.info(event, {
+          clientId:      client.id,
+          armed:         mine.length,
+          queued:        mine.filter(p => flushedProposals.has(p)).length,
+          action:        armedDecision.action,
+          reason:        armedDecision.reason || null,
+          detail:        armedDecision.detail || null,
+          strikePending: mine.filter(p => strikePending.has(p)).length,
+          mode,
+          traceId:       this._sweepTraceId,
+        });
+      }
+    }
+
+    // ── Phase 3c: plan doors — see the note by doorRepairArmed ────────────────────────────────
+    // The Plan Mapping save gives and takes doors in real time; this finds whoever it missed (a
+    // Kisi error, a row Pass 1 just added, a swap the save held back) and finishes the job with the
+    // save's own functions. Needs Kisi's user list (Pass 3): a user Kisi no longer has cannot be
+    // given a door, and that case is Pass 3's to report. Every door is re-read just before it is
+    // given or taken (_doorStateNow): a save or a cancellation may have landed since the check.
+    let doorsAdded = 0;
+    let doorsRemoved = 0;
+    let doorRemovalsHeld = false;
+    let doorRemovalHoldReason = null;
+    let doorChangesSkippedStale = 0;
+    const doorRepaired     = new Set(); // `${accessId}|${groupId}`
+    const doorRepairFailed = new Set();
+    let doorCheck = null;
+    if (pass3OutageObserved || pass3KisiUsers === null) {
+      log.info('reconciliation.door_check_skipped', {
+        clientId: client.id, reason: 'kisi_users_unavailable', traceId: this._sweepTraceId,
+      });
+    } else {
+      try {
+        doorCheck = await this._planDoorCheck(client.id, {
+          kisiAssignmentPairs,
+          kisiUserIdSet: new Set(pass3KisiUsers.map(u => String(u.id))),
+          isPayingPlan,
+          elevatedRolesFor,
+          seatState: (memberKey, planId) => {
+            const plan = ((wixMembers.get(memberKey) || {}).plans || []).find(x => x.planId === planId);
+            return this._holderSeatState(client.id, memberKey, planId, plan ? plan.orderIds : []);
+          },
+        });
+      } catch (err) {
+        log.warn('reconciliation.door_check_failed', { clientId: client.id, traceId: this._sweepTraceId }, err);
+      }
+    }
+    if (doorCheck) {
+      const doorCtx = (d) => ({
+        clientId: client.id, mappingId: d.mappingId, sourcePlanId: d.sourcePlanId, hardwarePlatform, apiKey: hardwareApiKey,
+      });
+      // What Kisi opens now: the sweep's read, plus every door given below.
+      const heldNow = new Set(kisiAssignmentPairs);
+      if (doorRepairArmed()) {
+        for (const d of doorCheck.missing) {
+          const now = await this._doorStateNow(client.id, d.mappingId, d.memberId);
+          if (!now.live || !now.doors.includes(d.groupId) || !now.accessActive || !now.onPlan) {
+            doorChangesSkippedStale++;
+            continue;
+          }
+          const given = await grantMappingGroup(
+            doorCtx(d), { member_id: d.memberId, hardware_user_id: d.hardwareUserId }, d.groupId, 'sweep_door_repair'
+          );
+          (given ? doorRepaired : doorRepairFailed).add(`${d.memberId}|${d.groupId}`);
+          if (given) {
+            doorsAdded++;
+            heldNow.add(`${d.hardwareUserId}:${d.groupId}`);
+            // The save's "couldn't add this door" alert is answered now.
+            await resolveDoorAlerts(client.id, ['door_grant_failed', 'door_swap_held'], d.memberId, d.groupId);
+          }
+        }
+      }
+      if (doorCheck.leftover.length > 0) {
+        if (anomalyHold)                  doorRemovalHoldReason = 'anomaly_hold';
+        else if (mode !== REVOKE_MODE.ON) doorRemovalHoldReason = holdReasonForMode(mode);
+        else if (!doorRemovalArmed())     doorRemovalHoldReason = 'kill_switch_off';
+        else if (doorCheck.massHold)      doorRemovalHoldReason = REVOKE_HOLD_REASON.MASS_REVOKE;
+        if (doorRemovalHoldReason === REVOKE_HOLD_REASON.MASS_REVOKE) {
+          doorRemovalsHeld = true;
+          await this._insertAlertOnce(client.id, SWEEP_ALERT.DOOR_REMOVAL_HELD, 'door_removal:mass');
+        } else if (!doorRemovalHoldReason) {
+          const lostPairs = new Map(); // `${accessId}|${groupId}` → { rows, removed } for doors Kisi loses
+          for (const d of doorCheck.leftover) {
+            // Taken off a plan that is still live: only once they hold one of its current doors.
+            if (d.planDoors && !d.planDoors.some(g => heldNow.has(`${d.hardwareUserId}:${g}`))) continue;
+            const now = await this._doorStateNow(client.id, d.mappingId, d.memberId);
+            // The plan moved since the check: the door is current again, or the plan is on with no
+            // door rows (a save between its DELETE and INSERT) — leave it to the next sweep.
+            if (!now.exists || (now.status === 'active' && (now.doors.length === 0 || now.doors.includes(d.groupId)))) {
+              doorChangesSkippedStale++;
+              continue;
+            }
+            const k = `${d.memberId}|${d.groupId}`;
+            if (d.lost && !lostPairs.has(k)) lostPairs.set(k, { rows: 0, removed: 0 });
+            if (d.lost) lostPairs.get(k).rows++;
+            const removed = await revokeMappingSource(doorCtx(d), {
+              source_id: d.sourceId, member_id: d.memberId,
+              hardware_group_id: d.groupId, role_assignment_id: d.roleAssignmentId,
+            }, 'sweep_leftover_door');
+            if (removed && d.lost) lostPairs.get(k).removed++;
+            if (removed) await resolveDoorAlerts(client.id, ['door_removal_failed'], d.memberId, d.groupId);
+          }
+          for (const p of lostPairs.values()) if (p.rows > 0 && p.removed === p.rows) doorsRemoved++;
+        }
+      }
+
+      // Pass 3's role-drift repairs, reconciled with what the door check knows: a door the check
+      // saw taken off its plan is not a missing door (the row is leftover bookkeeping), and a door given
+      // just now is repaired. Missing doors Pass 3 cannot see — a door outside its universe, a
+      // row Pass 1 has just added — are recorded the same way.
+      for (let i = repairProposals.length - 1; i >= 0; i--) {
+        const p = repairProposals[i];
+        if (p.source !== REVOKE_SOURCE.ROLE_DRIFT) continue;
+        const k = `${p.accessId}|${p.hardwareGroupId}`;
+        if (doorCheck.offPlanKeys.has(k)) { repairProposals.splice(i, 1); continue; }
+        if (doorRepaired.has(k)) p.repaired = true;
+        else if (doorRepairFailed.has(k)) p.repairFailed = true;
+      }
+      const recorded = new Set(repairProposals
+        .filter(p => p.source === REVOKE_SOURCE.ROLE_DRIFT).map(p => `${p.accessId}|${p.hardwareGroupId}`));
+      for (const d of doorCheck.missing) {
+        const k = `${d.memberId}|${d.groupId}`;
+        if (recorded.has(k)) continue;
+        recorded.add(k);
+        repairProposals.push({
+          source: REVOKE_SOURCE.ROLE_DRIFT, dataSource: DATA_SOURCE.KISI,
+          memberKey: d.memberKey, unitKey: unitKeyOf(d.memberKey, d.holderKey), holderKey: d.holderKey,
+          planId: d.sourcePlanId, accessId: d.memberId, hardwareUserId: d.hardwareUserId, hardwareGroupId: d.groupId,
+          classification: ORDER_CLASS.PAYING,
+          repaired: doorRepaired.has(k), repairFailed: doorRepairFailed.has(k),
+        });
+      }
+
+      log.info('reconciliation.door_check_complete', {
+        clientId:          client.id,
+        population:        doorCheck.population,
+        missing:           doorCheck.missing.length,
+        doorsAdded,
+        repairFailed:      doorRepairFailed.size,
+        repairArmed:       doorRepairArmed(),
+        leftover:          doorCheck.leftover.length,
+        leftoverMembers:   doorCheck.leftoverMembers,
+        doorsRemoved,
+        removalHoldReason: doorRemovalHoldReason,
+        skippedStale:      doorChangesSkippedStale,
+        plansWithoutDoors: doorCheck.plansWithoutDoors,
         mode,
-        traceId:       this._sweepTraceId,
+        traceId:           this._sweepTraceId,
       });
     }
+
+    // ── Phase 3c: finish removals the Kisi account delete never completed ─────────────────────
+    // A member parked 'removing' with no source row left: every door is already off, only
+    // finalizeRevoke (delete the Kisi account behind the DR-045 guard, clear their details)
+    // failed and its retries ran out. The revoke the retry design re-runs — it finds the parked
+    // member, has nothing left to remove, and finalizes again. A guard refusal leaves the member
+    // 'inactive', never 'removing', so a deliberate "keep this account" is never retried. At most
+    // FINISH_REMOVAL_MAX_RESTARTS restarts per member (counted from the persisted
+    // reconciliation.removal_restarted rows): one that keeps failing stays on the Errors page for a
+    // person, instead of failing again every 6 hours.
+    let removalsRestarted = 0;
+    if (!anomalyHold && mode === REVOKE_MODE.ON && finishRemovalArmed()) {
+      try {
+        const parked = await db.query(
+          `SELECT ma.id AS access_id, mm.platform_member_id, mm.source_platform
+             FROM member_access ma
+             JOIN member_master mm ON mm.id = ma.member_master_id
+            WHERE ma.client_id = $1
+              AND ma.status = 'removing'
+              AND ma.hardware_user_id IS NOT NULL
+              AND mm.source_tag = 'accesssync'
+              AND ma.updated_at < NOW() - make_interval(mins => $2::int)
+              AND NOT EXISTS (SELECT 1 FROM member_access_sources s WHERE s.access_id = ma.id)
+              AND (SELECT COUNT(*) FROM diagnostic_log d
+                    WHERE d.client_id = ma.client_id
+                      AND d.message = 'reconciliation.removal_restarted'
+                      AND d.context->>'accessId' = ma.id::text) < $3`,
+          [client.id, FINISH_REMOVAL_AFTER_MINUTES, FINISH_REMOVAL_MAX_RESTARTS]
+        );
+        for (const r of parked.rows) {
+          const stamp = Date.now();
+          const standardEvent = {
+            eventType:        'plan.cancelled',
+            sourcePlatform:   r.source_platform || 'wix',
+            platformMemberId: r.platform_member_id,
+            planId:           null,
+            synthetic:        true,
+            syntheticSource:  FINISH_REMOVAL_SYNTHETIC_SOURCE,
+            traceId:          this._sweepTraceId || crypto.randomUUID(),
+            eventId:          `recon-finish-${client.id}-${r.access_id}-${stamp}`,
+          };
+          try {
+            await eventQueue.add('revoke', { tenantId: client.id, standardEvent },
+              { jobId: `revoke-finish-${client.id}-${r.access_id}-${stamp}` });
+            removalsRestarted++;
+            revoked++;
+            log.info('reconciliation.removal_restarted', {
+              clientId: client.id, accessId: r.access_id, platformMemberId: r.platform_member_id,
+              traceId: this._sweepTraceId,
+            });
+          } catch (err) {
+            log.error('reconciliation.removal_restart_failed', {
+              clientId: client.id, accessId: r.access_id, traceId: this._sweepTraceId,
+            }, err);
+          }
+        }
+      } catch (err) {
+        log.warn('reconciliation.parked_removals_read_failed', { clientId: client.id, traceId: this._sweepTraceId }, err);
+      }
+    }
+
     const heldRevokeCount = revokeProposals.length - flushedProposals.size;
 
     // ── When strike clocks may move (fix round 3 — Phase 3b depends on this) ──
@@ -2279,6 +2576,22 @@ class NightlyReconciliation {
       }
     }
 
+    // CLEAR (c) — Phase 3c, always: a paying member's plan that is declined, pending or has no
+    // order (not proposed — only ENDED is) never keeps a removal clock running.
+    for (const o of payingMemberOtherPlans) {
+      if (strikeColumnsMissing) break;
+      if (!strikeReadFailed && !strikeClocks.has(memberPlanKey(o.accessId, o.planId))) continue;
+      try {
+        const res = await standardAdapter.clearNotPayingObservation(o.accessId, o.planId);
+        if (res && res.cleared && res.rowCount > 0) strikesCleared++;
+        else if (res && res.reason === 'columns_missing') strikeColumnsMissing = true;
+      } catch (err) {
+        log.warn('reconciliation.strike_clear_failed', {
+          clientId: client.id, accessId: o.accessId, sourcePlanId: o.planId,
+        }, err);
+      }
+    }
+
     if (revokeProposals.length > 0) {
       const heldKeys = [...new Set(revokeProposals.filter(p => !flushedProposals.has(p)).map(p => p.memberKey))];
       log.warn('reconciliation.revokes_held', {
@@ -2345,8 +2658,22 @@ class NightlyReconciliation {
       );
     }
     // Paying members whose door is missing in Kisi — one alert per member.
-    for (const memberKey of new Set(repairProposals.map(p => p.memberKey))) {
+    // Not for a door the sweep has just given back (Phase 3c) — only one still missing. A member
+    // whose every missing door was given back this sweep has their open alert answered.
+    const stillMissing = new Set(repairProposals.filter(p => !p.repaired).map(p => p.memberKey));
+    for (const memberKey of stillMissing) {
       await this._insertAlertOnce(client.id, SWEEP_ALERT.REPAIR_PENDING, `member:${memberKey}`);
+    }
+    for (const memberKey of new Set(repairProposals.filter(p => p.repaired).map(p => p.memberKey))) {
+      if (!stillMissing.has(memberKey)) await this._resolveAlerts(client.id, [SWEEP_ALERT.REPAIR_PENDING], `member:${memberKey}`);
+    }
+    // A removal this sweep queued answers that member's "still has access" alert — unless another
+    // of their removals is still held.
+    const stillHeld = new Set(revokeProposals.filter(p => !flushedProposals.has(p)).map(p => p.memberKey));
+    for (const p of flushedProposals) {
+      if (stillHeld.has(p.memberKey)) continue;
+      await this._resolveAlerts(client.id,
+        [SWEEP_ALERT.REMOVAL_PENDING, SWEEP_ALERT.HOLDER_LAPSE_PENDING], `member:${p.memberKey}`);
     }
     // Per-member alerts (fix round F9). Kept when the batch is held for
     // MASS_REVOKE — that hold is about volume; each member's evidence still
@@ -2362,7 +2689,7 @@ class NightlyReconciliation {
         await this._insertAlertOnce(client.id, SWEEP_ALERT.HOLDER_LAPSE_PENDING, `member:${memberKey}`);
       }
       const notPayingKeys = new Set(revokeProposals
-        .filter(p => p.source === REVOKE_SOURCE.WIX_ABSENCE).map(p => p.memberKey));
+        .filter(p => p.source === REVOKE_SOURCE.WIX_ABSENCE && !flushedProposals.has(p)).map(p => p.memberKey));
       for (const memberKey of notPayingKeys) {
         await this._insertAlertOnce(client.id, SWEEP_ALERT.REMOVAL_PENDING, `member:${memberKey}`);
       }
@@ -2380,7 +2707,11 @@ class NightlyReconciliation {
         mode, decision, payingInRead, strikeAdvanced: strikeAdvanced.has(p), queued: flushedProposals.has(p),
       })),
       // Repairs are not armed in Phase 1 either (3a) — held, observation only.
-      ...repairProposals.map(p => this._proposalRecord(p, PROPOSAL_KIND.REPAIR_PENDING, REVOKE_HOLD_REASON.OBSERVATION_ONLY, { mode, decision: null, payingInRead })),
+      // Phase 3c: a door the sweep gave back is 'repaired'; one it tried and could not give is
+      // held as repair_failed; anything else (a vanished Kisi user, repair switched off) is held.
+      ...repairProposals.map(p => this._proposalRecord(p, PROPOSAL_KIND.REPAIR_PENDING,
+        p.repaired ? null : (p.repairFailed ? REPAIR_FAILED_REASON : REVOKE_HOLD_REASON.OBSERVATION_ONLY),
+        { mode, decision: null, payingInRead, outcome: p.repaired ? 'repaired' : null })),
       // Declined / pending / unrecognised payments — recorded, never proposed:
       // no strike, and no policy decision (they never reach the policy).
       ...heldPaymentState.map(h => this._proposalRecord(h, PROPOSAL_KIND.HELD_PAYMENT_STATE, HELD_PAYMENT_STATE_REASON, { mode, decision: null, payingInRead })),
@@ -2503,7 +2834,8 @@ class NightlyReconciliation {
       granted, revoked, skippedHolderOptin,
       sanityGateTriggered, sanityGateResolved,
       heldRevokes: heldRevokeCount, holdReason,
-      repairsPending: repairProposals.length,
+      repairsPending: repairProposals.filter(p => !p.repaired).length,
+      doorsAdded, doorsRemoved, doorRemovalHoldReason, removalsRestarted,
       heldPaymentState: heldPaymentState.length,
       observationOnly: SWEEP_OBSERVATION_ONLY, proposalsRecorded, mode,
       readDisagreement, notPayingObserved, strikesCleared, heldClocksCleared,
@@ -2513,7 +2845,201 @@ class NightlyReconciliation {
     return this._syncResult({
       granted, revoked, skippedHolderOptin, runId, sanityGateTriggered, sanityGateResolved,
       heldRevokes: heldRevokeCount, holdReason, proposalsRecorded,
+      doorsAdded, doorsRemoved, doorRemovalsHeld,
     });
+  }
+
+  /**
+   * Phase 3c door check — see the note by doorRepairArmed. Reads every plan's doors as Plan
+   * Mapping holds them now (plan_mapping_groups) and every AccessSync row, and compares them with
+   * the (user, door) pairs Kisi holds. Changes nothing.
+   *
+   * A plan is live when it is on and has at least one door (admin/routes/operator.js planIsLive);
+   * off when switched off. A plan that is ON with NO door rows is left alone entirely: it is a
+   * legacy mapping that still grants plan_mappings.hardware_group_id (core/plan-mapping-resolver.js),
+   * a plan whose last door was just taken off, or a Plan Mapping save caught between deleting and
+   * re-inserting its doors — the sweep cannot tell which, so it neither gives nor takes.
+   *
+   *   missing  — a member on a live plan (an active access row, an active row under the plan on
+   *              any of its doors — the save's membersOnPlan — and a Kisi user Kisi still lists)
+   *              PAYING for it (a seat: its holder) holds no role on one of the doors the grant
+   *              path would give: health 'ok', and the location's AccessSync billing active
+   *              (DR-027). Never an owner / administrator, never a holder who released this seat —
+   *              and when either cannot be read this sweep, no door (fail closed).
+   *   leftover — a plan row with a role on a door its plan no longer has (taken off, or the plan
+   *              switched off) that Kisi still opens. `lost`: no other row of theirs gives that
+   *              door (C-4 — any other row, as revokeMappingSource re-checks), so Kisi loses it.
+   *              `planDoors`: the live plan's current doors — removed only once the member holds
+   *              one of them, so a remap in progress or a held swap never leaves anyone without a
+   *              door (the caller judges that after its repairs).
+   *   population / leftoverMembers — the mass cap, in members: those holding, in Kisi, a door a
+   *              row of theirs gives; and those who would lose a door. More than half holds every
+   *              door removal (the line revoke-policy massRevokeThreshold draws).
+   * Day-pass plans and rows are never looked at (core/day-pass-sweep.js owns them); neither are
+   * members a job is working on ('in_flight', 'removing').
+   *
+   * @returns {Promise<{ missing: Array, leftover: Array, offPlanKeys: Set<string>,
+   *   population: number, leftoverMembers: number, massHold: boolean, plansWithoutDoors: number }>}
+   *   offPlanKeys: `${accessId}|${groupId}` for rows on a door their plan no longer has, unless a
+   *   live plan the member is on still includes that door — what the sweep positively knows is
+   *   not a missing door.
+   */
+  async _planDoorCheck(clientId, { kisiAssignmentPairs, kisiUserIdSet, isPayingPlan, elevatedRolesFor, seatState }) {
+    const planRes = await db.query(
+      `SELECT pm.id AS mapping_id, pm.source_plan_id, pm.status AS mapping_status,
+              COALESCE(pm.access_type, 'group') AS access_type,
+              pmg.hardware_group_id::text AS door_group_id,
+              COALESCE(pmg.health_status, 'ok') AS door_health,
+              (pm.location_id IS NULL OR EXISTS (
+                 SELECT 1 FROM billing_subscriptions bs
+                  WHERE bs.location_id = pm.location_id AND bs.status = 'active')) AS billing_ok
+         FROM plan_mappings pm
+         LEFT JOIN plan_mapping_groups pmg ON pmg.mapping_id = pm.id
+        WHERE pm.client_id = $1`,
+      [clientId]
+    );
+    const plans = new Map(); // mapping id → { sourcePlanId, status, accessType, doors, grantable, billingOk }
+    for (const r of planRes.rows) {
+      let plan = plans.get(r.mapping_id);
+      if (!plan) {
+        plan = {
+          sourcePlanId: r.source_plan_id, status: r.mapping_status, accessType: r.access_type,
+          doors: new Set(), grantable: new Set(), billingOk: r.billing_ok === true,
+        };
+        plans.set(r.mapping_id, plan);
+      }
+      if (r.door_group_id) {
+        plan.doors.add(String(r.door_group_id));
+        if (r.door_health === 'ok') plan.grantable.add(String(r.door_group_id));
+      }
+    }
+    let plansWithoutDoors = 0;
+    for (const plan of plans.values()) {
+      plan.ambiguous = plan.status === 'active' && plan.doors.size === 0;
+      plan.live      = plan.status === 'active' && plan.doors.size > 0;
+      if (plan.ambiguous && plan.accessType !== 'day_pass') plansWithoutDoors++;
+    }
+
+    // Every non-day-pass row of AccessSync's members: plan rows are the candidates; every row
+    // (a booking, a row with no plan) can keep a door open for C-4.
+    const rowRes = await db.query(
+      `SELECT mas.id AS source_id, mas.access_id AS member_id, mas.mapping_id, mas.source_type,
+              mas.hardware_group_id::text AS door_group_id, mas.role_assignment_id,
+              mas.status AS source_status, ma.status AS access_status,
+              ma.hardware_user_id::text AS hardware_user_id,
+              mm.platform_member_id, ma.sub_master_id,
+              holder_mm.platform_member_id AS holder_platform_member_id
+         FROM member_access_sources mas
+         JOIN member_access ma ON ma.id = mas.access_id
+         JOIN member_master mm ON mm.id = ma.member_master_id
+         LEFT JOIN member_master holder_mm
+                ON holder_mm.id        = ma.sub_master_id
+               AND holder_mm.client_id = ma.client_id
+        WHERE mas.client_id = $1
+          AND mas.source_type <> 'day_pass'
+          AND mm.source_tag = 'accesssync'
+          AND ma.hardware_user_id IS NOT NULL
+          AND ma.status NOT IN ('in_flight', 'removing', 'deleted')`,
+      [clientId]
+    );
+
+    const holds = (userId, groupId) => kisiAssignmentPairs.has(`${userId}:${groupId}`);
+    const pairKey = (r) => `${r.member_id}|${r.door_group_id}`;
+    // A plan row on a door its plan no longer has (not a draft, not an ambiguous plan's).
+    const isOffPlanRow = (r, plan) => r.source_type === 'plan' && !!plan && plan.accessType !== 'day_pass'
+      && !plan.ambiguous && r.source_status !== 'draft'
+      && !(plan.live && plan.doors.has(String(r.door_group_id)));
+
+    const population = new Set();
+    const keptPairs  = new Set(); // (member, door) some row that is NOT off-plan still gives
+    const onPlan = new Map();     // `${accessId}|${mappingId}` → a row of theirs (the member, on a live plan)
+    const currentKeys = new Set();
+    const offPlanKeys = new Set();
+    const leftover = [];
+    for (const r of rowRes.rows) {
+      const plan = r.mapping_id ? plans.get(r.mapping_id) : null;
+      if (plan && plan.accessType === 'day_pass') continue;
+      if (r.door_group_id && holds(r.hardware_user_id, r.door_group_id)) population.add(r.member_id);
+      if (!isOffPlanRow(r, plan)) {
+        if (r.door_group_id) keptPairs.add(pairKey(r));
+      } else {
+        offPlanKeys.add(pairKey(r));
+      }
+      if (r.source_type === 'plan' && plan && plan.live && r.source_status === 'active' && r.access_status === 'active') {
+        const k = `${r.member_id}|${r.mapping_id}`;
+        if (!onPlan.has(k)) onPlan.set(k, r);
+      }
+    }
+    for (const r of rowRes.rows) {
+      const plan = r.mapping_id ? plans.get(r.mapping_id) : null;
+      if (!isOffPlanRow(r, plan)) continue;
+      if (!r.role_assignment_id || !holds(r.hardware_user_id, r.door_group_id)) continue;
+      leftover.push({
+        sourceId: r.source_id, memberId: r.member_id, mappingId: r.mapping_id, sourcePlanId: plan.sourcePlanId,
+        groupId: String(r.door_group_id), roleAssignmentId: r.role_assignment_id, hardwareUserId: r.hardware_user_id,
+        memberKey: r.platform_member_id, lost: !keptPairs.has(pairKey(r)),
+        planDoors: plan.live ? [...plan.doors] : null,
+      });
+    }
+
+    const missing = [];
+    for (const r of onPlan.values()) {
+      const mappingId = r.mapping_id;
+      const plan = plans.get(mappingId);
+      for (const d of plan.doors) currentKeys.add(`${r.member_id}|${d}`);
+      if (!plan.billingOk) continue;
+      const absent = [...plan.grantable].filter(d => !holds(r.hardware_user_id, d));
+      if (absent.length === 0 || !kisiUserIdSet.has(String(r.hardware_user_id))) continue;
+      const holderKey = r.sub_master_id ? (r.holder_platform_member_id || null) : null;
+      if (!isPayingPlan(r.platform_member_id, holderKey, plan.sourcePlanId)) continue;
+      if (!r.sub_master_id && (await seatState(r.platform_member_id, plan.sourcePlanId)) !== 'seated_or_unknown') continue;
+      const elevated = await elevatedRolesFor.lookup(r.hardware_user_id);
+      if (elevated.failed || elevated.roles) continue;
+      for (const groupId of absent) {
+        missing.push({
+          memberId: r.member_id, mappingId, sourcePlanId: plan.sourcePlanId, groupId,
+          hardwareUserId: r.hardware_user_id, memberKey: r.platform_member_id, holderKey,
+        });
+      }
+    }
+    for (const k of currentKeys) offPlanKeys.delete(k);
+
+    const leftoverMembers = new Set(leftover.filter(l => l.lost).map(l => l.memberId)).size;
+    const massHold = population.size >= MASS_REVOKE_MIN_POPULATION
+      && leftoverMembers >= massRevokeThreshold(population.size);
+    return {
+      missing, leftover, offPlanKeys, population: population.size, leftoverMembers, massHold, plansWithoutDoors,
+    };
+  }
+
+  /**
+   * Phase 3c, just before the sweep acts on one door: the plan as Plan Mapping holds it NOW, and
+   * the member as the database holds them now. The check above was read earlier in the sweep; a
+   * save (or a cancellation) can land in between. Returns { live, doors, accessActive, onPlan }.
+   */
+  async _doorStateNow(clientId, mappingId, memberId) {
+    const r = await db.query(
+      `SELECT pm.status AS mapping_status,
+              ARRAY(SELECT pmg.hardware_group_id::text FROM plan_mapping_groups pmg WHERE pmg.mapping_id = pm.id) AS doors,
+              (SELECT ma.status FROM member_access ma WHERE ma.id = $3 AND ma.client_id = pm.client_id) AS access_status,
+              EXISTS (SELECT 1 FROM member_access_sources s
+                       WHERE s.access_id = $3 AND s.mapping_id = pm.id
+                         AND s.source_type = 'plan' AND s.status = 'active') AS on_plan
+         FROM plan_mappings pm
+        WHERE pm.id = $2 AND pm.client_id = $1`,
+      [clientId, mappingId, memberId]
+    );
+    const row = r.rows[0];
+    if (!row) return { exists: false, live: false, doors: [], accessActive: false, onPlan: false };
+    const doors = (row.doors || []).map(String);
+    return {
+      exists: true,
+      status: row.mapping_status,
+      doors,
+      live: row.mapping_status === 'active' && doors.length > 0,
+      accessActive: row.access_status === 'active',
+      onPlan: row.on_plan === true,
+    };
   }
 
   /**
@@ -2527,7 +3053,7 @@ class NightlyReconciliation {
    * an observation on it (never during an anomaly hold, nor when the clock
    * read failed).
    */
-  _proposalRecord(p, kind, holdReason, { mode, decision, payingInRead, strikeAdvanced = false, queued = false }) {
+  _proposalRecord(p, kind, holdReason, { mode, decision, payingInRead, strikeAdvanced = false, queued = false, outcome = null }) {
     const judgeKey = p.holderKey || p.memberKey;
     return {
       platformMemberId: p.memberKey,
@@ -2538,8 +3064,8 @@ class NightlyReconciliation {
       dataSource:       p.dataSource,
       classification:   p.classification || null,
       // 'queued' = Phase 3b armed this one and its revoke reached the queue.
-      decision:         queued ? 'queued' : 'held',
-      holdReason:       queued ? null : holdReason,
+      decision:         queued ? 'queued' : (outcome || 'held'),
+      holdReason:       queued || outcome ? null : holdReason,
       evidence: {
         accessId:            p.accessId || null,
         hardwareUserId:      p.hardwareUserId || null,
@@ -2573,10 +3099,10 @@ class NightlyReconciliation {
    * @returns {Promise<boolean>} true when the job reached the queue
    */
   async _enqueueApprovedRevoke(clientId, p, { armed = false } = {}) {
-    // Phase 3b: the one armed source gets through; every other call is still refused
-    // while the sweep is observation-only.
-    const armedHolderLapse = armed && !!p && p.source === REVOKE_SOURCE.HOLDER_LAPSE && holderLapseRemovalArmed();
-    if (SWEEP_OBSERVATION_ONLY && !armedHolderLapse) {
+    // Phase 3b / 3c: the armed ENDED sources get through (isArmedRemoval — its kill switch read
+    // again here); every other call is still refused while the sweep is observation-only.
+    const armedSource = armed && isArmedRemoval(p);
+    if (SWEEP_OBSERVATION_ONLY && !armedSource) {
       log.warn('reconciliation.revoke_enqueue_refused_observation_only', {
         clientId, source: p && p.source, platformMemberId: p && p.memberKey,
         sourcePlanId: p && p.planId, traceId: this._sweepTraceId,
@@ -3503,27 +4029,33 @@ class NightlyReconciliation {
    * per user per sweep, and only for users whose group role looks missing.
    */
   _elevatedRoleCoverage(hardwarePlatform, apiKey, clientId) {
-    const byUser = new Map();
-    return (hardwareUserId) => {
-      if (!hardwareUserId) return Promise.resolve(null);
+    const byUser = new Map(); // user → Promise<{ roles: roles[] | null, failed: boolean }>
+    const lookup = (hardwareUserId) => {
+      if (!hardwareUserId) return Promise.resolve({ roles: null, failed: false });
       const key = String(hardwareUserId);
       if (!byUser.has(key)) {
         // Promise.resolve().then: a lookup that cannot even be called (a platform adapter
         // without it) fails the same safe way as one that errors, instead of the sweep.
         byUser.set(key, Promise.resolve()
           .then(() => hardwareAdapter.findElevatedAssignmentsForUser(hardwarePlatform, apiKey, key))
-          .then(roles => (Array.isArray(roles) && roles.length > 0 ? roles : null))
+          .then(roles => ({ roles: Array.isArray(roles) && roles.length > 0 ? roles : null, failed: false }))
           .catch((err) => {
             log.warn('reconciliation.elevated_role_check_failed', {
               clientId, hardwareUserId: key,
               statusCode: err.statusCode || null, code: err.code || null,
               traceId: this._sweepTraceId,
             }, err);
-            return null;
+            return { roles: null, failed: true };
           }));
       }
       return byUser.get(key);
     };
+    // Pass 3: roles, or null when none OR the lookup failed — a failed lookup keeps the finding.
+    const rolesFor = (hardwareUserId) => lookup(hardwareUserId).then(r => r.roles);
+    // Phase 3c door repair: the same one call per user, with a failure told apart — a grant must
+    // never rest on an answer Kisi could not give (fail closed: no door for that user this sweep).
+    rolesFor.lookup = lookup;
+    return rolesFor;
   }
 
   /** The persisted note for a drift skipped by _elevatedRoleCoverage — once per access row per sweep. */

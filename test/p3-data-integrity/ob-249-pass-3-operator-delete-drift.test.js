@@ -194,14 +194,15 @@ describe('OB-249: Pass 3 operator-deleted-Kisi-user drift detection', () => {
       );
     });
 
-    test('…and it refuses to enqueue anything while the sweep is observation-only (Pass 3 sources are not the one Phase 3b armed on 2026-10-15)', () => {
+    test('…and it refuses to enqueue anything while the sweep is observation-only (Pass 3 sources are not among those Phase 3b / 3c armed)', () => {
       expect(reconcileSrc).toMatch(/const SWEEP_OBSERVATION_ONLY = true;/);
       const fnIdx = reconcileSrc.search(/async _enqueueApprovedRevoke\(clientId, p, \{ armed = false \} = \{\}\) \{/);
       expect(fnIdx).toBeGreaterThan(-1);
       const body = reconcileSrc.slice(fnIdx, fnIdx + 900);
-      // only an explicitly armed HOLDER_LAPSE call gets through; KISI_USER_VANISHED / ROLE_DRIFT never do
-      expect(body).toMatch(/p\.source === REVOKE_SOURCE\.HOLDER_LAPSE && holderLapseRemovalArmed\(\)/);
-      expect(body).toMatch(/if \(SWEEP_OBSERVATION_ONLY && !armedHolderLapse\) \{[\s\S]*return false;/);
+      // only an explicitly armed ENDED HOLDER_LAPSE / WIX_ABSENCE call gets through; KISI_USER_VANISHED / ROLE_DRIFT never do
+      expect(body).toMatch(/const armedSource = armed && isArmedRemoval\(p\);/);
+      expect(body).toMatch(/if \(SWEEP_OBSERVATION_ONLY && !armedSource\) \{[\s\S]*return false;/);
+      expect(reconcileSrc).toMatch(/function isArmedRemoval\(p\) \{\s*if \(!p \|\| p\.classification !== ORDER_CLASS\.ENDED\) return false;\s*if \(p\.source === REVOKE_SOURCE\.HOLDER_LAPSE\) return holderLapseRemovalArmed\(\);\s*if \(p\.source === REVOKE_SOURCE\.WIX_ABSENCE\) return wixAbsenceRemovalArmed\(\);\s*return false;\s*\}/);
     });
 
     const overrides = JSON.parse(fs.readFileSync(

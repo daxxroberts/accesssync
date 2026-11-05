@@ -43,7 +43,13 @@ const { logMemberAccessEvent } = require('./member-access-log');
 // those are seat changes; the plan holder's Wix subscription is still active.
 // 'day-pass-sweep.expired' (OB-98 / OB-251): the pass's valid_until has passed —
 // the single-payment order is genuinely over, so its billing row flips 'cancelled'.
-const BILLING_CANCEL_ALLOWED_SYNTHETIC = new Set(['reconciliation.reconcile_member', 'day-pass-sweep.expired']);
+// 'reconciliation.wix_not_paying' (Phase 3c, 2026-11-05): the sweep finishing a removal for a
+// plan both Wix reads show ENDED, seen on 3 sweeps over 48 h — the cancellation the webhook
+// failed to finish. 'reconciliation.finish_removal' is not here: it removes nothing and names
+// no plan (only the Kisi account delete is re-run).
+const BILLING_CANCEL_ALLOWED_SYNTHETIC = new Set([
+  'reconciliation.reconcile_member', 'day-pass-sweep.expired', 'reconciliation.wix_not_paying',
+]);
 
 /**
  * Does this day-pass source row belong to the pass a revoke event names? Rows are
@@ -723,11 +729,15 @@ class GrantRevokeLogic {
             eventType, rawEventType: raw, cancelledEventType, planId,
             stage: 'revoke', result: 'skipped',
           });
-          await logMemberAccessEvent({
-            memberId,
-            clientId: tenantId,
-            eventType: cancelledEventType,
-          });
+          // A sweep restart of a removal already under way (reconciliation.finish_removal) is no new
+          // cancellation: no second history row — finalizeRevoke still runs after this.
+          if (wixEvent.syntheticSource !== 'reconciliation.finish_removal') {
+            await logMemberAccessEvent({
+              memberId,
+              clientId: tenantId,
+              eventType: cancelledEventType,
+            });
+          }
           return 'inactive';
         }
 

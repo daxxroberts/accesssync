@@ -416,7 +416,9 @@ function describeConfigAlert(row) {
   const whoStart   = person || 'A member';                    // sentence start
   const possessive = person ? person + '’s' : 'a member’s';
   const hardware   = r.platform || 'Kisi';
-  const pausedNote = 'Automatic removal is paused while AccessSync’s safety checks roll out, '
+  // Since Phase 3b/3c a plan Wix shows ENDED is removed automatically once the sweep has seen it
+  // for two days; anything less certain never is. Either way, nothing has been removed yet.
+  const pausedNote = 'AccessSync double-checks before it removes anyone, '
     + 'so nothing was removed and they can still get in.';
 
   // Only alert types some code actually writes are cataloged here. The v2 gate's
@@ -466,7 +468,7 @@ function describeConfigAlert(row) {
       return (person
         ? person + ' is a paying member, but their door access' + at + ' is missing in ' + hardware + '. '
         : 'A paying member’s door access' + at + ' is missing in ' + hardware + '. ')
-        + 'AccessSync will restore it once automatic repair is switched on; until then you can re-add it in ' + hardware + '.';
+        + 'AccessSync couldn’t add it back automatically — re-add it in ' + hardware + '.';
     case 'sweep_removal_pending':
       return whoStart + at + ' no longer shows as paying in Wix. ' + pausedNote + ' '
         + 'Check their membership in Wix — if they really have stopped paying and shouldn’t get in, you can remove their access in '
@@ -507,6 +509,14 @@ function describeConfigAlert(row) {
       return 'AccessSync couldn’t reach ' + platform + forLoc
         + ' during a sync — it stopped and changed nothing. Nobody lost access. '
         + 'This usually clears up on its own; AccessSync tries again on the next sync.';
+
+    // Phase 3c sweep: doors taken off plans in Plan Mapping are still on for more than half the
+    // members at once — too many to trust, so none were removed. hardware_ref "door_removal:mass".
+    case 'sweep_door_removal_held':
+      return 'More than half your members' + forLoc + ' still have doors that were taken off their plans in Plan Mapping. '
+        + 'That’s too many at once to trust, so AccessSync removed none of them and nobody lost access. '
+        + 'If Plan Mapping is set up the way you want, remove those doors in ' + hardware + '; '
+        + 'if not, fix the plans in Plan Mapping. Reply to this email if you’d like a hand.';
 
     // A door was taken off a plan (or the plan switched off) in Plan Mapping, and removing it
     // from this member failed (a Kisi error of any kind, or a database error before the call).

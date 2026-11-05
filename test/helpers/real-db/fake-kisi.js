@@ -14,13 +14,15 @@
 
 'use strict';
 
-const state = { users: new Map(), roles: new Map(), nextId: 1000, failures: new Map() };
+// elevated: userId → owner / administrator role assignments (what findElevatedAssignmentsForUser answers).
+const state = { users: new Map(), roles: new Map(), nextId: 1000, failures: new Map(), elevated: new Map() };
 
 function reset() {
   state.users.clear();
   state.roles.clear();
   state.nextId = 1000;
   state.failures.clear();
+  state.elevated.clear();
   for (const fn of Object.values(adapter)) if (fn && fn.mockClear) fn.mockClear();
 }
 
@@ -89,6 +91,14 @@ const adapter = {
     for (const [raId, r] of state.roles) if (r.userId === id) state.roles.delete(raId);
     return true;
   }),
+  // The reconcile sweep's reads (core/reconciliation.js): every role assignment, every user, and an
+  // owner / administrator's org-wide roles (state.elevated).
+  getManagedRoleAssignments: wrap('getManagedRoleAssignments', () =>
+    [...state.roles.entries()].map(([id, r]) => ({ userId: r.userId, groupId: r.groupId, roleAssignmentId: id }))),
+  listAllUsers: wrap('listAllUsers', () =>
+    [...state.users.entries()].map(([id, u]) => ({ id, email: u.email, name: u.name }))),
+  findElevatedAssignmentsForUser: wrap('findElevatedAssignmentsForUser', (_p, _k, userId) =>
+    state.elevated.get(String(userId)) || []),
   createGroupLink: wrap('createGroupLink', () => ({ id: String(state.nextId++) })),
   deleteGroupLink: wrap('deleteGroupLink', () => true),
   supportsDayPass: jest.fn(() => true),

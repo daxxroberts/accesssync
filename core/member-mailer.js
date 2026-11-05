@@ -183,7 +183,13 @@ const GRANT_ALLOWED_SYNTHETIC  = new Set(['multi-member.submit', 'multi-member.h
 // 'holder_lapse.cascade' (2026-10-15): a seat revoked because the holder's plan ended in Wix.
 // The seat's access genuinely ended — the same moment as a real plan.cancelled for them.
 // 'reconciliation.holder_lapse' (2026-10-15, Phase 3b): the same end, found by the nightly sweep.
-const REVOKE_ALLOWED_SYNTHETIC = new Set(['multi-member.remove_sub', 'holder_lapse.cascade', 'reconciliation.holder_lapse']);
+// 'reconciliation.wix_not_paying' (2026-11-05, Phase 3c): a member's own plan ended in Wix and the
+// webhook's removal never finished (it emails only after the doors are off), so the sweep's is the
+// first "your access ended". Not 'reconciliation.finish_removal': that one only re-runs the Kisi
+// account delete after a removal whose email already went.
+const REVOKE_ALLOWED_SYNTHETIC = new Set([
+  'multi-member.remove_sub', 'holder_lapse.cascade', 'reconciliation.holder_lapse', 'reconciliation.wix_not_paying',
+]);
 const REVOKE_EMAIL_EVENT_TYPES = new Set(['plan.cancelled', 'booking.cancelled']);
 
 function _grantEmailAllowed(standardEvent) {

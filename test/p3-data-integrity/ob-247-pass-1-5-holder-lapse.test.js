@@ -144,18 +144,18 @@ describe('OB-247: Pass 1.5 holder-lapse sub-member removal proposals (recorded a
       );
     });
 
-    test('…and refuses to enqueue anything while the sweep is observation-only, except an explicitly armed HOLDER_LAPSE call (Phase 3b, 2026-10-15)', () => {
+    test('…and refuses to enqueue anything while the sweep is observation-only, except an explicitly armed ENDED call of an armed source (Phase 3b 2026-10-15 HOLDER_LAPSE, Phase 3c 2026-11-05 WIX_ABSENCE)', () => {
       expect(reconcileSrc).toMatch(/const SWEEP_OBSERVATION_ONLY = true;/);
       const fnIdx = reconcileSrc.search(/async _enqueueApprovedRevoke\(clientId, p, \{ armed = false \} = \{\}\) \{/);
       expect(fnIdx).toBeGreaterThan(-1);
       const body = reconcileSrc.slice(fnIdx, fnIdx + 900);
-      expect(body).toMatch(/armed && !!p && p\.source === REVOKE_SOURCE\.HOLDER_LAPSE && holderLapseRemovalArmed\(\)/);
-      expect(body).toMatch(/if \(SWEEP_OBSERVATION_ONLY && !armedHolderLapse\) \{[\s\S]*return false;/);
+      expect(body).toMatch(/const armedSource = armed && isArmedRemoval\(p\);/);
+      expect(body).toMatch(/if \(SWEEP_OBSERVATION_ONLY && !armedSource\) \{[\s\S]*return false;/);
     });
 
-    test('Phase 3b arms HOLDER_LAPSE + ENDED only, never in an anomaly-held sweep, with removal explicitly armed', () => {
-      expect(reconcileSrc).toMatch(/p\.source === REVOKE_SOURCE\.HOLDER_LAPSE && p\.classification === 'ENDED'/);
-      expect(reconcileSrc).toMatch(/\(!anomalyHold && holderLapseRemovalArmed\(\)\)/);
+    test('Phase 3b / 3c arm ENDED HOLDER_LAPSE and WIX_ABSENCE only (each behind its kill switch), never in an anomaly-held sweep, with removal explicitly armed', () => {
+      expect(reconcileSrc).toMatch(/function isArmedRemoval\(p\) \{\s*if \(!p \|\| p\.classification !== ORDER_CLASS\.ENDED\) return false;\s*if \(p\.source === REVOKE_SOURCE\.HOLDER_LAPSE\) return holderLapseRemovalArmed\(\);\s*if \(p\.source === REVOKE_SOURCE\.WIX_ABSENCE\) return wixAbsenceRemovalArmed\(\);\s*return false;\s*\}/);
+      expect(reconcileSrc).toMatch(/const armedProposals = !anomalyHold \? revokeProposals\.filter\(isArmedRemoval\) : \[\];/);
       const armedIdx = reconcileSrc.search(/proposals:\s+armedProposals,/);
       expect(armedIdx).toBeGreaterThan(-1);
       expect(reconcileSrc.slice(armedIdx, armedIdx + 400)).toMatch(/observationOnly: false,/);

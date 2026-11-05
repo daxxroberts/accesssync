@@ -792,6 +792,31 @@ describe('[P3] dashboard Sync button — aborted-sync wording (F14)', () => {
     expect(resultMessage({ ok: true, granted: 0, revoked: 0 }, true)).toEqual({ kind: 'success', text: 'Everything is in sync' });
     expect(resultMessage({ error: 'Sync failed' }, false)).toEqual({ kind: 'error', text: 'Sync failed' });
   });
+
+  // Phase 3c (2026-11-05): the sync gives and takes doors to match Plan Mapping.
+  test('doors the sync gave or took off are counted; a held door removal is info and points to Alerts', () => {
+    expect(resultMessage({ ok: true, granted: 0, revoked: 0, doorsAdded: 1, doorsRemoved: 0 }, true))
+      .toEqual({ kind: 'success', text: '1 door added' });
+    expect(resultMessage({ ok: true, granted: 0, revoked: 0, doorsAdded: 3, doorsRemoved: 2 }, true))
+      .toEqual({ kind: 'success', text: '3 doors added · 2 doors removed' });
+    expect(resultMessage({ ok: true, granted: 1, revoked: 0, doorsAdded: 0, doorsRemoved: 1 }, true))
+      .toEqual({ kind: 'success', text: '1 granted · 0 revoked · 1 door removed' });
+    expect(resultMessage({ ok: true, granted: 0, revoked: 0, doorsAdded: 0, doorsRemoved: 0, doorRemovalsHeld: true }, true))
+      .toEqual({ kind: 'info', text: 'door removals held — see Alerts' });
+    expect(resultMessage({ ok: true, granted: 0, revoked: 0, doorsAdded: 2, doorRemovalsHeld: true }, true))
+      .toEqual({ kind: 'info', text: '2 doors added · door removals held — see Alerts' });
+  });
+
+  // 2026-11-05: syncNow reloads the page's numbers with loadLiveData() after a sync. It was a
+  // NAMED IIFE — its name exists only inside itself — so the call threw a ReferenceError and the
+  // catch relabelled every sync that worked "Sync failed" with a "network error" toast.
+  test('after a sync the page reloads its numbers: loadLiveData is a callable function, run once on load', () => {
+    const src = readRepoFile('admin', 'views', 'pages', 'dashboard.ejs');
+    expect(src).not.toMatch(/\(function loadLiveData\(\)/);
+    expect(src).toMatch(/\r?\n    function loadLiveData\(\) \{/);
+    expect(src).toMatch(/\r?\n    loadLiveData\(\);\r?\n  <\/script>/);
+    expect(src).toMatch(/showToast\(msg\.kind[\s\S]{0,200}loadLiveData\(\);/);   // the call syncNow makes
+  });
 });
 
 describe('[P3] errors page — sync alerts the gym can read and mark handled (L17)', () => {

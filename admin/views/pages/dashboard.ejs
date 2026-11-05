@@ -510,6 +510,7 @@
       // Translate sync response into a single line of human feedback.
       // Response shapes:
       //   { ok: true, granted, revoked }                  → counts (or "Up to date" if both 0)
+      //   … doorsAdded, doorsRemoved, doorRemovalsHeld    → doors matched to Plan Mapping (Phase 3c)
       //   { ok: true, granted, revoked, aborted, reason } → reason-aware error
       //   { error: "..." } at any status                  → server-side failure
       function resultMessage(data, httpOk) {
@@ -528,9 +529,16 @@
             ? reasonMap[data.reason]
             : { kind: 'error', text: 'Sync aborted — ' + (data.reason || 'unknown') };
         }
-        if (data.granted || data.revoked) {
-          return { kind: 'success', text: (data.granted || 0) + ' granted · ' + (data.revoked || 0) + ' revoked' };
+        var parts = [];
+        if (data.granted || data.revoked) parts.push((data.granted || 0) + ' granted · ' + (data.revoked || 0) + ' revoked');
+        if (data.doorsAdded)   parts.push(data.doorsAdded + (data.doorsAdded === 1 ? ' door added' : ' doors added'));
+        if (data.doorsRemoved) parts.push(data.doorsRemoved + (data.doorsRemoved === 1 ? ' door removed' : ' doors removed'));
+        // Leftover doors on more than half the members at once: nothing was taken off — an alert explains.
+        if (data.doorRemovalsHeld) {
+          parts.push('door removals held — see Alerts');
+          return { kind: 'info', text: parts.join(' · ') };
         }
+        if (parts.length) return { kind: 'success', text: parts.join(' · ') };
         return { kind: 'success', text: 'Everything is in sync' };
       }
 
@@ -759,7 +767,10 @@
     // Setup Hub pill loader removed 2026-05-30.
 
     // ══ OB-29: Live data loading ══════════════════════════════════
-    (function loadLiveData() {
+    // A named function (run once below), not a named IIFE: syncNow calls loadLiveData() after a
+    // sync, and an IIFE's name is visible only inside itself — the call threw, and the catch then
+    // relabelled a sync that worked as "Sync failed — network error".
+    function loadLiveData() {
       var clientId = new URLSearchParams(window.location.search).get('clientId');
       if (!clientId) {
         // No client selected — show empty state
@@ -1048,7 +1059,8 @@
             } catch(e) {}
           });
         }).catch(function(e) { console.error('Locations load error:', e); });
-    })();
+    }
+    loadLiveData();
   </script>
 </body>
 </html>
