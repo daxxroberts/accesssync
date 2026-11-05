@@ -924,11 +924,15 @@
           // /plan-mapping when their mapping is fine is a false diagnosis.
           // The pending_hardware count is still visible on Members page +
           // individual member drawer; no synthetic banner needed.
-          // Phase 3A: Setup checklist when no data yet
+          // Phase 3A: Setup checklist when no data yet. This runs again after every Sync now, so
+          // it replaces the card it added last time instead of adding a second one.
+          var oldChecklist = document.getElementById('setup-checklist');
+          if (oldChecklist) oldChecklist.remove();
           if (s.member_count === 0 && s.location_count === 0) {
             var statsGrid = document.querySelector('.stats-grid');
             if (statsGrid) {
               var checklist = document.createElement('div');
+              checklist.id = 'setup-checklist';
               checklist.className = 'card';
               checklist.style.cssText = 'margin-top:16px;padding:20px;';
               checklist.innerHTML =
@@ -950,14 +954,18 @@
           }
         }).catch(function(e) { console.error('Dashboard load error:', e); });
 
-      // OB-26: Check API key status — show CTA banner if missing
+      // OB-26: Check API key status — show CTA banner if missing. Like the checklist above, this
+      // runs again after every Sync now: one banner at most, gone once a key is added.
       apiFetch('/operator/clients/' + clientId + '/api-key/status')
         .then(function(r) { return r.json(); })
         .then(function(d) {
+          var oldCta = document.getElementById('key-cta');
+          if (oldCta) oldCta.remove();
           if (d.hasKey) return;
           var platformRow = document.querySelector('.platform-row');
           if (!platformRow) return;
           var cta = document.createElement('div');
+          cta.id = 'key-cta';
           cta.className = 'key-cta';
           cta.innerHTML =
             '<div class="key-cta-icon"><svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M7.5 10.5a3 3 0 113-3" stroke="#F5A623" stroke-width="1.3" stroke-linecap="round"/><path d="M10.5 7.5h4.5v3h-1.5v1.5h-1.5v-1.5h-1.5z" stroke="#F5A623" stroke-width="1.3" stroke-linejoin="round" fill="none"/></svg></div>' +

@@ -48,7 +48,10 @@ refusal leaves the member `inactive`, never `removing`, so rule 4 never retries 
 - **Bug fixed in passing:** after a sync that worked, the dashboard called `loadLiveData()`, a named
   IIFE whose name exists only inside itself — the ReferenceError sent every successful Sync now to
   the catch: label "Sync failed", toast "Sync failed — network error". Now a named function run
-  once on load.
+  once on load. Re-running it showed that two of its pieces were added rather than replaced — the
+  "Add your API key" banner and the setup checklist stacked one more copy per sync (Daxx spotted
+  it in the screenshots). Each now has an id and replaces its last copy; the banner goes once a
+  key is added.
 - Alert copy: `sweep_repair_pending` (repair is on now: it fires only when the attempt failed or the
   Kisi user is gone), the removal-pending note ("AccessSync double-checks before it removes
   anyone"), new `sweep_door_removal_held`.

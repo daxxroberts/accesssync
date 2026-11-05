@@ -817,6 +817,35 @@ describe('[P3] dashboard Sync button — aborted-sync wording (F14)', () => {
     expect(src).toMatch(/\r?\n    loadLiveData\(\);\r?\n  <\/script>/);
     expect(src).toMatch(/showToast\(msg\.kind[\s\S]{0,200}loadLiveData\(\);/);   // the call syncNow makes
   });
+
+  // …and running it again must not stack a second "Add your API key" banner or setup checklist.
+  test('a reload after a sync keeps one API-key banner and one setup checklist, and drops the banner once a key is added', async () => {
+    const added = [];
+    const node = () => ({ style: {}, textContent: '', innerHTML: '', className: '' });
+    const anchor = { parentNode: { insertBefore: (n) => { added.push(n); } } };
+    const document = {
+      getElementById: (id) => (id === 'key-cta' || id === 'setup-checklist') ? (added.find(n => n.id === id) || null) : node(),
+      querySelector: (sel) => (sel === '.platform-row' || sel === '.stats-grid') ? anchor : null,
+      querySelectorAll: () => [],
+      createElement: () => { const n = node(); n.remove = () => added.splice(added.indexOf(n), 1); return n; },
+    };
+    let hasKey = false;
+    const apiFetch = (url) => Promise.resolve(fakeResponse(200,
+      /\/api-key\/status$/.test(url) ? { hasKey }
+        : url === '/operator/c1' ? { client: { name: 'Gym' }, stats: { member_count: 0, location_count: 0 } }
+        : {}));
+    const { loadLiveData } = liftFunctions(readRepoFile('admin', 'views', 'pages', 'dashboard.ejs'), ['loadLiveData'], {
+      window: { location: { search: '?clientId=c1' } }, document, apiFetch, esc: realEsc,
+    });
+
+    loadLiveData(); await settle();
+    loadLiveData(); await settle();                       // what syncNow does after a sync
+    expect(added.map(n => n.id).sort()).toEqual(['key-cta', 'setup-checklist']);
+
+    hasKey = true;
+    loadLiveData(); await settle();
+    expect(added.map(n => n.id)).toEqual(['setup-checklist']);
+  });
 });
 
 describe('[P3] errors page — sync alerts the gym can read and mark handled (L17)', () => {
