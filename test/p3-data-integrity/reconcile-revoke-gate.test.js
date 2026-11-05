@@ -484,6 +484,10 @@ afterEach(() => {
   if (!phase3bArmed) expect(revokeCalls()).toEqual([]);
   phase3bArmed = false;
   delete process.env.RECONCILE_HOLDER_LAPSE_REMOVAL;
+  delete process.env.RECONCILE_WIX_ABSENCE_REMOVAL;
+  delete process.env.RECONCILE_DOOR_REPAIR;
+  delete process.env.RECONCILE_DOOR_REMOVAL;
+  delete process.env.RECONCILE_FINISH_REMOVAL;
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -540,7 +544,7 @@ describe('[P3] Phase 1 — the sweep never enqueues a revoke', () => {
       status: 'success', revokesQueued: 0, abortReason: 'observation_only',
       sanityGateTriggered: false, sanityGateResolved: null, runId: RUN_ID,
     }));
-    expect(lastPolicyArgs().observationOnly).toBe(true);
+    expect(firstPolicyArgs().observationOnly).toBe(true);
     expect(warnCall('reconciliation.revokes_held')[1]).toEqual(expect.objectContaining({
       clientId: CLIENT_ID, reason: 'observation_only', heldCount: 1, bySource: { wix_absence: 1 },
       byDataSource: { wix_orders: 1 }, observationOnly: true, mode: 'dry_run',
@@ -710,7 +714,10 @@ describe('[P3] Phase 3b — holder-lapse removals armed, every other source stil
     expect(holderLapseInfo()[0]).toEqual(expect.objectContaining({ action: 'hold', reason: 'strike_pending' }));
   });
 
-  test("a primary member's own lapse (3B, wix_absence) stays held even with a ripe clock and mode 'on' — only holder-lapse is armed", async () => {
+  // Phase 3c (2026-11-05): a member's OWN plan ENDED in Wix — the removal the webhook failed to
+  // finish — is armed exactly like a seat: same policy, same strike clock, same mode.
+  test("a primary member's own ENDED plan (3B, wix_absence) with a ripe clock and mode 'on' → its revoke is queued as reconciliation.wix_not_paying, recorded 'queued', no removal alert (Phase 3c)", async () => {
+    phase3bArmed = true;
     installWorld({
       mode: 'on',
       members: [member('a'), member('b'), member('c')],
@@ -718,10 +725,47 @@ describe('[P3] Phase 3b — holder-lapse removals armed, every other source stil
       strikes: [{ accessId: 'ma-c', planId: PLAN_ID, since: daysAgo(3), observations: 5 }],
     });
     const result = await runSync();
-    expect(revokeCalls()).toHaveLength(0);
-    expect(result.holdReason).toBe('observation_only');
+    expect(revokeCalls()).toHaveLength(1);
+    expect(revokeCalls()[0][1].standardEvent).toEqual(expect.objectContaining({
+      eventType: 'plan.cancelled', platformMemberId: 'c', planId: PLAN_ID,
+      synthetic: true, syntheticSource: 'reconciliation.wix_not_paying',
+    }));
+    expect(standardAdapter.markSubMemberRemoving).not.toHaveBeenCalled();       // a member, not a seat
+    expect(result.revoked).toBe(1);
     expect(holderLapseInfo()).toHaveLength(0);
-    expect(lastPolicyArgs().observationOnly).toBe(true);
+    expect(lastPolicyArgs().observationOnly).toBe(false);
+    expect(proposalRows().find(r => r.platform_member_id === 'c')).toEqual(expect.objectContaining({
+      kind: 'removal_pending', source: 'wix_absence', classification: 'ENDED', decision: 'queued', hold_reason: null,
+    }));
+    expect(alertsOf('sweep_removal_pending')).toEqual([]);                       // queued, not left for the gym
+    expect(log.info).toHaveBeenCalledWith('reconciliation.ended_plan_armed', expect.objectContaining({
+      clientId: CLIENT_ID, armed: 1, queued: 1, mode: 'on',
+    }));
+  });
+
+  test("…held instead when the clock is not ripe, the mode is not 'on', the kill switch is off, or the plan is ABSENT (no order at all) — and then the gym is alerted", async () => {
+    const world = (over = {}) => ({
+      mode: 'on',
+      members: [member('a'), member('b'), member('c')],
+      read1: reads([...paying(['a', 'b']), order('c', PLAN_ID, 'ENDED')]),
+      strikes: [{ accessId: 'ma-c', planId: PLAN_ID, since: daysAgo(3), observations: 5 }],
+      ...over,
+    });
+    const cases = [
+      ['not ripe',       world({ strikes: [{ accessId: 'ma-c', planId: PLAN_ID, since: daysAgo(1), observations: 1 }] })],
+      ['dry_run',        world({ mode: 'dry_run' })],
+      ['kill switch',    world(), () => { process.env.RECONCILE_WIX_ABSENCE_REMOVAL = 'off'; }],
+      ['ABSENT',         world({ read1: reads(paying(['a', 'b'])) })],
+    ];
+    for (const [label, w, before] of cases) {
+      eventQueue.add.mockClear();
+      if (before) before();
+      installWorld(w);
+      await runSync();
+      expect([label, revokeCalls().length]).toEqual([label, 0]);
+      expect([label, alertsOf('sweep_removal_pending').map(a => a.ref)]).toEqual([label, ['member:c']]);
+      delete process.env.RECONCILE_WIX_ABSENCE_REMOVAL;
+    }
   });
 
   test('one seat failing to queue does not stop another, and is logged', async () => {
@@ -2409,7 +2453,9 @@ describe('[P3] Fix round 3 — clears always run; only advancing a clock is ever
     const result = await runSync();
 
     expect(result.holdReason).toBe('observation_only');                               // not an anomaly…
-    expect(lastPolicyArgs().proposals.map(p => [p.memberKey, p.strike])).toEqual([['e', null]]);
+    // Phase 3c: m still pays PLAN_ID, and its ENDED PLAN_B is proposed too (its door, not the account)
+    expect(firstPolicyArgs().proposals.map(p => [p.memberKey, p.planId, p.strike]))
+      .toEqual([['m', PLAN_B, null], ['e', PLAN_ID, null]]);
     expect(standardAdapter.recordNotPayingObservation).not.toHaveBeenCalled();         // …yet nothing advances
     // Clears: every PAYING primary (member, plan) in the census — without knowing
     // which carry a clock (the primitive only writes a row that has one) — and the

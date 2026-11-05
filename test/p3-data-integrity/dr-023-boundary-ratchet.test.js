@@ -64,8 +64,10 @@ const ALLOWLIST = {
     // the removeGroupId pre-delete went, and the two sync revoke DELETEs became one
     // (revokeMappingSource — Kisi first, then the row). 5 → 2 on 2026-11-03: the sync's two
     // grant INSERTs and remap's own DELETE + INSERT now go through grantMappingGroup and
-    // revokeMappingSource — one INSERT, one DELETE.
-    'admin/routes/operator.js':    2,
+    // revokeMappingSource — one INSERT, one DELETE. 2026-11-05: those two functions moved,
+    // unchanged, to core/plan-door-sync.js so the reconcile sweep can finish a door change a
+    // save missed with the same writes (operator.js 2 → 0; no new write).
+    'core/plan-door-sync.js':      2,
   },
 };
 

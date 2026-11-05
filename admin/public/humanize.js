@@ -301,12 +301,12 @@
         " but didn't delete their Kisi account — it has admin, manager or owner rights. If they're staff, nothing needs to change; if not, review their roles in Kisi.";
     if (e === 'sweep_repair_pending')
       return (c.member ? c.member + ' is a paying member, but their door access' : "A paying member's door access") +
-        at + ' is missing in Kisi. AccessSync will restore it once automatic repair is switched on; until then you can re-add it in Kisi.';
+        at + " is missing in Kisi. AccessSync couldn't add it back automatically — re-add it in Kisi.";
     if (e === 'sweep_removal_pending')
-      return memberStart + at + " no longer shows as paying in Wix. Automatic removal is paused while AccessSync's safety checks roll out, " +
+      return memberStart + at + ' no longer shows as paying in Wix. AccessSync double-checks before it removes anyone, ' +
         'so nothing was removed and they can still get in. If they really stopped paying, you can remove their access in Kisi.';
     if (e === 'revoke_holder_lapse_pending')
-      return memberStart + at + " is on a shared plan whose main member no longer shows as paying in Wix. Automatic removal is paused while AccessSync's safety checks roll out, " +
+      return memberStart + at + ' is on a shared plan whose main member no longer shows as paying in Wix. AccessSync double-checks before it removes anyone, ' +
         'so nothing was removed and they can still get in.';
     // core/location-lapse.js reactivateLocationMembers — same meaning as describeConfigAlert.
     if (e === 'location_reactivate_failed')
@@ -324,7 +324,12 @@
       return (c.member ? c.member + "'s Wix payment" : "A member's Wix payment") + at +
         ' is declined, pending or unrecognized — AccessSync is leaving their door access alone. Nobody lost access. ' +
         "If the payment doesn't go through and they shouldn't get in, you can remove their access in Kisi.";
-    // Same meaning as describeConfigAlert's door_removal_failed (admin/routes/operator.js revokeMappingSource).
+    // Same meaning as describeConfigAlert's sweep_door_removal_held (core/reconciliation.js, Phase 3c).
+    if (e === 'sweep_door_removal_held')
+      return 'More than half your members' + at + ' still have doors that were taken off their plans in Plan Mapping. ' +
+        "That's too many at once to trust, so AccessSync removed none of them and nobody lost access. " +
+        'If Plan Mapping is set up the way you want, remove those doors in Kisi; if not, fix the plans in Plan Mapping.';
+    // Same meaning as describeConfigAlert's door_removal_failed (core/plan-door-sync.js revokeMappingSource).
     if (e === 'door_removal_failed')
       return memberStart + at + " can still open a door that was taken off their plan — AccessSync couldn't remove it in Kisi. " +
         'Remove that door from ' + (c.member ? 'their' : "the member's") + ' account in Kisi.';

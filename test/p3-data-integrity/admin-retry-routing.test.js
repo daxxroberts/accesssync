@@ -792,6 +792,60 @@ describe('[P3] dashboard Sync button — aborted-sync wording (F14)', () => {
     expect(resultMessage({ ok: true, granted: 0, revoked: 0 }, true)).toEqual({ kind: 'success', text: 'Everything is in sync' });
     expect(resultMessage({ error: 'Sync failed' }, false)).toEqual({ kind: 'error', text: 'Sync failed' });
   });
+
+  // Phase 3c (2026-11-05): the sync gives and takes doors to match Plan Mapping.
+  test('doors the sync gave or took off are counted; a held door removal is info and points to Alerts', () => {
+    expect(resultMessage({ ok: true, granted: 0, revoked: 0, doorsAdded: 1, doorsRemoved: 0 }, true))
+      .toEqual({ kind: 'success', text: '1 door added' });
+    expect(resultMessage({ ok: true, granted: 0, revoked: 0, doorsAdded: 3, doorsRemoved: 2 }, true))
+      .toEqual({ kind: 'success', text: '3 doors added · 2 doors removed' });
+    expect(resultMessage({ ok: true, granted: 1, revoked: 0, doorsAdded: 0, doorsRemoved: 1 }, true))
+      .toEqual({ kind: 'success', text: '1 granted · 0 revoked · 1 door removed' });
+    expect(resultMessage({ ok: true, granted: 0, revoked: 0, doorsAdded: 0, doorsRemoved: 0, doorRemovalsHeld: true }, true))
+      .toEqual({ kind: 'info', text: 'door removals held — see Alerts' });
+    expect(resultMessage({ ok: true, granted: 0, revoked: 0, doorsAdded: 2, doorRemovalsHeld: true }, true))
+      .toEqual({ kind: 'info', text: '2 doors added · door removals held — see Alerts' });
+  });
+
+  // 2026-11-05: syncNow reloads the page's numbers with loadLiveData() after a sync. It was a
+  // NAMED IIFE — its name exists only inside itself — so the call threw a ReferenceError and the
+  // catch relabelled every sync that worked "Sync failed" with a "network error" toast.
+  test('after a sync the page reloads its numbers: loadLiveData is a callable function, run once on load', () => {
+    const src = readRepoFile('admin', 'views', 'pages', 'dashboard.ejs');
+    expect(src).not.toMatch(/\(function loadLiveData\(\)/);
+    expect(src).toMatch(/\r?\n    function loadLiveData\(\) \{/);
+    expect(src).toMatch(/\r?\n    loadLiveData\(\);\r?\n  <\/script>/);
+    expect(src).toMatch(/showToast\(msg\.kind[\s\S]{0,200}loadLiveData\(\);/);   // the call syncNow makes
+  });
+
+  // …and running it again must not stack a second "Add your API key" banner or setup checklist.
+  test('a reload after a sync keeps one API-key banner and one setup checklist, and drops the banner once a key is added', async () => {
+    const added = [];
+    const node = () => ({ style: {}, textContent: '', innerHTML: '', className: '' });
+    const anchor = { parentNode: { insertBefore: (n) => { added.push(n); } } };
+    const document = {
+      getElementById: (id) => (id === 'key-cta' || id === 'setup-checklist') ? (added.find(n => n.id === id) || null) : node(),
+      querySelector: (sel) => (sel === '.platform-row' || sel === '.stats-grid') ? anchor : null,
+      querySelectorAll: () => [],
+      createElement: () => { const n = node(); n.remove = () => added.splice(added.indexOf(n), 1); return n; },
+    };
+    let hasKey = false;
+    const apiFetch = (url) => Promise.resolve(fakeResponse(200,
+      /\/api-key\/status$/.test(url) ? { hasKey }
+        : url === '/operator/c1' ? { client: { name: 'Gym' }, stats: { member_count: 0, location_count: 0 } }
+        : {}));
+    const { loadLiveData } = liftFunctions(readRepoFile('admin', 'views', 'pages', 'dashboard.ejs'), ['loadLiveData'], {
+      window: { location: { search: '?clientId=c1' } }, document, apiFetch, esc: realEsc,
+    });
+
+    loadLiveData(); await settle();
+    loadLiveData(); await settle();                       // what syncNow does after a sync
+    expect(added.map(n => n.id).sort()).toEqual(['key-cta', 'setup-checklist']);
+
+    hasKey = true;
+    loadLiveData(); await settle();
+    expect(added.map(n => n.id)).toEqual(['setup-checklist']);
+  });
 });
 
 describe('[P3] errors page — sync alerts the gym can read and mark handled (L17)', () => {

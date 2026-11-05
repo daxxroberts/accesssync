@@ -357,18 +357,18 @@ describe('[P2] describeConfigAlert — removal-safety alerts (Phase 1)', () => {
     });
   });
 
-  test('sweep_repair_pending: paying member missing in Kisi; restored once repair is on; re-add meanwhile', () => {
+  test('sweep_repair_pending: paying member missing in Kisi; repair tried and failed; re-add it', () => {
     const s = T.describeConfigAlert({ alert_type: 'sweep_repair_pending', locationName: 'House of Gains' });
     expect(s).toMatch(/paying member/);
     expect(s).toMatch(/missing in Kisi/);
-    expect(s).toMatch(/once automatic repair is switched on/);
+    expect(s).toMatch(/couldn’t add it back automatically/);
     expect(s).toMatch(/re-add it in Kisi/);
   });
 
-  test('sweep_removal_pending: no longer paying in Wix; removal paused; nothing removed', () => {
+  test('sweep_removal_pending: no longer paying in Wix; double-checked; nothing removed', () => {
     const s = T.describeConfigAlert({ alert_type: 'sweep_removal_pending', locationName: 'House of Gains' });
     expect(s).toMatch(/no longer shows as paying in Wix/);
-    expect(s).toMatch(/Automatic removal is paused while AccessSync’s safety checks roll out/);
+    expect(s).toMatch(/AccessSync double-checks before it removes anyone/);
     expect(s).toMatch(/nothing was removed/);
   });
 

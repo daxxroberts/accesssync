@@ -45,6 +45,8 @@ const UNSYNCED_SOURCE_STATUSES = `('pending_hardware', 'pending_start', 'failed'
 // GYM_DECIDES_ALERTS — a dismissal of one keeps it quiet for 30 days.
 const GYM_DECIDES_ALERT_TYPES = new Set(['sweep_removal_pending', 'revoke_holder_lapse_pending', 'revoke_held_payment_state']);
 const { suspendLocationMembers, reactivateLocationMembers } = require('../../core/location-lapse');
+// One member, one door: shared with the reconcile sweep (core/plan-door-sync.js).
+const { OTHER_PLAN_KEEPS_DOOR_SQL, raiseDoorAlert, grantMappingGroup, revokeMappingSource } = require('../../core/plan-door-sync');
 const { diagnoseMember, getTimeline } = require('../../core/diagnostics');
 const { log } = require('../../core/logger');
 const { getTraceId, getActor, runWith, mintTraceId, setClientId } = require('../../core/trace-context');
@@ -116,14 +118,8 @@ async function resolveApiKey(clientId, locationId) {
 // users need to be updated in Kisi and need to be in sync with their plan mappings"). Each rule
 // below has ONE definition, shared by the sync, the remap route and the confirmation counts
 // (GET …/door-change-impact), so the number the gym sees before saving is what the save does.
-
-// C-4: another plan still grants this member the same door → Kisi is left alone and only this
-// plan's row goes. Day passes never hold a door open (a bearer link is not a seat). `mas` is
-// the row being taken away.
-const OTHER_PLAN_KEEPS_DOOR_SQL = `EXISTS (
-         SELECT 1 FROM member_access_sources o
-          WHERE o.access_id = mas.access_id AND o.hardware_group_id = mas.hardware_group_id
-            AND o.mapping_id IS DISTINCT FROM mas.mapping_id AND o.source_type <> 'day_pass')`;
+// Giving or taking one door (grantMappingGroup / revokeMappingSource, C-4) lives in
+// core/plan-door-sync.js: the reconcile sweep finishes the same change for whoever a save missed.
 
 /**
  * The rows a door change takes away: this plan's rows on the given doors — every door when
@@ -226,108 +222,6 @@ async function restorePlanMembers(clientId, mappingId) {
   }
   log.info('operator.sync.restore_queued', { clientId, mappingId, queued: paying.length });
   return paying.length;
-}
-
-/**
- * One open alert per member and door. hardware_ref "member_id=<access id> group_id=<id>";
- * core/alert-context.js reads the member_id part to name the member and their location.
- * Never throws.
- */
-async function raiseDoorAlert(clientId, alertType, memberId, hardwareGroupId, mappingId) {
-  const _actor = getActor() || {};
-  await db.query(
-    `INSERT INTO config_alert_log (client_id, alert_type, hardware_ref, plan_mapping_id, trace_id, actor_type, actor_id)
-     SELECT $1::uuid, $2::varchar, $3::varchar, $4::uuid, $5::varchar, $6::varchar, $7::varchar
-     WHERE NOT EXISTS (
-       SELECT 1 FROM config_alert_log
-       WHERE client_id = $1::uuid AND alert_type = $2::varchar
-         AND hardware_ref = $3::varchar AND resolved_at IS NULL
-     )`,
-    [clientId, alertType, `member_id=${memberId} group_id=${hardwareGroupId}`.slice(0, 255), mappingId,
-      getTraceId() || null, _actor.type || null, _actor.id || null]
-  ).catch(alertErr => log.error('operator.sync.door_alert_failed', { clientId, memberId, alertType }, alertErr));
-}
-
-/**
- * Gives one member one door of this plan: Kisi first, then the row. Returns true when the door
- * is on in Kisi (a failed row write after that is only logged — the member can get in). Never
- * throws and never alerts: the caller knows whether a failure leaves the member with no door
- * from this plan (door_swap_held) or only without the new one (door_grant_failed).
- * ctx = { clientId, mappingId, sourcePlanId, hardwarePlatform, apiKey }.
- */
-async function grantMappingGroup(ctx, member, hardwareGroupId, reason) {
-  const { clientId, mappingId, sourcePlanId, hardwarePlatform, apiKey } = ctx;
-  const memberId = member.member_id;
-  let roleId;
-  try {
-    roleId = await hardwareAdapter.assignRole(hardwarePlatform, apiKey, member.hardware_user_id, hardwareGroupId);
-  } catch (err) {
-    log.error('operator.sync.grant_failed', { clientId, mappingId, memberId, hardwareGroupId, reason, kisiDone: false }, err);
-    return false;
-  }
-  try {
-    // OB-203: source_plan_id is part of the canonical UNIQUE (client_id, access_id, source_type,
-    // source_plan_id, hardware_group_id) ON CONFLICT matches on. S-11/A9: client_id + 'active'.
-    await db.query(
-      `INSERT INTO member_access_sources
-         (client_id, access_id, source_type, source_plan_id, mapping_id, hardware_group_id,
-          role_assignment_id, status, provisioned_at)
-       VALUES ($1, $2, 'plan', $3, $4, $5, $6, 'active', NOW())
-       ON CONFLICT (client_id, access_id, source_type, source_plan_id, hardware_group_id) DO UPDATE
-         SET role_assignment_id = EXCLUDED.role_assignment_id,
-             status = 'active',
-             updated_at = NOW()`,
-      [clientId, memberId, sourcePlanId, mappingId, hardwareGroupId, String(roleId)]
-    );
-    log.info('operator.sync.granted', { memberId, hardwareGroupId, reason });
-  } catch (err) {
-    log.error('operator.sync.grant_failed', { clientId, mappingId, memberId, hardwareGroupId, reason, kisiDone: true }, err);
-  }
-  return true;
-}
-
-/**
- * Takes one door away from one member because a plan mapping stopped granting it (the door
- * was taken off the plan, or the plan was switched off). Kisi FIRST, then the source row —
- * the order core/grant-revoke.js uses for a cancelled plan (2026-10-19 review H1). The other
- * way round, a Kisi failure left no row behind: the database said the member had lost the
- * door, Kisi still opened it, and nothing could find them again.
- *
- *   - C-4 (OTHER_PLAN_KEEPS_DOOR_SQL, re-checked here so a row another save already took away
- *     is skipped): Kisi is left alone when another plan grants the same door.
- *   - A row with no role assignment never reached Kisi — there is nothing to remove, the row goes.
- *   - Kisi fails → the row STAYS (it is still true: they can get in) and the gym gets a
- *     door_removal_failed alert naming the member. removeRole is 404-idempotent, so a later
- *     attempt that repeats it is safe.
- *
- * `row` comes from rowsLosingDoors (never a day-pass row). Returns true on success. Never throws.
- */
-async function revokeMappingSource(ctx, row, reason) {
-  const { clientId, mappingId, hardwarePlatform, apiKey } = ctx;
-  const { source_id: sourceId, member_id: memberId, hardware_group_id: hardwareGroupId, role_assignment_id: raId } = row;
-  let kisiDone = false;
-  try {
-    const live = await db.query(
-      `SELECT ${OTHER_PLAN_KEEPS_DOOR_SQL} AS door_kept
-       FROM member_access_sources mas WHERE mas.id = $1 AND mas.client_id = $2`,
-      [sourceId, clientId]
-    );
-    if (!live.rows.length) return true; // already taken away (a save that overlapped this one)
-    if (live.rows[0].door_kept) {
-      log.info('operator.sync.revoke_skipped', { memberId, hardwareGroupId, reason: 'other_mapping_grants' });
-    } else if (raId) {
-      await hardwareAdapter.removeRole(hardwarePlatform, apiKey, raId);
-      log.info('operator.sync.revoked', { memberId, hardwareGroupId, reason });
-    }
-    kisiDone = true;
-    await db.query('DELETE FROM member_access_sources WHERE id = $1 AND client_id = $2', [sourceId, clientId]);
-    return true;
-  } catch (err) {
-    log.error('operator.sync.revoke_failed', { clientId, mappingId, memberId, hardwareGroupId, reason, kisiDone }, err);
-    if (kisiDone) return true; // the door is gone; only the bookkeeping row is left over
-    await raiseDoorAlert(clientId, 'door_removal_failed', memberId, hardwareGroupId, mappingId);
-    return false;
-  }
 }
 
 /**
@@ -3800,7 +3694,9 @@ router.post('/:clientId/members/:memberId/resend-welcome-email', async (req, res
 // ── POST /sync/run ─────────────────────────────────────────────────
 // Manual sync trigger from the dashboard Sync button.
 // Runs _syncClient() for the logged-in client only — bypasses the
-// recurrence gate and nightly digest. Returns { granted, revoked }.
+// recurrence gate and nightly digest: the same check the 6-hour sweep runs,
+// door repairs and removals included (Phase 3c). Returns { granted, revoked,
+// doorsAdded, doorsRemoved, doorRemovalsHeld }.
 router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
   // Operators are pinned to their own client; only the owner may name one in the request.
   const clientId = req.admin?.role === 'admin'
@@ -3826,7 +3722,10 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
     const operatorActor = req.admin?.email || req.admin?.userId || clientId;
     const traceId = mintTraceId();
     reconciliation._sweepTraceId = traceId;
-    const { granted, revoked, skippedHolderOptin, runId, aborted, reason, sanityGateTriggered } = await runWith(
+    const {
+      granted, revoked, skippedHolderOptin, runId, aborted, reason, sanityGateTriggered,
+      doorsAdded, doorsRemoved, doorRemovalsHeld,
+    } = await runWith(
       { traceId, actor: { type: 'operator', id: String(operatorActor) }, clientId },
       () => reconciliation._syncClient(
         clientResult.rows[0],
@@ -3842,6 +3741,7 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
 
     log.info('operator.sync.manual_run', {
       clientId, runId, granted, revoked,
+      doorsAdded: doorsAdded || 0, doorsRemoved: doorsRemoved || 0, doorRemovalsHeld: !!doorRemovalsHeld,
       skippedHolderOptin: skippedHolderOptin || 0,
       sanityGateTriggered: !!sanityGateTriggered,
       aborted: !!aborted, reason: reason || null,
@@ -3851,11 +3751,15 @@ router.post('/sync/run', requireAuthOrOperator, async (req, res) => {
     // diagnostic_log's own persistence is currently healthy.
     recordActivity(req, 'client.synced', {
       clientId, runId, granted, revoked,
+      doorsAdded: doorsAdded || 0, doorsRemoved: doorsRemoved || 0,
       skippedHolderOptin: skippedHolderOptin || 0,
       aborted: !!aborted, reason: reason || null,
     });
     res.json({
       ok: true, runId, granted, revoked,
+      // Phase 3c: doors the sync gave / took off in Kisi to match Plan Mapping, and whether it
+      // held door removals back because they touched more than half the members.
+      doorsAdded: doorsAdded || 0, doorsRemoved: doorsRemoved || 0, doorRemovalsHeld: !!doorRemovalsHeld,
       skippedHolderOptin: skippedHolderOptin || 0,
       sanityGateTriggered: !!sanityGateTriggered,
       aborted: !!aborted, reason: reason || null,
