@@ -191,6 +191,29 @@ async function payingMembersForPlan(clientId, mappingId) {
  *  makes it live again — and then restorePlanMembers, not the rows, says who gets the doors. */
 const planIsLive = (status, doorCount) => status === 'active' && doorCount > 0;
 
+/** plan_mappings.hardware_group_id / door_name are the one-door columns from before
+ *  plan_mapping_groups. The grant resolver and the sweep's backfill fall back to them when a plan
+ *  has no door rows, the sweep's A12 filter reads them, and both Plan Mapping screens show them as
+ *  the door. So after a save changes the doors they must name one of the plan's doors — its first —
+ *  or nothing once it has none; left on a removed door, a plan with no doors kept giving that door
+ *  to every new buyer. Only a true legacy mapping (the column set, never any door rows) still
+ *  grants through the column, until its doors are first changed. Returns the new columns when they
+ *  changed, else null. */
+async function alignLegacyDoor(mappingId) {
+  const r = await db.query(
+    `UPDATE plan_mappings pm
+        SET (hardware_group_id, door_name) = (
+              SELECT g.hardware_group_id, g.door_name FROM plan_mapping_groups g
+               WHERE g.mapping_id = pm.id ORDER BY g.created_at, g.hardware_group_id LIMIT 1)
+      WHERE pm.id = $1
+        AND (pm.hardware_group_id IS NULL
+             OR pm.hardware_group_id NOT IN (SELECT hardware_group_id FROM plan_mapping_groups WHERE mapping_id = pm.id))
+      RETURNING pm.hardware_group_id, pm.door_name`,
+    [mappingId]
+  );
+  return r.rows[0] || null;
+}
+
 /**
  * A plan came back: queue the grant engine's synthetic plan.purchased — the same event the
  * sweep's 3A queues for a paying member missing from Kisi — for everyone paying for it. The
@@ -2323,6 +2346,7 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
       const newGroupIds = [...new Set([...oldGroupIds, addGroupId])];
       // Flip status to 'active' — auto-inserted placeholder mappings start as 'inactive'
       await db.query(`UPDATE plan_mappings SET status = 'active' WHERE id = $1`, [mappingId]);
+      await alignLegacyDoor(mappingId);
       // M-4: Check API key and warn if missing
       const locationId = (await db.query('SELECT location_id FROM plan_mappings WHERE id = $1', [mappingId])).rows[0]?.location_id;
       const apiKey = await resolveApiKey(clientId, locationId);
@@ -2344,6 +2368,9 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
         `DELETE FROM plan_mapping_groups WHERE mapping_id = $1 AND hardware_group_id = $2`,
         [mappingId, removeGroupId]
       );
+      // The last door off leaves the plan on with no doors (not live): it grants nothing until
+      // a door is added back, and no longer through the one-door column either.
+      await alignLegacyDoor(mappingId);
       const newGroupIds = oldGroupIds.filter(id => id !== removeGroupId);
       syncMappingMembers(clientId, mappingId, oldGroupIds, newGroupIds, oldStatus, oldStatus)
         .catch(err => log.warn('operator.sync.remove_group_failed', { clientId, mappingId }, err));
@@ -2403,6 +2430,8 @@ router.patch('/:clientId/plan-mappings/:mappingId', async (req, res) => {
           values
         );
       }
+      const aligned = await alignLegacyDoor(mappingId);
+      if (aligned) mapping = { ...mapping, ...aligned };
       // Auto-sync status: groups present → active, groups empty → inactive
       const autoStatus = validGroups.length > 0 ? 'active' : 'inactive';
       if (mapping.status !== autoStatus) {
