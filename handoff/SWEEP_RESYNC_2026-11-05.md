@@ -96,7 +96,8 @@ decided after repairs on what would really come off (a big remap still granting 
 longer trips it), `doorsRemoved` counts a door only when every row of it came off, the restart
 cap is per 30 days. Pre-existing, for a follow-up on the Plan Mapping route: taking a plan's last
 door off with `removeGroupId` leaves the plan `active` with a stale `plan_mappings.hardware_group_id`
-that the webhook resolver and Pass 1 still grant to new buyers.
+that the webhook resolver and Pass 1 still grant to new buyers. **Fixed** in
+`fix/plan-mapping-last-door` (merged after this branch, 2026-11-05).
 
 ## Day-one impact at House of Gains (read-only check, 2026-11-05)
 
@@ -128,9 +129,10 @@ plan of two ended; declined payment never removed.
   `reconciliation.ended_plan_armed` in `diagnostic_log` for the first sweeps (expect all zeros).
 - Known, not changed here: a paying member whose Kisi **user** was deleted in the Kisi dashboard
   stays alert-only (`sweep_repair_pending`) — re-creating an account a gym deleted is a product call.
-- Known, not changed here: Pass 1(b) still falls back to `plan_mappings.hardware_group_id` for a
-  mapping with no `plan_mapping_groups` rows (a plan whose last door was taken off), inserting a
-  role-less row; harmless (the door check ignores role-less rows and treats the plan as not live).
+- ~~Pass 1(b) still falls back to `plan_mappings.hardware_group_id` for a plan whose last door was
+  taken off~~ — fixed by `fix/plan-mapping-last-door`: a save that changes a plan's doors now sets
+  that column to the plan's first door, or NULL once it has none, so the fallback fires only for a
+  true legacy mapping (column set, never any door rows; none at House of Gains).
 - Known, not changed here: family sub-members are not restored when a plan is switched back on
   (from `fix/plan-mapping-kisi-sync`).
 - A Kisi account delete that keeps failing is restarted once per sweep (6 h), each failure visible
