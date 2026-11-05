@@ -723,7 +723,7 @@ describe('[P1] real DB sweep — SAGE gate review findings', () => {
     expect((await accessOf(dana)).status).toBe('deleted');
   });
 
-  test('9: alerts the sync itself answered are closed — a door given back, a removal queued', async () => {
+  test('9: a door given back closes its alert; a queued removal leaves the gym\'s "still has access" alert open (a resolved one would stay quiet for 30 days)', async () => {
     await addPlan(MONTHLY, [FRONT, POOL]);
     const dana = await buy('Dana');
     const eli  = await buy('Eli');
@@ -749,6 +749,24 @@ describe('[P1] real DB sweep — SAGE gate review findings', () => {
         WHERE access_id = $1`, [eli.accessId]);
     await sweep(wixNow);
     expect(queuedRevokes()).toHaveLength(1);
+    expect((await openAlerts()).map(a => a.alert_type)).toEqual(['sweep_removal_pending']);
+  });
+
+  test('2: a mass hold is answered by the next sync that is under the cap', async () => {
+    const monthly = await addPlan(MONTHLY, [FRONT]);
+    const yoga    = await addPlan(YOGA, [FRONT]);
+    const members = [];
+    for (const first of ['Dana', 'Eli', 'Fay']) { members.push(await buy(first)); await buy(first, YOGA); }
+    await realDb.query(`UPDATE plan_mappings SET status = 'inactive' WHERE id = ANY($1::uuid[])`, [[monthly, yoga]]);
+    const wixNow = [...paying(members), ...paying(members, YOGA)];
+    await sweep(wixNow);
+    expect((await openAlerts()).map(a => a.alert_type)).toEqual(['sweep_door_removal_held']);
+
+    await realDb.query(`UPDATE plan_mappings SET status = 'active' WHERE id = ANY($1::uuid[])`, [[monthly, yoga]]);   // the gym undid it
+    const result = await sweep(wixNow);
+
+    expect(result.doorRemovalsHeld).toBe(false);
     expect(await openAlerts()).toEqual([]);
+    for (const m of members) expect(kisi.canOpen(m.userId, FRONT)).toBe(true);
   });
 });

@@ -82,10 +82,18 @@ An independent review of the first cut found these; all fixed, each with a real-
    running. Now cleared every sweep (CLEAR (c)).
 8. A Kisi account delete that keeps failing was restarted every 6 h forever and wrote a
    "cancelled" history row each time. Now at most 3 restarts, and no history row.
-9. Alerts the sweep answered (`sweep_repair_pending` after a door is given back;
-   `sweep_removal_pending` / `revoke_holder_lapse_pending` after the removal is queued) are now
-   resolved; alert copy no longer claims a repair was attempted when it was not, nor promises a
-   support override that does not exist.
+9. Alerts the sweep answered are now resolved — `sweep_repair_pending` once every missing door of
+   the member is given back, `sweep_door_removal_held` once a sweep is under the cap. NOT the
+   gym-decides held-removal alerts after a removal is queued: resolving one starts its 30-day quiet
+   window, so a queued revoke that then failed would go unheard (re-review). Alert copy no longer
+   claims a repair was attempted when it was not, nor promises a support override that does not exist.
+
+Re-review of b98ac5c: **ship**. Its nits are fixed in the follow-up commit — the mass cap is
+decided after repairs on what would really come off (a big remap still granting its new door no
+longer trips it), `doorsRemoved` counts a door only when every row of it came off, the restart
+cap is per 30 days. Pre-existing, for a follow-up on the Plan Mapping route: taking a plan's last
+door off with `removeGroupId` leaves the plan `active` with a stale `plan_mappings.hardware_group_id`
+that the webhook resolver and Pass 1 still grant to new buyers.
 
 ## Day-one impact at House of Gains (read-only check, 2026-11-05)
 

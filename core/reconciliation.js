@@ -2284,6 +2284,7 @@ class NightlyReconciliation {
     let doorRemovalsHeld = false;
     let doorRemovalHoldReason = null;
     let doorChangesSkippedStale = 0;
+    let leftoverMembers = 0;
     const doorRepaired     = new Set(); // `${accessId}|${groupId}`
     const doorRepairFailed = new Set();
     let doorCheck = null;
@@ -2332,19 +2333,37 @@ class NightlyReconciliation {
           }
         }
       }
-      if (doorCheck.leftover.length > 0) {
+      // Taken off a plan that is still live: only once they hold one of its current doors — judged
+      // after the repairs above, so a swap the save held back finishes in this sweep.
+      const removable = doorCheck.leftover.filter(d =>
+        !d.planDoors || d.planDoors.some(g => heldNow.has(`${d.hardwareUserId}:${g}`)));
+      // The mass cap, on what would come off now: more than half the members losing a door holds
+      // every removal (a big remap still granting its new door is not counted until it has).
+      leftoverMembers = new Set(removable.filter(d => d.lost).map(d => d.memberId)).size;
+      const massHold = doorCheck.population >= MASS_REVOKE_MIN_POPULATION
+        && leftoverMembers >= massRevokeThreshold(doorCheck.population);
+      if (removable.length > 0) {
         if (anomalyHold)                  doorRemovalHoldReason = 'anomaly_hold';
         else if (mode !== REVOKE_MODE.ON) doorRemovalHoldReason = holdReasonForMode(mode);
         else if (!doorRemovalArmed())     doorRemovalHoldReason = 'kill_switch_off';
-        else if (doorCheck.massHold)      doorRemovalHoldReason = REVOKE_HOLD_REASON.MASS_REVOKE;
-        if (doorRemovalHoldReason === REVOKE_HOLD_REASON.MASS_REVOKE) {
-          doorRemovalsHeld = true;
-          await this._insertAlertOnce(client.id, SWEEP_ALERT.DOOR_REMOVAL_HELD, 'door_removal:mass');
-        } else if (!doorRemovalHoldReason) {
-          const lostPairs = new Map(); // `${accessId}|${groupId}` → { rows, removed } for doors Kisi loses
-          for (const d of doorCheck.leftover) {
-            // Taken off a plan that is still live: only once they hold one of its current doors.
-            if (d.planDoors && !d.planDoors.some(g => heldNow.has(`${d.hardwareUserId}:${g}`))) continue;
+        else if (massHold)                doorRemovalHoldReason = REVOKE_HOLD_REASON.MASS_REVOKE;
+      }
+      if (doorRemovalHoldReason === REVOKE_HOLD_REASON.MASS_REVOKE) {
+        doorRemovalsHeld = true;
+        await this._insertAlertOnce(client.id, SWEEP_ALERT.DOOR_REMOVAL_HELD, 'door_removal:mass');
+      } else {
+        // Under the cap this sweep: an earlier hold is answered (the doors are gone, or few enough).
+        if (!doorRemovalHoldReason) await this._resolveAlerts(client.id, [SWEEP_ALERT.DOOR_REMOVAL_HELD], 'door_removal:mass');
+        if (!doorRemovalHoldReason && removable.length > 0) {
+          // A door counts as removed only when every leftover row of it came off.
+          const lostPairs = new Map(); // `${accessId}|${groupId}` → { rows, removed }
+          for (const d of removable) {
+            if (!d.lost) continue;
+            const k = `${d.memberId}|${d.groupId}`;
+            if (!lostPairs.has(k)) lostPairs.set(k, { rows: 0, removed: 0 });
+            lostPairs.get(k).rows++;
+          }
+          for (const d of removable) {
             const now = await this._doorStateNow(client.id, d.mappingId, d.memberId);
             // The plan moved since the check: the door is current again, or the plan is on with no
             // door rows (a save between its DELETE and INSERT) — leave it to the next sweep.
@@ -2352,17 +2371,14 @@ class NightlyReconciliation {
               doorChangesSkippedStale++;
               continue;
             }
-            const k = `${d.memberId}|${d.groupId}`;
-            if (d.lost && !lostPairs.has(k)) lostPairs.set(k, { rows: 0, removed: 0 });
-            if (d.lost) lostPairs.get(k).rows++;
             const removed = await revokeMappingSource(doorCtx(d), {
               source_id: d.sourceId, member_id: d.memberId,
               hardware_group_id: d.groupId, role_assignment_id: d.roleAssignmentId,
             }, 'sweep_leftover_door');
-            if (removed && d.lost) lostPairs.get(k).removed++;
+            if (removed && d.lost) lostPairs.get(`${d.memberId}|${d.groupId}`).removed++;
             if (removed) await resolveDoorAlerts(client.id, ['door_removal_failed'], d.memberId, d.groupId);
           }
-          for (const p of lostPairs.values()) if (p.rows > 0 && p.removed === p.rows) doorsRemoved++;
+          for (const p of lostPairs.values()) if (p.removed === p.rows) doorsRemoved++;
         }
       }
 
@@ -2401,7 +2417,7 @@ class NightlyReconciliation {
         repairFailed:      doorRepairFailed.size,
         repairArmed:       doorRepairArmed(),
         leftover:          doorCheck.leftover.length,
-        leftoverMembers:   doorCheck.leftoverMembers,
+        leftoverMembers,
         doorsRemoved,
         removalHoldReason: doorRemovalHoldReason,
         skippedStale:      doorChangesSkippedStale,
@@ -2417,7 +2433,7 @@ class NightlyReconciliation {
     // failed and its retries ran out. The revoke the retry design re-runs — it finds the parked
     // member, has nothing left to remove, and finalizes again. A guard refusal leaves the member
     // 'inactive', never 'removing', so a deliberate "keep this account" is never retried. At most
-    // FINISH_REMOVAL_MAX_RESTARTS restarts per member (counted from the persisted
+    // FINISH_REMOVAL_MAX_RESTARTS restarts per member in 30 days (counted from the persisted
     // reconciliation.removal_restarted rows): one that keeps failing stays on the Errors page for a
     // person, instead of failing again every 6 hours.
     let removalsRestarted = 0;
@@ -2436,6 +2452,7 @@ class NightlyReconciliation {
               AND (SELECT COUNT(*) FROM diagnostic_log d
                     WHERE d.client_id = ma.client_id
                       AND d.message = 'reconciliation.removal_restarted'
+                      AND d.created_at > NOW() - interval '30 days'
                       AND d.context->>'accessId' = ma.id::text) < $3`,
           [client.id, FINISH_REMOVAL_AFTER_MINUTES, FINISH_REMOVAL_MAX_RESTARTS]
         );
@@ -2667,14 +2684,9 @@ class NightlyReconciliation {
     for (const memberKey of new Set(repairProposals.filter(p => p.repaired).map(p => p.memberKey))) {
       if (!stillMissing.has(memberKey)) await this._resolveAlerts(client.id, [SWEEP_ALERT.REPAIR_PENDING], `member:${memberKey}`);
     }
-    // A removal this sweep queued answers that member's "still has access" alert — unless another
-    // of their removals is still held.
-    const stillHeld = new Set(revokeProposals.filter(p => !flushedProposals.has(p)).map(p => p.memberKey));
-    for (const p of flushedProposals) {
-      if (stillHeld.has(p.memberKey)) continue;
-      await this._resolveAlerts(client.id,
-        [SWEEP_ALERT.REMOVAL_PENDING, SWEEP_ALERT.HOLDER_LAPSE_PENDING], `member:${p.memberKey}`);
-    }
+    // Not the held-removal alerts (GYM_DECIDES_ALERTS) when their removal is queued: a resolved one
+    // stays quiet for GYM_DECISION_QUIET_DAYS, so a queued revoke that then failed would go unheard
+    // for a month. They stay open for the gym, as before.
     // Per-member alerts (fix round F9). Kept when the batch is held for
     // MASS_REVOKE — that hold is about volume; each member's evidence still
     // stands. Suppressed only for SNAPSHOT_UNSTABLE and INVALID_PROPOSAL, where
@@ -2872,14 +2884,14 @@ class NightlyReconciliation {
    *              `planDoors`: the live plan's current doors — removed only once the member holds
    *              one of them, so a remap in progress or a held swap never leaves anyone without a
    *              door (the caller judges that after its repairs).
-   *   population / leftoverMembers — the mass cap, in members: those holding, in Kisi, a door a
-   *              row of theirs gives; and those who would lose a door. More than half holds every
-   *              door removal (the line revoke-policy massRevokeThreshold draws).
+   *   population — the mass cap's denominator, in members: those holding, in Kisi, a door a row of
+   *              theirs gives. The caller counts who would lose a door (after its repairs) and holds
+   *              every door removal at more than half (the line revoke-policy massRevokeThreshold draws).
    * Day-pass plans and rows are never looked at (core/day-pass-sweep.js owns them); neither are
    * members a job is working on ('in_flight', 'removing').
    *
    * @returns {Promise<{ missing: Array, leftover: Array, offPlanKeys: Set<string>,
-   *   population: number, leftoverMembers: number, massHold: boolean, plansWithoutDoors: number }>}
+   *   population: number, plansWithoutDoors: number }>}
    *   offPlanKeys: `${accessId}|${groupId}` for rows on a door their plan no longer has, unless a
    *   live plan the member is on still includes that door — what the sweep positively knows is
    *   not a missing door.
@@ -3004,12 +3016,7 @@ class NightlyReconciliation {
     }
     for (const k of currentKeys) offPlanKeys.delete(k);
 
-    const leftoverMembers = new Set(leftover.filter(l => l.lost).map(l => l.memberId)).size;
-    const massHold = population.size >= MASS_REVOKE_MIN_POPULATION
-      && leftoverMembers >= massRevokeThreshold(population.size);
-    return {
-      missing, leftover, offPlanKeys, population: population.size, leftoverMembers, massHold, plansWithoutDoors,
-    };
+    return { missing, leftover, offPlanKeys, population: population.size, plansWithoutDoors };
   }
 
   /**
