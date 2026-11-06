@@ -2,16 +2,17 @@
  * @file day-pass-api.js
  * @layer core/layer4
  * @role member-facing-api
- * @route POST /member/day-pass · GET /member/day-pass/qr.png
+ * @route POST /member/day-pass · GET /member/day-pass/info · GET /member/day-pass/qr.png
  * @auth POST: HMAC-SHA256 over the raw body with the client's Wix webhook secret
  *       (x-wix-signature + x-accesssync-client-id) — the same trust as /webhooks/wix.
  *       Called from a Velo BACKEND module that takes the member id from
  *       wix-members-backend, never from the browser.
- *       GET: 10-minute signed token minted by the POST.
+ *       GET info: 15-minute signed view token minted by the POST.
+ *       GET qr.png: 10-minute signed QR token minted by the POST / info call.
  * @reads member_master, member_access, member_access_sources, plan_mappings, connector_subscriptions
  * @writes (none)
  * @calls hardware-adapter (getGroupLink), wix-connector (verifySignedRequest)
- * @exports handleLookup, handleQrImage, signQrToken, verifyQrToken
+ * @exports handleLookup, handleInfo, handleQrImage, signQrToken, verifyQrToken, signViewToken, verifyViewToken
  * @ob OB-98, OB-251
  *
  * Why not the Member Hub's unauthenticated /member/... pattern: those endpoints return
@@ -24,46 +25,15 @@
 
 'use strict';
 
-const crypto = require('crypto');
 const db = require('../db');
 const { log } = require('./logger');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const wixConnector = require('../adapters/wix/wix-connector');
 const { decryptApiKey } = require('./crypto-utils');
-
-const QR_TOKEN_TTL_MS = 10 * 60 * 1000;
-
-function _tokenSecret() {
-  const key = process.env.DAY_PASS_TOKEN_SECRET || process.env.API_KEY_ENCRYPTION_KEY;
-  if (!key) {
-    const err = new Error('DAY_PASS_TOKEN_SECRET / API_KEY_ENCRYPTION_KEY not set — cannot sign QR URLs');
-    err.code = 'DAY_PASS_TOKEN_SECRET_MISSING';
-    throw err;
-  }
-  return key;
-}
-
-/** Signed, expiring pointer to one (client, access, link) triple. No credential inside. */
-function signQrToken({ clientId, accessId, linkId, exp }) {
-  const payload = Buffer.from(JSON.stringify({ c: clientId, a: accessId, l: String(linkId), e: exp })).toString('base64url');
-  const sig = crypto.createHmac('sha256', _tokenSecret()).update(payload).digest('base64url');
-  return `${payload}.${sig}`;
-}
-
-function verifyQrToken(token) {
-  if (typeof token !== 'string') return null;
-  const [payload, sig] = token.split('.');
-  if (!payload || !sig) return null;
-  const expected = crypto.createHmac('sha256', _tokenSecret()).update(payload).digest('base64url');
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  let data;
-  try { data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch (_) { return null; }
-  if (!data || typeof data.e !== 'number' || Date.now() > data.e) return null;
-  if (!data.c || !data.a || !data.l) return null;
-  return { clientId: data.c, accessId: data.a, linkId: data.l, exp: data.e };
-}
+const {
+  signQrToken, verifyQrToken, signViewToken, verifyViewToken,
+  QR_TOKEN_TTL_MS, VIEW_TOKEN_TTL_MS,
+} = require('./day-pass-token');
 
 async function _clientHardware(clientId) {
   const r = await db.query(
@@ -83,12 +53,82 @@ function _baseUrl(req) {
   return `${proto}://${req.get('host')}`;
 }
 
+// One day-pass row, newest live one first. `where` picks the buyer: by Wix member id
+// (the Velo lookup) or by access id (the branded page, from its signed view token).
+function _passQuery(where) {
+  return `SELECT ma.id AS access_id, mas.role_assignment_id, mas.status AS source_status,
+                 mas.effective_start, mas.valid_until, pm.plan_name, pm.door_name, mm.email
+          FROM member_master mm
+          JOIN member_access ma ON ma.member_master_id = mm.id
+          JOIN member_access_sources mas ON mas.access_id = ma.id
+          LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
+          WHERE ${where}
+            AND mas.source_type = 'day_pass'
+            AND mas.status IN ('active', 'pending_hardware')
+          ORDER BY (mas.status = 'active') DESC, mas.valid_until DESC NULLS LAST, mas.created_at DESC
+          LIMIT 1`;
+}
+
+/**
+ * The shared answer for one day-pass row: pending / expired / ready (+ a signed QR URL).
+ * Both the Velo lookup and the branded page's info call use it, so the two always agree.
+ */
+async function _passResponse(req, clientId, platformMemberId, row) {
+  const base = {
+    planName:   row.plan_name || null,
+    doorName:   row.door_name || null,
+    validFrom:  row.effective_start || null,
+    validUntil: row.valid_until || null,
+    // Where the day_pass_ready email goes (the buyer's Wix email), so the page can say
+    // so. Only released behind a signed request or token; never logged. null when it
+    // isn't cached.
+    email:      row.email || null,
+  };
+  if (row.source_status !== 'active' || !row.role_assignment_id) {
+    return { status: 'pending', ...base };
+  }
+  if (row.valid_until && Date.parse(row.valid_until) <= Date.now()) {
+    return { status: 'expired', ...base };
+  }
+
+  const hw = await _clientHardware(clientId);
+  let link = null;
+  if (hw) {
+    try {
+      link = await hardwareAdapter.getGroupLink(hw.platform, hw.apiKey, row.role_assignment_id);
+    } catch (err) {
+      log.warn('member.day_pass.link_fetch_failed', {
+        clientId, accessId: row.access_id, code: err.code || null, statusCode: err.statusCode || null,
+      });
+    }
+  }
+  const qrAvailable = !!(link && (link.qrImageBase64 || link.qrImageUrl));
+  const qrUrl = qrAvailable
+    ? `${_baseUrl(req)}/member/day-pass/qr.png?t=${encodeURIComponent(signQrToken({
+        clientId, accessId: row.access_id, linkId: row.role_assignment_id, exp: Date.now() + QR_TOKEN_TTL_MS,
+      }))}`
+    : null;
+
+  log.info('member.day_pass.ready', {
+    clientId, platformMemberId, accessId: row.access_id, qrAvailable, hasLink: !!(link && link.linkUrl),
+  });
+  return {
+    status: 'ready', ...base,
+    // QR only — the access link unlocks from anywhere, so it is never put on a web page.
+    unlockUrl: null,
+    qrUrl,
+    qrAvailable,
+  };
+}
+
 /**
  * POST /member/day-pass  body: { platformMemberId }
  * → { status: 'none' | 'pending' | 'expired' | 'ready', planName, doorName, validFrom,
- *     validUntil, unlockUrl, qrUrl, qrAvailable }
+ *     validUntil, email, unlockUrl, qrUrl, qrAvailable, pageToken }
  * 'pending' = the purchase landed but the Kisi link is still being created (claim row);
  * the page keeps polling. 'none' = no day pass for this member — not a day-pass purchase.
+ * pageToken (pending / ready only) opens the gym-branded day-pass page on the admin app
+ * for 15 minutes; the Wix button links there instead of showing the QR on a Wix page.
  */
 async function handleLookup(req, res) {
   res.set('Cache-Control', 'no-store');
@@ -108,18 +148,7 @@ async function handleLookup(req, res) {
     }
 
     const row = (await db.query(
-      `SELECT ma.id AS access_id, mas.role_assignment_id, mas.status AS source_status,
-              mas.effective_start, mas.valid_until, pm.plan_name, pm.door_name
-       FROM member_master mm
-       JOIN member_access ma ON ma.member_master_id = mm.id
-       JOIN member_access_sources mas ON mas.access_id = ma.id
-       LEFT JOIN plan_mappings pm ON pm.id = mas.mapping_id
-       WHERE mm.platform_member_id = $1 AND mm.source_platform = 'wix'
-         AND ma.client_id = $2
-         AND mas.source_type = 'day_pass'
-         AND mas.status IN ('active', 'pending_hardware')
-       ORDER BY (mas.status = 'active') DESC, mas.valid_until DESC NULLS LAST, mas.created_at DESC
-       LIMIT 1`,
+      _passQuery(`mm.platform_member_id = $1 AND mm.source_platform = 'wix' AND ma.client_id = $2`),
       [platformMemberId, clientId]
     )).rows[0];
 
@@ -128,49 +157,39 @@ async function handleLookup(req, res) {
     });
     if (!row) return res.json({ status: 'none' });
 
-    const base = {
-      planName:   row.plan_name || null,
-      doorName:   row.door_name || null,
-      validFrom:  row.effective_start || null,
-      validUntil: row.valid_until || null,
-    };
-    if (row.source_status !== 'active' || !row.role_assignment_id) {
-      return res.json({ status: 'pending', ...base });
+    const out = await _passResponse(req, clientId, platformMemberId, row);
+    if (out.status === 'pending' || out.status === 'ready') {
+      out.pageToken = signViewToken({ clientId, accessId: row.access_id, exp: Date.now() + VIEW_TOKEN_TTL_MS });
     }
-    if (row.valid_until && Date.parse(row.valid_until) <= Date.now()) {
-      return res.json({ status: 'expired', ...base });
-    }
-
-    const hw = await _clientHardware(clientId);
-    let link = null;
-    if (hw) {
-      try {
-        link = await hardwareAdapter.getGroupLink(hw.platform, hw.apiKey, row.role_assignment_id);
-      } catch (err) {
-        log.warn('member.day_pass.link_fetch_failed', {
-          clientId, accessId: row.access_id, code: err.code || null, statusCode: err.statusCode || null,
-        });
-      }
-    }
-    const qrAvailable = !!(link && (link.qrImageBase64 || link.qrImageUrl));
-    const qrUrl = qrAvailable
-      ? `${_baseUrl(req)}/member/day-pass/qr.png?t=${encodeURIComponent(signQrToken({
-          clientId, accessId: row.access_id, linkId: row.role_assignment_id, exp: Date.now() + QR_TOKEN_TTL_MS,
-        }))}`
-      : null;
-
-    log.info('member.day_pass.ready', {
-      clientId, platformMemberId, accessId: row.access_id, qrAvailable, hasLink: !!(link && link.linkUrl),
-    });
-    return res.json({
-      status: 'ready', ...base,
-      // QR only — the access link unlocks from anywhere, so it is never put on a web page.
-      unlockUrl: null,
-      qrUrl,
-      qrAvailable,
-    });
+    return res.json(out);
   } catch (err) {
     log.error('member.day_pass.error', {}, err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+/**
+ * GET /member/day-pass/info?t=<view token>
+ * What the branded day-pass page shows. Same answer as the lookup, minus the token mint,
+ * plus the clientId so the admin app can load the gym's branding. The token is the only
+ * credential: it comes from the HMAC-signed POST above and lives 15 minutes.
+ */
+async function handleInfo(req, res) {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const tok = verifyViewToken(req.query && req.query.t);
+    if (!tok) return res.status(401).json({ error: 'Unauthorized' });
+
+    const row = (await db.query(
+      _passQuery(`ma.id = $1 AND ma.client_id = $2`),
+      [tok.accessId, tok.clientId]
+    )).rows[0];
+    if (!row) return res.status(404).json({ status: 'none', clientId: tok.clientId });
+
+    const out = await _passResponse(req, tok.clientId, null, row);
+    return res.json({ ...out, clientId: tok.clientId });
+  } catch (err) {
+    log.error('member.day_pass.info_error', {}, err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
@@ -214,4 +233,8 @@ async function handleQrImage(req, res) {
   }
 }
 
-module.exports = { handleLookup, handleQrImage, signQrToken, verifyQrToken, QR_TOKEN_TTL_MS };
+module.exports = {
+  handleLookup, handleInfo, handleQrImage,
+  signQrToken, verifyQrToken, signViewToken, verifyViewToken,
+  QR_TOKEN_TTL_MS, VIEW_TOKEN_TTL_MS,
+};

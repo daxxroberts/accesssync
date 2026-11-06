@@ -1,0 +1,234 @@
+<%#
+  @file day-pass.ejs
+  @layer admin/pages
+  @route /day-pass?t=<view token>
+  @role member-facing
+  @audience a gym's day-pass buyer, right after checkout (opened from a button on the gym's Wix Thank You page)
+  @data GET /day-pass/data?t=<view token>  (proxy to core GET /member/day-pass/info)
+  @ob OB-98, OB-251
+  @notes Branded exactly like the Member Hub's status card: the gym's logo on its primary color,
+         its button color, and a "Back to {gym}" link — all from the gym's clients row via
+         core/member-hub-branding.js, so the page, the hub and the emails agree.
+         The token is the only credential. It is minted by the gym's signed Wix backend, lasts
+         15 minutes, and the QR image URL on the page is a further 10-minute signed URL.
+         Nothing about the pass is stored or logged here.
+%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="referrer" content="no-referrer"/>
+<meta name="robots" content="noindex, nofollow"/>
+<title><%= gymName ? gymName + ' — Day Pass' : 'Day Pass' %></title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --brand: #4F6EF7;
+  --green: #16A34A;
+  --bg: #FAFAF7; --card: #FFFFFF;
+  --border: rgba(28,22,16,0.06); --border2: rgba(28,22,16,0.10);
+  --text: #1F1B16; --text2: #6E6358; --muted: #9A8F82;
+  --shadow: rgba(28,22,16,0.08);
+}
+html, body { min-height: 100%; background: var(--bg); color: var(--text);
+  font-family: 'Sora', -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; font-size: 14px; }
+body { min-height: 100vh; min-height: 100svh; display: flex; align-items: flex-start; justify-content: center; padding: 16px; }
+
+.card { background: var(--card); border: 1px solid var(--border2); border-radius: 16px; overflow: hidden;
+  max-width: 480px; width: 100%; margin: auto 0; text-align: center; box-shadow: 0 8px 32px var(--shadow); }
+
+/* Brand band — the gym's logo on THEIR primary color, same as the hub card and the emails. */
+.band { background: var(--gym-primary, var(--brand)); padding: 20px 24px; display: flex; align-items: center;
+  justify-content: center; }
+.band.has-back { justify-content: space-between; gap: 8px; padding: 14px 14px; }
+.gym-logo { height: 30px; max-width: 220px; object-fit: contain; display: block; }
+.band.has-back .gym-logo { height: 22px; max-width: 124px; flex-shrink: 0; }
+.gym-name-band { font-size: 16px; font-weight: 800; letter-spacing: -0.3px; color: var(--gym-bar-text, #fff); }
+.gym-back { display: inline-flex; align-items: center; gap: 4px; min-width: 0; font-size: 12.5px; font-weight: 600;
+  color: var(--gym-bar-text, #fff); text-decoration: none; white-space: nowrap; padding: 10px 0 10px 10px; }
+.gym-back svg { width: 14px; height: 14px; flex-shrink: 0; }
+.gym-back span { overflow: hidden; text-overflow: ellipsis; }
+
+.body { padding: 28px 24px 26px; }
+.as-only { display: flex; align-items: center; justify-content: center; gap: 9px; opacity: .55; margin-bottom: 22px; }
+.as-only .mark { width: 26px; height: 26px; background: var(--brand); border-radius: 7px; display: flex; align-items: center; justify-content: center; }
+.as-only .name { font-size: 13px; font-weight: 700; letter-spacing: -0.2px; color: var(--text2); }
+
+.title { font-size: 21px; font-weight: 800; letter-spacing: -.5px; line-height: 1.2; margin-bottom: 8px; }
+.sub { font-size: 13px; color: var(--text2); line-height: 1.7; }
+.sub strong { color: var(--text); font-weight: 600; word-break: break-all; }
+
+.qr-frame { margin: 20px auto 16px; width: min(260px, 100%); aspect-ratio: 1; background: #fff; border: 1px solid var(--border2);
+  border-radius: 14px; padding: 10px; display: flex; align-items: center; justify-content: center; }
+.qr-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.until { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.door { font-size: 12px; color: var(--text2); margin-bottom: 14px; }
+.email-note { font-size: 12.5px; color: var(--text2); line-height: 1.65; padding-top: 14px; border-top: 1px solid var(--border); margin-top: 6px; }
+.email-note strong { color: var(--text); font-weight: 600; word-break: break-all; }
+
+.btn { display: flex; align-items: center; justify-content: center; width: 100%; height: 44px; border-radius: 12px;
+  background: var(--gym-btn, var(--brand)); color: #fff; font-family: inherit; font-weight: 600; font-size: 14px;
+  text-decoration: none; margin-top: 16px; }
+.btn:hover { filter: brightness(.92); }
+
+.icon { width: 72px; height: 72px; border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; }
+.icon.wait { background: rgba(28,22,16,0.05); }
+.icon.ok   { background: rgba(22,163,74,0.10); }
+.icon.warn { background: rgba(217,119,6,0.10); }
+.spin { width: 30px; height: 30px; border-radius: 50%; border: 3px solid rgba(28,22,16,0.14); border-top-color: var(--gym-btn, var(--brand));
+  animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
+
+.powered-by { font-size: 10px; font-weight: 600; letter-spacing: .03em; color: var(--muted); opacity: .7;
+  margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--border); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<%
+  var _hasGymBrand = !!(gymLogoUrl || gymName);
+  var _vars = _hasGymBrand
+    ? 'style="--gym-primary:' + (gymPrimaryColor || '#333333') + ';--gym-bar-text:' + (gymBarText || '#ffffff') + ';--gym-btn:' + (gymButtonColor || gymPrimaryColor || '#333333') + ';"'
+    : '';
+  var _hasBack = !!(gymSiteUrl && gymName);
+%>
+<main class="card" <%- _vars %>>
+  <% if (_hasGymBrand) { %>
+    <div class="band<%= _hasBack ? ' has-back' : '' %>">
+      <% if (gymLogoUrl) { %>
+        <img class="gym-logo" src="<%= gymLogoUrl %>" alt="<%= gymName || 'Your gym' %>"/>
+      <% } else { %>
+        <span class="gym-name-band"><%= gymName %></span>
+      <% } %>
+      <% if (_hasBack) { %>
+        <a class="gym-back" href="<%= gymSiteUrl %>" target="_self" rel="noopener noreferrer" aria-label="Back to <%= gymName %> website"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Back to <%= gymName %></span></a>
+      <% } %>
+    </div>
+  <% } %>
+
+  <div class="body">
+    <% if (!_hasGymBrand) { %>
+      <div class="as-only"><div class="mark"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M10 3L3 7v6l7 4 7-4V7L10 3z" stroke="white" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" fill="white"/></svg></div><span class="name">AccessSync</span></div>
+    <% } %>
+
+    <div id="view" aria-live="polite"></div>
+
+    <% if (_hasGymBrand) { %><div class="powered-by">Powered by AccessSync</div><% } %>
+  </div>
+</main>
+
+<script>
+const BOOT = <%- JSON.stringify(boot).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026') %>;
+const TOKEN = <%- JSON.stringify(token || '').replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026') %>;
+const GUIDE_URL = <%- JSON.stringify(qrGuideUrl || '').replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026') %>;
+const POLL_MS = 3000, MAX_POLLS = 30; // ~90s of "setting up", then fall back to the email
+const view = document.getElementById('view');
+let polls = 0;
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+// "A copy is also on its way to <email>" — built from text nodes, never innerHTML.
+function emailNote(d, lead) {
+  const p = el('div', 'email-note');
+  if (d && d.email) {
+    p.append(lead + ' ');
+    p.append(el('strong', null, d.email));
+    p.append('. Check your spam or promotions folder if you do not see it.');
+  } else {
+    p.append(lead + ' the email you used at checkout. Check your spam or promotions folder if you do not see it.');
+  }
+  return p;
+}
+function icon(kind, svg) {
+  const w = el('div', 'icon ' + kind);
+  if (svg === 'spin') w.append(el('div', 'spin'));
+  else w.innerHTML = svg;
+  return w;
+}
+const CHECK = '<svg width="34" height="34" viewBox="0 0 36 36" fill="none"><path d="M9 18l7 7L27 11" stroke="#16A34A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const MAIL  = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect x="5" y="8" width="22" height="16" rx="3" stroke="#D97706" stroke-width="2.4"/><path d="M6 10l10 8 10-8" stroke="#D97706" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function fmtUntil(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+function guideButton() {
+  if (!/^https:\/\//.test(GUIDE_URL)) return null;
+  const a = el('a', 'btn', 'How to get in with your QR code');
+  a.href = GUIDE_URL; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  return a;
+}
+
+function render(d) {
+  view.replaceChildren();
+  if (d && d.status === 'ready' && d.qrUrl) {
+    view.append(el('div', 'title', 'Your day pass is ready'));
+    view.append(el('div', 'sub', 'Show this code at the door reader.'));
+    const frame = el('div', 'qr-frame');
+    const img = el('img'); img.alt = 'Your day pass QR code'; img.src = d.qrUrl;
+    frame.append(img); view.append(frame);
+    const until = d.validUntil ? fmtUntil(d.validUntil) : '';
+    if (until) view.append(el('div', 'until', 'Good until ' + until));
+    if (d.doorName) view.append(el('div', 'door', d.doorName));
+    view.append(emailNote(d, 'A copy is also on its way to'));
+    const g = guideButton(); if (g) view.append(g);
+    return;
+  }
+  if (d && d.status === 'ready') { // pass exists but Kisi gave no QR image — the email carries it
+    view.append(icon('warn', MAIL));
+    view.append(el('div', 'title', 'Your QR code is on its way'));
+    view.append(emailNote(d, 'We are sending your QR code to'));
+    const g = guideButton(); if (g) view.append(g);
+    return;
+  }
+  if (d && d.status === 'pending' && polls < MAX_POLLS) {
+    view.append(icon('wait', 'spin'));
+    view.append(el('div', 'title', 'Setting up your day pass'));
+    view.append(el('div', 'sub', 'This only takes a moment. Your QR code will show up right here.'));
+    view.append(emailNote(d, 'It is also on its way to'));
+    return;
+  }
+  if (d && d.status === 'pending') { // still not ready after ~90s
+    view.append(icon('warn', MAIL));
+    view.append(el('div', 'title', 'Your QR code is on its way'));
+    view.append(emailNote(d, 'We are sending your QR code to'));
+    return;
+  }
+  if (d && d.status === 'expired') {
+    view.append(el('div', 'title', 'This day pass has ended'));
+    view.append(el('div', 'sub', 'Need another day? You can buy a new pass any time.'));
+    return;
+  }
+  // invalid / expired link, or nothing found
+  view.append(icon('warn', MAIL));
+  view.append(el('div', 'title', 'Check your email for your QR code'));
+  view.append(el('div', 'sub', 'This link has timed out. Your QR code was sent to the email you used at checkout. Check your spam or promotions folder if you do not see it.'));
+}
+
+async function poll() {
+  polls++;
+  try {
+    const r = await fetch('/day-pass/data?t=' + encodeURIComponent(TOKEN), { cache: 'no-store' });
+    const d = r.ok ? await r.json() : { status: 'none' };
+    render(d);
+    if (d.status === 'pending' && polls < MAX_POLLS) setTimeout(poll, POLL_MS);
+  } catch (e) {
+    if (polls < MAX_POLLS) setTimeout(poll, POLL_MS); else render({ status: 'none' });
+  }
+}
+
+render(BOOT);
+if (BOOT && BOOT.status === 'pending') setTimeout(poll, POLL_MS);
+</script>
+</body>
+</html>

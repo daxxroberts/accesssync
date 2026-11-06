@@ -93,6 +93,9 @@ const dayPassApi = require('./core/day-pass-api');
 app.post('/member/day-pass', async (req, res) => {
     await dayPassApi.handleLookup(req, res);
 });
+app.get('/member/day-pass/info', async (req, res) => {
+    await dayPassApi.handleInfo(req, res);
+});
 app.get('/member/day-pass/qr.png', async (req, res) => {
     await dayPassApi.handleQrImage(req, res);
 });

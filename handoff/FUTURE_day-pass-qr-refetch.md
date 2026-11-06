@@ -4,6 +4,16 @@
 `open_items.md`, decision record DR-055).
 **Related:** OB-98 / OB-251 (day passes), `core/day-pass-api.js`, `core/SNIPPET_REGISTRY.json`.
 
+**Update 2026-10-23 (built, not yet installed on HOG):** option 2 is done in a simpler form. The Wix Thank You page
+gets ONE button (`btnDayPassQr`, snippet `thank_you_day_pass` v2.0.0) that opens a gym-branded page on the admin app:
+`/day-pass?t=<view token>` (`admin/routes/day-pass-page.js`, `pages/day-pass.ejs`). It shows the QR, the expiry, the door,
+and says a copy is also on its way to the buyer's email; while the pass is still being made it says the QR is coming to
+their email. Branding comes from the same `clients` row as the Member Hub and the emails. The token is minted by
+`POST /member/day-pass` (HMAC-signed, gym's own Velo backend), lasts 15 minutes, and a new `GET /member/day-pass/info`
+serves the page; `core/day-pass-token.js` holds both token kinds (a view token never opens the QR image and vice versa).
+No QR is drawn on a Wix page. Still needs the Wix-side install on HOG. Options 1, 3 and the Member Hub day-pass card
+are still open; a buyer who loses the page can still only get the code from the email.
+
 ## Problem
 
 Today the day-pass QR reaches the buyer in one place only: the "Your House of Gains day

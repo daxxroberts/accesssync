@@ -234,6 +234,11 @@ app.get('/member-hub', allowMemberFrame, async (req, res) => {
   });
 });
 
+// ── Day-pass page (OB-98) ────────────────────────────────────────
+// One button on the gym's Wix Thank You page opens /day-pass?t=<signed view token>: the QR
+// on a page in the gym's own branding. See admin/routes/day-pass-page.js.
+app.use('/day-pass', require('./routes/day-pass-page'));
+
 // ── OB-237 Phase C — Setup Hub heartbeat endpoint ────────
 // Called from the my_access_page Wix Velo snippet on mount. Records snippet
 // version telemetry so the Setup Hub knows the snippet is actively
