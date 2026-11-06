@@ -59,6 +59,9 @@ class WixAdapter {
       'wixBookings.bookingCanceled':    'booking.cancelled',
       'wixBookings.bookingCancelled':   'booking.cancelled',
       'wixMembers.memberDeleted':       'member.deleted',
+      // DR-056: any profile edit. The worker compares the login email against the stored one
+      // and does nothing unless it changed.
+      'wixMembers.memberUpdated':       'member.updated',
       // OB-98 day pass: a one-off pass is sold as a Wix STORES product, because
       // Pricing Plans cannot go below a 7-day length (verified 2026-09-14). A paid
       // store order is a grant trigger exactly like a plan purchase — the mapped
@@ -308,8 +311,21 @@ class WixAdapter {
     if (!memberId && !storeOrder) {
       log.warn('wix.parse.no_member_id', { eventType: normalizedEventType, dataKeys: d ? Object.keys(d).join(',') : 'null' });
     }
-    if (!planId && !storeOrder && normalizedEventType && !normalizedEventType.includes('member.deleted')) {
+    if (!planId && !storeOrder && normalizedEventType && !normalizedEventType.includes('member.deleted') && normalizedEventType !== 'member.updated') {
       log.warn('wix.parse.no_plan_id', { eventType: normalizedEventType, dataKeys: d ? Object.keys(d).join(',') : 'null' });
+    }
+
+    // DR-056 — member.updated: the member is the event itself (Velo: event.entity), so
+    // the id, login email and its verified flag come from there, not from order paths.
+    let memberUpdate = null;
+    if (normalizedEventType === 'member.updated') {
+      const m = d?.entity || d?.member || {};
+      memberUpdate = {
+        memberId: m._id || m.id || null,
+        email: typeof m.loginEmail === 'string' && m.loginEmail.trim() ? m.loginEmail.trim() : null,
+        // Only a literal true counts as verified. A missing field is "not confirmed".
+        verified: m.loginEmailVerified === true,
+      };
     }
 
     const standardEvent = {
@@ -329,6 +345,14 @@ class WixAdapter {
       timestamp: new Date().toISOString(),
       rawPayload: body
     };
+
+    if (memberUpdate) {
+      standardEvent.platformMemberId = memberUpdate.memberId;
+      standardEvent.email = memberUpdate.email;
+      standardEvent.loginEmailVerified = memberUpdate.verified;
+      // The member entity carries no plan or order; drop what the order paths guessed.
+      standardEvent.planId = null;
+    }
 
     if (storeOrder) {
       standardEvent.platformMemberId = storeOrder.memberId;

@@ -919,6 +919,31 @@ class KisiAdapter {
   async deleteUser(apiKey, userId, options = {}) {
     log.info('kisi.user.delete_guard_check', { userId, clientId: options.clientId });
 
+    const checked = await this.assertDeletable(apiKey, userId, options);
+    if (!checked) return; // already gone — idempotent success
+    const { marker } = checked;
+
+    log.info('kisi.user.deleting', { userId, ownerClientId: marker.clientId, ownershipSource: marker.source });
+    try {
+      await kisiConnector.makeRequest(`/users/${userId}`, { method: 'DELETE' }, apiKey);
+      log.info('kisi.user.deleted', { userId, ownerClientId: marker.clientId, ownershipSource: marker.source });
+    } catch (err) {
+      log.error('kisi.user.delete_failed', { userId, statusCode: err.statusCode }, err);
+      throw err;
+    }
+  }
+
+  /**
+   * DR-056: the Layer B + Layer C half of the DR-045 delete guard, as a read-only
+   * check. deleteUser calls it before it deletes; the login-email swap calls it
+   * BEFORE it creates the replacement user, so a user that could never be deleted
+   * is found out up front instead of after the new one exists.
+   *
+   * Returns { user, marker } when the user is ours and holds no elevated role, or
+   * null when the user is already gone (404). Throws the same UNOWNED_USER /
+   * CLIENT_MISMATCH / ELEVATED_ROLE_ATTACHED errors deleteUser always threw.
+   */
+  async assertDeletable(apiKey, userId, options = {}) {
     let user;
     try {
       user = await kisiConnector.makeRequest(`/users/${userId}`, { method: 'GET' }, apiKey);
@@ -926,7 +951,7 @@ class KisiAdapter {
       if (err.statusCode === 404) {
         // User already gone — idempotent success. Nothing to delete, nothing to guard.
         log.info('kisi.user.delete_skipped_already_gone', { userId });
-        return;
+        return null;
       }
       log.error('kisi.user.delete_guard_fetch_failed', { userId, statusCode: err.statusCode }, err);
       throw err;
@@ -971,14 +996,7 @@ class KisiAdapter {
       throw err;
     }
 
-    log.info('kisi.user.deleting', { userId, ownerClientId: marker.clientId, ownershipSource: marker.source });
-    try {
-      await kisiConnector.makeRequest(`/users/${userId}`, { method: 'DELETE' }, apiKey);
-      log.info('kisi.user.deleted', { userId, ownerClientId: marker.clientId, ownershipSource: marker.source });
-    } catch (err) {
-      log.error('kisi.user.delete_failed', { userId, statusCode: err.statusCode }, err);
-      throw err;
-    }
+    return { user, marker };
   }
 
   /**

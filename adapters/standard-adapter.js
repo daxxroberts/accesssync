@@ -1616,6 +1616,70 @@ class StandardAdapter {
   }
 
   /**
+   * DR-056 — the Layer 3 half of the login-email swap. Core Engine (core/login-email-swap.js)
+   * decides and talks to the door system; every write to member_master / member_access /
+   * member_access_sources stays here (DR-023).
+   *
+   * One transaction: the source rows' role-assignment ids, the cached door-system user id,
+   * the stored email, and the 'login_email_swapped' audit row (which is also what the
+   * one-swap-per-30-days check reads). All of it commits or none of it does.
+   *
+   * @param {Object}   p
+   * @param {string}   p.accessId          member_access.id
+   * @param {string}   p.memberMasterId    member_master.id
+   * @param {string}   p.tenantId
+   * @param {string}   p.newEmail          the member's new login email (as Wix spells it)
+   * @param {string}   p.newHardwareUserId the replacement door-system user id
+   * @param {Array}    p.sourceMoves       [{ sourceIds: string[], roleAssignmentId: string }]
+   * @param {string}   p.auditEventType    audit row event_type
+   */
+  async completeLoginEmailSwap({ accessId, memberMasterId, tenantId, newEmail, newHardwareUserId, sourceMoves, auditEventType }) {
+    const dbClient = await db.getClient();
+    try {
+      await dbClient.query('BEGIN');
+      for (const move of sourceMoves || []) {
+        await dbClient.query(
+          `UPDATE member_access_sources SET role_assignment_id = $1, updated_at = NOW()
+            WHERE id = ANY($2::uuid[]) AND client_id = $3`,
+          [move.roleAssignmentId, move.sourceIds, tenantId]
+        );
+      }
+      await dbClient.query(
+        `UPDATE member_access SET hardware_user_id = $1, updated_at = NOW() WHERE id = $2 AND client_id = $3`,
+        [String(newHardwareUserId), accessId, tenantId]
+      );
+      await dbClient.query(
+        `UPDATE member_master SET email = $1, updated_at = NOW() WHERE id = $2 AND client_id = $3`,
+        [newEmail, memberMasterId, tenantId]
+      );
+      const actor = getActor() || {};
+      await dbClient.query(
+        `INSERT INTO member_access_log (member_id, client_id, event_type, credential_type, trace_id, actor_type, actor_id)
+         VALUES ($1, $2, $3, 'kisi_user', $4, $5, $6)`,
+        [accessId, tenantId, auditEventType, getTraceId() || null, actor.type || 'system', actor.id || 'login-email-swap']
+      );
+      await dbClient.query('COMMIT');
+    } catch (err) {
+      await dbClient.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      dbClient.release();
+    }
+  }
+
+  /**
+   * DR-056 — store a changed login email when there is no door-system user to swap
+   * (day-pass-only or parked member, or the door system already shows the new email),
+   * so the next grant creates the user on the new address.
+   */
+  async storeLoginEmail(memberMasterId, tenantId, email) {
+    await db.query(
+      `UPDATE member_master SET email = $1, updated_at = NOW() WHERE id = $2 AND client_id = $3`,
+      [email, memberMasterId, tenantId]
+    );
+  }
+
+  /**
    * Releases the in_flight lock on error.
    * Sets member_access.status to a valid post-S-11 value: the source rollup
    * ('active' / 'inactive'), or 'pending_identity'.

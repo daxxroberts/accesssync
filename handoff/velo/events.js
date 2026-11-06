@@ -62,3 +62,7 @@ export function wixBookings_onBookingCanceled(event)           { return _send('w
 
 // Members — clean up access on account deletion
 export function wixMembers_onMemberDeleted(event)              { return _send('wixMembers.memberDeleted', event); }
+
+// Members — a changed login email moves the member's door login to the new address (DR-056).
+// Fires on any profile edit; AccessSync ignores it unless the login email actually changed.
+export function wixMembers_onMemberUpdated(event)              { return _send('wixMembers.memberUpdated', event); }

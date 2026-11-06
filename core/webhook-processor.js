@@ -23,7 +23,7 @@ const tenantResolver = require('./tenant-resolver');
 const { getRedisConnection } = require('./redis-utils');
 const { log } = require('./logger');
 const { getTraceId, getActor, setTraceContext, setClientId } = require('./trace-context');
-const { GRANT_EVENT_TYPES, REVOKE_EVENT_TYPES } = require('./event-routing');
+const { GRANT_EVENT_TYPES, REVOKE_EVENT_TYPES, MEMBER_UPDATE_EVENT_TYPES } = require('./event-routing');
 
 const connection = getRedisConnection();
 
@@ -191,6 +191,17 @@ class WebhookProcessor {
         traceId, eventId, eventType: standardEvent.eventType,
         clientId: tenantId, platformMemberId, planId,
         jobId: `revoke-${eventId}`, jobType: 'revoke',
+        stage: 'queue', result: 'success',
+      });
+
+    } else if (MEMBER_UPDATE_EVENT_TYPES.includes(standardEvent.eventType)) {
+      // DR-056: a profile edit. The email_swap job decides whether the login email
+      // actually changed; most of these end as a no-op.
+      await this._enqueueOrUnmark('email_swap', eventId, tenantId, standardEvent);
+      log.info('webhook.enqueued', {
+        traceId, eventId, eventType: standardEvent.eventType,
+        clientId: tenantId, platformMemberId, planId,
+        jobId: `email_swap-${eventId}`, jobType: 'email_swap',
         stage: 'queue', result: 'success',
       });
 

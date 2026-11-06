@@ -175,6 +175,16 @@ class HardwareAdapter {
   }
 
   /**
+   * DR-056: read-only form of the delete guard. Resolves { user, marker } when the user
+   * is AccessSync's and safe to delete, null when already gone; throws the guard's
+   * refusal (UNOWNED_USER / CLIENT_MISMATCH / ELEVATED_ROLE_ATTACHED) otherwise.
+   */
+  async assertUserDeletable(hardwarePlatform, apiKey, userId, options = {}) {
+    this._validate(hardwarePlatform, 'deleteUser', { userId });
+    return this._getAdapter(hardwarePlatform).assertDeletable(apiKey, userId, options);
+  }
+
+  /**
    * Phase 1 (I-4): fetch one hardware user. Returns the user object, or null
    * when the platform says the user does not exist (404). Any other failure
    * throws. core/grant-revoke.js uses this after an assignRole 404 to tell a

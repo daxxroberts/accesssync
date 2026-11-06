@@ -697,3 +697,20 @@ link id lives in `member_access_sources.role_assignment_id` with `source_type='d
 | `operator.email_branding.guide_uploaded` | info | Operator uploaded the QR entry guide PDF (attached to every QR-code email) |
 | `operator.email_branding.guide_removed` | info | Operator removed the QR entry guide PDF |
 | `operator.email_branding.guide_upload_failed` | error | Storage rejected the QR entry guide upload |
+
+## Login Email Swap Events (DR-056, 2026-11-05)
+
+A changed Wix login email swaps the member's Kisi user (`core/login-email-swap.js`, queue job `email_swap`). No event ever carries an email address (DR-001).
+
+| Event | Level | Description |
+|---|---|---|
+| `login_email_swap.skipped` | info | A member-profile update that needs no swap: gym switch off, email unchanged, unknown member, no API key. Fires on every ordinary profile edit, so it is not persisted |
+| `login_email_swap.email_stored` | info | The member had no Kisi user (or Kisi already showed the new email), so only the stored email was updated |
+| `login_email_swap.user_created` | info | The replacement Kisi user was created (old and new Kisi ids recorded) |
+| `login_email_swap.complete` | info | Swap finished: access moved, records updated, old Kisi user deleted |
+| `login_email_swap.deferred` | info | Swap postponed (live day pass or an in-flight job); the job returns later without using a retry |
+| `login_email_swap.rolled_back` | warn | A step failed after the new Kisi user was created; the new user was deleted and our records were left untouched |
+| `login_email_swap.rollback_failed` | error | Rolling back could not delete the new Kisi user; a stray user exists and the old one still works |
+| `login_email_swap.old_user_delete_failed` | error | The member is fully moved but the old Kisi user could not be deleted; flagged on the Errors page and no emails are sent |
+| `login_email_swap.no_admin_contact` | warn | The gym has no admin contact, so the old-address notice has no "That wasn't me" button |
+| `queue.email_swap.done` | info | An `email_swap` job finished (outcome recorded); a breadcrumb, not persisted |

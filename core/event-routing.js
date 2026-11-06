@@ -47,6 +47,13 @@ const REVOKE_EVENT_TYPES = Object.freeze([
   'member.deleted',
 ]);
 
+// DR-056: a Wix member-profile update. Neither a grant nor a revoke, so
+// jobNameForEventType still answers null (reconcile and Retry never replay it);
+// webhook-processor routes it to its own 'email_swap' job.
+const MEMBER_UPDATE_EVENT_TYPES = Object.freeze([
+  'member.updated',
+]);
+
 /**
  * @param {string} eventType  standard event type, e.g. 'plan.purchased'
  * @returns {'grant'|'revoke'|null}  null for any type that is neither —
@@ -58,4 +65,4 @@ function jobNameForEventType(eventType) {
   return null;
 }
 
-module.exports = { GRANT_EVENT_TYPES, REVOKE_EVENT_TYPES, jobNameForEventType };
+module.exports = { GRANT_EVENT_TYPES, REVOKE_EVENT_TYPES, MEMBER_UPDATE_EVENT_TYPES, jobNameForEventType };

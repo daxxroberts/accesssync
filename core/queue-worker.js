@@ -43,6 +43,7 @@ const { extractBillingSnapshot } = require('./billing-snapshot');
 const { log, withTrace } = require('./logger');
 const { runWith, registerTrace, setTraceContext, mintTraceId } = require('./trace-context');
 const memberMailer = require('./member-mailer');
+const loginEmailSwap = require('./login-email-swap');
 
 const connection = getRedisConnection();
 
@@ -515,11 +516,11 @@ async function processJob(job, token) {
     // clientId: every log row written while this job runs — including from layers that never
     // receive the tenant (the Kisi connector's HTTP error log) — is stamped with its client.
     { traceId, actor: { type: 'system', id: 'queue-worker' }, clientId: tenantId || null },
-    () => _processJobBody(job, traceId)
+    () => _processJobBody(job, traceId, token)
   ));
 }
 
-async function _processJobBody(job, traceId) {
+async function _processJobBody(job, traceId, token) {
   const { tenantId, standardEvent } = job.data || {};
   const clientId = tenantId;
   const eventId  = standardEvent.eventId  || null;
@@ -1102,11 +1103,33 @@ async function _processJobBody(job, traceId) {
         }
       }
 
+    } else if (job.name === 'email_swap') {
+      // DR-056: a Wix member-profile update. Swaps the member's Kisi user when (and only
+      // when) the login email really changed; every other edit ends here as a no-op.
+      lastStep = 'email_swap';
+      const swap = await loginEmailSwap.runLoginEmailSwap({
+        tenantId, standardEvent, eventId, logger, getApiKey: getClientApiKey,
+      });
+      if (swap.status === 'deferred') {
+        // A live day pass (or an in-flight job) is in the way: come back later without
+        // spending a retry attempt, the same way withMemberLock parks a busy member.
+        await job.moveToDelayed(Date.now() + swap.delayMs, token);
+        throw new DelayedError();
+      }
+      logger.info('queue.email_swap.done', {
+        clientId, eventId, platformMemberId: standardEvent.platformMemberId,
+        outcome: swap.status, durationMs: Date.now() - jobStart,
+        stage: 'email_swap', result: 'success',
+      });
+
     } else {
       logger.warn('queue.job.unknown_name', { jobId: job.id, jobName: job.name, clientId, eventId });
     }
 
   } catch (error) {
+    // A deliberate park (DelayedError) is not a failure: no log, no lock release.
+    if (error && (error.name === 'DelayedError' || (typeof DelayedError === 'function' && error instanceof DelayedError))) throw error;
+
     logger.error('queue.job.failed', {
       jobId: job.id, jobName: job.name,
       clientId, memberId, eventId,

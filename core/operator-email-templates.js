@@ -618,6 +618,8 @@ function describeFailedJob(row) {
       return subject + '’s plan ended' + onPlan + ' but their door access didn’t get turned off.';
     case 'member.deleted':
       return subject + ' was deleted, but their door access didn’t get cleaned up.';
+    case 'member.updated':
+      return subject + ' changed their login email, but their door login was left as it was.';
     default:
       break;
   }

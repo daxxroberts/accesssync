@@ -170,6 +170,12 @@
     "admin.scheduler.day_pass_sweep_armed":       { "persist": true },
     "kisi.user.created.full_response":            { "persist": false },
     "retry.notify.suppressed_repeat":             { "persist": false },
-    "retry.notify.suppressed_same_cause":         { "persist": false }
+    "retry.notify.suppressed_same_cause":         { "persist": false },
+    "login_email_swap.skipped":                   { "persist": false },
+    "login_email_swap.email_stored":              { "persist": true },
+    "login_email_swap.user_created":              { "persist": true },
+    "login_email_swap.complete":                  { "persist": true },
+    "login_email_swap.deferred":                  { "persist": true },
+    "queue.email_swap.done":                      { "persist": false }
   }
 }

@@ -90,6 +90,28 @@ const BY_CODE = {
     { gymMayDismiss: true }),
   CLIENT_MISMATCH: accessSyncOwned(
     'This Kisi record is marked as belonging to a different AccessSync account, so AccessSync will not change or delete it.'),
+  // DR-056 — login-email swap. Each is a deliberate stop: the member's door login was left exactly as it was.
+  // Retry cannot help (the same event would stop in the same place), so none offers it.
+  LOGIN_EMAIL_UNVERIFIED: {
+    owner: OWNER.GYM, retry: RETRY.NONE,
+    headline: 'This member changed their login email in Wix, but Wix has not confirmed the new address. Their door login was left on the old address.',
+    steps: ['Ask the member to confirm the new email from the message Wix sent them.', 'Their door access keeps working in the meantime. Once they confirm, the change is picked up on their next profile update.'],
+  },
+  LOGIN_EMAIL_IN_USE: accessSyncOwned(
+    'This member changed their login email, but the new address already belongs to a different Kisi user. Nothing was changed.',
+    [SUPPORT_LINE, 'Their door access keeps working. If the new address is theirs on another Kisi account, AccessSync support can sort out which one to keep.']),
+  LOGIN_EMAIL_SHARED_USER: accessSyncOwned(
+    'This member changed their login email, but other members share the same Kisi login, so it was not swapped automatically.',
+    [SUPPORT_LINE, 'Door access keeps working for everyone on that login.']),
+  LOGIN_EMAIL_RATE_LIMITED: accessSyncOwned(
+    'This member\'s door login was already swapped in the last 30 days, so a second change was not applied automatically.',
+    [SUPPORT_LINE, 'Their door access keeps working. If this was not them, contact the member.']),
+  LOGIN_EMAIL_USER_NOT_OURS: accessSyncOwned(
+    'This member changed their login email, but their Kisi user was not created by AccessSync or holds an admin role, so it was not swapped.',
+    [SUPPORT_LINE, 'Their door access keeps working.']),
+  LOGIN_EMAIL_OLD_USER_NOT_REMOVED: accessSyncOwned(
+    'This member was moved to a new Kisi login after changing their email, but the old Kisi user could not be deleted.',
+    [SUPPORT_LINE, 'The member can already get in with the new login. The old Kisi user still exists on the old address and should be removed.']),
   // Written by core/source-retry-probe.js when its automatic retries ran out; not a queue job, so Retry cannot replay it.
   SOURCE_RETRY_EXHAUSTED: accessSyncOwned(
     'AccessSync tried several times to finish this door assignment and could not. Pressing Retry would not change that.'),

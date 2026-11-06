@@ -807,11 +807,58 @@ function renderDayPassReady({ branding, member, doorName, validUntilText, validU
   return { subject: 'Your ' + gym + ' day pass is ready', html, text };
 }
 
+/**
+ * DR-056 — shown in the old-address notice. The new address is never printed in full:
+ * the notice goes to a mailbox that may no longer belong to the member.
+ *   'olivia@gmail.com' -> 'ol***@gmail.com'   'al@x.com' -> 'a***@x.com'
+ */
+function maskEmail(email) {
+  const s = String(email || '').trim();
+  const at = s.lastIndexOf('@');
+  if (at < 1) return '***';
+  const local = s.slice(0, at);
+  return local.slice(0, local.length > 2 ? 2 : 1) + '***@' + s.slice(at + 1);
+}
+
+/**
+ * DR-056 — sent to the member's OLD login address after the Kisi user swap:
+ * "your door login email was changed". Wording approved by the Builder 2026-11-05.
+ * `newEmailMasked` must already be masked (maskEmail); this template never sees the
+ * real new address. The "That wasn't me" button is a mailto to the gym's admin contact
+ * and is left out when the gym has none set.
+ */
+function renderLoginEmailChanged({ branding, member, newEmailMasked }) {
+  const first  = (member && member.firstName) ? member.firstName : null;
+  const gym    = branding.gymName;
+  const masked = newEmailMasked || '***';
+
+  const bodyHtml =
+    '<p style="margin:0 0 12px 0;">Hi ' + escapeHtml(first || 'there') + ',</p>' +
+    '<p style="margin:0 0 12px 0;">The email on your <strong>' + escapeHtml(gym) + '</strong> door login was just changed to <strong>' + escapeHtml(masked) + '</strong>. Your sign-in link for the Kisi app is on its way to that address.</p>' +
+    '<p style="margin:0 0 12px 0;">If you made the change, you&rsquo;re set. Nothing else to do, and your door access works the same.</p>' +
+    '<p style="margin:0;">If you didn&rsquo;t, tell us right away. We&rsquo;ll lock it down.</p>';
+
+  const bodyText =
+    'Hi ' + (first || 'there') + ',\n\n' +
+    'The email on your ' + gym + ' door login was just changed to ' + masked + '. Your sign-in link for the Kisi app is on its way to that address.\n\n' +
+    "If you made the change, you're set. Nothing else to do, and your door access works the same.\n\n" +
+    "If you didn't, tell us right away. We'll lock it down.";
+
+  const { html, text } = renderLayout({
+    branding, heading: 'Your door login email changed', bodyHtml, bodyText,
+    ctaText: branding.adminEmail ? "That wasn't me" : null,
+    ctaUrl:  branding.adminEmail ? 'mailto:' + branding.adminEmail : null,
+  });
+  return { subject: 'Your ' + gym + ' door login email was changed', html, text };
+}
+
 module.exports = {
   escapeHtml,
   isValidHexColor,
   brandingFromClientRow,
   renderLayout,
+  maskEmail,
+  renderLoginEmailChanged,
   renderAccessReady,
   renderAccessRemoved,
   renderAccessSuspended,
