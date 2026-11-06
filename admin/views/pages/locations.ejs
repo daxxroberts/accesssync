@@ -210,50 +210,208 @@
     .inner-tab:hover { color: var(--text); }
     .inner-tab.active { color: var(--brand); border-bottom-color: var(--brand); }
 
-    /* ── Setup Guide snippets ── */
+    /* ── Setup Guide snippets (Installer Checklist UX) ── */
     .setup-section { display: none; }
     .setup-section.active { display: block; }
+
+    .setup-group-header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 10px; margin: 22px 0 10px; padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .setup-group-header:first-child { margin-top: 4px; }
+    .setup-group-title {
+      font-size: 11px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.7px; color: var(--text);
+    }
+    .setup-group-sub { font-size: 11px; color: var(--muted); }
+
     .snippet-card {
       background: var(--card); border: 1px solid var(--border);
-      border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow);
+      border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; box-shadow: var(--shadow);
     }
-    .snippet-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; gap: 10px; }
-    .snippet-card-title  { font-size: 13px; font-weight: 700; }
-    .snippet-card-badge  { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: var(--brand-dim); color: var(--brand); flex-shrink: 0; }
-    .snippet-instructions {
-      font-size: 11px; color: var(--muted); line-height: 1.7; margin-bottom: 14px;
+    .snippet-card-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px; margin-bottom: 10px;
     }
-    .snippet-instructions ol { margin: 8px 0 0 18px; padding: 0; }
-    .snippet-instructions li { margin-bottom: 4px; }
+    .snippet-step-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+    .snippet-step-num {
+      width: 22px; height: 22px; border-radius: 6px;
+      background: var(--brand-dim); color: var(--brand);
+      font-size: 11px; font-weight: 800;
+      display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .snippet-step-num.optional {
+      background: var(--bg); color: var(--muted); border: 1px solid var(--border2);
+    }
+    .snippet-card-title { font-size: 13.5px; font-weight: 700; color: var(--text); }
+    .snippet-version-tag {
+      font-size: 10px; font-family: monospace; color: var(--muted);
+      background: var(--bg); border: 1px solid var(--border);
+      padding: 1px 6px; border-radius: 4px;
+    }
+    .snippet-card-badge {
+      font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 4px;
+      background: var(--brand-dim); color: var(--brand); flex-shrink: 0; letter-spacing: 0.4px;
+    }
+    .snippet-card-badge.optional {
+      background: var(--bg); color: var(--muted); border: 1px solid var(--border);
+    }
+
+    /* Compact Create -> Paste checklist */
+    .installer-steps {
+      list-style: none; margin: 0 0 12px 0; padding: 0;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .installer-steps li {
+      font-size: 12px; color: var(--text2); line-height: 1.55;
+      display: flex; align-items: baseline; gap: 8px;
+    }
+    .installer-verb {
+      font-size: 10px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.4px; min-width: 54px; flex-shrink: 0;
+      color: var(--muted);
+    }
+    .installer-verb.create { color: var(--brand); }
+    .installer-verb.paste  { color: var(--sage-dark); }
+
+    /* Inline copyable identifier chip */
+    .copy-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-family: monospace; font-size: 11px; font-weight: 600;
+      padding: 1px 7px; margin: 0 2px; border-radius: 5px;
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--border2); cursor: pointer;
+      transition: all 0.12s; line-height: 1.4;
+    }
+    .copy-chip:hover {
+      border-color: var(--brand); color: var(--brand); background: var(--brand-dim);
+    }
+    .copy-chip.copied {
+      background: var(--sage-dim); color: var(--sage-dark); border-color: var(--sage-border);
+    }
+    .copy-chip-icon { font-size: 10px; opacity: 0.7; }
+
+    .prop-pill {
+      display: inline-block; font-size: 10.5px; font-weight: 700;
+      padding: 1px 7px; border-radius: 4px;
+      background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;
+    }
+
+    /* Prerequisite notice bar */
+    .setup-prereq-bar {
+      background: var(--bg); border: 1px solid var(--border);
+      border-left: 3px solid var(--brand); border-radius: 7px;
+      padding: 9px 12px; margin-bottom: 12px;
+      font-size: 11.5px; color: var(--text2); line-height: 1.55;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    }
+
+    /* Action bar: primary Copy button + secondary Guide / View Code toggles */
+    .snippet-action-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; flex-wrap: wrap; margin-top: 8px;
+    }
+    .snippet-action-left, .snippet-action-right {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .snippet-copy-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 13px; font-size: 11.5px; font-weight: 700;
+      background: var(--brand); border: 1px solid var(--brand); border-radius: 6px;
+      color: #fff; cursor: pointer; font-family: inherit; transition: all 0.12s;
+    }
+    .snippet-copy-btn:hover { opacity: 0.92; }
+    .snippet-copy-btn.secondary-copy {
+      background: var(--card); color: var(--text2); border-color: var(--border2);
+    }
+    .snippet-copy-btn.secondary-copy:hover {
+      background: var(--brand-dim); color: var(--brand); border-color: var(--brand-glow);
+    }
+    .snippet-copy-btn.copied {
+      background: var(--sage-dim) !important; color: var(--sage-dark) !important;
+      border-color: var(--sage-border) !important;
+    }
+
+    .snippet-toggle-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 10px; font-size: 11px; font-weight: 600;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text2); cursor: pointer; font-family: inherit; transition: all 0.12s;
+    }
+    .snippet-toggle-btn:hover { border-color: var(--brand); color: var(--brand); }
+    .snippet-toggle-btn.open {
+      background: var(--brand-dim); color: var(--brand); border-color: var(--brand-glow);
+    }
+
+    /* Expandable Wix Setup Guide drawer */
+    .wix-guide-drawer {
+      display: none; margin-top: 10px; margin-bottom: 10px;
+      padding: 13px 15px; border-radius: 8px;
+      background: var(--bg); border: 1px solid var(--border);
+      font-size: 11.5px; color: var(--text2); line-height: 1.65;
+    }
+    .wix-guide-drawer.open { display: block; }
+    .wix-guide-grid {
+      display: grid; grid-template-columns: 1fr; gap: 10px;
+    }
+    .wix-guide-box {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 7px; padding: 10px 12px;
+    }
+    .wix-guide-box-title {
+      font-size: 11.5px; font-weight: 700; color: var(--text); margin-bottom: 4px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .wix-guide-box ul, .wix-guide-box ol {
+      margin: 4px 0 0 18px; padding: 0;
+    }
+    .wix-guide-box li { margin-bottom: 3px; }
+
+    /* Collapsible code preview drawer (collapsed by default) */
+    .snippet-code-drawer {
+      display: none; margin-top: 10px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 14px; position: relative; max-height: 340px; overflow-y: auto;
+    }
+    .snippet-code-drawer.open { display: block; }
+    .snippet-code-drawer pre {
+      font-family: monospace; font-size: 10.5px; color: var(--text2);
+      white-space: pre-wrap; word-break: break-all; margin: 0; line-height: 1.55;
+    }
+
+    /* Sub-steps inside a card (e.g. 4a/4b or 5a/5b) */
+    .snippet-substep {
+      padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--border);
+    }
+    .snippet-substep:first-of-type {
+      padding-top: 0; margin-top: 0; border-top: none;
+    }
+    .snippet-substep-header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; flex-wrap: wrap; margin-bottom: 6px;
+    }
+    .snippet-substep-title {
+      font-size: 12px; font-weight: 700; color: var(--text);
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }
+    .snippet-substep-pill {
+      font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 4px;
+      background: var(--brand-dim); color: var(--brand);
+    }
+
     .snippet-field-label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
     .snippet-row {
-      display: flex; align-items: center; gap: 8px;
-      padding: 9px 13px; background: var(--bg);
-      border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 8px 12px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px;
     }
     .snippet-value {
       flex: 1; font-family: monospace; font-size: 11px; color: var(--text);
-      word-break: break-all; white-space: pre-wrap;
+      word-break: break-all; white-space: pre-wrap; min-width: 180px;
     }
     .snippet-value.masked { filter: blur(4px); transition: filter 0.2s; cursor: pointer; }
     .snippet-value.masked:hover { filter: blur(2px); }
-    .snippet-code-block {
-      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-      padding: 14px; margin-bottom: 10px; position: relative;
-    }
-    .snippet-code-block pre {
-      font-family: monospace; font-size: 10.5px; color: var(--text2);
-      white-space: pre-wrap; word-break: break-all; margin: 0; line-height: 1.6;
-    }
-    .snippet-copy-row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
-    .snippet-copy-btn {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 5px 12px; font-size: 11px; font-weight: 600;
-      background: var(--card); border: 1px solid var(--border2); border-radius: 6px;
-      color: var(--text2); cursor: pointer; font-family: inherit; transition: all 0.12s;
-    }
-    .snippet-copy-btn:hover { background: var(--brand-dim); color: var(--brand); border-color: var(--brand-glow); }
-    .snippet-copy-btn.copied { background: var(--sage-dim); color: var(--sage-dark); border-color: var(--sage-border); }
     .snippet-reveal-btn {
       padding: 4px 10px; font-size: 10px; font-weight: 600;
       background: none; border: 1px solid var(--border2); border-radius: 5px;
@@ -261,58 +419,11 @@
     }
     .snippet-reveal-btn:hover { border-color: var(--brand); color: var(--brand); }
     .snippet-loading { font-size: 12px; color: var(--muted); padding: 32px 0; text-align: center; }
-    .snippet-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
-
-    /* OB-237 Phase B — Setup Hub status badges + env-issue banner */
-    .setup-aggregate {
-      padding: 14px 18px; border-radius: 10px; margin-bottom: 18px;
-      display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 600;
-      border: 1px solid var(--border);
-    }
-    .setup-aggregate.green  { background: var(--sage-dim);  color: var(--sage-dark);  border-color: var(--sage-border); }
-    .setup-aggregate.amber  { background: #FEF3C7;          color: #92400E;           border-color: #FCD34D; }
-    .setup-aggregate.red    { background: #FEE2E2;          color: #991B1B;           border-color: #FCA5A5; }
-    .setup-aggregate-icon { font-size: 18px; }
-    .setup-aggregate-action { margin-left: auto; font-size: 11px; }
-
-    .snippet-status-badge {
-      font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 12px;
-      display: inline-flex; align-items: center; gap: 4px;
-      text-transform: uppercase; letter-spacing: 0.4px;
-    }
-    .snippet-status-badge.verified            { background: var(--sage-dim);  color: var(--sage-dark); }
-    .snippet-status-badge.installed_unverified{ background: #FEF3C7;          color: #92400E; }
-    .snippet-status-badge.stale               { background: #FEF3C7;          color: #92400E; }
-    .snippet-status-badge.broken              { background: #FEE2E2;          color: #991B1B; }
-    .snippet-status-badge.not_installed       { background: var(--bg);        color: var(--muted); border: 1px solid var(--border); }
-    .snippet-status-dot {
-      width: 7px; height: 7px; border-radius: 50%; display: inline-block;
-    }
-    .verified .snippet-status-dot             { background: var(--sage-dark); }
-    .installed_unverified .snippet-status-dot { background: #92400E; }
-    .stale .snippet-status-dot                { background: #92400E; }
-    .broken .snippet-status-dot               { background: #991B1B; }
-    .not_installed .snippet-status-dot        { background: var(--muted); }
-
-    .snippet-card.broken { border-color: #FCA5A5; }
+    .snippet-divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
     .snippet-render-error {
       background: #FEE2E2; color: #991B1B; padding: 10px 14px; border-radius: 8px;
-      font-size: 11px; margin-bottom: 12px; border: 1px solid #FCA5A5;
+      font-size: 11px; margin-bottom: 10px; border: 1px solid #FCA5A5;
     }
-    .setup-env-banner {
-      background: #FEE2E2; color: #991B1B; padding: 12px 16px; border-radius: 10px;
-      font-size: 12px; margin-bottom: 18px; border: 1px solid #FCA5A5;
-    }
-    .setup-env-banner strong { font-weight: 700; }
-    .snippet-meta {
-      font-size: 10px; color: var(--muted); margin-top: 8px;
-      display: flex; gap: 12px; flex-wrap: wrap;
-    }
-    .snippet-meta-item { display: inline-flex; align-items: center; gap: 4px; }
-    .snippet-badge-row {
-      display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
-    }
-    /* .snippet-test-result removed 2026-05-30 (Test Connection ripped out). */
 
     @media (max-width: 600px) {
       .loc-stats   { grid-template-columns: repeat(2, 1fr); }
@@ -1641,7 +1752,7 @@
       if (tab === 'setup' && !_snippetsLoaded) loadSetupSnippets();
     }
 
-    // ── Setup Hub (OB-237 Phase B — registry-driven) ──────────────────
+    // ── Setup Hub (OB-237 Phase B — compact installer checklist UX) ───
     var _setupState = null;
 
     function loadSetupSnippets() {
@@ -1658,13 +1769,38 @@
         });
     }
 
+    function chipHtml(value, label) {
+      var display = label || value;
+      return '<button type="button" class="copy-chip" data-copy-chip="' + esc(value) + '" title="Click to copy ' + esc(value) + '">' +
+        '<span>' + esc(display) + '</span><span class="copy-chip-icon">⧉</span></button>';
+    }
+
+    function copyIconSvg() {
+      return '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    }
+
+    function flashCopiedButton(btn, customCopiedText) {
+      btn.classList.add('copied');
+      var originalHtml = btn.getAttribute('data-orig-html');
+      if (!originalHtml) {
+        originalHtml = btn.innerHTML;
+        btn.setAttribute('data-orig-html', originalHtml);
+      }
+      btn.textContent = customCopiedText || '✓ Copied';
+      setTimeout(function() {
+        btn.classList.remove('copied');
+        btn.innerHTML = originalHtml;
+      }, 1800);
+    }
+
     function renderSetupHub(d) {
       document.getElementById('setup-loading').style.display = 'none';
-      document.getElementById('setup-content').style.display = '';
+      var contentEl = document.getElementById('setup-content');
+      contentEl.style.display = '';
 
-      // Aggregate pill + env banner removed 2026-05-30 — no synthetic status.
       renderWebhookCard(d);
       renderSnippetCards(d.snippets || []);
+      wireInteractiveSetupControls(contentEl);
     }
 
     function renderWebhookCard(d) {
@@ -1673,47 +1809,81 @@
       var hmacSecret = d.hmacSecret;
       var hmacSource = d.hmacSource || 'none';
 
-      // Rotate (server-gen new) + Edit (operator pastes custom value).
-      // No status badge — per-client vs env-fallback isn't actionable info
-      // the operator cares about visually. Both buttons always render.
       var rotateButtonLabel = (hmacSource === 'per_client') ? 'Rotate secret' : 'Generate per-client secret';
-      var rotateButtonHtml =
-        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' +
-        '<button class="snippet-reveal-btn" id="rotate-webhook-secret-btn">' +
-        rotateButtonLabel + '</button>' +
-        '<button class="snippet-reveal-btn" id="edit-webhook-secret-btn">' +
-        'Edit / Set custom value</button>' +
+
+      var secretRowHtml = '';
+      if (hmacSecret) {
+        secretRowHtml =
+          '<div class="snippet-row" style="margin-bottom:6px;">' +
+            '<span class="snippet-value masked" data-secret="' + esc(hmacSecret) + '">Click to reveal</span>' +
+            '<button type="button" class="snippet-reveal-btn" id="reveal-webhook-secret-btn">Reveal</button>' +
+            '<button type="button" class="snippet-copy-btn" data-copy-secret="1">' + copyIconSvg() + ' Copy HMAC Secret</button>' +
+          '</div>';
+      } else {
+        secretRowHtml =
+          '<div class="snippet-row" style="margin-bottom:6px;">' +
+            '<span class="snippet-value" style="color:var(--red)">(WIX_WEBHOOK_SECRET not configured)</span>' +
+          '</div>';
+      }
+
+      var guideDrawerHtml =
+        '<div class="wix-guide-drawer" id="guide-drawer-step-1">' +
+          '<div class="wix-guide-grid">' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">Where to paste this in Wix</div>' +
+              '<ol>' +
+                '<li>Open your <strong>Wix Dashboard</strong> and go to <strong>Developer Tools &rarr; Secrets Manager</strong>.</li>' +
+                '<li>Click <strong>+ Store Secret</strong>.</li>' +
+                '<li>Set <strong>Name</strong> to ' + chipHtml('accesssync_webhook_secret') + ' (must match exact spelling).</li>' +
+                '<li>Paste the <strong>HMAC Secret</strong> above into <strong>Value</strong> and click <strong>Save</strong>.</li>' +
+              '</ol>' +
+            '</div>' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">Reference: Raw Webhook Endpoint URL</div>' +
+              '<div style="margin-bottom:6px;">Already pre-filled inside <code>events.js</code> (Step 2). Provided here only if you need to inspect or test it manually:</div>' +
+              '<div class="snippet-row" style="margin-bottom:0;">' +
+                '<span class="snippet-value"' + (webhookUrl ? '' : ' style="color:var(--red)"') + '>' +
+                  esc(webhookUrl || '(CORE_ENGINE_URL not configured — contact AccessSync support)') +
+                '</span>' +
+                (webhookUrl ? '<button type="button" class="snippet-copy-btn secondary-copy" data-copy-text="' + esc(webhookUrl) + '">Copy URL</button>' : '') +
+              '</div>' +
+            '</div>' +
+          '</div>' +
         '</div>';
 
-      var html = '<div class="snippet-card"><div class="snippet-card-header"><div>' +
-                 '<div class="snippet-card-title">Webhook URL + HMAC Secret</div>' +
-                 '<div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">' +
-                 'Used by the Velo backend snippet below to verify webhook authenticity. ' +
-                 'Paste these into your Wix Secrets Manager (see events.js install instructions).' +
-                 '</div></div>' +
-                 '<span class="snippet-card-badge">CONFIG</span></div>' +
-                 '<hr class="snippet-divider">' +
-                 '<div class="snippet-field-label">Webhook URL</div>' +
-                 '<div class="snippet-row">' +
-                 '<span class="snippet-value"' + (webhookUrl ? '' : ' style="color:var(--red)"') + '>' +
-                 esc(webhookUrl || '(CORE_ENGINE_URL not configured — contact AccessSync support)') +
-                 '</span>' +
-                 (webhookUrl ? '<button class="snippet-copy-btn" data-copy-text="' + esc(webhookUrl) + '">Copy</button>' : '') +
-                 '</div>' +
-                 '<div class="snippet-field-label" style="margin-top:12px;">HMAC Secret</div>' +
-                 '<div class="snippet-row">';
-      if (hmacSecret) {
-        html += '<span class="snippet-value masked" data-secret="' + esc(hmacSecret) + '">Click to reveal</span>' +
-                '<button class="snippet-reveal-btn">Reveal</button>' +
-                '<button class="snippet-copy-btn" data-copy-secret="1">Copy</button>';
-      } else {
-        html += '<span class="snippet-value" style="color:var(--red)">(WIX_WEBHOOK_SECRET not configured)</span>';
-      }
-      html += '</div>' + rotateButtonHtml + '</div>';
+      var html =
+        '<div class="setup-group-header">' +
+          '<div class="setup-group-title">Required Setup (Steps 1–3)</div>' +
+          '<div class="setup-group-sub">Complete these 3 steps once to connect Wix webhooks and your Member Hub.</div>' +
+        '</div>' +
+        '<div class="snippet-card">' +
+          '<div class="snippet-card-header">' +
+            '<div class="snippet-step-head">' +
+              '<span class="snippet-step-num">1</span>' +
+              '<span class="snippet-card-title">Wix Secrets Manager</span>' +
+            '</div>' +
+            '<span class="snippet-card-badge">REQUIRED</span>' +
+          '</div>' +
+          '<ul class="installer-steps">' +
+            '<li><span class="installer-verb create">Create</span><span>In Wix Dashboard &rarr; <strong>Developer Tools &rarr; Secrets Manager</strong>, store a secret named ' + chipHtml('accesssync_webhook_secret') + '</span></li>' +
+            '<li><span class="installer-verb paste">Paste</span><span>Copy the <strong>HMAC Secret</strong> below and paste it as the secret value:</span></li>' +
+          '</ul>' +
+          secretRowHtml +
+          '<div class="snippet-action-bar">' +
+            '<div class="snippet-action-left">' +
+              '<button type="button" class="snippet-reveal-btn" id="rotate-webhook-secret-btn">' + rotateButtonLabel + '</button>' +
+              '<button type="button" class="snippet-reveal-btn" id="edit-webhook-secret-btn">Edit / Set custom value</button>' +
+            '</div>' +
+            '<div class="snippet-action-right">' +
+              '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="guide-drawer-step-1">Wix Setup Guide &#9662;</button>' +
+            '</div>' +
+          '</div>' +
+          guideDrawerHtml +
+        '</div>';
+
       el.innerHTML = html;
 
-      // Wire up reveal + copy
-      var revealBtn = el.querySelector('.snippet-reveal-btn');
+      var revealBtn = document.getElementById('reveal-webhook-secret-btn');
       var maskedEl = el.querySelector('.snippet-value.masked');
       function reveal() {
         if (!maskedEl) return;
@@ -1724,22 +1894,18 @@
       if (revealBtn) revealBtn.addEventListener('click', reveal);
       if (maskedEl)  maskedEl.addEventListener('click', reveal);
 
-      el.querySelectorAll('.snippet-copy-btn').forEach(function(btn) {
+      el.querySelectorAll('[data-copy-secret], [data-copy-text]').forEach(function(btn) {
         btn.addEventListener('click', function() {
           var text = btn.getAttribute('data-copy-secret')
             ? (maskedEl ? maskedEl.getAttribute('data-secret') : '')
             : btn.getAttribute('data-copy-text');
           if (!text) return;
           navigator.clipboard.writeText(text.trim()).then(function() {
-            btn.classList.add('copied');
-            var originalText = btn.textContent;
-            btn.textContent = '✓ Copied';
-            setTimeout(function() { btn.classList.remove('copied'); btn.textContent = originalText; }, 1800);
+            flashCopiedButton(btn);
           }).catch(function() { toast('Copy failed — try manually selecting', 'error'); });
         });
       });
 
-      // OB-238 — rotate + edit buttons
       var rotateBtn = document.getElementById('rotate-webhook-secret-btn');
       if (rotateBtn) rotateBtn.addEventListener('click', rotateWebhookSecret);
       var editBtn = document.getElementById('edit-webhook-secret-btn');
@@ -1752,7 +1918,7 @@
         'This is the same value you would (or already do) have in your Wix Secrets Manager under the key "accesssync_webhook_secret".\n\n' +
         'Must be at least 32 characters. Can be longer (e.g., Wix-generated values are typically longer).'
       );
-      if (entered === null) return; // canceled
+      if (entered === null) return;
       entered = (entered || '').trim();
       if (entered.length < 32) {
         toast('Secret must be at least 32 characters', 'error');
@@ -1797,8 +1963,6 @@
             toast(data.error || 'Rotate failed', 'error');
             return;
           }
-          // Show the new secret ONCE via a modal-like confirm prompt the operator
-          // must explicitly close, so they can paste before navigating away.
           window.prompt(
             'NEW per-client webhook secret — copy this NOW and paste into Wix Secrets Manager under the key "accesssync_webhook_secret".\n\n' +
             'This value will not be shown again — but you can re-reveal it from this page later.',
@@ -1813,171 +1977,464 @@
         });
     }
 
+    function renderErrorBlockHtml(s) {
+      if (!s) return '';
+      if (s.render_error === 'missing_env_vars') {
+        return '<div class="snippet-render-error">This snippet cannot be generated yet — server config incomplete. Contact AccessSync support.</div>';
+      }
+      if (s.render_error) {
+        return '<div class="snippet-render-error">Snippet render error: ' + esc(s.render_error) + '</div>';
+      }
+      return '';
+    }
+
+    function splitDayPassParts(body) {
+      if (!body) return { part1: '', part2: '' };
+      var marker = '// ===== PART 2';
+      var idx = body.indexOf(marker);
+      if (idx === -1) {
+        return { part1: body.trim(), part2: '' };
+      }
+      var part1Slice = body.slice(0, idx).trim();
+      if (part1Slice.indexOf('// ===== PART 1') === 0) {
+        var nl1 = part1Slice.indexOf('\n');
+        if (nl1 !== -1) part1Slice = part1Slice.slice(nl1 + 1).trim();
+      }
+      var part2Slice = body.slice(idx);
+      var firstNewline = part2Slice.indexOf('\n');
+      var part2Raw = (firstNewline !== -1 ? part2Slice.slice(firstNewline + 1) : part2Slice).trim();
+      return { part1: part1Slice, part2: part2Raw };
+    }
+
     function renderSnippetCards(snippets) {
       var el = document.getElementById('setup-snippets-list');
+      var byId = {};
+      snippets.forEach(function(s) { byId[s.id] = s; });
 
-      // OB-238 followup — group snippets by display_group so paired snippets
-      // that depend on each other render inside one card. post_purchase_flow
-      // originally paired sync_status_page with thank_you_redirect (both
-      // removed); now pairs the reinstated thank_you_redirect (auto-redirect
-      // off the native Thank You page) with thank_you_button (the status
-      // button on wherever that redirect lands) — same grouping, new pair.
-      var groupTitles = {
-        webhook: 'Webhook Forwarder',
-        member_access: 'Member Access Page',
-        post_purchase_flow: 'Post-Purchase Flow (Redirect + Status Button)',
-      };
-      var groups = {};
-      var groupOrder = [];
+      var html = '';
+
+      // ── Step 2: Backend Webhook Forwarder (events.js) ──
+      if (byId.velo_events_backend) {
+        html += buildStep2EventsCard(byId.velo_events_backend);
+      }
+
+      // ── Step 3: Member Hub Button (My Access Page) ──
+      if (byId.my_access_page) {
+        html += buildStep3MyAccessCard(byId.my_access_page);
+      }
+
+      // ── Optional Add-Ons Header ──
+      if (byId.thank_you_button || byId.thank_you_redirect || byId.thank_you_day_pass) {
+        html +=
+          '<div class="setup-group-header">' +
+            '<div class="setup-group-title">Optional Add-Ons (Steps 4–5)</div>' +
+            '<div class="setup-group-sub">Install only if you want a post-purchase status button or sell QR day passes.</div>' +
+          '</div>';
+      }
+
+      // ── Step 4: Post-Purchase Status Button (+ Optional Auto-Redirect) ──
+      if (byId.thank_you_button || byId.thank_you_redirect) {
+        html += buildStep4PostPurchaseCard(byId.thank_you_button, byId.thank_you_redirect);
+      }
+
+      // ── Step 5: Day-Pass QR Button (Backend .jsw + Thank You Page Button) ──
+      if (byId.thank_you_day_pass) {
+        html += buildStep5DayPassCard(byId.thank_you_day_pass);
+      }
+
+      // Render any unexpected future registry snippets gracefully so nothing is ever hidden
       snippets.forEach(function(s) {
-        var g = s.display_group || s.id;
-        if (!groups[g]) { groups[g] = []; groupOrder.push(g); }
-        groups[g].push(s);
-      });
-
-      var html = groupOrder.map(function(gid) {
-        var items = groups[gid];
-        if (items.length === 1) {
-          // Single-snippet group: render as before (one card per snippet)
-          return buildSnippetCardHtml(items[0]);
+        if (['velo_events_backend', 'my_access_page', 'thank_you_button', 'thank_you_redirect', 'thank_you_day_pass'].indexOf(s.id) === -1) {
+          html += buildFallbackSnippetCard(s);
         }
-        // Multi-snippet group: group title + stacked snippet sections
-        var title = groupTitles[gid] || items.map(function(i) { return i.name; }).join(' + ');
-        return buildGroupedCardHtml(title, items);
-      }).join('');
+      });
 
       el.innerHTML = html;
-
-      // Wire up Copy buttons across all groups
-      el.querySelectorAll('[data-snippet-id]').forEach(function(node) {
-        var snippetId = node.getAttribute('data-snippet-id');
-        var copyBtn = node.querySelector('.snippet-copy-btn');
-        if (copyBtn) copyBtn.addEventListener('click', function() { copySnippet(snippetId, copyBtn); });
-      });
     }
 
-    function buildGroupedCardHtml(groupTitle, items) {
-      // Status badges removed 2026-05-30 — no synthetic state coloring.
-      var subSections = items.map(function(s) {
-        return buildSubSnippetHtml(s);
-      }).join('<hr class="snippet-divider" style="margin:24px 0;">');
-
-      return '<div class="snippet-card" data-display-group="' + esc(groupTitle) + '">' +
-        '<div class="snippet-card-header">' +
-        '<div style="flex:1;">' +
-        '<div class="snippet-card-title">' + esc(groupTitle) + '</div>' +
-        '<div class="snippet-instructions" style="margin-top:8px;margin-bottom:0;">' +
-        'These snippets work together — install both for the post-purchase member experience.' +
-        '</div>' +
-        '</div>' +
-        '<span class="snippet-card-badge">REQUIRED</span>' +
-        '</div>' +
-        '<hr class="snippet-divider">' +
-        subSections +
+    function buildStep2EventsCard(s) {
+      var guideHtml =
+        '<div class="wix-guide-drawer" id="guide-drawer-step-2">' +
+          '<div class="wix-guide-grid">' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">How to install <code>events.js</code> in Wix</div>' +
+              '<ol>' +
+                '<li>In your Wix Editor, turn on <strong>Dev Mode</strong> (top bar).</li>' +
+                '<li>In the left sidebar under <strong>Public &amp; Backend &rarr; Backend</strong>, click <strong>+</strong> to create ' + chipHtml('events.js') + ' (or open it if it already exists).</li>' +
+                '<li>Delete any placeholder code in <code>events.js</code>, paste the copied snippet, and click <strong>Publish</strong>.</li>' +
+              '</ol>' +
+            '</div>' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">What this file handles automatically</div>' +
+              '<ul>' +
+                '<li><strong>Pricing Plans &amp; Bookings:</strong> Forwards purchases, renewals, cancellations, and booking confirmations.</li>' +
+                '<li><strong>Wix Stores Day Passes (v2.2.0+):</strong> Includes <code>wixStores_onOrderPaid</code> so 1-day passes sold via Wix Stores provision door access automatically.</li>' +
+                '<li><strong>Member Deletions &amp; Login Email Changes (v2.3.0+):</strong> Immediately revokes hardware credentials when a member is deleted, and automatically moves their Kisi user when they change their verified login email in Wix.</li>' +
+              '</ul>' +
+            '</div>' +
+          '</div>' +
         '</div>';
-    }
-
-    function buildSubSnippetHtml(s) {
-      // Same content as buildSnippetCardHtml but without the outer card wrapper.
-      // Status badges + last-seen meta removed 2026-05-30.
-      var instructionsHtml = (s.instructions || []).map(function(step) {
-        return '<li>' + esc(step) + '</li>';
-      }).join('');
-
-      var renderErrorHtml = '';
-      if (s.render_error === 'missing_env_vars') {
-        renderErrorHtml = '<div class="snippet-render-error">' +
-          'This snippet cannot be generated yet — server config incomplete. Contact AccessSync support.' +
-          '</div>';
-      } else if (s.render_error) {
-        renderErrorHtml = '<div class="snippet-render-error">Snippet render error: ' + esc(s.render_error) + '</div>';
-      }
-
-      var metaHtml = '<div class="snippet-meta">' +
-        '<span class="snippet-meta-item"><strong>Version:</strong> ' + esc(s.current_version) + '</span>' +
-        '<span class="snippet-meta-item"><strong>Install in:</strong> ' + esc(s.wix_install_path) + '</span>' +
-        '</div>';
-
-      var bodyHtml = s.body
-        ? '<div class="snippet-code-block"><pre>' + esc(s.body) + '</pre></div>' +
-          '<div class="snippet-copy-row">' +
-          '<button class="snippet-copy-btn">' +
-          '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
-          ' Copy snippet</button></div>'
-        : '';
-
-      var optionalBadge = s.category === 'optional'
-        ? '<span class="snippet-card-badge" style="background:var(--bg);color:var(--muted);font-size:9px;margin-left:8px;">OPTIONAL</span>'
-        : '';
-
-      return '<div data-snippet-id="' + esc(s.id) + '">' +
-        '<div class="snippet-badge-row" style="margin-bottom:6px;">' +
-        '<div class="snippet-card-title" style="font-size:12px;">' + esc(s.name) + '</div>' +
-        optionalBadge +
-        '</div>' +
-        '<div class="snippet-instructions" style="margin-top:6px;margin-bottom:0;">' +
-        esc(s.description) +
-        (instructionsHtml ? '<ol>' + instructionsHtml + '</ol>' : '') +
-        '</div>' +
-        renderErrorHtml + metaHtml + bodyHtml +
-        '</div>';
-    }
-
-    function buildSnippetCardHtml(s) {
-      // Status badges + last-seen meta removed 2026-05-30 (no synthetic status).
-      var categoryBadge = s.category === 'required'
-        ? '<span class="snippet-card-badge">REQUIRED</span>'
-        : (s.category === 'optional' ? '<span class="snippet-card-badge" style="background:var(--bg);color:var(--muted);">OPTIONAL</span>' : '');
-
-      var instructionsHtml = (s.instructions || []).map(function(step) {
-        return '<li>' + esc(step) + '</li>';
-      }).join('');
-
-      var renderErrorHtml = '';
-      if (s.render_error === 'missing_env_vars') {
-        renderErrorHtml = '<div class="snippet-render-error">' +
-          'This snippet cannot be generated yet — server config incomplete. Contact AccessSync support.' +
-          '</div>';
-      } else if (s.render_error) {
-        renderErrorHtml = '<div class="snippet-render-error">Snippet render error: ' + esc(s.render_error) + '</div>';
-      }
-
-      var metaHtml = '<div class="snippet-meta">' +
-        '<span class="snippet-meta-item"><strong>Version:</strong> ' + esc(s.current_version) + '</span>' +
-        '<span class="snippet-meta-item"><strong>Install in:</strong> ' + esc(s.wix_install_path) + '</span>' +
-        '</div>';
-
-      var bodyHtml = s.body
-        ? '<div class="snippet-code-block"><pre>' + esc(s.body) + '</pre></div>' +
-          '<div class="snippet-copy-row">' +
-          '<button class="snippet-copy-btn">' +
-          '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
-          ' Copy snippet</button></div>'
-        : '';
 
       return '<div class="snippet-card" data-snippet-id="' + esc(s.id) + '">' +
         '<div class="snippet-card-header">' +
-        '<div style="flex:1;">' +
-        '<div class="snippet-card-title">' + esc(s.name) + '</div>' +
-        '<div class="snippet-instructions" style="margin-top:8px;margin-bottom:0;">' +
-        esc(s.description) +
-        (instructionsHtml ? '<ol>' + instructionsHtml + '</ol>' : '') +
+          '<div class="snippet-step-head">' +
+            '<span class="snippet-step-num">2</span>' +
+            '<span class="snippet-card-title">Backend Webhook Forwarder</span>' +
+            '<span class="snippet-version-tag">' + esc(s.current_version) + '</span>' +
+          '</div>' +
+          '<span class="snippet-card-badge">REQUIRED</span>' +
         '</div>' +
-        '</div>' + categoryBadge + '</div>' +
-        '<hr class="snippet-divider">' +
-        renderErrorHtml + metaHtml + bodyHtml +
+        '<ul class="installer-steps">' +
+          '<li><span class="installer-verb create">Create</span><span>In Wix Editor (<strong>Dev Mode ON</strong>) &rarr; <strong>Public &amp; Backend &rarr; Backend</strong>, create or open ' + chipHtml('events.js') + '</span></li>' +
+          '<li><span class="installer-verb paste">Paste</span><span>Click <strong>Copy events.js</strong> below, replace the file contents, and <strong>Publish</strong> your site.</span></li>' +
+        '</ul>' +
+        renderErrorBlockHtml(s) +
+        '<div class="snippet-action-bar">' +
+          '<div class="snippet-action-left">' +
+            (s.body ? '<button type="button" class="snippet-copy-btn" data-copy-snippet="' + esc(s.id) + '">' + copyIconSvg() + ' Copy events.js</button>' : '') +
+          '</div>' +
+          '<div class="snippet-action-right">' +
+            '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="guide-drawer-step-2">Wix Setup Guide &#9662;</button>' +
+            (s.body ? '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="code-drawer-step-2">View Code &#9662;</button>' : '') +
+          '</div>' +
+        '</div>' +
+        guideHtml +
+        (s.body ? '<div class="snippet-code-drawer" id="code-drawer-step-2"><pre>' + esc(s.body) + '</pre></div>' : '') +
+      '</div>';
+    }
+
+    function buildStep3MyAccessCard(s) {
+      var guideHtml =
+        '<div class="wix-guide-drawer" id="guide-drawer-step-3">' +
+          '<div class="wix-guide-grid">' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">How to set up the Member Hub button in Wix</div>' +
+              '<ol>' +
+                '<li>Open your member-facing page in Wix Editor (e.g. a Member Area subpage named <strong>My Access</strong>).</li>' +
+                '<li>Drag any Wix <strong>Button</strong> onto the page (label it e.g. <em>"Manage My Door Access"</em>).</li>' +
+                '<li>Click the button and change its <strong>ID</strong> in the Properties &amp; Events panel (bottom-right) to ' + chipHtml('btnMyAccess') + '.</li>' +
+                '<li>Paste this page code into the page\'s Velo code panel (delete the default <code>$w.onReady</code> stub first) and click <strong>Publish</strong>.</li>' +
+              '</ol>' +
+            '</div>' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">What members see when they click</div>' +
+              '<ul>' +
+                '<li>Opens the member\'s live AccessSync Member Hub showing their active doors, credential status, and plan details.</li>' +
+                '<li>For <strong>Family / Multi-Person plans</strong>, plan holders can add or remove sub-members directly from this screen.</li>' +
+              '</ul>' +
+            '</div>' +
+          '</div>' +
         '</div>';
+
+      return '<div class="snippet-card" data-snippet-id="' + esc(s.id) + '">' +
+        '<div class="snippet-card-header">' +
+          '<div class="snippet-step-head">' +
+            '<span class="snippet-step-num">3</span>' +
+            '<span class="snippet-card-title">Member Hub Button (My Access Page)</span>' +
+            '<span class="snippet-version-tag">' + esc(s.current_version) + '</span>' +
+          '</div>' +
+          '<span class="snippet-card-badge">REQUIRED</span>' +
+        '</div>' +
+        '<ul class="installer-steps">' +
+          '<li><span class="installer-verb create">Create</span><span>On your Wix Member page, add a <strong>Button</strong> element and set its Element ID to ' + chipHtml('btnMyAccess') + '</span></li>' +
+          '<li><span class="installer-verb paste">Paste</span><span>Click <strong>Copy Page Code</strong>, paste into that page\'s Velo code panel, and <strong>Publish</strong>.</span></li>' +
+        '</ul>' +
+        renderErrorBlockHtml(s) +
+        '<div class="snippet-action-bar">' +
+          '<div class="snippet-action-left">' +
+            (s.body ? '<button type="button" class="snippet-copy-btn" data-copy-snippet="' + esc(s.id) + '">' + copyIconSvg() + ' Copy Page Code</button>' : '') +
+          '</div>' +
+          '<div class="snippet-action-right">' +
+            '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="guide-drawer-step-3">Wix Setup Guide &#9662;</button>' +
+            (s.body ? '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="code-drawer-step-3">View Code &#9662;</button>' : '') +
+          '</div>' +
+        '</div>' +
+        guideHtml +
+        (s.body ? '<div class="snippet-code-drawer" id="code-drawer-step-3"><pre>' + esc(s.body) + '</pre></div>' : '') +
+      '</div>';
+    }
+
+    function buildStep4PostPurchaseCard(btnSnippet, redirectSnippet) {
+      var guideHtml =
+        '<div class="wix-guide-drawer" id="guide-drawer-step-4">' +
+          '<div class="wix-guide-grid">' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">Option A (Simplest): Put the button directly on Wix\'s Thank You page (Uses 4a only)</div>' +
+              '<ul>' +
+                '<li>Open your Wix <strong>Thank You Page</strong> (or <strong>Bookings Confirmation Page</strong>).</li>' +
+                '<li>Add a Button with ID ' + chipHtml('btnViewStatus') + ' and paste <strong>4a (Button Code)</strong> into that page\'s Velo code panel.</li>' +
+                '<li>You do <strong>not</strong> need 4b if the button lives directly on the Thank You page.</li>' +
+              '</ul>' +
+            '</div>' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">Option B: Custom Post-Purchase Info Page + Auto-Redirect (Uses 4a + 4b)</div>' +
+              '<ul>' +
+                '<li>If Wix\'s default Thank You page is too cramped, create your own Wix page (e.g. URL slug ' + chipHtml('/member-door-sync-status') + ' — check the slug under <strong>Pages &amp; Menu &rarr; Page Settings &rarr; SEO Basics</strong>).</li>' +
+                '<li>Put Button ' + chipHtml('btnViewStatus') + ' + <strong>4a (Button Code)</strong> on that custom page.</li>' +
+                '<li>Then paste <strong>4b (Auto-Redirect)</strong> into Wix\'s native Thank You page code panel so buyers automatically redirect to your custom page after checkout.</li>' +
+              '</ul>' +
+            '</div>' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">Selling both Memberships and Day Passes?</div>' +
+              '<ul>' +
+                '<li>If you also install <strong>Step 5 (Day-Pass QR Button)</strong> on the Thank You page, keep ' + chipHtml('btnViewStatus') + ' on the page — Step 5 automatically hides <code>#btnViewStatus</code> when the buyer purchased a Day Pass.</li>' +
+                '<li>Do <strong>not</strong> install <strong>4b (Auto-Redirect)</strong> on a Thank You page that uses Step 5 Day-Pass QR.</li>' +
+              '</ul>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+      var sub4a = '';
+      if (btnSnippet) {
+        sub4a =
+          '<div class="snippet-substep" data-snippet-id="' + esc(btnSnippet.id) + '">' +
+            '<div class="snippet-substep-header">' +
+              '<div class="snippet-substep-title">' +
+                '<span class="snippet-substep-pill">4a</span>' +
+                '<span>Post-Purchase Status Button</span>' +
+                '<span class="snippet-version-tag">' + esc(btnSnippet.current_version) + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<ul class="installer-steps">' +
+              '<li><span class="installer-verb create">Create</span><span>On your Thank You page (or custom status page), add a <strong>Button</strong> with Element ID ' + chipHtml('btnViewStatus') + '</span></li>' +
+              '<li><span class="installer-verb paste">Paste</span><span>Click <strong>Copy 4a: Button Code</strong>, paste into that page\'s Velo code panel, and <strong>Publish</strong>.</span></li>' +
+            '</ul>' +
+            renderErrorBlockHtml(btnSnippet) +
+            '<div class="snippet-action-bar">' +
+              '<div class="snippet-action-left">' +
+                (btnSnippet.body ? '<button type="button" class="snippet-copy-btn" data-copy-snippet="' + esc(btnSnippet.id) + '">' + copyIconSvg() + ' Copy 4a: Button Code</button>' : '') +
+              '</div>' +
+              '<div class="snippet-action-right">' +
+                (btnSnippet.body ? '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="code-drawer-step-4a">View Code &#9662;</button>' : '') +
+              '</div>' +
+            '</div>' +
+            (btnSnippet.body ? '<div class="snippet-code-drawer" id="code-drawer-step-4a"><pre>' + esc(btnSnippet.body) + '</pre></div>' : '') +
+          '</div>';
+      }
+
+      var sub4b = '';
+      if (redirectSnippet) {
+        sub4b =
+          '<div class="snippet-substep" data-snippet-id="' + esc(redirectSnippet.id) + '">' +
+            '<div class="snippet-substep-header">' +
+              '<div class="snippet-substep-title">' +
+                '<span class="snippet-substep-pill" style="background:var(--bg);color:var(--muted);border:1px solid var(--border2);">4b</span>' +
+                '<span>Thank You Page Auto-Redirect</span>' +
+                '<span class="snippet-version-tag">' + esc(redirectSnippet.current_version) + '</span>' +
+                '<span class="snippet-card-badge optional">ONLY IF USING CUSTOM PAGE</span>' +
+              '</div>' +
+            '</div>' +
+            '<ul class="installer-steps">' +
+              '<li><span class="installer-verb create">Create</span><span>If using a separate custom page for 4a, verify its URL slug (default in code: ' + chipHtml('/member-door-sync-status') + ')</span></li>' +
+              '<li><span class="installer-verb paste">Paste</span><span>Paste into Wix\'s native <strong>Thank You page</strong> code panel (update <code>REDIRECT_PATH</code> on line 1 if your slug differs).</span></li>' +
+            '</ul>' +
+            renderErrorBlockHtml(redirectSnippet) +
+            '<div class="snippet-action-bar">' +
+              '<div class="snippet-action-left">' +
+                (redirectSnippet.body ? '<button type="button" class="snippet-copy-btn secondary-copy" data-copy-snippet="' + esc(redirectSnippet.id) + '">' + copyIconSvg() + ' Copy 4b: Redirect Code</button>' : '') +
+              '</div>' +
+              '<div class="snippet-action-right">' +
+                (redirectSnippet.body ? '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="code-drawer-step-4b">View Code &#9662;</button>' : '') +
+              '</div>' +
+            '</div>' +
+            (redirectSnippet.body ? '<div class="snippet-code-drawer" id="code-drawer-step-4b"><pre>' + esc(redirectSnippet.body) + '</pre></div>' : '') +
+          '</div>';
+      }
+
+      return '<div class="snippet-card" data-display-group="post_purchase_flow">' +
+        '<div class="snippet-card-header">' +
+          '<div class="snippet-step-head">' +
+            '<span class="snippet-step-num optional">4</span>' +
+            '<span class="snippet-card-title">Post-Purchase Status Button</span>' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="guide-drawer-step-4">Wix Setup Guide &#9662;</button>' +
+            '<span class="snippet-card-badge optional">OPTIONAL</span>' +
+          '</div>' +
+        '</div>' +
+        guideHtml +
+        sub4a +
+        sub4b +
+      '</div>';
+    }
+
+    function buildStep5DayPassCard(s) {
+      var parts = splitDayPassParts(s.body || '');
+
+      var guideHtml =
+        '<div class="wix-guide-drawer" id="guide-drawer-step-5">' +
+          '<div class="wix-guide-grid">' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">1. Create the Day Pass Item in Wix (Why Wix Stores vs. Pricing Plans?)</div>' +
+              '<ul>' +
+                '<li><strong>Wix Pricing Plans has a 7-day minimum:</strong> Wix does not allow Pricing Plans shorter than 7 days.</li>' +
+                '<li><strong>For 1-Day Passes (or any pass under 7 days):</strong> In Wix Dashboard, go to <strong>Store Products &rarr; Products &rarr; + New Product &rarr; Physical or Digital Product</strong> and create your Day Pass item (e.g. <em>"1-Day Gym Pass"</em>). Make sure <strong>Step 2 (<code>events.js</code> v2.2.0+)</strong> is installed so <code>wixStores_onOrderPaid</code> fires when purchased.</li>' +
+                '<li><strong>For 7+ Day Passes:</strong> You can create the item in either <strong>Wix Stores</strong> or <strong>Wix Pricing Plans</strong>.</li>' +
+              '</ul>' +
+            '</div>' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">2. Set Pass Hours &amp; Door in AccessSync (Plan Mapping)</div>' +
+              '<ol>' +
+                '<li>Open the <strong>Plan Mapping</strong> page in AccessSync and click <strong>Sync Plans from Wix</strong> (Wix Store products appear alongside your plans).</li>' +
+                '<li>Find your Day Pass product, toggle <strong>Day pass (QR code)</strong> <strong>ON</strong>, and assign the <strong>Door / Access Group</strong> it should unlock.</li>' +
+                '<li>Enter the <strong>Pass length (hours)</strong> (between <code>1</code> and <code>720</code> hours — e.g. <code>24</code> = 1-day pass, <code>72</code> = 3-day pass, <code>168</code> = 7-day pass). AccessSync automatically sets the QR pass to expire after that exact number of hours from purchase.</li>' +
+              '</ol>' +
+            '</div>' +
+            '<div class="wix-guide-box">' +
+              '<div class="wix-guide-box-title">3. How the Wix Button &amp; Branded QR Page Work</div>' +
+              '<ul>' +
+                '<li><strong>Hidden on Load:</strong> Keep ' + chipHtml('btnDayPassQr') + ' set to <span class="prop-pill">Hidden on load</span> in Wix Properties. When a customer buys a regular membership, the button stays hidden. When they buy a Day Pass, the code detects the pass, reveals <code>#btnDayPassQr</code>, and automatically hides <code>#btnViewStatus</code> (if present).</li>' +
+                '<li><strong>Branded QR Page &amp; PDF Guide:</strong> Clicking the button opens AccessSync\'s mobile-friendly QR Pass page styled with your gym\'s logo, colors, and optional <em>"How to use your QR code"</em> PDF from <strong>System Config &rarr; Locations &rarr; Member Emails</strong>.</li>' +
+                '<li><strong>Important:</strong> Do <strong>not</strong> install <strong>4b (Auto-Redirect)</strong> on the same Thank You page, or it will redirect away before the QR button appears.</li>' +
+              '</ul>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+      return '<div class="snippet-card" data-snippet-id="' + esc(s.id) + '">' +
+        '<div class="snippet-card-header">' +
+          '<div class="snippet-step-head">' +
+            '<span class="snippet-step-num optional">5</span>' +
+            '<span class="snippet-card-title">Day-Pass QR Code Button (Wix Stores &amp; Short-Term Passes)</span>' +
+            '<span class="snippet-version-tag">' + esc(s.current_version) + '</span>' +
+          '</div>' +
+          '<span class="snippet-card-badge optional">OPTIONAL</span>' +
+        '</div>' +
+        '<div class="setup-prereq-bar">' +
+          '<div><strong>Requires Wix item + Plan Mapping setup:</strong> Sell &lt;7-day passes as a <strong>Wix Stores</strong> product, then enable <strong>Day pass (QR code)</strong> + set <strong>Pass length (hours)</strong> in <strong>Plan Mapping</strong>.</div>' +
+          '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="guide-drawer-step-5">Wix &amp; AccessSync Setup Guide &#9662;</button>' +
+        '</div>' +
+        guideHtml +
+        renderErrorBlockHtml(s) +
+
+        // Sub-step 5a: Part 1 Backend .jsw
+        '<div class="snippet-substep">' +
+          '<div class="snippet-substep-header">' +
+            '<div class="snippet-substep-title">' +
+              '<span class="snippet-substep-pill">5a</span>' +
+              '<span>Part 1 — Backend Web Module</span>' +
+            '</div>' +
+          '</div>' +
+          '<ul class="installer-steps">' +
+            '<li><span class="installer-verb create">Create</span><span>In Wix Editor (<strong>Dev Mode ON</strong>) &rarr; <strong>Public &amp; Backend &rarr; Backend</strong>, create ' + chipHtml('accesssync-daypass.jsw') + '</span></li>' +
+            '<li><span class="installer-verb paste">Paste</span><span>Click <strong>Copy Part 1: Backend (.jsw)</strong> and replace the contents of <code>accesssync-daypass.jsw</code>.</span></li>' +
+          '</ul>' +
+          '<div class="snippet-action-bar">' +
+            '<div class="snippet-action-left">' +
+              (parts.part1 ? '<button type="button" class="snippet-copy-btn" data-copy-snippet-part="part1" data-parent-snippet="' + esc(s.id) + '">' + copyIconSvg() + ' Copy Part 1: Backend (.jsw)</button>' : '') +
+            '</div>' +
+            '<div class="snippet-action-right">' +
+              (parts.part1 ? '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="code-drawer-step-5a">View Part 1 Code &#9662;</button>' : '') +
+            '</div>' +
+          '</div>' +
+          (parts.part1 ? '<div class="snippet-code-drawer" id="code-drawer-step-5a"><pre>' + esc(parts.part1) + '</pre></div>' : '') +
+        '</div>' +
+
+        // Sub-step 5b: Part 2 Thank You Page Code
+        '<div class="snippet-substep">' +
+          '<div class="snippet-substep-header">' +
+            '<div class="snippet-substep-title">' +
+              '<span class="snippet-substep-pill">5b</span>' +
+              '<span>Part 2 — Thank You Page Button &amp; Code</span>' +
+            '</div>' +
+          '</div>' +
+          '<ul class="installer-steps">' +
+            '<li><span class="installer-verb create">Create</span><span>On your Wix <strong>Thank You Page</strong>, add a <strong>Button</strong> with ID ' + chipHtml('btnDayPassQr') + ' and check <span class="prop-pill">Hidden on load</span> in Properties.</span></li>' +
+            '<li><span class="installer-verb paste">Paste</span><span>Click <strong>Copy Part 2: Page Code</strong>, paste into the Thank You page\'s Velo code panel, and <strong>Publish</strong>.</span></li>' +
+          '</ul>' +
+          '<div class="snippet-action-bar">' +
+            '<div class="snippet-action-left">' +
+              (parts.part2 ? '<button type="button" class="snippet-copy-btn" data-copy-snippet-part="part2" data-parent-snippet="' + esc(s.id) + '">' + copyIconSvg() + ' Copy Part 2: Page Code</button>' : '') +
+            '</div>' +
+            '<div class="snippet-action-right">' +
+              (parts.part2 ? '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="code-drawer-step-5b">View Part 2 Code &#9662;</button>' : '') +
+            '</div>' +
+          '</div>' +
+          (parts.part2 ? '<div class="snippet-code-drawer" id="code-drawer-step-5b"><pre>' + esc(parts.part2) + '</pre></div>' : '') +
+        '</div>' +
+      '</div>';
+    }
+
+    function buildFallbackSnippetCard(s) {
+      var drawerId = 'code-drawer-' + s.id;
+      return '<div class="snippet-card" data-snippet-id="' + esc(s.id) + '">' +
+        '<div class="snippet-card-header">' +
+          '<div class="snippet-step-head">' +
+            '<span class="snippet-card-title">' + esc(s.name) + '</span>' +
+            '<span class="snippet-version-tag">' + esc(s.current_version) + '</span>' +
+          '</div>' +
+          '<span class="snippet-card-badge' + (s.category === 'optional' ? ' optional' : '') + '">' + esc((s.category || 'required').toUpperCase()) + '</span>' +
+        '</div>' +
+        renderErrorBlockHtml(s) +
+        '<div class="snippet-action-bar">' +
+          '<div class="snippet-action-left">' +
+            (s.body ? '<button type="button" class="snippet-copy-btn" data-copy-snippet="' + esc(s.id) + '">' + copyIconSvg() + ' Copy Snippet</button>' : '') +
+          '</div>' +
+          '<div class="snippet-action-right">' +
+            (s.body ? '<button type="button" class="snippet-toggle-btn" data-toggle-drawer="' + esc(drawerId) + '">View Code &#9662;</button>' : '') +
+          '</div>' +
+        '</div>' +
+        (s.body ? '<div class="snippet-code-drawer" id="' + esc(drawerId) + '"><pre>' + esc(s.body) + '</pre></div>' : '') +
+      '</div>';
+    }
+
+    function wireInteractiveSetupControls(container) {
+      // 1. Copy chips (identifiers like accesssync_webhook_secret, events.js, btnMyAccess, etc.)
+      container.querySelectorAll('[data-copy-chip]').forEach(function(chip) {
+        chip.addEventListener('click', function() {
+          var val = chip.getAttribute('data-copy-chip');
+          if (!val) return;
+          navigator.clipboard.writeText(val).then(function() {
+            flashCopiedButton(chip, '✓ ' + val);
+          }).catch(function() { toast('Copy failed — try manually selecting', 'error'); });
+        });
+      });
+
+      // 2. Drawer toggles (Wix Setup Guide + View Code)
+      container.querySelectorAll('[data-toggle-drawer]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var targetId = btn.getAttribute('data-toggle-drawer');
+          var drawer = document.getElementById(targetId);
+          if (!drawer) return;
+          var isOpen = drawer.classList.toggle('open');
+          btn.classList.toggle('open', isOpen);
+        });
+      });
+
+      // 3. Full snippet copy buttons
+      container.querySelectorAll('[data-copy-snippet]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var snippetId = btn.getAttribute('data-copy-snippet');
+          copySnippet(snippetId, btn);
+        });
+      });
+
+      // 4. Split snippet copy buttons (Step 5a Part 1 / Step 5b Part 2)
+      container.querySelectorAll('[data-copy-snippet-part]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var partKey = btn.getAttribute('data-copy-snippet-part');
+          var snippetId = btn.getAttribute('data-parent-snippet');
+          if (!_setupState) return;
+          var snippet = (_setupState.snippets || []).find(function(s) { return s.id === snippetId; });
+          if (!snippet || !snippet.body) return;
+          var parts = splitDayPassParts(snippet.body);
+          var textToCopy = partKey === 'part1' ? parts.part1 : parts.part2;
+          if (!textToCopy) return;
+          copySnippetText(snippetId, textToCopy, btn);
+        });
+      });
     }
 
     function copySnippet(snippetId, btn) {
       if (!_setupState) return;
       var snippet = (_setupState.snippets || []).find(function(s) { return s.id === snippetId; });
       if (!snippet || !snippet.body) return;
-      navigator.clipboard.writeText(snippet.body).then(function() {
-        btn.classList.add('copied');
-        var originalText = btn.textContent;
-        btn.textContent = '✓ Copied';
-        setTimeout(function() { btn.classList.remove('copied'); btn.textContent = originalText; }, 1800);
+      copySnippetText(snippetId, snippet.body, btn);
+    }
+
+    function copySnippetText(snippetId, text, btn) {
+      navigator.clipboard.writeText(text).then(function() {
+        flashCopiedButton(btn);
         // Record the copy action server-side (transitions state to installed_unverified)
         apiFetch('/operator/' + clientId + '/setup-state/copied', {
           method: 'POST',
@@ -1986,8 +2443,6 @@
         }).catch(function() { /* non-blocking */ });
       }).catch(function() { toast('Copy failed — try manually selecting', 'error'); });
     }
-
-    // testConnection() removed 2026-05-30 — endpoint deleted, button removed.
 
     function fmtRelative(iso) {
       if (!iso) return '';
