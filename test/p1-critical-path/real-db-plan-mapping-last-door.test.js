@@ -186,6 +186,15 @@ async function waitFor(check, what) {
 const noRowOn = (mappingId, groupId) => async () => !(await rows(mappingId)).some(r => r.hardware_group_id === groupId);
 const logged = (event) => logLines.filter(l => (l.event || l.message) === event);
 const assignedTo = (groupId) => kisi.adapter.assignRole.mock.calls.filter(([, , , gid]) => String(gid) === groupId);
+/** Grants queued (eventQueue is mocked) by one path, e.g. the save's restore or the sweep's 3A. */
+const queuedGrants = (syntheticSource) => eventQueue.add.mock.calls
+  .filter(([name, data]) => name === 'grant' && data.standardEvent.syntheticSource === syntheticSource);
+async function runAll(jobs) {
+  for (const [name, data, opts] of jobs) await processJob({ id: opts.jobId, name, data, attemptsMade: 0, opts: { attempts: 5 } });
+}
+async function kisiUserOf(member) {
+  return (await realDb.query(`SELECT hardware_user_id FROM member_access WHERE id = $1`, [member.accessId])).rows[0].hardware_user_id;
+}
 
 // ── The last door taken off ─────────────────────────────────────────────────
 
@@ -236,6 +245,40 @@ describe('[P1] real DB — a plan whose last door was taken off gives that door 
     expect(assignedTo(FRONT)).toHaveLength(0);
     expect(kisi.canOpen(dana.userId, FRONT)).toBe(false);
     expect(await rows(plan)).toEqual([]);
+  });
+});
+
+// ── A door added back ───────────────────────────────────────────────────────
+
+describe('[P1] real DB — a door added back reaches everyone paying, including who bought while it had none', () => {
+  test('the save restores members from billing; the next sync gives the door to the buyer who was parked', async () => {
+    const plan = await addPlan(MONTHLY, [FRONT]);
+    const dana = await buy('Dana');
+    await patch(plan, { removeGroupId: FRONT });
+    await waitFor(noRowOn(plan, FRONT), 'front row removed');
+
+    // Gus buys while the plan has no door: parked, no Kisi account. His billing row is written
+    // only when a grant completes, so the save's restore (which reads billing) cannot see him.
+    const gus = await buy('Gus');
+    expect(gus.userId).toBeNull();
+
+    await patch(plan, { addGroupId: POOL });
+    await waitFor(() => queuedGrants('operator.plan_mapping.restore').length === 1, 'restore queued');
+    expect(queuedGrants('operator.plan_mapping.restore').map(([, d]) => d.standardEvent.platformMemberId)).toEqual([dana.key]);
+    await runAll(queuedGrants('operator.plan_mapping.restore'));
+    expect(kisi.canOpen(dana.userId, POOL)).toBe(true);
+
+    // Sync now: Wix says Gus is paying and he is not in Kisi, so the sweep (3A) queues his grant.
+    eventQueue.add.mockClear();
+    await sweep(paying([dana, gus]));
+    expect(queuedGrants('reconciliation.true_source_sync').map(([, d]) => d.standardEvent.platformMemberId)).toEqual([gus.key]);
+    await runAll(queuedGrants('reconciliation.true_source_sync'));
+
+    const gusUser = await kisiUserOf(gus);
+    expect(gusUser).toBeTruthy();
+    expect(kisi.canOpen(gusUser, POOL)).toBe(true);
+    expect(kisi.canOpen(gusUser, FRONT)).toBe(false);
+    expect((await rows(plan)).map(r => r.hardware_group_id)).toEqual([POOL, POOL]);
   });
 });
 
