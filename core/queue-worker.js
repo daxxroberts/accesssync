@@ -32,6 +32,7 @@
 const { Worker, UnrecoverableError, DelayedError } = require('bullmq');
 const grantRevokeLogic = require('./grant-revoke');
 const retryEngine = require('./retry-engine');
+const { FINALIZE_PENDING_MESSAGE } = require('./error-guidance');
 const standardAdapter = require('../adapters/standard-adapter');
 const hardwareAdapter = require('../adapters/hardware-adapter');
 const planMappingResolver = require('./plan-mapping-resolver');
@@ -1057,6 +1058,7 @@ async function _processJobBody(job, traceId, token) {
       // without throwing. Other Kisi errors throw so BullMQ can retry.
       if (targetStatus === 'inactive' || targetStatus === 'deleted') {
         lastStep = 'revoke.finalize';
+        let finalized = false;
         try {
           const finalizeApiKey = await getClientApiKey(tenantId);
           if (finalizeApiKey) {
@@ -1071,6 +1073,7 @@ async function _processJobBody(job, traceId, token) {
               durationMs: Date.now() - jobStart,
               stage: 'revoke', result: finalizeResult.finalized ? 'success' : 'skipped',
             });
+            finalized = finalizeResult.finalized === true;
           } else {
             logger.warn('queue.revoke.finalize_skipped_no_api_key', {
               clientId, memberId, eventId,
@@ -1090,8 +1093,8 @@ async function _processJobBody(job, traceId, token) {
           // Its own words if it dead-letters (error_queue.user_message → Errors page and
           // operator email): the door part is done, and the generic "access didn't get
           // turned off" would be wrong. Code and HTTP status are kept for guidance + dedupe.
-          finalizeErr.userMessage = 'The door access was removed; only the cleanup after it didn\'t finish '
-            + '(deleting their Kisi account and clearing their stored details).'
+          // core/error-guidance.js keys on this opening, so it is its constant, not a copy.
+          finalizeErr.userMessage = FINALIZE_PENDING_MESSAGE
             + (finalizeErr.userMessage ? ' ' + finalizeErr.userMessage : '');
           finalizePending = true;
           logger.error('queue.revoke.finalize_failed', {
@@ -1101,6 +1104,10 @@ async function _processJobBody(job, traceId, token) {
           }, finalizeErr);
           throw finalizeErr;
         }
+        // The removal is finished: any removal error still open for this member (a finalize that dead-lettered
+        // before the 6-hour sweep re-ran it, DR-057) is answered, so it closes instead of turning, a day later, into
+        // "expected to clear by itself" with a support line. Never throws.
+        if (finalized) await retryEngine.resolveFinishedRemoval(tenantId, memberId);
       }
 
     } else if (job.name === 'email_swap') {

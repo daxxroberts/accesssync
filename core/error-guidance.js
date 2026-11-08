@@ -31,7 +31,8 @@ const { jobNameForEventType } = require('./event-routing');
 const OWNER = Object.freeze({ GYM: 'gym', ACCESSSYNC: 'accesssync', NOBODY: 'nobody' });
 const RETRY = Object.freeze({ NOW: 'now', AFTER_FIX: 'after_fix', NONE: 'none' });
 
-// "Clears by itself" only holds for a while: nothing auto-resolves an error row, so past this age it is AccessSync's.
+// "Clears by itself" only holds for a while: almost nothing auto-resolves an error row (the one exception is a removal
+// that finished, core/retry-engine.js resolveFinishedRemoval), so past this age it is AccessSync's.
 const SELF_CLEARING_MAX_H = 24;
 const SUPPORT_LINE = 'Nothing for you to fix. AccessSync support can see this on their own panel and will look into it.';
 const NETWORK_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EPIPE', 'UND_ERR_CONNECT_TIMEOUT']);
@@ -68,7 +69,7 @@ const BY_CODE = {
     'Kisi refused this request and gave no reason. Retrying sends the same request again and fails the same way.',
     [SUPPORT_LINE, 'If this member tells you they cannot get in, contact AccessSync support and mention this error.']),
   HARDWARE_API_ERROR: {
-    owner: OWNER.NOBODY, retry: RETRY.NOW,
+    owner: OWNER.NOBODY, retry: RETRY.NOW, temporary: true,
     headline: 'The door system had a temporary problem. AccessSync tries again on the next sync.',
     steps: ['Nothing to do yet. If it is still here after a few hours, contact AccessSync support.'],
   },
@@ -139,8 +140,35 @@ const BY_RESOLUTION = {
 };
 
 const temporary = (headline) => ({
-  owner: OWNER.NOBODY, retry: RETRY.NOW, headline,
+  owner: OWNER.NOBODY, retry: RETRY.NOW, temporary: true, headline,
   steps: ['Nothing to do yet. If it is still here after a few hours, contact AccessSync support.'],
+});
+
+/**
+ * core/queue-worker.js starts error.userMessage (stored as error_queue.user_message) with this when a removal took
+ * the doors off but the cleanup after it threw: deleting the Kisi account and clearing the member's stored details
+ * (finalizeRevoke, DR-044). guidanceFor keys on it, so the text lives here, once.
+ */
+const FINALIZE_PENDING_MESSAGE = 'The door access was removed; only the cleanup after it didn\'t finish '
+  + '(deleting their Kisi account and clearing their stored details).';
+const isFinalizePending = (row) =>
+  String(row.user_message || row.userMessage || '').startsWith(FINALIZE_PENDING_MESSAGE);
+
+/**
+ * That cleanup hit a temporary Kisi problem on every attempt. The generic "AccessSync tries again on the next sync"
+ * is not true here: only the 6-hour sweep re-runs it (core/reconciliation.js, finish removal, DR-057), and only for a
+ * gym whose automatic removals are on, at most 3 times in 30 days. What holds either way: the member cannot get in,
+ * the gym has nothing to do, the row closes once the cleanup finishes (core/retry-engine.js resolveFinishedRemoval),
+ * and past SELF_CLEARING_MAX_H it is AccessSync support's (below). Removals are never retried from the page.
+ */
+const finalizePending = () => ({
+  owner: OWNER.NOBODY, retry: RETRY.NONE,
+  headline: 'Their door access is off. Only the cleanup after it is not finished: Kisi had a temporary problem '
+    + 'while AccessSync was deleting their Kisi account and clearing their stored details.',
+  steps: [
+    'Nothing for you to do. They can no longer get in.',
+    'AccessSync finishes the cleanup, and this clears once it is done. If it is still here after a day, AccessSync support takes it over.',
+  ],
 });
 
 const is4xx = (s) => !!s && s >= 400 && s < 500 && s !== 429;
@@ -163,10 +191,14 @@ const COPY = (g) => ({
 /**
  * @param {{ error_code?: string|null, errorCode?: string|null, code?: string|null, resolution?: string|null,
  *           http_status?: number|null, statusCode?: number|null, occurred_count?: number|null,
- *           event_type?: string|null, eventType?: string|null }} row
- *        an error_queue row (snake_case) or a thrown error (camelCase)
+ *           event_type?: string|null, eventType?: string|null,
+ *           user_message?: string|null, userMessage?: string|null }} row
+ *        an error_queue row (snake_case) or a thrown error (camelCase). Pass user_message wherever the guidance is
+ *        shown: it tells a removal whose doors are already off (FINALIZE_PENDING_MESSAGE) from one that is not.
  * @returns {{ owner: 'gym'|'accesssync'|'nobody', retry: 'now'|'after_fix'|'none', retryHelps: boolean, gymMayDismiss: boolean,
- *             headline: string, steps: string[], repeating: boolean, removal: boolean }}
+ *             headline: string, steps: string[], repeating: boolean, removal: boolean, cleanupPending: boolean }}
+ *          cleanupPending: a removal whose doors already came off and only the cleanup after it failed — whatever
+ *          the cause or the row's age, so a screen's own title never says the access "wasn't removed".
  */
 function guidanceFor(row) {
   row = row || {};
@@ -199,6 +231,9 @@ function guidanceFor(row) {
     const who = String(code || '').startsWith('WIX_') ? 'Wix' : 'A connected service';
     g = accessSyncOwned(`${who} refused a request (HTTP ${status}). Retrying sends the same request again.`);
   }
+
+  // A removal whose doors are already off and whose cleanup hit a temporary problem: not "tries again on the next sync".
+  if (g && g.temporary && removal && isFinalizePending(row)) g = finalizePending();
 
   // A 404 is "door group deleted" for a grant, but for a suspend / enable / removal the thing that is missing is
   // the member's own door account — sending the gym to Plan Mapping would be wrong.
@@ -255,6 +290,7 @@ function guidanceFor(row) {
   out.retryHelps = out.retry === RETRY.NOW;
   out.repeating = repeating;
   out.removal = removal;
+  out.cleanupPending = removal && isFinalizePending(row);
   return out;
 }
 
@@ -291,4 +327,4 @@ function dismissRefusal(row, role) {
   };
 }
 
-module.exports = { SELF_CLEARING_MAX_H, guidanceFor, retryRefusal, dismissRefusal, OWNER, RETRY };
+module.exports = { SELF_CLEARING_MAX_H, FINALIZE_PENDING_MESSAGE, guidanceFor, retryRefusal, dismissRefusal, OWNER, RETRY };

@@ -133,7 +133,7 @@ async function computeOwnerHealth() {
 
   // Every OPEN row (status='failed' = open, see admin/routes/errors.js), classified by who must act.
   const errorsP = settle(db.query(
-    `SELECT client_id, error_code, resolution, http_status, occurred_count, event_type, created_at
+    `SELECT client_id, error_code, resolution, http_status, occurred_count, event_type, user_message, created_at
        FROM error_queue
       WHERE status = 'failed'`
   ));

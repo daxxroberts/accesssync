@@ -137,3 +137,25 @@ plan of two ended; declined payment never removed.
   (from `fix/plan-mapping-kisi-sync`).
 - A Kisi account delete that keeps failing is restarted once per sweep (6 h), each failure visible
   on the Errors page as before.
+
+## Follow-up 2026-11-08 — the Errors page for a stuck account delete (`fix/finish-removal-error-copy`)
+
+SAGE check of rule 4 found two honesty gaps on the Errors page and in the operator email, both fixed:
+
+- **Words.** A removal whose doors came off but whose Kisi account delete failed on every attempt
+  said "AccessSync tries again on the next sync". Only the 6-hour sweep re-runs it, only when
+  `auto_revoke_mode='on'`, at most 3 times in 30 days, and the copy never said the door was already
+  off. It now says the door access is off, there is nothing for the gym to do, it clears once done,
+  and past a day AccessSync support takes it over (true in every mode). `core/error-guidance.js`
+  keys on `FINALIZE_PENDING_MESSAGE`, the opening `core/queue-worker.js` puts on
+  `error_queue.user_message` — one constant, used by both. Every place that shows guidance (Errors
+  page, owner panel, operator list, email, dismiss guard) now passes `user_message`.
+- **Row never closed.** When the sweep finished such a removal, nothing closed its `error_queue`
+  row; a day later it read "expected to clear by itself" plus a support line. After a finalize
+  succeeds, `retryEngine.resolveFinishedRemoval` closes that member's open removal rows
+  (`dismissed_by='removal-finished'`, event `retry.removal_finished.errors_resolved`, persisted).
+  Grant rows and other members' rows are never touched; it never fails the removal.
+
+Not changed (separate question): a removal whose **door** removal failed (not the cleanup) still
+says "AccessSync tries again on the next sync". The sweep only finishes that for an ENDED plan,
+mode `on`, after 3 sweeps / 48 h, and the member may still be able to get in.

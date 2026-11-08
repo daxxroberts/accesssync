@@ -2171,7 +2171,8 @@ router.post('/:clientId/errors/:errorId/dismiss', async (req, res) => {
     // The gym cannot hide an error only AccessSync can fix (it would turn the owner's panel green while the member
     // is still locked out). The owner (role 'admin') can dismiss anything.
     const current = await db.query(
-      `SELECT error_code, resolution, http_status, occurred_count, event_type FROM error_queue WHERE id = $1 AND client_id = $2`,
+      `SELECT error_code, resolution, http_status, occurred_count, event_type, user_message
+         FROM error_queue WHERE id = $1 AND client_id = $2`,
       [errorId, clientId]
     );
     if (current.rows.length) {

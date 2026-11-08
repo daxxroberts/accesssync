@@ -473,6 +473,11 @@
       if (e.error_code === 'PLAN_NOT_MAPPED') {
         return (name || 'A member') + ' is waiting for access — plan not mapped';
       }
+      // The doors already came off; only deleting the Kisi account / clearing their details did not finish
+      // (core/error-guidance.js decides, so this title cannot contradict the guidance under it).
+      if (e.guidance && e.guidance.cleanupPending) {
+        return (name || 'A member') + '\u2019s access was removed \u2014 the cleanup after it didn\u2019t finish';
+      }
       var isRevoke = ['plan.cancelled','payment.failed','member.deleted','booking.cancelled'].indexOf(e.event_type) !== -1;
       if (isRevoke) return (name || "A member") + "\u2019s access wasn\u2019t removed";
       return (name || 'A member') + " couldn\u2019t get door access";

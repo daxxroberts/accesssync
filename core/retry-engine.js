@@ -14,6 +14,7 @@
  * - Called by queue-worker when BullMQ has exhausted all retries (worker.on('failed'))
  * - Writes dead-lettered job to error_queue for reconciliation re-attempt
  * - Sends operator email notification via Resend SDK (DR-020)
+ * - Closes a member's open removal errors once their removal finished (resolveFinishedRemoval, DR-057 follow-up)
  */
 
 const db = require('../db');
@@ -22,6 +23,7 @@ const { getTraceId, getActor } = require('./trace-context');
 const { sendOperatorEmail } = require('./operator-mailer');
 const { renderMemberFailureAlert } = require('./operator-email-templates');
 const { guidanceFor, OWNER } = require('./error-guidance');
+const { REVOKE_EVENT_TYPES } = require('./event-routing');
 
 /**
  * Next-step text stored on the error row and put in the email. core/error-guidance.js is the single source of
@@ -32,6 +34,7 @@ const { guidanceFor, OWNER } = require('./error-guidance');
 function nextStepText(error, eventType) {
   return guidanceFor({
     error_code: error.code, resolution: error.resolution, http_status: error.statusCode, event_type: eventType,
+    user_message: error.userMessage,
   }).steps.join(' ');
 }
 
@@ -69,6 +72,7 @@ class RetryEngine {
     }
     const guide = guidanceFor({
       error_code: error.code, resolution: error.resolution, http_status: error.statusCode, event_type: eventType,
+      user_message: error.userMessage,
     });
     // One cause, many members (a revoked key, a deleted door group, an outage): one email, not one per member.
     if (await this._alertedRecentlyForCause(tenantId, error, dl.id, guide)) {
@@ -234,7 +238,7 @@ class RetryEngine {
     try {
       const byCode = !!error.code;
       const r = await db.query(
-        `SELECT event_type, error_code, resolution, http_status FROM error_queue
+        `SELECT event_type, error_code, resolution, http_status, user_message FROM error_queue
           WHERE client_id = $1 AND id <> $2
             AND ${byCode ? 'error_code' : 'error_reason'} = $3
             AND created_at > NOW() - INTERVAL '1 hour'
@@ -258,6 +262,7 @@ class RetryEngine {
     let toEmail = null;
     guide = guide || guidanceFor({
       error_code: error.code, resolution: error.resolution, http_status: error.statusCode, event_type: eventType,
+      user_message: error.userMessage,
     });
 
     try {
@@ -346,6 +351,48 @@ class RetryEngine {
       });
     } catch (err) {
       log.error('retry.notify.owner_copy_failed', { tenantId }, err);
+    }
+  }
+
+  /**
+   * A member's removal finished: finalizeRevoke deleted their Kisi account and cleared their stored details
+   * (DR-044), so every removal error still open for them is answered. Close it. Before this nothing closed such a
+   * row: when the 6-hour sweep finished a removal that had dead-lettered (core/reconciliation.js, finish removal,
+   * DR-057), the Errors page kept the row and, a day later, called it "expected to clear by itself" and handed it to
+   * support — a false alarm for a job that was done.
+   *
+   * Only rows of a removal event type (REVOKE_EVENT_TYPES), only this member's (error_queue.member_id is
+   * member_master.id; older rows stored member_access.id — one access row per member per gym, UNIQUE
+   * (member_master_id, client_id)), and only once that access row really is 'deleted'. Grant errors are not
+   * touched. Never throws — the removal itself already succeeded.
+   *
+   * @param {string} tenantId  client id
+   * @param {string} accessId  member_access.id that finalizeRevoke just marked 'deleted'
+   * @returns {Promise<number>} how many rows were closed
+   */
+  async resolveFinishedRemoval(tenantId, accessId) {
+    if (!tenantId || !accessId) return 0;
+    try {
+      const r = await db.query(
+        `UPDATE error_queue eq
+            SET status = 'resolved', resolved_at = NOW(), dismissed_by = 'removal-finished'
+           FROM member_access ma
+          WHERE ma.id = $2 AND ma.client_id = $1 AND ma.status = 'deleted'
+            AND eq.client_id = $1
+            AND eq.status = 'failed'
+            AND eq.event_type = ANY($3::text[])
+            AND (eq.member_id = ma.member_master_id OR eq.member_id = ma.id)
+        RETURNING eq.id`,
+        [tenantId, accessId, [...REVOKE_EVENT_TYPES]]
+      );
+      const ids = ((r && r.rows) || []).map((x) => x.id);
+      if (ids.length) {
+        log.info('retry.removal_finished.errors_resolved', { tenantId, accessId, errorIds: ids, count: ids.length });
+      }
+      return ids.length;
+    } catch (err) {
+      log.warn('retry.removal_finished.resolve_failed', { tenantId, accessId }, err);
+      return 0;
     }
   }
 }

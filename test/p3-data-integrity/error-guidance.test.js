@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const { guidanceFor, dismissRefusal, OWNER, RETRY } = require('../../core/error-guidance');
+const { guidanceFor, dismissRefusal, FINALIZE_PENDING_MESSAGE, OWNER, RETRY } = require('../../core/error-guidance');
 
 const KNOWN = [
   'IN_FLIGHT_LOCK', 'HARDWARE_KEY_INVALID', 'HARDWARE_KEY_PERMISSIONS', 'HARDWARE_KEY_MISSING',
@@ -216,5 +216,79 @@ describe('review follow-ups', () => {
     const g = guidanceFor({ ...row, created_at: old });
     expect(g.owner).toBe('accesssync');
     expect(g.steps.join(' ')).toMatch(/AccessSync support/);
+  });
+});
+
+describe('a removal whose doors are off but whose cleanup hit a temporary problem (DR-057 follow-up)', () => {
+  // What queue-worker stores as error_queue.user_message when finalizeRevoke throws: this opening + Kisi's own words.
+  const finalizeMsg = `${FINALIZE_PENDING_MESSAGE} Kisi is temporarily unavailable.`;
+  const fresh = () => new Date(Date.now() - 2 * 3_600_000).toISOString();
+
+  test('is not "tries again on the next sync": the door is off, nothing for the gym to do, it clears when done', () => {
+    for (const row of [
+      { error_code: 'HARDWARE_API_ERROR', http_status: 503 },
+      { error_code: 'HARDWARE_API_ERROR', http_status: 429 },
+      { error_code: 'HARDWARE_API_ERROR' },                     // no status: the table entry itself
+      { error_code: 'ETIMEDOUT' },                              // network
+      { error_code: null, http_status: 502 },                   // no code, server trouble
+    ]) {
+      for (const event_type of ['plan.cancelled', 'member.deleted', 'booking.cancelled']) {
+        const g = guidanceFor({ ...row, event_type, user_message: finalizeMsg, created_at: fresh() });
+        expect(g.headline).not.toMatch(/next sync/i);
+        expect(steps(g)).not.toMatch(/next sync/i);
+        expect(g.headline).toMatch(/door access is off/);
+        expect(steps(g)).toMatch(/They can no longer get in/);
+        expect(steps(g)).toMatch(/clears once it is done/);
+        expect(steps(g)).toMatch(/after a day, AccessSync support takes it over/);
+        expect(g.owner).toBe(OWNER.NOBODY);
+        expect(g.retry).toBe(RETRY.NONE);
+        expect(g.retryHelps).toBe(false);
+        expect(steps(g)).not.toMatch(/press Retry/i);
+        expect(g.cleanupPending).toBe(true);                   // the page's title says the access WAS removed
+      }
+    }
+  });
+
+  test('the camelCase form (a thrown error, as the operator email sees it) gets the same words', () => {
+    const fromRow = guidanceFor({ error_code: 'HARDWARE_API_ERROR', http_status: 503, event_type: 'plan.cancelled', user_message: finalizeMsg });
+    const fromErr = guidanceFor({ errorCode: 'HARDWARE_API_ERROR', statusCode: 503, eventType: 'plan.cancelled', userMessage: finalizeMsg });
+    expect(fromErr.headline).toBe(fromRow.headline);
+    expect(fromErr.steps).toEqual(fromRow.steps);
+  });
+
+  test('past a day it is AccessSync support\'s, as its own words promise', () => {
+    const old = new Date(Date.now() - 30 * 3_600_000).toISOString();
+    const g = guidanceFor({ error_code: 'HARDWARE_API_ERROR', http_status: 503, event_type: 'plan.cancelled', user_message: finalizeMsg, created_at: old });
+    expect(g.owner).toBe(OWNER.ACCESSSYNC);
+    expect(steps(g)).toMatch(/AccessSync support/);
+    expect(g.cleanupPending).toBe(true);                     // still true: the doors did come off
+  });
+
+  test('only that case: a refused request, a removal that did not get that far, and a grant keep their own advice', () => {
+    // A refused delete (the gym's key) is still the gym's to fix.
+    const key = guidanceFor({ error_code: 'HARDWARE_KEY_INVALID', http_status: 401, event_type: 'plan.cancelled', user_message: finalizeMsg });
+    expect(key.owner).toBe(OWNER.GYM);
+    expect(key.headline).not.toMatch(/door access is off/);
+    expect(key.cleanupPending).toBe(true);                   // its doors did come off; only the cleanup is refused
+    // A removal whose doors did not come off (no marker) does not claim they did.
+    const doors = guidanceFor({ error_code: 'HARDWARE_API_ERROR', http_status: 503, event_type: 'plan.cancelled', user_message: 'Kisi is temporarily unavailable.' });
+    expect(doors.headline).not.toMatch(/door access is off/);
+    expect(doors.cleanupPending).toBe(false);
+    // The marker on a grant row (cannot happen; defensive) changes nothing.
+    const grant = guidanceFor({ error_code: 'HARDWARE_API_ERROR', http_status: 503, event_type: 'plan.purchased', user_message: finalizeMsg });
+    expect(grant.headline).not.toMatch(/door access is off/);
+    expect(grant.retry).toBe(RETRY.NOW);
+    expect(grant.cleanupPending).toBe(false);
+  });
+
+  test('a cleanup that keeps failing is escalated like any repeat', () => {
+    const g = guidanceFor({ error_code: 'HARDWARE_API_ERROR', http_status: 503, event_type: 'plan.cancelled', user_message: finalizeMsg, occurred_count: 5, created_at: fresh() });
+    expect(g.owner).toBe(OWNER.ACCESSSYNC);
+    expect(g.headline).toMatch(/keeps happening \(5 times\)/);
+  });
+
+  test('the gym may still close it (it is not AccessSync-owned while it is fresh)', () => {
+    const row = { error_code: 'HARDWARE_API_ERROR', http_status: 503, event_type: 'plan.cancelled', user_message: finalizeMsg };
+    expect(dismissRefusal(row, 'operator')).toBeNull();
   });
 });

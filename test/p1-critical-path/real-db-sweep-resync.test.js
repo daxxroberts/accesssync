@@ -29,7 +29,7 @@ jest.mock('../../adapters/hardware-adapter',  () => require('../helpers/real-db/
 jest.mock('../../core/redis-utils',           () => ({ getRedisConnection: jest.fn(() => ({})) }));
 jest.mock('../../core/webhook-processor',     () => ({ eventQueue: { add: jest.fn(), getJob: jest.fn() } }));
 jest.mock('../../core/crypto-utils',          () => ({ decryptApiKey: jest.fn(k => k), encryptApiKey: jest.fn(k => k) }));
-jest.mock('../../core/retry-engine',          () => ({ handleFailure: jest.fn() }));
+jest.mock('../../core/retry-engine',          () => ({ handleFailure: jest.fn(), resolveFinishedRemoval: jest.fn(async () => 0) }));
 jest.mock('../../core/operator-mailer',       () => ({ sendOperatorEmail: jest.fn(async () => ({ sent: false, reason: 'test' })) }));
 jest.mock('../../adapters/wix/wix-plans-api', () => ({
   listOrdersClassified:  jest.fn(),
