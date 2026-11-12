@@ -339,31 +339,30 @@ function renderHmacAlert({ clientId } = {}) {
  * @param {string}  [a.audience]    'gym' (default) | 'owner' — the AccessSync owner's copy names the client.
  * @param {string}  [a.clientName]
  */
-function renderMemberFailureAlert({ userMessage, why, actionText, memberName, planName, clientId, owner, retry, audience, clientName, title }) {
+function renderMemberFailureAlert({ userMessage, actionText, memberName, planName, clientId, owner, retry, audience, clientName, title, errorId }) {
   const who  = memberName || 'A member';
   const forOwner = audience === 'owner';
 
-  // Problem / Why / Do: one short line each (core/error-guidance.js writes them that way).
-  const problem = userMessage || (who + ' didn’t get their door access' + (planName ? ' on ' + planName : '') + '.');
+  // The email is the short version: what is wrong, and what to do. Why it happened and the rest of the detail
+  // open on the Errors page (the button lands on this exact error, already expanded).
+  // When the heading already says what is wrong (login-email stops carry their own title), the problem line is not repeated.
+  const problem = title ? '' : (userMessage || (who + ' didn’t get their door access' + (planName ? ' on ' + planName : '') + '.'));
   const todo = actionText || 'Open your dashboard to see what to do next.';
-  const intro = forOwner ? (clientName ? clientName : 'A client') + ': ' : '';
-  const detail = planName || '';   // the member is already in the heading
+  const intro = forOwner && problem ? (clientName ? clientName : 'A client') + ': ' : '';
 
-  const row = (label, text) =>
-    '<p style="margin:0 0 10px 0;"><strong style="color:' + MUTED + ';font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">' +
-    label + '</strong><br/>' + escapeHtml(text) + '</p>';
+  const label = (text) =>
+    '<strong style="color:' + MUTED + ';font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">' + text + '</strong>';
 
   const bodyHtml =
-    (detail ? '<p style="margin:0 0 14px 0;color:' + MUTED + ';">' + escapeHtml(detail) + '</p>' : '') +
-    row('Problem', intro + problem) +
-    (why ? row('Why', why) : '') +
-    row('Do', todo);
+    (problem ? '<p style="margin:0 0 6px 0;">' + escapeHtml(intro + problem) + '</p>' : '') +
+    (planName ? '<p style="margin:0 0 14px 0;color:' + MUTED + ';font-size:13px;">' + escapeHtml(planName) + '</p>' : (problem ? '<p style="margin:0 0 8px 0;"></p>' : '')) +
+    '<p style="margin:0;">' + label('What to do') + '<br/>' + escapeHtml(todo) + '</p>';
 
   const bodyText =
-    (detail ? detail + '\n\n' : '') +
-    'Problem: ' + intro + problem + '\n' +
-    (why ? 'Why: ' + why + '\n' : '') +
-    'Do: ' + todo;
+    (problem ? intro + problem + '\n' : '') +
+    (planName ? planName + '\n' : '') +
+    (problem || planName ? '\n' : '') +
+    'What to do: ' + todo;
 
   // Unknown owner (older callers): keep the original "action needed" behaviour.
   const mustAct = forOwner ? owner === 'accesssync' : (owner ? owner === 'gym' : true);
@@ -382,7 +381,7 @@ function renderMemberFailureAlert({ userMessage, why, actionText, memberName, pl
     bodyText,
     actionNeeded: mustAct,
     ctaText,
-    ctaUrl: hubLink('/errors', clientId),
+    ctaUrl: hubLink('/errors' + (errorId && !forOwner ? '?open=' + encodeURIComponent(errorId) : ''), clientId),
   });
 
   const subject = forOwner

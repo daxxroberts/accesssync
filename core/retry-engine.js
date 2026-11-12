@@ -75,7 +75,7 @@ class RetryEngine {
       log.info('retry.notify.suppressed_same_cause', { tenantId, errorCode: error.code || null, eventType });
       return;
     }
-    await this._notifyOperator(tenantId, error, platformMemberId, eventType, guide, { planName: dl.planName || null });
+    await this._notifyOperator(tenantId, error, platformMemberId, eventType, guide, { planName: dl.planName || null, errorId: dl.id || null });
     // The gym's email says "AccessSync support will look into it" — so AccessSync's owner must be told too,
     // not left to find it on the panel.
     if (guide.owner === OWNER.ACCESSSYNC) await this._notifyOwnerCopy(tenantId, error, eventType, guide);
@@ -327,13 +327,13 @@ class RetryEngine {
           // The headline and steps come from core/error-guidance.js, never from the connector's own message,
           // so the email says who must act and what to do — the same as the page it links to.
           userMessage: guide.headline,
-          why: guide.why,
           title: guide.title,
           actionText: guide.steps.join(' '),
           owner: guide.owner,
           retry: guide.retry,
           memberName: await this._memberName(tenantId, platformMemberId),
           planName: extra.planName || null,
+          errorId: extra.errorId || null,
           clientId: tenantId,
         },
         logContext: { alert: 'member_failure', tenantId, eventType, errorCode: error.code || null },
@@ -378,7 +378,6 @@ class RetryEngine {
         render: renderMemberFailureAlert,
         renderArgs: {
           userMessage: guide.headline,
-          why: guide.why,
           title: guide.title,
           actionText: guide.steps.join(' '),
           owner: guide.owner,

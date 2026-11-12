@@ -55,6 +55,46 @@
     .err-card-directions   { font-size: 11px; color: var(--text2); margin-bottom: 8px; line-height: 1.7; background: var(--surface); border-left: 3px solid var(--brand); padding: 6px 10px; border-radius: 0 6px 6px 0; }
     .err-card-directions strong { color: var(--text); font-weight: 700; }
     .err-card-meta { font-size: 10px; color: var(--muted); }
+    /* ── Summary strip + sections (collapsed rows, open on click) ── */
+    .err-summary { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--text2); }
+    .err-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border); background: var(--card); font-weight: 600; font-size: 11px; color: var(--text2); }
+    .err-pill b { font-weight: 800; color: var(--text); }
+    .err-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+    .err-pill-gym::before { background: var(--red, #ef4444); }
+    .err-pill-accesssync::before { background: var(--brand, #4F6EF7); }
+    .err-pill-nobody::before { background: var(--sage-dark, #22c55e); }
+    .err-allclear { color: var(--sage-dark, #22c55e); font-weight: 700; }
+    .err-section { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+    .err-section-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 2px; border: 0; background: transparent; font-family: inherit; cursor: pointer; text-align: left; color: var(--text); }
+    .err-section-title { font-size: 12px; font-weight: 800; letter-spacing: 0.3px; text-transform: uppercase; }
+    .err-section-gym .err-section-title { color: var(--red, #e5484d); }
+    .err-section-accesssync .err-section-title { color: var(--brand, #4F6EF7); }
+    .err-section-nobody .err-section-title, .err-section-resolved .err-section-title { color: var(--muted); }
+    .err-section-count { font-size: 11px; font-weight: 700; color: var(--muted); }
+    .err-section-hint { font-size: 11px; color: var(--muted); margin-left: auto; }
+    .err-chev { display: inline-block; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; flex: none; }
+    .err-section.open > .err-section-head .err-chev, .err-card.open .err-chev { transform: rotate(45deg); }
+    .err-section-body { display: none; flex-direction: column; gap: 6px; }
+    .err-section.open > .err-section-body { display: flex; }
+    .err-card { transition: border-color .15s; }
+    .err-card.open { border-color: var(--brand, #4F6EF7); }
+    .err-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 14px; border: 0; background: transparent; font-family: inherit; cursor: pointer; text-align: left; color: var(--text); }
+    .err-row:hover { background: var(--surface); }
+    .err-row-main { flex: 1; min-width: 0; }
+    .err-row-title { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .err-row-problem { font-size: 12px; color: var(--text2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .err-card.open .err-row-title { white-space: normal; }
+    .err-card.open .err-row-problem { display: none; }
+    .err-row-meta { font-size: 11px; color: var(--muted); white-space: nowrap; flex: none; }
+    .err-panel { display: none; padding: 2px 16px 12px 32px; border-top: 1px solid var(--border); }
+    .err-card.open .err-panel { display: block; }
+    .err-block { margin-top: 10px; }
+    .err-block-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin-bottom: 2px; }
+    .err-block-text { font-size: 13px; color: var(--text); line-height: 1.55; }
+    .err-block-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .err-block-do { background: var(--surface); border-left: 3px solid var(--brand); padding: 7px 10px; border-radius: 0 6px 6px 0; }
+    .err-block-do ol { margin: 0 0 0 16px; padding: 0; }
+    .err-panel .err-card-actions { margin: 12px -16px -12px -32px; }
     /* ── Details panel ── */
     .err-details-digest { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
     .err-details-digest-row { display: flex; gap: 8px; font-size: 12px; }
@@ -84,6 +124,8 @@
 
     /* ── Dot colors ── */
     .err-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red, #ef4444); box-shadow: 0 0 5px rgba(239,68,68,0.4); flex-shrink: 0; margin-top: 3px; }
+    .err-dot.err-dot-accesssync { background: var(--brand, #4F6EF7); box-shadow: 0 0 5px rgba(79,110,247,0.35); }
+    .err-dot.err-dot-nobody { background: var(--sage-dark, #22c55e); box-shadow: 0 0 5px rgba(34,197,94,0.3); }
     .err-dot.sage { background: var(--sage-dark); box-shadow: 0 0 5px rgba(34,197,94,0.3); }
 
     /* ── Empty / loading states ── */
@@ -136,6 +178,9 @@
          Before this section they reached the gym only in the daily digest email, with no way to clear them. -->
     <div id="sync-alerts" class="sync-alerts" hidden></div>
 
+    <!-- At-a-glance counts: what needs you, what AccessSync is handling, what needs nothing -->
+    <div id="err-summary" class="err-summary" hidden></div>
+
     <!-- Error list -->
     <div id="error-list">
       <div class="loading-state">Loading errors…</div>
@@ -158,6 +203,12 @@
     var _isOwnerView   = (document.body.getAttribute('data-session-role') || '') === 'owner';
     var _currentFilter = 'failed';
     var _filterLocation = '';
+    var _openIds = {};        // error rows the person has opened (survives the 30s refresh and every action)
+    (function () {            // the alert email's button: /errors?open=<error id> lands on that error, already expanded
+      var o = new URLSearchParams(window.location.search).get('open') || '';
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(o)) _openIds[o] = true;
+    })();
+    var _sectionOpen = {};    // section key -> true/false once the person has toggled it
     var _filterCode    = '';
     var _errors        = [];
     var _pollTimer     = null;
@@ -171,6 +222,7 @@
       'booking.confirmed':      'booking confirmation',
       'booking.cancelled':      'booking cancellation',
       'member.deleted':         'account deletion',
+      'member.updated':         'profile update',
       'retry.pending_hardware': 'access retry',
     };
 
@@ -444,7 +496,9 @@
     // ── Rendering ─────────────────────────────────────────────────
     function renderErrors(errors) {
       var container = document.getElementById('error-list');
+      var summary   = document.getElementById('err-summary');
       if (!errors.length) {
+        if (summary) { summary.hidden = true; summary.innerHTML = ''; }
         container.innerHTML =
           '<div class="empty-state">' +
             '<span class="no-err-badge">' +
@@ -454,8 +508,74 @@
           '</div>';
         return;
       }
-      container.innerHTML = errors.map(renderErrorCard).join('');
+
+      // Group by who has to act (core/error-guidance.js decides): the gym first, then AccessSync, then the ones that
+      // need nothing, then resolved. Newest first inside a group.
+      var SECTIONS = [
+        { key: 'gym',        title: _isOwnerView ? 'Needs the gym' : 'Needs you',          hint: _isOwnerView ? '' : 'Waiting on you', open: true },
+        { key: 'accesssync', title: 'Needs AccessSync',                                       hint: '', open: true },
+        { key: 'nobody',     title: _isOwnerView ? 'No action needed' : 'Nothing for you to do', hint: '', open: false },
+        { key: 'resolved',   title: 'Resolved',                                               hint: '', open: _currentFilter === 'resolved' }
+      ];
+      var buckets = { gym: [], accesssync: [], nobody: [], resolved: [] };
+      errors.forEach(function (e) {
+        var key = e.status === 'resolved' ? 'resolved' : (e.guidance && buckets[e.guidance.owner] ? e.guidance.owner : 'accesssync');
+        // A gym has nothing to do about AccessSync's errors, so they sit with the ones that need nothing (each row still
+        // says "AccessSync is on it"). Only the AccessSync owner gets a "Needs AccessSync" section.
+        if (key === 'accesssync' && !_isOwnerView) key = 'nobody';
+        buckets[key].push(e);
+      });
+      Object.keys(buckets).forEach(function (k) {
+        buckets[k].sort(function (x, y) {
+          return new Date(y.last_occurred_at || y.created_at) - new Date(x.last_occurred_at || x.created_at);
+        });
+      });
+
+      if (summary) {
+        var pills = [];
+        if (buckets.gym.length)        pills.push('<span class="err-pill err-pill-gym"><b>' + buckets.gym.length + '</b> ' + (_isOwnerView ? 'need the gym' : 'need you') + '</span>');
+        if (buckets.accesssync.length) pills.push('<span class="err-pill err-pill-accesssync"><b>' + buckets.accesssync.length + '</b> need AccessSync</span>');
+        if (buckets.nobody.length)     pills.push('<span class="err-pill err-pill-nobody"><b>' + buckets.nobody.length + '</b> need nothing</span>');
+        var anyActive = buckets.gym.length + buckets.accesssync.length + buckets.nobody.length;
+        if (anyActive && !buckets.gym.length && !_isOwnerView) pills.unshift('<span class="err-allclear">Nothing needs you right now.</span>');
+        summary.innerHTML = pills.join('');
+        summary.hidden = !pills.length;
+      }
+
+      container.innerHTML = SECTIONS.filter(function (sec) { return buckets[sec.key].length; }).map(function (sec) {
+        // a section holding a row that was opened (e.g. from the email button) is never hidden
+        var holdsOpenRow = buckets[sec.key].some(function (e) { return _openIds[e.id]; });
+        var isOpen = (sec.key in _sectionOpen) ? _sectionOpen[sec.key] : (sec.open || holdsOpenRow);
+        return '<div class="err-section err-section-' + sec.key + (isOpen ? ' open' : '') + '" data-section="' + sec.key + '">' +
+          '<button type="button" class="err-section-head" data-toggle-section="' + sec.key + '" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' +
+            '<span class="err-chev"></span>' +
+            '<span class="err-section-title">' + esc(sec.title) + '</span>' +
+            '<span class="err-section-count">' + buckets[sec.key].length + '</span>' +
+            (sec.hint ? '<span class="err-section-hint">' + esc(sec.hint) + '</span>' : '') +
+          '</button>' +
+          '<div class="err-section-body">' + buckets[sec.key].map(renderErrorCard).join('') + '</div>' +
+        '</div>';
+      }).join('');
     }
+
+    // One delegated listener: open/close a section or a row without re-rendering (and remember it for the next refresh).
+    document.getElementById('error-list').addEventListener('click', function (ev) {
+      var sec = ev.target.closest && ev.target.closest('[data-toggle-section]');
+      if (sec) {
+        var box = sec.parentNode, nowOpen = !box.classList.contains('open');
+        box.classList.toggle('open', nowOpen);
+        sec.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+        _sectionOpen[sec.getAttribute('data-toggle-section')] = nowOpen;
+        return;
+      }
+      var row = ev.target.closest && ev.target.closest('[data-toggle-row]');
+      if (row) {
+        var card = row.parentNode, id = row.getAttribute('data-toggle-row'), open = !card.classList.contains('open');
+        card.classList.toggle('open', open);
+        row.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) _openIds[id] = true; else delete _openIds[id];
+      }
+    });
 
     // ── Card render helpers ───────────────────────────────────────
     function memberName(e) {
@@ -467,6 +587,7 @@
 
     function getTitleLine(e) {
       var name = memberName(e);
+      if (e.guidance && e.guidance.title && e.status !== 'resolved') return (name || 'A member') + '\u2019s ' + e.guidance.title;
       if (isInFlightError(e)) {
         return (name || 'A member') + '\u2019s event was delayed — another event was already in progress';
       }
@@ -522,70 +643,73 @@
 
     function renderErrorCard(e) {
       var isResolved  = e.status === 'resolved';
-      var dotClass    = 'err-dot' + (isResolved ? ' sage' : '');
+      var g           = isResolved ? null : e.guidance;   // who must act / does Retry help (core/error-guidance.js)
+      var isOpen      = !!_openIds[e.id];
       var timeLabel   = timeAgo(new Date(e.last_occurred_at || e.created_at));
-      var recurrence  = (e.occurred_count > 1)
-        ? 'Happened ' + e.occurred_count + 'x \u2014 last ' + timeLabel
-        : timeLabel;
+      var count       = e.occurred_count > 1 ? ' · ×' + e.occurred_count : '';
 
-      var titleLine      = getTitleLine(e);
-      var subtitleLine   = getSubtitleLine(e);
-      var statusMsg      = getStatusMsg(e);
-      var g              = isResolved ? null : e.guidance;   // who must act / does Retry help (core/error-guidance.js)
-      var confidenceLine = isResolved ? null : (g ? null : getConfidenceLine(e));
-      var nextStep       = isResolved ? null : (g ? null : getNextStepLine(e));
-      // Retry is shown when it can help now, or when the gym's fix comes first and Retry is the final step.
-      // Hidden only when the cause is AccessSync's to fix: pressing it would just fail the same way.
-      // Everything about Retry / Mark resolved comes from the server's guidance (core/error-guidance.js):
+      var titleLine   = getTitleLine(e);
+      var subtitle    = getSubtitleLine(e);
+      // The one-line summary a person scans: the problem. Guidance owns it; a resolved row keeps what it stored.
+      var problem     = g ? g.headline : (getStatusMsg(e) || '');
+
+      // Retry / Mark resolved come from the server's guidance (core/error-guidance.js):
       //   retry 'now'       pressing Retry can succeed as things stand
       //   retry 'after_fix' the gym's fix comes first; Retry is the LAST step
       //   retry 'none'      the same request would fail the same way (or removals, which the server refuses)
       var retry          = g ? g.retry : 'now';
       var retryLabel     = retry === 'after_fix' ? 'Retry after fixing' : 'Retry now';
-      var noRetryLabel   = !g ? '' : g.removal ? 'Removals can\u2019t be retried'
+      var noRetryLabel   = !g ? '' : g.owner === 'gym' ? (g.removal ? 'Removals can\u2019t be retried' : '')
+                         : g.removal ? 'Removals can\u2019t be retried'
                          : g.owner === 'nobody' ? 'No action needed'
                          : 'AccessSync is on it';
       // The gym cannot dismiss what only AccessSync can fix (the server refuses it too); the owner can dismiss anything.
       var canDismiss     = !g || _isOwnerView || g.owner !== 'accesssync' || !!g.gymMayDismiss;
-      // When guidance owns the card it says everything once: the problem, why it happened, what to do. The older static
-      // lines (connector message, "Why", "consequence") only repeated it, and for AccessSync-owned errors contradicted it
-      // ("AccessSync will retry automatically" under "this keeps happening").
-      var staticOk       = !g;
-      if (!staticOk) { statusMsg = null; }
-      var reason         = staticOk ? errorReason(e.error_code) : null;
-      var consequence    = staticOk ? errorConsequence(e.error_code) : null;
       var jumpUrl        = errorJumpUrl(e.error_code, e.location_id);
 
-      return '<div class="err-card" data-id="' + esc(e.id) + '">' +
-        '<div class="err-card-main">' +
-          '<div class="' + dotClass + '"></div>' +
-          '<div class="err-card-body">' +
-            '<div class="err-card-title">' + esc(titleLine) + '</div>' +
-            (subtitleLine   ? '<div class="err-card-subtitle">' + esc(subtitleLine) + '</div>'              : '') +
-            (statusMsg      ? '<div class="err-card-msg">'        + esc(statusMsg)      + '</div>'          : '') +
-            (confidenceLine ? '<div class="err-confidence">'      + esc(confidenceLine) + '</div>'          : '') +
-            (g ?
-              '<div class="err-owner err-owner-' + esc(g.owner) + '"><strong>' + esc(OWNER_LABELS[g.owner] || g.owner) + '</strong> \u2014 ' + esc(g.headline) + '</div>' +
-              (g.why ? '<div class="err-card-reason">Why: ' + esc(g.why) + '</div>' : '') +
-              (g.steps.length === 1
-                ? '<div class="err-card-directions"><strong>Do:</strong> ' + esc(g.steps[0]) + '</div>'
-                : '<ol class="err-steps">' + g.steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>') : '') +
-            (consequence    ? '<div class="err-card-consequence">\u26A0 ' + esc(consequence) + '</div>'     : '') +
-            (reason         ? '<div class="err-card-reason">Why: ' + esc(reason) + '</div>'                 : '') +
-            (nextStep       ?
-              '<div class="err-card-directions"><strong>Next step:</strong> ' + esc(nextStep) + '</div>'    : '') +
-            '<div class="err-card-meta">' + esc(recurrence) + '</div>' +
+      // Expanded: what happened, why, what to do. Said once, each in a line or two.
+      var context = [subtitle, timeLabel + (e.occurred_count > 1 ? ' · happened ' + e.occurred_count + ' times' : '')]
+        .filter(Boolean).join(' · ');
+      var blocks = '';
+      if (g) {
+        blocks +=
+          '<div class="err-block"><div class="err-block-label">What happened</div>' +
+            '<div class="err-block-text">' + esc(g.headline) + '</div>' +
+            '<div class="err-block-sub">' + esc(context) + '</div></div>' +
+          (g.why ? '<div class="err-block"><div class="err-block-label">Why</div><div class="err-block-text">' + esc(g.why) + '</div></div>' : '') +
+          '<div class="err-block"><div class="err-block-label">What to do</div><div class="err-block-text err-block-do">' +
+            (g.steps.length === 1
+              ? esc(g.steps[0])
+              : '<ol>' + g.steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>') +
+          '</div></div>';
+      } else {
+        blocks +=
+          '<div class="err-block"><div class="err-block-label">' + (isResolved ? 'Resolved' : 'What happened') + '</div>' +
+            '<div class="err-block-text">' + esc(problem || titleLine) + '</div>' +
+            '<div class="err-block-sub">' + esc(context) + '</div></div>';
+      }
+
+      return '<div class="err-card' + (isOpen ? ' open' : '') + '" data-id="' + esc(e.id) + '">' +
+        '<button type="button" class="err-row" data-toggle-row="' + esc(e.id) + '" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' +
+          '<span class="err-dot' + (isResolved ? ' sage' : (g ? ' err-dot-' + ((g.owner === 'accesssync' && !_isOwnerView) ? 'nobody' : g.owner) : '')) + '"></span>' +
+          '<span class="err-row-main">' +
+            '<div class="err-row-title">' + esc(titleLine) + '</div>' +
+            (problem ? '<div class="err-row-problem">' + esc(problem) + '</div>' : '') +
+          '</span>' +
+          '<span class="err-row-meta">' + esc(timeLabel + count) + '</span>' +
+          '<span class="err-chev"></span>' +
+        '</button>' +
+        '<div class="err-panel">' + blocks +
+          '<div class="err-card-actions">' +
+            (jumpUrl ? '<button class="btn-jump" onclick="jumpToFix(\'' + esc(jumpUrl) + '\')">Fix this ↗</button>' : '') +
+            (retry !== 'none'
+              ? '<button class="btn-retry" data-label="' + esc(retryLabel) + '"'   + (isResolved ? ' disabled' : '') + ' onclick="retryOne(\''   + esc(e.id) + '\', this)">' + retryLabel + '</button>'
+              : (noRetryLabel ? '<span class="err-noretry">' + esc(noRetryLabel) + '</span>' : '')) +
+            (canDismiss
+              ? '<button class="btn-dismiss"' + (isResolved ? ' disabled' : '') + ' onclick="dismissOne(\'' + esc(e.id) + '\', this)">Mark resolved</button>'
+              : '') +
+            '<button class="btn-details" onclick="openIncidentDrawer(\'' + esc(e.id) + '\')">View incident</button>' +
           '</div>' +
-        '</div>' +
-        '<div class="err-card-actions">' +
-          (jumpUrl ? '<button class="btn-jump" onclick="jumpToFix(\'' + esc(jumpUrl) + '\')">Fix this \u2197</button>' : '') +
-          (retry !== 'none'
-            ? '<button class="btn-retry" data-label="' + esc(retryLabel) + '"'   + (isResolved ? ' disabled' : '') + ' onclick="retryOne(\''   + esc(e.id) + '\', this)">' + retryLabel + '</button>'
-            : '<span class="err-noretry">' + esc(noRetryLabel) + '</span>') +
-          (canDismiss
-            ? '<button class="btn-dismiss"' + (isResolved ? ' disabled' : '') + ' onclick="dismissOne(\'' + esc(e.id) + '\', this)">Mark resolved</button>'
-            : '') +
-          '<button class="btn-details" onclick="openIncidentDrawer(\'' + esc(e.id) + '\')">View incident</button>' +
         '</div>' +
       '</div>';
     }

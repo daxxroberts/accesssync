@@ -77,13 +77,14 @@ describe('[P1] first occurrence: one row, one email, saying who acts', () => {
     expect(params[6]).toContain('Your door system rejected');   // the connector's own user_message is still stored as-is
   });
 
-  test('the email names the member and the plan, and carries the guidance why', async () => {
+  test('the email names the member and the plan, and links to the exact error', async () => {
     world.memberName = { first_name: 'Callie', last_name: 'Bring', display_name: null };
     world.planRow = [{ plan_name: 'Monthly', door_name: 'Front', location_id: null }];
     await engine.handleFailure(job(), kisiError({ code: 'HARDWARE_KEY_INVALID', statusCode: 401, resolution: 'ROTATE_API_KEY' }));
     const args = emails()[0].renderArgs;
     expect(args).toMatchObject({ memberName: 'Callie Bring', planName: 'Monthly' });
-    expect(args.why).toEqual(expect.any(String));
+    expect(args.errorId).toBe('row-new');
+    expect(args.why).toBeUndefined();
     expect(renderMemberFailureAlert(args).subject).toBe('[AccessSync] Action needed: Callie Bring didn\u2019t get access');
   });
 
