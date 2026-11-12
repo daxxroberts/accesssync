@@ -33,104 +33,140 @@ const RETRY = Object.freeze({ NOW: 'now', AFTER_FIX: 'after_fix', NONE: 'none' }
 
 // "Clears by itself" only holds for a while: nothing auto-resolves an error row, so past this age it is AccessSync's.
 const SELF_CLEARING_MAX_H = 24;
-const SUPPORT_LINE = 'Nothing for you to fix. AccessSync support can see this on their own panel and will look into it.';
+const SUPPORT_LINE = 'Nothing for you to do. AccessSync support can see this and will look into it.';
 const NETWORK_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EPIPE', 'UND_ERR_CONNECT_TIMEOUT']);
 
-const accessSyncOwned = (headline, steps = [SUPPORT_LINE], extra = {}) =>
-  ({ owner: OWNER.ACCESSSYNC, retry: RETRY.NONE, headline, steps, ...extra });
+// Every entry reads the same way on the Errors page and in the alert email: headline = the problem (one sentence),
+// why = what caused it (one short sentence, optional), steps = what to do (short, in order).
+const accessSyncOwned = (headline, why, steps = [SUPPORT_LINE], extra = {}) =>
+  ({ owner: OWNER.ACCESSSYNC, retry: RETRY.NONE, headline, why, steps, ...extra });
 // "Their door account is gone": only the gym knows whether it was deleted on purpose, so the gym may close the row.
-const GONE_STEPS = [SUPPORT_LINE, 'If you removed them in Kisi on purpose, you can mark this resolved.'];
-const gymFix = (headline, steps) => ({ owner: OWNER.GYM, retry: RETRY.AFTER_FIX, headline, steps });
+const GONE_STEPS = [SUPPORT_LINE, 'If you removed them in Kisi on purpose, mark this resolved.'];
+const gymFix = (headline, why, steps) => ({ owner: OWNER.GYM, retry: RETRY.AFTER_FIX, headline, why, steps });
+const RETRY_AFFECTED = 'Then press Retry on the affected members.';
 
 /** code → guidance. `resolution` (set by the connector) is the fallback key. */
 const BY_CODE = {
   IN_FLIGHT_LOCK: {
     owner: OWNER.NOBODY, retry: RETRY.NONE,
-    headline: 'Two updates for the same member arrived at once. AccessSync handled the first and will handle this one automatically.',
-    steps: ['Nothing to do. If this member is still without access after the next sync, contact AccessSync support.'],
+    headline: 'Two updates for this member arrived at once.',
+    why: 'AccessSync handled the first and retries this one itself.',
+    steps: ['Nothing to do. If they still lack access after the next sync, contact AccessSync support.'],
   },
   HARDWARE_KEY_INVALID: gymFix(
-    'The door system rejected the saved Kisi API key, so no one can be added or removed.',
-    ['Open System Config and replace the Kisi API Key (create a new key in Kisi if needed).', 'Press "Test" to confirm it works.', 'Then press Retry on the affected members.']),
+    'Kisi rejected the saved API key.',
+    'It was changed, deleted or expired, so nobody can be added or removed.',
+    ['Replace the Kisi API Key in System Config and press Test.', RETRY_AFFECTED]),
   HARDWARE_KEY_PERMISSIONS: gymFix(
-    'The Kisi API key works but is not allowed to manage users.',
-    ['In Kisi, create a key with permission to manage users (this can depend on the Kisi plan).', 'Replace the key in System Config and press "Test".', 'Then press Retry on the affected members.']),
+    'The Kisi API key is not allowed to manage users.',
+    'The key works but lacks that permission (it can depend on the Kisi plan).',
+    ['Create a Kisi key that can manage users, save it in System Config and press Test.', RETRY_AFFECTED]),
   HARDWARE_KEY_MISSING: gymFix(
-    'No Kisi API key has been saved yet, so nobody can be given door access.',
-    ['Open System Config and add the Kisi API Key.', 'Then press Retry on the affected members.']),
+    'No Kisi API key is saved.',
+    'Without it nobody can be given door access.',
+    ['Add the Kisi API Key in System Config.', RETRY_AFFECTED]),
   HARDWARE_RESOURCE_NOT_FOUND: gymFix(
-    'A door group this plan points to no longer exists in Kisi.',
-    ['Open Plan Mapping and choose a door group that still exists for this plan.', 'Then press Retry on the affected members.']),
+    'A door group for this plan no longer exists in Kisi.',
+    'It was probably deleted or renamed there.',
+    ['Choose a door group that still exists in Plan Mapping.', RETRY_AFFECTED]),
   // Kisi answered 422 "unknown" to the role assignment: no reason is given and the cause has not been established
   // (the old advice — "check the member's email and name" — was wrong: the live 422s are on POST /role_assignments,
   // which carries no member details; names are only sent when the Kisi user is created, since 2026-10-14).
   HARDWARE_VALIDATION_ERROR: accessSyncOwned(
-    'Kisi refused this request and gave no reason. Retrying sends the same request again and fails the same way.',
-    [SUPPORT_LINE, 'If this member tells you they cannot get in, contact AccessSync support and mention this error.']),
+    'Kisi refused this request and gave no reason.',
+    'Retrying sends the same request, so it fails the same way.',
+    [SUPPORT_LINE, 'If the member says they cannot get in, tell AccessSync support.']),
   HARDWARE_API_ERROR: {
     owner: OWNER.NOBODY, retry: RETRY.NOW,
-    headline: 'The door system had a temporary problem. AccessSync tries again on the next sync.',
+    headline: 'Kisi had a temporary problem.',
+    why: 'AccessSync tries again on the next sync.',
     steps: ['Nothing to do yet. If it is still here after a few hours, contact AccessSync support.'],
   },
   KISI_ROLE_CONFLICT_UNRESOLVED: accessSyncOwned(
-    'Kisi reported a conflict assigning this member to a door group and AccessSync could not resolve it.'),
+    'Kisi reported a conflict assigning this member to a door group.',
+    'AccessSync could not resolve it automatically.'),
   HARDWARE_USER_GONE: accessSyncOwned(
-    'This member\'s door account no longer exists in Kisi (it may have been deleted there).',
+    'This member\'s Kisi account no longer exists.',
+    'It was probably deleted in Kisi.',
     GONE_STEPS, { gymMayDismiss: true }),
   // DR-045 delete guard (adapters/kisi/kisi-adapter.js): Kisi answers the same way every time, so Retry cannot help.
   // A member removal no longer fails on these (finalizeRevoke takes the doors away first and leaves the account with a
   // config alert), so a row here is an older one, or a day-pass door link on another client's marker.
   UNOWNED_USER: accessSyncOwned(
-    'This person\'s Kisi account has no AccessSync ownership label, so AccessSync will not delete it.',
-    [SUPPORT_LINE, 'If you know the account is meant to stay in Kisi, you can mark this resolved.'],
+    'This Kisi account has no AccessSync ownership label.',
+    'AccessSync only deletes accounts it created.',
+    [SUPPORT_LINE, 'If it is meant to stay in Kisi, mark this resolved.'],
     { gymMayDismiss: true }),
   ELEVATED_ROLE_ATTACHED: accessSyncOwned(
-    'This person\'s Kisi account has admin, manager or owner rights, so AccessSync will not delete it.',
-    [SUPPORT_LINE, 'If they are staff, the account is meant to stay and you can mark this resolved.'],
+    'This Kisi account has admin, manager or owner rights.',
+    'AccessSync never deletes those.',
+    [SUPPORT_LINE, 'If they are staff, mark this resolved.'],
     { gymMayDismiss: true }),
   CLIENT_MISMATCH: accessSyncOwned(
-    'This Kisi record is marked as belonging to a different AccessSync account, so AccessSync will not change or delete it.'),
+    'This Kisi record belongs to a different AccessSync account.',
+    'AccessSync will not change or delete it.'),
   // DR-056 — login-email swap. Each is a deliberate stop: the member's door login was left exactly as it was.
   // Retry cannot help (the same event would stop in the same place), so none offers it.
   LOGIN_EMAIL_UNVERIFIED: {
     owner: OWNER.GYM, retry: RETRY.NONE,
-    headline: 'This member changed their login email in Wix, but Wix has not confirmed the new address. Their door login was left on the old address.',
-    steps: ['Ask the member to confirm the new email from the message Wix sent them.', 'Their door access keeps working in the meantime. Once they confirm, the change is picked up on their next profile update.'],
+    headline: 'Wix has not confirmed this member\'s new login email.',
+    why: 'They have not clicked the confirmation link Wix sent. Their door login stays on the old address.',
+    steps: ['Ask them to confirm the new email. This closes itself once they do.'],
   },
   LOGIN_EMAIL_IN_USE: accessSyncOwned(
-    'This member changed their login email, but the new address already belongs to a different Kisi user. Nothing was changed.',
-    [SUPPORT_LINE, 'Their door access keeps working. If the new address is theirs on another Kisi account, AccessSync support can sort out which one to keep.']),
+    'The new login email already belongs to a different Kisi user.',
+    'Nothing was changed and their door access still works.',
+    [SUPPORT_LINE, 'If the address is theirs on another Kisi account, support will decide which to keep.']),
   LOGIN_EMAIL_SHARED_USER: accessSyncOwned(
-    'This member changed their login email, but other members share the same Kisi login, so it was not swapped automatically.',
-    [SUPPORT_LINE, 'Door access keeps working for everyone on that login.']),
+    'Other members share this member\'s Kisi login.',
+    'Swapping it would change their login too, so it was not swapped.',
+    [SUPPORT_LINE]),
   LOGIN_EMAIL_RATE_LIMITED: accessSyncOwned(
-    'This member\'s door login was already swapped in the last 30 days, so a second change was not applied automatically.',
-    [SUPPORT_LINE, 'Their door access keeps working. If this was not them, contact the member.']),
+    'This member\'s door login was already swapped in the last 30 days.',
+    'A second change is not applied automatically.',
+    [SUPPORT_LINE, 'If this was not them, contact the member.']),
   LOGIN_EMAIL_USER_NOT_OURS: accessSyncOwned(
-    'This member changed their login email, but their Kisi user was not created by AccessSync or holds an admin role, so it was not swapped.',
-    [SUPPORT_LINE, 'Their door access keeps working.']),
+    'This member\'s Kisi user was not created by AccessSync, or has an admin role.',
+    'AccessSync only swaps accounts it created.',
+    [SUPPORT_LINE]),
   LOGIN_EMAIL_OLD_USER_NOT_REMOVED: accessSyncOwned(
-    'This member was moved to a new Kisi login after changing their email, but the old Kisi user could not be deleted.',
-    [SUPPORT_LINE, 'The member can already get in with the new login. The old Kisi user still exists on the old address and should be removed.']),
+    'This member moved to a new Kisi login, but the old Kisi user was not deleted.',
+    'Kisi refused or failed the delete.',
+    [SUPPORT_LINE, 'They can already get in. Support will remove the old user.']),
   // Written by core/source-retry-probe.js when its automatic retries ran out; not a queue job, so Retry cannot replay it.
   SOURCE_RETRY_EXHAUSTED: accessSyncOwned(
-    'AccessSync tried several times to finish this door assignment and could not. Pressing Retry would not change that.'),
+    'A door assignment kept failing.',
+    'AccessSync retried several times without success, so pressing Retry would not change that.'),
   INVALID_HARDWARE_REQUEST: accessSyncOwned(
-    'AccessSync could not build a valid request for the door system for this member (a required detail is missing).'),
+    'AccessSync could not build a valid door-system request for this member.',
+    'A required detail is missing.'),
   WIX_KEY_INVALID: gymFix(
-    'Wix rejected the saved Wix API key, so new purchases cannot be read.',
-    ['Open System Config and replace the Wix API key.', 'Then press Retry on the affected members.']),
-  WIX_KEY_MISSING: gymFix('No Wix API key has been saved yet.', ['Open System Config and add the Wix API key.']),
+    'Wix rejected the saved API key.',
+    'New purchases cannot be read until it is replaced.',
+    ['Replace the Wix API key in System Config.', RETRY_AFFECTED]),
+  WIX_KEY_MISSING: gymFix(
+    'No Wix API key is saved.',
+    'AccessSync cannot read Wix purchases without it.',
+    ['Add the Wix API key in System Config.']),
   WIX_KEY_PERMISSIONS: gymFix(
-    'The Wix API key is missing the Pricing Plans / Bookings read permissions.',
-    ['Create a new Wix API key with those permissions and save it in System Config.']),
+    'The Wix API key cannot read Pricing Plans or Bookings.',
+    'Those permissions are missing.',
+    ['Create a Wix API key with them and save it in System Config.']),
   PLAN_NOT_MAPPED: gymFix(
-    'A member bought a Wix plan that is not linked to a door group yet. They have paid and are waiting.',
-    ['Open Plan Mapping and link the plan to a door group.', 'Then press Retry on the waiting members.']),
+    'This member bought a Wix plan that has no door group.',
+    'They have paid and are waiting.',
+    ['Link the plan to a door group in Plan Mapping.', 'Then press Retry on the waiting members.']),
   SUBSCRIPTION_LAPSED: accessSyncOwned(
-    'AccessSync is not active for this location, so changes are paused.',
-    ['Contact AccessSync to reactivate the location.']),
+    'AccessSync is not active for this location.',
+    'Changes are paused.',
+    ['Contact AccessSync to reactivate it.']),
 };
+
+// Login-email stops are not "didn't get access" problems: the alert names them for what they are.
+for (const code of Object.keys(BY_CODE)) {
+  if (code.startsWith('LOGIN_EMAIL_')) BY_CODE[code].title = 'login email change didn\u2019t go through';
+}
+BY_CODE.LOGIN_EMAIL_UNVERIFIED.title = 'new login email isn\u2019t confirmed';
 
 const BY_RESOLUTION = {
   ROTATE_API_KEY: 'HARDWARE_KEY_INVALID',
@@ -138,8 +174,8 @@ const BY_RESOLUTION = {
   REMAP_PLAN: 'HARDWARE_RESOURCE_NOT_FOUND',
 };
 
-const temporary = (headline) => ({
-  owner: OWNER.NOBODY, retry: RETRY.NOW, headline,
+const temporary = (headline, why = 'AccessSync tries again on the next sync.') => ({
+  owner: OWNER.NOBODY, retry: RETRY.NOW, headline, why,
   steps: ['Nothing to do yet. If it is still here after a few hours, contact AccessSync support.'],
 });
 
@@ -153,11 +189,12 @@ const isTransient = (s) => !!s && (s >= 500 || s === 429);
 const unknownError = () => ({
   owner: OWNER.ACCESSSYNC, retry: RETRY.NOW,
   headline: 'Something went wrong that AccessSync does not recognise yet.',
-  steps: ['You can press Retry once. If it fails again, leave it with AccessSync support: they can see this on their own panel and will look into it.'],
+  why: 'The cause is not known yet.',
+  steps: ['You can press Retry once. If it fails again, AccessSync support will pick it up.'],
 });
 
 const COPY = (g) => ({
-  owner: g.owner, retry: g.retry, headline: g.headline, steps: g.steps.slice(), gymMayDismiss: !!g.gymMayDismiss,
+  owner: g.owner, retry: g.retry, headline: g.headline, why: g.why || null, title: g.title || null, steps: g.steps.slice(), gymMayDismiss: !!g.gymMayDismiss,
 });
 
 /**
@@ -166,7 +203,7 @@ const COPY = (g) => ({
  *           event_type?: string|null, eventType?: string|null }} row
  *        an error_queue row (snake_case) or a thrown error (camelCase)
  * @returns {{ owner: 'gym'|'accesssync'|'nobody', retry: 'now'|'after_fix'|'none', retryHelps: boolean, gymMayDismiss: boolean,
- *             headline: string, steps: string[], repeating: boolean, removal: boolean }}
+ *             headline: string, why: string|null, steps: string[], repeating: boolean, removal: boolean }}
  */
 function guidanceFor(row) {
   row = row || {};
@@ -183,28 +220,29 @@ function guidanceFor(row) {
     // The connector files every status it does not list — 400, 405, 409, ... — under HARDWARE_API_ERROR. Only
     // server-side trouble is temporary; a refused (4xx) request fails the same way every time.
     if (is4xx(status)) {
-      g = accessSyncOwned(`The door system refused this request (HTTP ${status}). Retrying sends the same request again.`);
+      g = accessSyncOwned(`Kisi refused this request (HTTP ${status}).`, 'Retrying sends the same request again.');
     } else if (isTransient(status)) {
-      g = temporary('The door system had a temporary problem. AccessSync tries again on the next sync.');
+      g = temporary('Kisi had a temporary problem.');
     }
   }
 
   if (!g && code && NETWORK_CODES.has(code)) {
-    g = temporary('AccessSync could not reach the door system for a moment. It tries again on the next sync.');
+    g = temporary('AccessSync could not reach Kisi for a moment.');
   }
   if (!g && isTransient(status)) {
-    g = temporary('A connected service had a temporary problem. AccessSync tries again on the next sync.');
+    g = temporary('A connected service had a temporary problem.');
   }
   if (!g && is4xx(status)) {
     const who = String(code || '').startsWith('WIX_') ? 'Wix' : 'A connected service';
-    g = accessSyncOwned(`${who} refused a request (HTTP ${status}). Retrying sends the same request again.`);
+    g = accessSyncOwned(`${who} refused a request (HTTP ${status}).`, 'Retrying sends the same request again.');
   }
 
   // A 404 is "door group deleted" for a grant, but for a suspend / enable / removal the thing that is missing is
   // the member's own door account — sending the gym to Plan Mapping would be wrong.
   if (code === 'HARDWARE_RESOURCE_NOT_FOUND' && (removal || (eventType && eventType.startsWith('payment.')))) {
     g = accessSyncOwned(
-      'AccessSync could not find this member\'s door account in Kisi (it may have been deleted there).',
+      'This member\'s door account is missing in Kisi.',
+      'It was probably deleted there.',
       GONE_STEPS, { gymMayDismiss: true });
   }
 
@@ -231,7 +269,8 @@ function guidanceFor(row) {
   const ageH = row.created_at ? (Date.now() - new Date(row.created_at).getTime()) / 3_600_000 : null;
   if (out.owner === OWNER.NOBODY && ageH != null && ageH >= SELF_CLEARING_MAX_H) {
     out.owner = OWNER.ACCESSSYNC;
-    out.headline = 'This was expected to clear by itself but has been open for over a day.';
+    out.headline = 'This was meant to clear by itself but is still open after a day.';
+    out.why = null;
     out.steps = [SUPPORT_LINE];
   }
 
@@ -239,16 +278,19 @@ function guidanceFor(row) {
   const repeating = count >= 5;
   if (repeating && out.retry === RETRY.NOW && out.owner === OWNER.ACCESSSYNC) {
     out.retry = RETRY.NONE;
-    out.headline = `This keeps failing (${count} times), so retrying is not the answer.`;
+    out.headline = `This keeps failing (${count} times).`;
+    out.why = 'Retrying is not the answer.';
     out.steps = [SUPPORT_LINE];
   } else if (repeating && out.owner === OWNER.NOBODY && code !== 'IN_FLIGHT_LOCK') {
     out.owner = OWNER.ACCESSSYNC;
     out.retry = RETRY.NONE;
-    out.headline = `This keeps happening (${count} times), so it is not a temporary glitch.`;
+    out.headline = `This keeps happening (${count} times).`;
+    out.why = 'It is not a temporary glitch.';
     out.steps = [SUPPORT_LINE];
   } else if (repeating && code === 'IN_FLIGHT_LOCK') {
     out.owner = OWNER.ACCESSSYNC;
-    out.headline = `This member has been locked ${count} times, so it is not a one-off collision.`;
+    out.headline = `This member has been locked ${count} times.`;
+    out.why = 'It is not a one-off collision.';
     out.steps = [SUPPORT_LINE];
   }
 

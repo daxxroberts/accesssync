@@ -339,20 +339,31 @@ function renderHmacAlert({ clientId } = {}) {
  * @param {string}  [a.audience]    'gym' (default) | 'owner' — the AccessSync owner's copy names the client.
  * @param {string}  [a.clientName]
  */
-function renderMemberFailureAlert({ userMessage, actionText, memberName, planName, clientId, owner, retry, audience, clientName }) {
+function renderMemberFailureAlert({ userMessage, why, actionText, memberName, planName, clientId, owner, retry, audience, clientName, title }) {
   const who  = memberName || 'A member';
-  const plan = planName ? ' on ' + planName : '';
   const forOwner = audience === 'owner';
 
-  const lead = userMessage || (who + ' didn’t get their door access' + plan + '.');
-  const what = actionText || 'Open your dashboard to see what to do next.';
+  // Problem / Why / Do: one short line each (core/error-guidance.js writes them that way).
+  const problem = userMessage || (who + ' didn’t get their door access' + (planName ? ' on ' + planName : '') + '.');
+  const todo = actionText || 'Open your dashboard to see what to do next.';
   const intro = forOwner ? (clientName ? clientName : 'A client') + ': ' : '';
+  const detail = planName || '';   // the member is already in the heading
+
+  const row = (label, text) =>
+    '<p style="margin:0 0 10px 0;"><strong style="color:' + MUTED + ';font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">' +
+    label + '</strong><br/>' + escapeHtml(text) + '</p>';
 
   const bodyHtml =
-    '<p style="margin:0 0 12px 0;">' + escapeHtml(intro + lead) + '</p>' +
-    '<p style="margin:0;">' + escapeHtml(what) + '</p>';
+    (detail ? '<p style="margin:0 0 14px 0;color:' + MUTED + ';">' + escapeHtml(detail) + '</p>' : '') +
+    row('Problem', intro + problem) +
+    (why ? row('Why', why) : '') +
+    row('Do', todo);
 
-  const bodyText = intro + lead + '\n\n' + what;
+  const bodyText =
+    (detail ? detail + '\n\n' : '') +
+    'Problem: ' + intro + problem + '\n' +
+    (why ? 'Why: ' + why + '\n' : '') +
+    'Do: ' + todo;
 
   // Unknown owner (older callers): keep the original "action needed" behaviour.
   const mustAct = forOwner ? owner === 'accesssync' : (owner ? owner === 'gym' : true);
@@ -362,8 +373,11 @@ function renderMemberFailureAlert({ userMessage, actionText, memberName, planNam
     : mustAct ? 'See what to do'
     : 'See details';
 
+  // "didn’t get access" is the default; login-email stops say what they are instead.
+  const what = title ? who + '’s ' + title : who + ' didn’t get access';
+
   const { html, text } = renderLayout({
-    heading: forOwner ? (clientName || 'A client') + ': ' + who + ' didn’t get access' : who + ' didn’t get access',
+    heading: forOwner ? (clientName || 'A client') + ': ' + what : what,
     bodyHtml,
     bodyText,
     actionNeeded: mustAct,
@@ -372,12 +386,12 @@ function renderMemberFailureAlert({ userMessage, actionText, memberName, planNam
   });
 
   const subject = forOwner
-    ? '[AccessSync] ' + (clientName || 'A client') + ': ' + who + ' didn’t get access (needs AccessSync)'
+    ? '[AccessSync] ' + (clientName || 'A client') + ': ' + what + ' (needs AccessSync)'
     : mustAct
-      ? '[AccessSync] Action needed: ' + who + ' didn’t get access'
+      ? '[AccessSync] Action needed: ' + what
       : owner === 'nobody'
-        ? '[AccessSync] ' + who + ' didn’t get access (no action needed)'
-        : '[AccessSync] ' + who + ' didn’t get access (AccessSync is looking into it)';
+        ? '[AccessSync] ' + what + ' (no action needed)'
+        : '[AccessSync] ' + what + ' (AccessSync is looking into it)';
 
   return { subject, html, text };
 }

@@ -547,9 +547,10 @@
                          : 'AccessSync is on it';
       // The gym cannot dismiss what only AccessSync can fix (the server refuses it too); the owner can dismiss anything.
       var canDismiss     = !g || _isOwnerView || g.owner !== 'accesssync' || !!g.gymMayDismiss;
-      // When guidance owns the card, the older static lines (connector message, "Why", "consequence") are only shown for
-      // the gym's own fixes: for the others they contradicted it ("AccessSync will retry automatically" under "this keeps happening").
-      var staticOk       = !g || g.owner === 'gym';
+      // When guidance owns the card it says everything once: the problem, why it happened, what to do. The older static
+      // lines (connector message, "Why", "consequence") only repeated it, and for AccessSync-owned errors contradicted it
+      // ("AccessSync will retry automatically" under "this keeps happening").
+      var staticOk       = !g;
       if (!staticOk) { statusMsg = null; }
       var reason         = staticOk ? errorReason(e.error_code) : null;
       var consequence    = staticOk ? errorConsequence(e.error_code) : null;
@@ -565,7 +566,10 @@
             (confidenceLine ? '<div class="err-confidence">'      + esc(confidenceLine) + '</div>'          : '') +
             (g ?
               '<div class="err-owner err-owner-' + esc(g.owner) + '"><strong>' + esc(OWNER_LABELS[g.owner] || g.owner) + '</strong> \u2014 ' + esc(g.headline) + '</div>' +
-              '<ol class="err-steps">' + g.steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>' : '') +
+              (g.why ? '<div class="err-card-reason">Why: ' + esc(g.why) + '</div>' : '') +
+              (g.steps.length === 1
+                ? '<div class="err-card-directions"><strong>Do:</strong> ' + esc(g.steps[0]) + '</div>'
+                : '<ol class="err-steps">' + g.steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>') : '') +
             (consequence    ? '<div class="err-card-consequence">\u26A0 ' + esc(consequence) + '</div>'     : '') +
             (reason         ? '<div class="err-card-reason">Why: ' + esc(reason) + '</div>'                 : '') +
             (nextStep       ?

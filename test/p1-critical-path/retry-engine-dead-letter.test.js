@@ -44,8 +44,9 @@ beforeEach(() => {
   delete process.env.ACCESSSYNC_OWNER_NOTIFICATION_EMAIL;
   world = { memberRow: [{ id: MEMBER }], existing: [], sameCause: [], clientRow: { name: 'House of Gains', notification_email: 'chad@gym.example' }, insertThrows: false };
   db.query.mockImplementation(async (sql, params) => {
+    if (/SELECT first_name, last_name/.test(sql)) { if (world.nameThrows) throw new Error('db down'); return { rows: world.memberName ? [world.memberName] : [] }; }
     if (/FROM member_master/.test(sql)) return { rows: world.memberRow };
-    if (/FROM plan_mappings/.test(sql)) return { rows: [] };
+    if (/FROM plan_mappings/.test(sql)) return { rows: world.planRow || [] };
     if (/SELECT id FROM error_queue/.test(sql)) return { rows: world.existing };
     if (/\(created_at, id\) </.test(sql)) return { rows: world.sameCause };
     if (/INSERT INTO error_queue/.test(sql)) { if (world.insertThrows) throw new Error('db down'); return { rows: [{ id: 'row-new' }] }; }
@@ -74,6 +75,23 @@ describe('[P1] first occurrence: one row, one email, saying who acts', () => {
     expect(actionText).toMatch(/AccessSync support can see this/);
     expect(actionText).not.toMatch(/retrying/i);
     expect(params[6]).toContain('Your door system rejected');   // the connector's own user_message is still stored as-is
+  });
+
+  test('the email names the member and the plan, and carries the guidance why', async () => {
+    world.memberName = { first_name: 'Callie', last_name: 'Bring', display_name: null };
+    world.planRow = [{ plan_name: 'Monthly', door_name: 'Front', location_id: null }];
+    await engine.handleFailure(job(), kisiError({ code: 'HARDWARE_KEY_INVALID', statusCode: 401, resolution: 'ROTATE_API_KEY' }));
+    const args = emails()[0].renderArgs;
+    expect(args).toMatchObject({ memberName: 'Callie Bring', planName: 'Monthly' });
+    expect(args.why).toEqual(expect.any(String));
+    expect(renderMemberFailureAlert(args).subject).toBe('[AccessSync] Action needed: Callie Bring didn\u2019t get access');
+  });
+
+  test('a name lookup that fails still sends the alert', async () => {
+    world.nameThrows = true;
+    await engine.handleFailure(job(), kisiError());
+    expect(emails()).toHaveLength(1);
+    expect(emails()[0].renderArgs.memberName).toBeNull();
   });
 
   test('an AccessSync-owned error is emailed as "AccessSync is looking into it", not "Action needed"', async () => {

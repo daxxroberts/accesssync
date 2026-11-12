@@ -75,7 +75,7 @@ class RetryEngine {
       log.info('retry.notify.suppressed_same_cause', { tenantId, errorCode: error.code || null, eventType });
       return;
     }
-    await this._notifyOperator(tenantId, error, platformMemberId, eventType, guide);
+    await this._notifyOperator(tenantId, error, platformMemberId, eventType, guide, { planName: dl.planName || null });
     // The gym's email says "AccessSync support will look into it" — so AccessSync's owner must be told too,
     // not left to find it on the panel.
     if (guide.owner === OWNER.ACCESSSYNC) await this._notifyOwnerCopy(tenantId, error, eventType, guide);
@@ -85,6 +85,32 @@ class RetryEngine {
    * Writes failed job to error_queue.
    * member_access_state.status is already set to 'failed' by grant-revoke before throw.
    */
+  /**
+   * Close open error rows of one code for one Wix member once the thing they reported is no
+   * longer true. First user: LOGIN_EMAIL_UNVERIFIED — Wix reports a new login email as
+   * unverified for a few seconds, the job dead-letters, and then a verified update goes
+   * through; the earlier row is stale. Only status 'failed' rows move, so a row someone has
+   * already resolved or dismissed is left alone. Never throws: this is housekeeping that
+   * must not turn a finished job into a failure.
+   * @returns {Promise<number>} rows closed
+   */
+  async resolveStaleErrors({ tenantId, platformMemberId, errorCode, resolvedBy }) {
+    if (!tenantId || !platformMemberId || !errorCode) return 0;
+    try {
+      const r = await db.query(
+        `UPDATE error_queue
+            SET status = 'resolved', resolved_at = NOW(), dismissed_by = $4
+          WHERE client_id = $1 AND status = 'failed' AND error_code = $3
+            AND payload->>'platformMemberId' = $2`,
+        [tenantId, String(platformMemberId), errorCode, resolvedBy || 'auto']
+      );
+      return r.rowCount || 0;
+    } catch (err) {
+      log.warn('retry.resolve_stale_failed', { tenantId, errorCode }, err);
+      return 0;
+    }
+  }
+
   async _moveToDeadLetter(tenantId, platformMemberId, eventType, standardEvent, error) {
     try {
       // Resolve internal member_master.id from (client_id, source_platform, platform_member_id)
@@ -211,7 +237,7 @@ class RetryEngine {
           _actor.id         || null,
         ]
       );
-      return { isNew: true, id: inserted && inserted.rows && inserted.rows[0] ? inserted.rows[0].id : null };
+      return { isNew: true, id: inserted && inserted.rows && inserted.rows[0] ? inserted.rows[0].id : null, planName };
     } catch (dbErr) {
       // Never crash retry-engine — log and continue to notification. (If the row could not be written the
       // operator must still hear about the failure, so this counts as new.)
@@ -254,7 +280,24 @@ class RetryEngine {
    * Sends operator email via Resend SDK (DR-020).
    * Falls back to config_alert_log if email is not configured or delivery fails.
    */
-  async _notifyOperator(tenantId, error, platformMemberId, eventType, guide = null) {
+  /** The member's display name for the alert, or null. Never throws: an alert without a name still goes out. */
+  async _memberName(tenantId, platformMemberId) {
+    if (!tenantId || !platformMemberId) return null;
+    try {
+      const r = await db.query(
+        `SELECT first_name, last_name, display_name FROM member_master
+          WHERE client_id = $1 AND platform_member_id = $2 LIMIT 1`,
+        [tenantId, platformMemberId]
+      );
+      const m = r && r.rows && r.rows[0];
+      if (!m) return null;
+      return [m.first_name, m.last_name].filter(Boolean).join(' ').trim() || (m.display_name && String(m.display_name).trim()) || null;
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  async _notifyOperator(tenantId, error, platformMemberId, eventType, guide = null, extra = {}) {
     let toEmail = null;
     guide = guide || guidanceFor({
       error_code: error.code, resolution: error.resolution, http_status: error.statusCode, event_type: eventType,
@@ -284,11 +327,13 @@ class RetryEngine {
           // The headline and steps come from core/error-guidance.js, never from the connector's own message,
           // so the email says who must act and what to do — the same as the page it links to.
           userMessage: guide.headline,
+          why: guide.why,
+          title: guide.title,
           actionText: guide.steps.join(' '),
           owner: guide.owner,
           retry: guide.retry,
-          memberName: null,
-          planName: null,
+          memberName: await this._memberName(tenantId, platformMemberId),
+          planName: extra.planName || null,
           clientId: tenantId,
         },
         logContext: { alert: 'member_failure', tenantId, eventType, errorCode: error.code || null },
@@ -333,6 +378,8 @@ class RetryEngine {
         render: renderMemberFailureAlert,
         renderArgs: {
           userMessage: guide.headline,
+          why: guide.why,
+          title: guide.title,
           actionText: guide.steps.join(' '),
           owner: guide.owner,
           retry: guide.retry,

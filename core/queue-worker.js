@@ -1109,12 +1109,30 @@ async function _processJobBody(job, traceId, token) {
       lastStep = 'email_swap';
       const swap = await loginEmailSwap.runLoginEmailSwap({
         tenantId, standardEvent, eventId, logger, getApiKey: getClientApiKey,
+        unverifiedWaited: !!(job.data && job.data.unverifiedWaited),
       });
       if (swap.status === 'deferred') {
+        // Wix has not verified the email yet: wait once (and remember that we did) before it counts as an error.
+        if (swap.reason === 'email_unverified') await job.updateData({ ...job.data, unverifiedWaited: true });
         // A live day pass (or an in-flight job) is in the way: come back later without
         // spending a retry attempt, the same way withMemberLock parks a busy member.
         await job.moveToDelayed(Date.now() + swap.delayMs, token);
         throw new DelayedError();
+      }
+      // The email is verified and stored or swapped: any LOGIN_EMAIL_UNVERIFIED row left by the
+      // seconds before Wix confirmed it is stale. A member still unconfirmed throws above, so
+      // their row stays.
+      if (swap.status === 'email_stored' || swap.status === 'swapped') {
+        const cleared = await retryEngine.resolveStaleErrors({
+          tenantId, platformMemberId: standardEvent.platformMemberId,
+          errorCode: 'LOGIN_EMAIL_UNVERIFIED', resolvedBy: 'auto-email-verified',
+        });
+        if (cleared) {
+          logger.info('login_email_swap.unverified_cleared', {
+            clientId, eventId, platformMemberId: standardEvent.platformMemberId,
+            cleared, stage: 'email_swap', result: 'success',
+          });
+        }
       }
       logger.info('queue.email_swap.done', {
         clientId, eventId, platformMemberId: standardEvent.platformMemberId,

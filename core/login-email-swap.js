@@ -51,6 +51,10 @@ const templates = require('./email-templates');
 const RATE_LIMIT_DAYS = 30;
 const MAX_DEFER_MS = 24 * 60 * 60 * 1000;
 const MIN_DEFER_MS = 60 * 1000;
+// Wix reports a brand-new login email as unverified for a few seconds (trace 435a2a4e): wait once before
+// treating it as a real problem. The verified update arrives as its own event and stores the email; when this
+// job runs again it finds nothing left to do.
+const UNVERIFIED_WAIT_MS = 5 * 60 * 1000;
 const SWAP_EVENT = 'login_email_swapped';
 
 /**
@@ -131,10 +135,11 @@ async function _deleteNewUserQuietly(platform, apiKey, newUserId, tenantId, logg
  * @param {string}   p.eventId
  * @param {Object}   [p.logger]
  * @param {Function} p.getApiKey       async (tenantId) => decrypted hardware API key | null
+ * @param {boolean}  [p.unverifiedWaited] true once this job has already waited for Wix to verify the email
  * @returns {Promise<{status: 'skipped'|'email_stored'|'deferred'|'swapped', reason?: string, delayMs?: number}>}
  * @throws {SwapBlocked} a condition a person has to look at (dead-letters, not retried)
  */
-async function runLoginEmailSwap({ tenantId, standardEvent, eventId, logger = log, getApiKey }) {
+async function runLoginEmailSwap({ tenantId, standardEvent, eventId, logger = log, getApiKey, unverifiedWaited = false }) {
   const platformMemberId = standardEvent.platformMemberId;
   const ctx = { clientId: tenantId, eventId, platformMemberId };
   const skip = (reason, extra = {}) => {
@@ -152,6 +157,10 @@ async function runLoginEmailSwap({ tenantId, standardEvent, eventId, logger = lo
   // 3. Only a verified new email may move a door login (WARD: a taken-over Wix login
   //    must not be able to point the door login at an address nobody confirmed).
   if (standardEvent.loginEmailVerified !== true) {
+    if (!unverifiedWaited) {
+      logger.info('login_email_swap.deferred', { ...ctx, reason: 'email_unverified', delayMs: UNVERIFIED_WAIT_MS, stage: 'swap', result: 'retry' });
+      return { status: 'deferred', reason: 'email_unverified', delayMs: UNVERIFIED_WAIT_MS };
+    }
     throw new SwapBlocked('LOGIN_EMAIL_UNVERIFIED',
       'Wix has not confirmed the new login email as verified, so the door login was left on the old address');
   }
@@ -339,4 +348,4 @@ async function _sendEmails({ tenantId, eventId, person, priorEmail, emailForKisi
   }
 }
 
-module.exports = { runLoginEmailSwap, SwapBlocked, RATE_LIMIT_DAYS, _groupsToMove };
+module.exports = { runLoginEmailSwap, SwapBlocked, RATE_LIMIT_DAYS, UNVERIFIED_WAIT_MS, _groupsToMove };

@@ -176,6 +176,8 @@
     "login_email_swap.user_created":              { "persist": true },
     "login_email_swap.complete":                  { "persist": true },
     "login_email_swap.deferred":                  { "persist": true },
+    "login_email_swap.unverified_cleared":        { "persist": true },
+    "retry.resolve_stale_failed":                 { "persist": true },
     "queue.email_swap.done":                      { "persist": false }
   }
 }

@@ -47,7 +47,7 @@ const l3 = require('../../adapters/standard-adapter');
 const mailer = require('../../core/member-mailer');
 const templates = require('../../core/email-templates');
 const { log } = require('../../core/logger');
-const { runLoginEmailSwap, SwapBlocked, _groupsToMove } = require('../../core/login-email-swap');
+const { runLoginEmailSwap, SwapBlocked, UNVERIFIED_WAIT_MS, _groupsToMove } = require('../../core/login-email-swap');
 
 const CLIENT = 'client-056';
 const OLD_USER = '111';
@@ -112,8 +112,8 @@ beforeEach(() => {
   mailer.sendMemberEmail.mockImplementation(async (p) => { order.push(`email:${p.emailType}`); return { sent: true }; });
 });
 
-const run = (event = EVENT) => runLoginEmailSwap({
-  tenantId: CLIENT, standardEvent: event, eventId: 'evt-1', logger: log, getApiKey: jest.fn().mockResolvedValue('key'),
+const run = (event = EVENT, extra = {}) => runLoginEmailSwap({
+  tenantId: CLIENT, standardEvent: event, eventId: 'evt-1', logger: log, getApiKey: jest.fn().mockResolvedValue('key'), ...extra,
 });
 const expectNothingChangedInKisi = () => {
   expect(hw.createUser).not.toHaveBeenCalled();
@@ -236,10 +236,29 @@ describe('[P1] DR-056 nothing changes until every check passes', () => {
     expectNothingChangedInKisi();
   });
 
-  test('Wix has not verified the new email → blocked, flagged, nothing touched', async () => {
-    await expect(run({ ...EVENT, loginEmailVerified: false })).rejects.toMatchObject({ code: 'LOGIN_EMAIL_UNVERIFIED', statusCode: 409 });
-    await expect(run({ ...EVENT, loginEmailVerified: undefined })).rejects.toBeInstanceOf(SwapBlocked);
+  // Wix reports a brand-new login email as unverified for a few seconds (trace 435a2a4e, 2026-11-11), so the
+  // first sight of "unverified" waits instead of raising an error and an alert.
+  test('Wix has not verified the new email yet → the job waits 5 minutes, nothing touched, no error', async () => {
+    const res = await run({ ...EVENT, loginEmailVerified: false });
+    expect(res).toEqual({ status: 'deferred', reason: 'email_unverified', delayMs: UNVERIFIED_WAIT_MS });
+    expect(UNVERIFIED_WAIT_MS).toBe(5 * 60 * 1000);
+    expect(log.error).not.toHaveBeenCalled();
     expect(hw.findUserByEmail).not.toHaveBeenCalled();
+    expectNothingChangedInKisi();
+  });
+
+  test('still unverified after the wait → blocked, flagged, nothing touched', async () => {
+    await expect(run({ ...EVENT, loginEmailVerified: false }, { unverifiedWaited: true })).rejects.toMatchObject({ code: 'LOGIN_EMAIL_UNVERIFIED', statusCode: 409 });
+    await expect(run({ ...EVENT, loginEmailVerified: undefined }, { unverifiedWaited: true })).rejects.toBeInstanceOf(SwapBlocked);
+    expect(hw.findUserByEmail).not.toHaveBeenCalled();
+    expectNothingChangedInKisi();
+  });
+
+  test('Wix verified it during the wait (the verified update stored the email) → the waiting job finds nothing to do', async () => {
+    // The stale event still says unverified, but our stored email already matches it.
+    setWorld({ person: { ...PERSON, email: 'new@x.com' } });
+    await expect(run({ ...EVENT, loginEmailVerified: false }, { unverifiedWaited: true }))
+      .resolves.toMatchObject({ status: 'skipped', reason: 'unchanged' });
     expectNothingChangedInKisi();
   });
 

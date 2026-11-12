@@ -35,7 +35,7 @@ jest.mock('../../adapters/standard-adapter', () => ({ releaseLock: jest.fn() }))
 jest.mock('../../adapters/hardware-adapter', () => ({}));
 jest.mock('../../core/grant-revoke', () => ({ processGrant: jest.fn(), processRevoke: jest.fn() }));
 jest.mock('../../core/plan-mapping-resolver', () => ({ resolve: jest.fn() }));
-jest.mock('../../core/retry-engine', () => ({ handleFailure: jest.fn().mockResolvedValue() }));
+jest.mock('../../core/retry-engine', () => ({ handleFailure: jest.fn().mockResolvedValue(), resolveStaleErrors: jest.fn().mockResolvedValue(0) }));
 jest.mock('../../core/login-email-swap', () => ({ runLoginEmailSwap: jest.fn() }));
 jest.mock('bullmq', () => {
   class DelayedError extends Error { constructor(m) { super(m || 'delayed'); this.name = 'DelayedError'; } }
@@ -117,6 +117,7 @@ describe('[P1] DR-056 the queue worker runs the email_swap job', () => {
   const makeJob = () => ({
     id: 'job-swap', name: 'email_swap', attemptsMade: 0, opts: { attempts: 3 },
     moveToDelayed: jest.fn().mockResolvedValue(),
+    updateData: jest.fn().mockResolvedValue(),
     data: { tenantId: 'tenant-056', standardEvent: { traceId: mintTraceId(), eventId: 'evt-mu-1', eventType: 'member.updated', platformMemberId: 'wix-m-1', email: 'new@x.com' } },
   });
 
@@ -141,6 +142,46 @@ describe('[P1] DR-056 the queue worker runs the email_swap job', () => {
     loginEmailSwap.runLoginEmailSwap.mockResolvedValue({ status: 'skipped', reason: 'unchanged' });
     await expect(processJob(makeJob(), 'tok')).resolves.toBeUndefined();
     expect(retryEngine.handleFailure).not.toHaveBeenCalled();
+  });
+
+  test('an unverified email waits ONCE: the job remembers it already waited and is parked without a retry', async () => {
+    loginEmailSwap.runLoginEmailSwap.mockResolvedValue({ status: 'deferred', reason: 'email_unverified', delayMs: 300000 });
+    const job = makeJob();
+    await expect(processJob(job, 'tok')).rejects.toMatchObject({ name: 'DelayedError' });
+    expect(loginEmailSwap.runLoginEmailSwap.mock.calls[0][0].unverifiedWaited).toBe(false);
+    expect(job.updateData).toHaveBeenCalledWith(expect.objectContaining({ unverifiedWaited: true }));
+    expect(job.moveToDelayed).toHaveBeenCalledTimes(1);
+    expect(retryEngine.handleFailure).not.toHaveBeenCalled();
+  });
+
+  test('a job that already waited tells the swap so, and a day-pass deferral does not mark it as waited', async () => {
+    loginEmailSwap.runLoginEmailSwap.mockResolvedValue({ status: 'skipped', reason: 'unchanged' });
+    const waited = makeJob(); waited.data.unverifiedWaited = true;
+    await processJob(waited, 'tok');
+    expect(loginEmailSwap.runLoginEmailSwap.mock.calls[0][0].unverifiedWaited).toBe(true);
+
+    loginEmailSwap.runLoginEmailSwap.mockResolvedValue({ status: 'deferred', reason: 'live_day_pass', delayMs: 3600000 });
+    const parked = makeJob();
+    await expect(processJob(parked, 'tok')).rejects.toMatchObject({ name: 'DelayedError' });
+    expect(parked.updateData).not.toHaveBeenCalled();
+  });
+
+  test.each(['email_stored', 'swapped'])('a verified %s closes the stale LOGIN_EMAIL_UNVERIFIED error for that member', async (status) => {
+    loginEmailSwap.runLoginEmailSwap.mockResolvedValue({ status });
+    retryEngine.resolveStaleErrors.mockResolvedValue(1);
+    await processJob(makeJob(), 'tok');
+    expect(retryEngine.resolveStaleErrors).toHaveBeenCalledWith({
+      tenantId: 'tenant-056', platformMemberId: 'wix-m-1', errorCode: 'LOGIN_EMAIL_UNVERIFIED', resolvedBy: 'auto-email-verified',
+    });
+    expect(retryEngine.handleFailure).not.toHaveBeenCalled();
+  });
+
+  test('a skipped swap (ordinary profile edit) and a blocked one leave the error alone', async () => {
+    loginEmailSwap.runLoginEmailSwap.mockResolvedValue({ status: 'skipped', reason: 'unchanged' });
+    await processJob(makeJob(), 'tok');
+    loginEmailSwap.runLoginEmailSwap.mockRejectedValue(Object.assign(new Error('x'), { code: 'LOGIN_EMAIL_UNVERIFIED', statusCode: 409 }));
+    await expect(processJob(makeJob(), 'tok')).rejects.toMatchObject({ code: 'LOGIN_EMAIL_UNVERIFIED' });
+    expect(retryEngine.resolveStaleErrors).not.toHaveBeenCalled();
   });
 
   test('a deferred swap moves the job to later and throws DelayedError: no failure, no lock release, no retry used', async () => {
