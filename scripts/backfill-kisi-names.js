@@ -100,7 +100,7 @@ const norm = (s) => (s || '').trim().toLowerCase();
 
     const marker = kisiAdapter.readUserOwnership(user);
     if (!marker) { skip('not created by AccessSync'); continue; }
-    if (marker.conflict || marker.clientId !== r.client_id) { skip('marked for a different client'); continue; }
+    if (marker.clientId !== r.client_id) { skip('marked for a different client'); continue; }
 
     const current = (user.name || '').trim();
     if (current === newName) { skip(`already "${current}"`); continue; }
