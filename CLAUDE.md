@@ -113,7 +113,7 @@ When asked about a UI page or to view/open one:
 - Per-person `member_access` cardinality live: UNIQUE `(member_master_id, client_id)`, status enum `active`/`inactive`/`in_flight`/`pending_identity`.
 - A9/A10/A11 multi-tenancy hardening live: `member_access_sources.client_id NOT NULL` FK CASCADE; `member_billing` UNIQUE includes client_id; P3 regression test guards INSERTs.
 - Reconcile observe-and-log behavior: Kisi assignments outside DB source rows are preserved, not revoked. Operator-side manual grants safe indefinitely.
-- DR-045 three-layer Kisi delete guard live (Layer A DB source_tag + Layer B Kisi ownership marker + Layer C Kisi elevated-role check). Layer B lives in the Kisi user's `metadata` since 2026-10-24; all HOG users were backfilled 2026-10-26. The legacy `notes` line is still written until phase 2 (branch `dr045-metadata-phase2`, awaiting SAGE) merges. Runbook: `handoff/KISI_METADATA_MARKER_PROPOSAL_2026-10-23.md`.
+- DR-045 three-layer Kisi delete guard live (Layer A DB source_tag + Layer B Kisi ownership marker + Layer C Kisi elevated-role check). Layer B lives in the Kisi user's `metadata` since 2026-10-24; all HOG users were backfilled 2026-10-26. Phase 2 merged 2026-11-26 (PR #10, Builder sign-off as SAGE): guards trust metadata only and nothing writes the Kisi `notes` field; the old notes lines stay on existing users until `kisi-ownership-migrate.js clear-notes --apply` runs (separate Builder-approved step). Runbook: `handoff/KISI_METADATA_MARKER_PROPOSAL_2026-10-23.md`.
 - DR-044 sub-member soft-delete with PII purge live (verified end-to-end on Drew Roberts revoke 2026-04-30).
 - Members React page (React 18 + Babel-standalone island) live with per-person plan iteration and compact expanded-plans table.
 
@@ -130,7 +130,7 @@ When asked about a UI page or to view/open one:
 - `adapters/wix/wix-plans-api.js` — Wix Pricing Plans + Bookings REST client. `GET /pricing-plans/v2/orders` (list variant — queryOrders endpoint removed by Wix, OB-85 fix). `POST /_api/bookings-reader/v2/extended-bookings/query` (OB-86 fix). Fail-closed on HTTP errors (OB-87).
 - `adapters/standard-adapter.js` — Layer 3. Owns `member_master` UPSERT, `member_access` per-(person × client) UPSERT, `member_access_sources` writes (per-mapping in 'pending_hardware' / 'pending_start' / 'active' / 'cancelled' via parkPendingHardware/parkPendingStart/completeGrant/completeRevoke), in_flight lock. resolveAndLock(), resolveIdentity() (Wix Members API resolve ladder per OB-89), releaseLock() (translates legacy 'failed'/'pending_hardware' → 'inactive'). Writes client_activity_summary (DR-024). `_maybeFireFirstGrantEmail()` atomic first-grant welcome email.
 - `adapters/hardware-adapter.js` — Layer 5. Hardware platform router. Delegates kisi/seam by hardwarePlatform string. `assignRole(options.validUntil)`. INVALID_HARDWARE_REQUEST validator gate.
-- `adapters/kisi/kisi-adapter.js` — Layer 6. Kisi business methods. `getGroups`, `assignRole(validUntil)`, `getLocks` returns normalized `{id, name, locked}`. **DR-045 three-layer delete guard:** Layer B marker written to user `metadata` (`accesssync_managed`, `accesssync_client_id`, `accesssync_created_at`, `accesssync_marker_v`) plus the legacy `notes` line until phase 2; `readUserOwnership` reads metadata first, then notes, and refuses a conflict. Layer C elevated-role refusal in `deleteUser`. `findElevatedAssignments` + `getRoleAssignmentsForUser` helpers.
+- `adapters/kisi/kisi-adapter.js` — Layer 6. Kisi business methods. `getGroups`, `assignRole(validUntil)`, `getLocks` returns normalized `{id, name, locked}`. **DR-045 three-layer delete guard:** Layer B marker written to user `metadata` (`accesssync_managed`, `accesssync_client_id`, `accesssync_created_at`, `accesssync_marker_v`) (metadata only since DR-045 phase 2, 2026-11-26; never writes `notes`); `readUserOwnership` reads metadata only. If Kisi rejects `metadata` on create, the user is still created and the label is stamped or alerted (access first). Layer C elevated-role refusal in `deleteUser`. `findElevatedAssignments` + `getRoleAssignmentsForUser` helpers.
 - `adapters/kisi/kisi-connector.js` — Layer 7. Kisi HTTP client, rate-limited via core/rate-limiter.js (5 req/sec per DR-008).
 - `adapters/seam/*` — Stubs. Post-V1.
 - `core/queue-worker.js` — Layer coordinator. resolveAndLock → resolveIdentity → grantRevokeLogic → completeGrant/Revoke. Concurrency 20. payment.recovered early-exit (enableAccess only). UnrecoverableError for 4xx. Lifecycle breadcrumbs via lastStep.
@@ -208,7 +208,7 @@ Layer 5: Hardware Standard Adapter  adapters/hardware-adapter.js
 
 Layer 6: Kisi Adapter Layer       adapters/kisi/kisi-adapter.js
   Kisi business methods. DR-045 three-layer delete guard:
-    Layer B (metadata marker; legacy notes line until phase 2), Layer C (elevated-role refusal).
+    Layer B (metadata marker only, since phase 2 2026-11-26), Layer C (elevated-role refusal).
   createUser hard-requires options.clientId, and stamps the metadata marker on the spot if Kisi's
   echo lacks it (never fails the grant). suspendAccess/enableAccess PATCH access_enabled only.
 
@@ -453,6 +453,7 @@ This project is managed by the Business Operating Team (BOT). The vault is the s
 
 | Version | Date | Summary |
 |---|---|---|
+| v6.3-parity + repo note | 2026-11-26 | Repo-only docs update; KEEPER to mirror into the vault. DR-045 phase 2 merged (PR #10): Layer B is the metadata marker only; clear-notes still to run. |
 | v6.2-parity + repo note | 2026-10-31 | Repo-only docs update; KEEPER to mirror into the vault. DR-045 Layer B now described as a Kisi user `metadata` marker: phase 1 live, HOG backfill done 2026-10-26, phase 2 awaiting SAGE. No code touched. |
 | **v6.1-parity (repo)** | **2026-05-26** | **Mirror of vault v6.1 — OB-220 + OB-214 doc-hygiene ship.** Views table expanded (3 views, not 1); `locations` row corrected (`hardware_api_key` was dropped S-10/S-11, canonical column list shown); `clients` row expanded with previously-omitted live columns (`source_api_key`, `platform_instance_id`, `reconciliation_interval`, `last_active_member_count`, `first_grant_sent`, `archived_at`, `source_site_url`, `platform`, `last_sync_at`, `status`). OB-214 closed FALSE_ALARM — OB-91 always existed in open_items.md ledger. Pure docs pass; no code touched. |
 | v1.0–v3.9 | 2026-03-07 to 2026-04-01 | Initial setup through Phase 2+3 + Sprint 5 complete. |

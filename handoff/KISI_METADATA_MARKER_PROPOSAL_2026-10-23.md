@@ -69,7 +69,12 @@ Anything listed as CONFLICT needs a human look before phase 2: one Kisi user car
 - Users created since phase 1 (2026-10-24) get the metadata marker when `createUser` runs, so they need no backfill.
 - The notes line is still on every user and is still written. It comes off only after phase 2 merges, via `clear-notes` below.
 
-## Phase 2 — branch `dr045-metadata-phase2`, merge after SAGE ratifies (backfill done)
+## Phase 2 — rebuilt on main 2026-11-26 (branch `claude/project-thread-il3dtv`), merge after SAGE ratifies
+
+The original branch `dr045-metadata-phase2` (2026-10-24) predates SAGE's 2026-10-26 "step 1" ruling (merged 2026-11-03). The rebuild merges it onto current main and keeps step 1's access-first create rule: if Kisi rejects the `metadata` field, `createUser` still creates the user (now with no notes either), then `_healCreatedUserMetadata` tries to stamp the label and, failing that, warns `kisi.user.create_metadata_missing` and raises the `kisi_create_metadata_missing` alert. An unlabeled user fails safe: the delete guard refuses it. The old branch instead failed the grant; that part was dropped. Supersedes `dr045-metadata-phase2`.
+
+Evidence at rebuild time (diagnostic_log, read 2026-11-26): every Pass 3 since 2026-11-03 (latest read 174 HOG Kisi users, 162 active members) reported `ownershipMarkerNotInMetadata: 0`; 18 of 18 users created since then had `metadataEchoed: true`; 7 of 7 deletes trusted `metadata`; zero `kisi_create_metadata_missing` alerts. Phase 2 removes that Pass 3 counter (nothing left to count).
+
 
 - Guards read metadata only. The notes fallback and the conflict case are gone.
 - `createUser`, `suspendAccess`, `enableAccess` stop writing notes. Suspend / re-enable patch `access_enabled` only, so an operator's notes are never erased again.

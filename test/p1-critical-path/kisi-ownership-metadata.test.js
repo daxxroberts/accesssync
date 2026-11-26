@@ -1,25 +1,25 @@
 /**
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │  PRIORITY 1 — CRITICAL PATH                                             │
- * │  Scenario: DR-045 Layer B moves to Kisi user metadata (phase 1)         │
+ * │  Scenario: DR-045 Layer B lives in Kisi user metadata (phase 2)         │
  * │                                                                         │
  * │  Business consequence: the ownership marker is what stops AccessSync    │
  * │  from deleting a gym's own Kisi users (staff, the owner, hand-added     │
  * │  members). If a new user is created without it, or a guard reads it    │
  * │  wrong, either a member's Kisi account is never cleaned up or — worse — │
- * │  someone who is not ours is deleted.                                    │
+ * │  someone who is not ours is deleted. And since phase 2 an operator's    │
+ * │  own notes on a member must never be written or trusted.                │
  * │                                                                         │
- * │  What this tests: createUser writes flat metadata (Kisi limits) plus    │
- * │  the legacy notes marker, and still creates the user if Kisi rejects    │
- * │  metadata; deleteUser / setUserName accept metadata or notes and refuse │
- * │  on no marker, another client, or a metadata-vs-notes conflict, with    │
- * │  the error codes finalizeRevoke already maps to a clean refusal;        │
- * │  Layer C still refuses elevated users; stampOwnershipMetadata merges,   │
- * │  never overwrites another client, and confirms on re-read;              │
- * │  listAllUsers reports owner + marker source for reconcile's count.      │
- * │  DR-045 step 1 (SAGE 2026-10-26): suspend / enable PATCH access only    │
- * │  (no notes); createUser checks the echoed label and heals it on the     │
- * │  spot, and if that fails warns + alerts but still returns the user.     │
+ * │  What this tests: createUser writes flat metadata (Kisi limits) and no  │
+ * │  notes; if Kisi rejects metadata the user is still created (access      │
+ * │  first, DR-045 step 1) and the label is stamped or alerted;             │
+ * │  deleteUser / setUserName trust metadata only — a notes marker alone is │
+ * │  no longer ownership — with the error codes finalizeRevoke maps to a    │
+ * │  clean refusal; Layer C still refuses elevated users; suspend / enable  │
+ * │  patch access only; createUser heals a missing echoed label on the spot │
+ * │  and if that fails warns + alerts but still returns the user;           │
+ * │  stampOwnershipMetadata merges, never overwrites another client,        │
+ * │  confirms on re-read; listAllUsers reports the owner.                   │
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
@@ -41,7 +41,8 @@ const K = kisiAdapter.OWNERSHIP_METADATA_KEYS;
 const meta = (clientId, extra = {}) => ({
   [K.MANAGED]: true, [K.CLIENT_ID]: clientId, [K.CREATED_AT]: '2026-10-24T00:00:00.000Z', [K.VERSION]: 1, ...extra,
 });
-const notesFor = (clientId) => `[AS|managed|${clientId}|2026-05-13T00:00:00Z] Created by AccessSync`;
+// The retired text marker, as old users still carry it until clear-notes runs.
+const legacyNotes = (clientId) => `[AS|managed|${clientId}|2026-05-13T00:00:00Z] Created by AccessSync`;
 const call = (i) => kisiConnector.makeRequest.mock.calls[i];
 const bodyOf = (i) => JSON.parse(call(i)[1].body);
 // Kisi's POST /users response echoes the user it made, metadata included (verified live 2026-10-26).
@@ -57,8 +58,8 @@ beforeEach(() => {
   db.query.mockResolvedValue({ rows: [] });
 });
 
-describe('[P1] createUser writes the metadata marker', () => {
-  test('sends four flat metadata keys naming the client, alongside the legacy notes marker', async () => {
+describe('[P1] createUser writes the metadata marker, never notes', () => {
+  test('sends four flat metadata keys naming the client and no notes field', async () => {
     kisiConnector.makeRequest.mockImplementationOnce(echoCreate(501));
     await kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID });
 
@@ -69,9 +70,7 @@ describe('[P1] createUser writes the metadata marker', () => {
       [K.CREATED_AT]: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       [K.VERSION]: 1,
     });
-    expect(user.notes).toMatch(new RegExp(`^\\[AS\\|managed\\|${CLIENT_ID}\\|`));
-    // One timestamp for both records, so verify can compare them.
-    expect(kisiAdapter.parseAccessSyncMarker(user.notes).createdAt).toBe(user.metadata[K.CREATED_AT]);
+    expect(user).not.toHaveProperty('notes');
   });
 
   test('stays inside Kisi metadata limits: flat primitives, keys <= 50 chars, values <= 500, <= 50 keys', async () => {
@@ -87,7 +86,7 @@ describe('[P1] createUser writes the metadata marker', () => {
     }
   });
 
-  test('if Kisi rejects the metadata field, the user is still created (notes marker only), then labelled', async () => {
+  test('if Kisi rejects the metadata field, the user is still created (no label, no notes), then labelled', async () => {
     const rejected = Object.assign(new Error('Kisi 422'), {
       statusCode: 422, body: { errors: { metadata: ['is not permitted'] } },
     });
@@ -104,7 +103,7 @@ describe('[P1] createUser writes the metadata marker', () => {
     expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(5);
     expect(bodyOf(0).user.metadata).toBeDefined();
     expect(bodyOf(1).user.metadata).toBeUndefined();
-    expect(bodyOf(1).user.notes).toMatch(/^\[AS\|managed\|/);
+    expect(bodyOf(1).user).not.toHaveProperty('notes');
     expect(call(3)[0]).toBe('/users/503');
     expect(bodyOf(3).user.metadata[K.CLIENT_ID]).toBe(CLIENT_ID);
     expect(alertInserts()).toHaveLength(0);
@@ -115,9 +114,10 @@ describe('[P1] createUser writes the metadata marker', () => {
       statusCode: 422, body: { errors: { email: ['has already been taken'] } },
     });
     kisiConnector.makeRequest.mockRejectedValueOnce(taken);
+    const rejected = taken;
     await expect(
       kisiAdapter.createUser(API_KEY, 'a@b.com', 'Ann Bee', { clientId: CLIENT_ID })
-    ).rejects.toBe(taken);
+    ).rejects.toBe(rejected);
     expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
   });
 });
@@ -217,10 +217,10 @@ describe('[P1] DR-045 step 1: suspend / enable never write notes', () => {
   });
 });
 
-describe('[P1] deleteUser Layer B reads metadata first, notes second', () => {
+describe('[P1] deleteUser Layer B trusts metadata only', () => {
   const noRoles = [{ role_id: 'group_basic', scope: 'group' }];
 
-  test('metadata-only marker for this client → DELETE fires', async () => {
+  test('metadata marker for this client → DELETE fires', async () => {
     kisiConnector.makeRequest
       .mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID), notes: null })
       .mockResolvedValueOnce(noRoles)
@@ -229,9 +229,16 @@ describe('[P1] deleteUser Layer B reads metadata first, notes second', () => {
     expect(call(2)[1].method).toBe('DELETE');
   });
 
-  test('legacy notes-only marker still passes during the transition', async () => {
+  test('a notes marker alone is no longer ownership → UNOWNED_USER, no DELETE', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, notes: legacyNotes(CLIENT_ID) });
+    await expect(kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID }))
+      .rejects.toMatchObject({ code: 'UNOWNED_USER' });
+    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test("whatever notes say is ignored: our metadata + another client's old notes line → DELETE fires", async () => {
     kisiConnector.makeRequest
-      .mockResolvedValueOnce({ id: 9, notes: notesFor(CLIENT_ID) })
+      .mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID), notes: legacyNotes(OTHER) })
       .mockResolvedValueOnce(noRoles)
       .mockResolvedValueOnce({});
     await kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID });
@@ -242,7 +249,7 @@ describe('[P1] deleteUser Layer B reads metadata first, notes second', () => {
     const infoSpy = jest.spyOn(log, 'info');
     for (const [user, source] of [
       [{ id: 9, metadata: meta(CLIENT_ID) }, 'metadata'],
-      [{ id: 9, notes: notesFor(CLIENT_ID) }, 'notes'],
+      [{ id: 9, metadata: meta(CLIENT_ID), notes: legacyNotes(OTHER) }, 'metadata'],
     ]) {
       kisiConnector.makeRequest
         .mockResolvedValueOnce(user)
@@ -256,23 +263,10 @@ describe('[P1] deleteUser Layer B reads metadata first, notes second', () => {
   });
 
   test('metadata naming another client → CLIENT_MISMATCH, no DELETE', async () => {
-    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(OTHER) });
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(OTHER), notes: legacyNotes(CLIENT_ID) });
     await expect(kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID }))
       .rejects.toMatchObject({ code: 'CLIENT_MISMATCH', ownerClientId: OTHER });
     expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
-  });
-
-  test('metadata and notes naming different clients → CLIENT_MISMATCH (markerConflict), no DELETE', async () => {
-    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID), notes: notesFor(OTHER) });
-    await expect(kisiAdapter.deleteUser(API_KEY, 9, { clientId: CLIENT_ID }))
-      .rejects.toMatchObject({ code: 'CLIENT_MISMATCH', markerConflict: true });
-    expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
-  });
-
-  test('a conflict refuses even when the caller passes no clientId', async () => {
-    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID), notes: notesFor(OTHER) });
-    await expect(kisiAdapter.deleteUser(API_KEY, 9, {}))
-      .rejects.toMatchObject({ code: 'CLIENT_MISMATCH', markerConflict: true });
   });
 
   test('accesssync_managed not true → no marker → UNOWNED_USER', async () => {
@@ -293,7 +287,7 @@ describe('[P1] deleteUser Layer B reads metadata first, notes second', () => {
 });
 
 describe('[P1] setUserName ownership check', () => {
-  test('metadata-only owner → PATCHes name only', async () => {
+  test('metadata owner → PATCHes name only', async () => {
     kisiConnector.makeRequest
       .mockResolvedValueOnce({ id: 9, metadata: meta(CLIENT_ID) })
       .mockResolvedValueOnce({});
@@ -301,31 +295,41 @@ describe('[P1] setUserName ownership check', () => {
     expect(bodyOf(1)).toEqual({ user: { name: 'Ann Bee' } });
   });
 
-  test('conflicting markers → refuses with CLIENT_MISMATCH, no PATCH', async () => {
-    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(OTHER), notes: notesFor(CLIENT_ID) });
+  test('a notes marker alone → NOT_ACCESSSYNC_MANAGED, no PATCH', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, notes: legacyNotes(CLIENT_ID) });
     await expect(kisiAdapter.setUserName(API_KEY, 9, 'Ann Bee', { clientId: CLIENT_ID }))
-      .rejects.toMatchObject({ code: 'CLIENT_MISMATCH', markerConflict: true });
+      .rejects.toMatchObject({ code: 'NOT_ACCESSSYNC_MANAGED' });
     expect(kisiConnector.makeRequest).toHaveBeenCalledTimes(1);
   });
 
-  test('no marker → NOT_ACCESSSYNC_MANAGED, as before', async () => {
-    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: {}, notes: '' });
+  test('metadata naming another client → CLIENT_MISMATCH', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({ id: 9, metadata: meta(OTHER) });
     await expect(kisiAdapter.setUserName(API_KEY, 9, 'Ann Bee', { clientId: CLIENT_ID }))
-      .rejects.toMatchObject({ code: 'NOT_ACCESSSYNC_MANAGED' });
+      .rejects.toMatchObject({ code: 'CLIENT_MISMATCH' });
+  });
+});
+
+describe('[P1] suspend / enable never write notes', () => {
+  test('suspendAccess PATCHes access_enabled:false only', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({});
+    await kisiAdapter.suspendAccess(API_KEY, 9, 'Payment failed', { clientId: CLIENT_ID });
+    expect(bodyOf(0)).toEqual({ user: { access_enabled: false } });
+  });
+
+  test('enableAccess PATCHes access_enabled:true only', async () => {
+    kisiConnector.makeRequest.mockResolvedValueOnce({});
+    await kisiAdapter.enableAccess(API_KEY, 9, { clientId: CLIENT_ID });
+    expect(bodyOf(0)).toEqual({ user: { access_enabled: true } });
   });
 });
 
 describe('[P1] ownership helpers', () => {
-  test('readUserOwnership: metadata wins, notes falls back, conflict and none are explicit', () => {
+  test('readUserOwnership reads metadata only', () => {
     expect(kisiAdapter.readUserOwnership({ metadata: meta(CLIENT_ID) }))
-      .toMatchObject({ clientId: CLIENT_ID, source: 'metadata' });
-    expect(kisiAdapter.readUserOwnership({ notes: notesFor(CLIENT_ID) }))
-      .toMatchObject({ clientId: CLIENT_ID, source: 'notes' });
-    expect(kisiAdapter.readUserOwnership({ metadata: meta(CLIENT_ID), notes: notesFor(CLIENT_ID) }))
-      .toMatchObject({ clientId: CLIENT_ID, source: 'metadata' });
-    expect(kisiAdapter.readUserOwnership({ metadata: meta(CLIENT_ID), notes: notesFor(OTHER) }))
-      .toEqual({ conflict: true, metadataClientId: CLIENT_ID, notesClientId: OTHER });
+      .toEqual({ clientId: CLIENT_ID, createdAt: '2026-10-24T00:00:00.000Z', source: 'metadata' });
+    expect(kisiAdapter.readUserOwnership({ notes: legacyNotes(CLIENT_ID) })).toBeNull();
     expect(kisiAdapter.readUserOwnership({ metadata: {}, notes: 'VIP — comp access' })).toBeNull();
+    expect(kisiAdapter.readUserOwnership(null)).toBeNull();
   });
 
   test('parseOwnershipMetadata accepts "true" as a string, rejects a blank client id and non-objects', () => {
@@ -349,9 +353,9 @@ describe('[P1] ownership helpers', () => {
 describe('[P1] stampOwnershipMetadata (backfill write)', () => {
   test('merges into existing metadata, PATCHes metadata only, confirms on re-read', async () => {
     kisiConnector.makeRequest
-      .mockResolvedValueOnce({ id: 9, metadata: { city: 'Austin' }, notes: notesFor(CLIENT_ID) }) // GET
-      .mockResolvedValueOnce(undefined)                                                          // PATCH (204)
-      .mockResolvedValueOnce({ id: 9, metadata: { city: 'Austin', ...meta(CLIENT_ID) } });       // re-GET
+      .mockResolvedValueOnce({ id: 9, metadata: { city: 'Austin' }, notes: legacyNotes(CLIENT_ID) }) // GET
+      .mockResolvedValueOnce(undefined)                                                             // PATCH (204)
+      .mockResolvedValueOnce({ id: 9, metadata: { city: 'Austin', ...meta(CLIENT_ID) } });          // re-GET
 
     const res = await kisiAdapter.stampOwnershipMetadata(API_KEY, 9, CLIENT_ID, { createdAt: '2026-05-13T00:00:00Z' });
 
@@ -387,20 +391,18 @@ describe('[P1] stampOwnershipMetadata (backfill write)', () => {
   });
 });
 
-describe('[P1] listAllUsers reports owner and marker source (reconcile progress count)', () => {
-  test('metadata, notes, conflict and unowned users are labelled', async () => {
+describe('[P1] listAllUsers reports the metadata owner', () => {
+  test('metadata owners are labelled; a notes line alone is not ownership', async () => {
     kisiConnector.makeRequest.mockResolvedValueOnce([
       { id: 1, email: 'a@x', name: 'A', metadata: meta(CLIENT_ID) },
-      { id: 2, email: 'b@x', name: 'B', notes: notesFor(CLIENT_ID) },
-      { id: 3, email: 'c@x', name: 'C', metadata: meta(CLIENT_ID), notes: notesFor(OTHER) },
-      { id: 4, email: 'd@x', name: 'D' },
+      { id: 2, email: 'b@x', name: 'B', notes: legacyNotes(CLIENT_ID) },
+      { id: 3, email: 'c@x', name: 'C' },
     ]);
     const users = await kisiAdapter.listAllUsers(API_KEY);
     expect(users).toEqual([
       { id: 1, email: 'a@x', name: 'A', ownerClientId: CLIENT_ID, ownershipSource: 'metadata' },
-      { id: 2, email: 'b@x', name: 'B', ownerClientId: CLIENT_ID, ownershipSource: 'notes' },
-      { id: 3, email: 'c@x', name: 'C', ownerClientId: null, ownershipSource: 'conflict' },
-      { id: 4, email: 'd@x', name: 'D', ownerClientId: null, ownershipSource: null },
+      { id: 2, email: 'b@x', name: 'B', ownerClientId: null, ownershipSource: null },
+      { id: 3, email: 'c@x', name: 'C', ownerClientId: null, ownershipSource: null },
     ]);
   });
 });
